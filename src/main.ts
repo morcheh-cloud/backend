@@ -47,6 +47,8 @@ async function bootstrap() {
   };
   await RedocModule.setup("/redoc", app, document, redocOptions);
 
+  // useContainer(app.select(AppModule), { fallbackOnErrors: true });
+
   await app.listen(PORT, "0.0.0.0");
   logger.debug(`Application is running on: ${await app.getUrl()}`);
   logger.debug(`Swagger is running on: ${await app.getUrl()}/swagger`);

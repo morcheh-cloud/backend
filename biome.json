@@ -22,6 +22,9 @@
 	"javascript": {
 		"formatter": {
 			"quoteStyle": "double"
+		},
+		"parser": {
+			"unsafeParameterDecoratorsEnabled": true
 		}
 	},
 	"linter": {
@@ -46,7 +49,10 @@
 				"noUnusedPrivateClassMembers": "error",
 				"noUnusedVariables": "error"
 			},
-			"recommended": true
+			"recommended": true,
+			"style": {
+				"useImportType": "off"
+			}
 		}
 	},
 	"vcs": {

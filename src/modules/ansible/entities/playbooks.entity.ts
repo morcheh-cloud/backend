@@ -4,6 +4,7 @@ import {
   IsReferenceField,
   IsStringField,
 } from "src/common/decorators/validation.decorator";
+import type { IPlaybook } from "src/modules/ansible/interfaces/playbook.interface";
 import { Column, Entity } from "typeorm";
 
 export class Code {
@@ -35,5 +36,5 @@ export class PlayBook extends BaseEntity {
 
   @IsStringField()
   @Column({ default: {}, type: "json" })
-  schema!: string;
+  schema!: Partial<IPlaybook>;
 }
