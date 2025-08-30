@@ -1,21 +1,5 @@
 {
-	"name": "backend",
-	"version": "0.0.1",
-	"description": "",
 	"author": "",
-	"private": true,
-	"license": "UNLICENSED",
-	"scripts": {
-		"build": "nest build",
-		"format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-		"dev": "nest start --watch",
-		"docker": "docker compose -f docker/docker-compose.dev.yml up -d",
-		"start:debug": "nest start --debug --watch",
-		"start:prod": "node dist/main",
-		"lint": "pnpm exec biome check --write src",
-		"migrate": "typeorm migration:run",
-		"migrate:generate": "typeorm migration:create ./migrations/$(date +%Y%m%d%H%M%S)-migration"
-	},
 	"dependencies": {
 		"@nestjs/common": "^11.1.6",
 		"@nestjs/core": "^11.1.6",
@@ -25,16 +9,19 @@
 		"@nestjs/typeorm": "^11.0.0",
 		"class-transformer": "^0.5.1",
 		"class-validator": "^0.14.2",
+		"compression": "^1.8.1",
 		"pg": "^8.16.3",
 		"reflect-metadata": "^0.2.2",
 		"rxjs": "^7.8.2",
 		"typeorm": "^0.3.26"
 	},
+	"description": "",
 	"devDependencies": {
 		"@biomejs/biome": "2.2.2",
 		"@nestjs/cli": "^11.0.10",
 		"@nestjs/schematics": "^11.0.7",
 		"@nestjs/testing": "^11.1.6",
+		"@types/compression": "^1.8.1",
 		"@types/express": "^5.0.3",
 		"@types/jest": "^30.0.0",
 		"@types/node": "^24.3.0",
@@ -47,26 +34,42 @@
 		"typescript": "^5.9.2"
 	},
 	"jest": {
+		"collectCoverageFrom": [
+			"**/*.(t|j)s"
+		],
+		"coverageDirectory": "../coverage",
 		"moduleFileExtensions": [
 			"js",
 			"json",
 			"ts"
 		],
 		"rootDir": "src",
+		"testEnvironment": "node",
 		"testRegex": ".*\\.spec\\.ts$",
 		"transform": {
 			"^.+\\.(t|j)s$": "ts-jest"
-		},
-		"collectCoverageFrom": [
-			"**/*.(t|j)s"
-		],
-		"coverageDirectory": "../coverage",
-		"testEnvironment": "node"
+		}
 	},
+	"license": "UNLICENSED",
+	"name": "backend",
 	"pnpm": {
 		"onlyBuiltDependencies": [
 			"@nestjs/core",
+			"@scarf/scarf",
 			"unrs-resolver"
 		]
-	}
+	},
+	"private": true,
+	"scripts": {
+		"build": "nest build",
+		"dev": "TZ='UTC' nest start --watch",
+		"docker": "docker compose -f docker/docker-compose.dev.yml up -d",
+		"format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+		"lint": "pnpm exec biome check --write src",
+		"migrate": "typeorm migration:run",
+		"migrate:generate": "typeorm migration:create ./migrations/$(date +%Y%m%d%H%M%S)-migration",
+		"start:debug": "nest start --debug --watch",
+		"start:prod": "node dist/main"
+	},
+	"version": "0.0.1"
 }

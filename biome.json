@@ -28,6 +28,11 @@
 		"enabled": true,
 		"rules": {
 			"complexity": {
+				"noUselessConstructor": {
+					"fix": "safe",
+					"level": "error",
+					"options": {}
+				},
 				"useLiteralKeys": "off"
 			},
 			"correctness": {

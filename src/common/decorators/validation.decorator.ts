@@ -66,7 +66,7 @@ export function IsReferenceField(params?: {
     const required = params?.required ?? false;
 
     const isFunc = isPlainFunction(type);
-    const t = isFunc ? type : () => type;
+    const t: Function | object = isFunc ? type : () => type;
 
     ApiProperty({ isArray, required, type: type as any })(target, propertyKey);
     Type(t as any)(target, propertyKey);
@@ -216,12 +216,11 @@ export function IsDateField(params?: {
 }
 
 interface IEnumField {
-  enum: object;
   isArray?: boolean;
   required?: boolean;
 }
 
-export function IsEnumField(enumObj: object, params: IEnumField) {
+export function IsEnumField(enumObj: object, params: IEnumField = {}) {
   return (target: object, propertyKey: string): void => {
     const { isArray } = getPropMetaData(params, target, propertyKey);
 
