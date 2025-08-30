@@ -30,6 +30,33 @@
 			"complexity": {
 				"useLiteralKeys": "off"
 			},
+			"correctness": {
+				"noUnusedFunctionParameters": {
+					"fix": "safe",
+					"level": "error",
+					"options": {}
+				},
+				"noUnusedImports": {
+					"fix": "safe",
+					"level": "error",
+					"options": {}
+				},
+				"noUnusedLabels": {
+					"fix": "safe",
+					"level": "error",
+					"options": {}
+				},
+				"noUnusedPrivateClassMembers": {
+					"fix": "safe",
+					"level": "error",
+					"options": {}
+				},
+				"noUnusedVariables": {
+					"fix": "safe",
+					"level": "error",
+					"options": {}
+				}
+			},
 			"recommended": true
 		}
 	},
