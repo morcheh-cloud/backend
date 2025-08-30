@@ -3,7 +3,7 @@ import os from "node:os";
 import { promisify } from "node:util";
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { InjectDataSource } from "@nestjs/typeorm";
-import { PlaybookRepository } from "src/modules/ansible/repositories/ansible.repository";
+import { PlaybookRepository } from "src/modules/ansible/repositories/playbook.repository";
 import type { DataSource } from "typeorm";
 
 const execFileAsync = promisify(execFile);
@@ -58,8 +58,8 @@ const CONCURRENCY = DEFAULT_CONCURRENCY;
 const MAX_BUFFER = 16 * 1024 * 1024; // 16MB, ansible-doc output can be large
 
 @Injectable()
-export class AnsibleService implements OnModuleInit {
-  private readonly logger = new Logger(AnsibleService.name);
+export class PlaybookService implements OnModuleInit {
+  private readonly logger = new Logger(PlaybookService.name);
 
   private ansibleModuleSize = 0;
   private updatedModulesCount = 0;

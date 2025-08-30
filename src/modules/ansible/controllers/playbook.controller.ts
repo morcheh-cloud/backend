@@ -1,9 +1,9 @@
 import { Controller, Post } from "@nestjs/common";
-import { AnsibleService } from "src/modules/ansible/services/ansible.service";
+import { PlaybookService } from "src/modules/ansible/services/playbook.service";
 
 @Controller("ansible")
 export class AnsibleController {
-  constructor(private ansibleService: AnsibleService) {}
+  constructor(private ansibleService: PlaybookService) {}
 
   @Post("sync")
   async syncAnsible() {
