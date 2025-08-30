@@ -36,31 +36,15 @@
 				"useLiteralKeys": "off"
 			},
 			"correctness": {
-				"noUnusedFunctionParameters": {
-					"fix": "safe",
-					"level": "error",
-					"options": {}
-				},
+				"noUnusedFunctionParameters": "error",
 				"noUnusedImports": {
 					"fix": "safe",
 					"level": "error",
 					"options": {}
 				},
-				"noUnusedLabels": {
-					"fix": "safe",
-					"level": "error",
-					"options": {}
-				},
-				"noUnusedPrivateClassMembers": {
-					"fix": "safe",
-					"level": "error",
-					"options": {}
-				},
-				"noUnusedVariables": {
-					"fix": "safe",
-					"level": "error",
-					"options": {}
-				}
+				"noUnusedLabels": "error",
+				"noUnusedPrivateClassMembers": "error",
+				"noUnusedVariables": "error"
 			},
 			"recommended": true
 		}
