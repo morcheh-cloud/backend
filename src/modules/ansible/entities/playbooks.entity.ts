@@ -1,17 +1,25 @@
 import { BaseEntity } from "src/common/base/base.entity";
 import {
+  IsEnumField,
   IsReferenceField,
   IsStringField,
 } from "src/common/decorators/validation.decorator";
-import { Column } from "typeorm";
+import { Column, Entity } from "typeorm";
 
 export class Code {
   @IsStringField()
   content!: string;
 }
 
+export enum PlayBookType {
+  OFFICIAL = "official",
+  COMMUNITY = "community",
+  CUSTOM = "custom",
+}
+
+@Entity()
 export class PlayBook extends BaseEntity {
-  @Column()
+  @Column({ unique: true })
   name!: string;
 
   @Column()
@@ -20,4 +28,12 @@ export class PlayBook extends BaseEntity {
   @IsReferenceField()
   @Column("jsonb", { default: {} })
   content!: Code;
+
+  @IsEnumField(PlayBookType)
+  @Column({ enum: PlayBookType, type: "enum" })
+  type!: PlayBookType;
+
+  @IsStringField()
+  @Column({ default: {}, type: "json" })
+  schema!: string;
 }
