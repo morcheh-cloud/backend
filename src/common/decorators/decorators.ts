@@ -1,11 +1,10 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { Expose, Transform, Type } from 'class-transformer';
+import { ApiProperty } from "@nestjs/swagger";
+import { Expose, Transform, Type } from "class-transformer";
 import {
   Allow,
   IsArray,
   IsBoolean,
   IsDate,
-  IsInt,
   IsJSON,
   IsNumber,
   IsOptional,
@@ -13,30 +12,30 @@ import {
   IsUUID,
   Matches,
   ValidateNested,
-} from 'class-validator';
-import { EnsureIsArray } from 'src/lib/utils';
+} from "class-validator";
+import { EnsureIsArray } from "src/lib/utils";
 
-export const RelationalFieldMetaDataKey = 'RelationalFieldMetaDataKey';
+export const RelationalFieldMetaDataKey = "RelationalFieldMetaDataKey";
 
 export interface relationalFieldMetaData {
   property: string;
   entity: string;
   isArray?: boolean;
   checkPermission?: boolean;
-  checkPermissionStrategy?: 'host';
+  checkPermissionStrategy?: "host";
 }
 
 function getPropMetaData(
   params: { type?: any; isArray?: boolean; [k: string]: any },
   target: any,
-  propertyKey: string,
+  propertyKey: string
 ): { propertyType: any; type: any; isArray: boolean } {
-  const propertyType = Reflect.getMetadata('design:type', target, propertyKey);
+  const propertyType = Reflect.getMetadata("design:type", target, propertyKey);
 
-  const isArray = params?.isArray || propertyType?.name === 'Array';
+  const isArray = params?.isArray || propertyType?.name === "Array";
   const type = params?.type || propertyType;
 
-  return { propertyType, type, isArray };
+  return { isArray, propertyType, type };
 }
 
 interface CommonDecoratorParam {
@@ -47,7 +46,7 @@ interface CommonDecoratorParam {
 
 function isPlainFunction(fn: unknown): boolean {
   return (
-    typeof fn === 'function' &&
+    typeof fn === "function" &&
     !/^class\s/.test(Function.prototype.toString.call(fn))
   );
 }
@@ -57,14 +56,18 @@ export function IsReferenceField(params?: {
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string): void {
-    const { isArray, type } = getPropMetaData(params, target, propertyKey);
+  return (target: any, propertyKey: string): void => {
+    const { isArray, type } = getPropMetaData(
+      params as any,
+      target,
+      propertyKey
+    );
     const required = params?.required ?? false;
 
     const isFunc = isPlainFunction(type);
     const t = isFunc ? type : () => type;
 
-    ApiProperty({ type, isArray, required })(target, propertyKey);
+    ApiProperty({ isArray, required, type })(target, propertyKey);
     Type(t)(target, propertyKey);
     Expose()(target, propertyKey);
 
@@ -84,14 +87,14 @@ export function IsStringField(params?: {
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string): void {
+  return (target: any, propertyKey: string): void => {
     params ||= {};
     params.required = params.required ?? false;
     const { isArray } = getPropMetaData(params, target, propertyKey);
 
-    ApiProperty({ type: String, required: params.required, isArray })(
+    ApiProperty({ isArray, required: params.required, type: String })(
       target,
-      propertyKey,
+      propertyKey
     );
     IsString({ each: isArray })(target, propertyKey);
     Type(() => String)(target, propertyKey);
@@ -106,17 +109,17 @@ export function IsStringField(params?: {
 
 export function IsRegExpField(
   pattern: RegExp,
-  params?: { type?: any; isArray?: boolean; required?: boolean },
+  params?: { type?: any; isArray?: boolean; required?: boolean }
 ) {
-  return function (target: any, propertyKey: string): void {
+  return (target: any, propertyKey: string): void => {
     params ||= {};
     params.required = params.required ?? false;
 
     const { isArray } = getPropMetaData(params, target, propertyKey);
 
-    ApiProperty({ type: String, required: params.required, isArray })(
+    ApiProperty({ isArray, required: params.required, type: String })(
       target,
-      propertyKey,
+      propertyKey
     );
     Matches(pattern, { each: isArray })(target, propertyKey);
     Expose()(target, propertyKey);
@@ -132,15 +135,15 @@ export function IsNumberField(params?: {
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string) {
+  return (target: any, propertyKey: string) => {
     params ||= {};
     params.required = params.required ?? false;
 
     const { isArray } = getPropMetaData(params, target, propertyKey);
 
-    ApiProperty({ type: Number, required: params.required, isArray })(
+    ApiProperty({ isArray, required: params.required, type: Number })(
       target,
-      propertyKey,
+      propertyKey
     );
     IsNumber({}, { each: isArray })(target, propertyKey);
     Type(() => Number)(target, propertyKey);
@@ -153,9 +156,9 @@ export function IsNumberField(params?: {
   };
 }
 const optionalBooleanMapper = new Map([
-  ['undefined', undefined],
-  ['true', true],
-  ['false', false],
+  ["undefined", undefined],
+  ["true", true],
+  ["false", false],
 ]);
 
 export function IsBooleanField(params?: {
@@ -163,19 +166,19 @@ export function IsBooleanField(params?: {
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string) {
+  return (target: any, propertyKey: string) => {
     params ||= {};
     params.required = params.required ?? false;
     const { isArray } = getPropMetaData(params, target, propertyKey);
 
     Expose()(target, propertyKey);
-    ApiProperty({ type: Boolean, required: params.required, isArray })(
+    ApiProperty({ isArray, required: params.required, type: Boolean })(
       target,
-      propertyKey,
+      propertyKey
     );
     IsBoolean({ each: isArray })(target, propertyKey);
     Transform(({ value }) => {
-      if (typeof value === 'string') {
+      if (typeof value === "string") {
         return optionalBooleanMapper.get(value);
       } else {
         return value;
@@ -193,14 +196,14 @@ export function IsDateField(params?: {
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string) {
+  return (target: any, propertyKey: string) => {
     params ||= {};
     params.required = params.required ?? false;
     const { isArray } = getPropMetaData(params, target, propertyKey);
 
-    ApiProperty({ type: Date, required: params.required, isArray })(
+    ApiProperty({ isArray, required: params.required, type: Date })(
       target,
-      propertyKey,
+      propertyKey
     );
     IsDate({ each: isArray })(target, propertyKey);
     Type(() => Date)(target, propertyKey);
@@ -218,7 +221,7 @@ export function IsEnumField(params: {
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string): void {
+  return (target: any, propertyKey: string): void => {
     const { isArray, type } = getPropMetaData(params, target, propertyKey);
 
     params ||= { type };
@@ -226,9 +229,9 @@ export function IsEnumField(params: {
 
     ApiProperty({
       enum: type,
-      type: 'string',
-      required: params.required,
       isArray,
+      required: params.required,
+      type: "string",
     })(target, propertyKey);
     // TODO: fix this
     // if (!isArray) {
@@ -249,55 +252,55 @@ export function IsEnumField(params: {
   };
 }
 
-export function IsPrimaryKeyField(params?: {
-  type?: any;
-  isArray?: boolean;
-  required?: boolean;
-  checkPermission?: boolean;
-  checkPermissionStrategy?: 'host';
-}): PropertyDecorator {
-  return function (target: any, propertyKey: string): void {
-    params ||= {};
-    params.required = params.required ?? false;
+// export function IsPrimaryKeyField(params?: {
+//   type?: any;
+//   isArray?: boolean;
+//   required?: boolean;
+//   checkPermission?: boolean;
+//   checkPermissionStrategy?: "host";
+// }): PropertyDecorator {
+//   return (target: any, propertyKey: string) => {
+//     params ||= {};
+//     params.required = params.required ?? false;
 
-    const { isArray, type } = getPropMetaData(params, target, propertyKey);
+//     const { isArray, type } = getPropMetaData(params, target, propertyKey);
 
-    if (!params?.required) {
-      IsOptional()(target, propertyKey);
-    }
+//     if (!params?.required) {
+//       IsOptional()(target, propertyKey);
+//     }
 
-    IsInt({ each: isArray })(target, propertyKey);
-    Type(() => Number)(target, propertyKey);
-    Expose()(target, propertyKey);
-    ApiProperty({ required: params?.required, type: Number, isArray })(
-      target,
-      propertyKey,
-    );
+//     IsInt({ each: isArray })(target, propertyKey);
+//     Type(() => Number)(target, propertyKey);
+//     Expose()(target, propertyKey);
+//     ApiProperty({ isArray, required: params?.required, type: Number })(
+//       target,
+//       propertyKey
+//     );
 
-    let relationalFields: relationalFieldMetaData[] = Reflect.getMetadata(
-      RelationalFieldMetaDataKey,
-      target.constructor,
-    );
+//     // let relationalFields: relationalFieldMetaData[] = Reflect.getMetadata(
+//     //   RelationalFieldMetaDataKey,
+//     //   target.constructor
+//     // );
 
-    relationalFields ||= [];
-    relationalFields.push({
-      entity: type?.name,
-      property: propertyKey,
-      isArray,
-      checkPermission: params.checkPermission,
-      checkPermissionStrategy: params.checkPermissionStrategy,
-    });
+//     // relationalFields ||= [];
+//     // relationalFields.push({
+//     //   checkPermission: params.checkPermission,
+//     //   checkPermissionStrategy: params.checkPermissionStrategy,
+//     //   entity: type?.name,
+//     //   isArray,
+//     //   property: propertyKey,
+//     // });
 
-    Reflect.defineMetadata(
-      RelationalFieldMetaDataKey,
-      relationalFields,
-      target.constructor,
-    );
-  };
-}
+//     // Reflect.defineMetadata(
+//     //   RelationalFieldMetaDataKey,
+//     //   relationalFields,
+//     //   target.constructor
+//     // );
+//   };
+// }
 
 export function IsTimeField(params?: CommonDecoratorParam) {
-  return function (target: any, propertyKey: string): void {
+  return (target: any, propertyKey: string): void => {
     params ||= {};
     params.required = params.required ?? false;
 
@@ -305,10 +308,10 @@ export function IsTimeField(params?: CommonDecoratorParam) {
 
     const { isArray } = getPropMetaData(params, target, propertyKey);
     ApiProperty({
-      required: params.required,
       isArray,
-      type: 'string',
       pattern: String(pattern),
+      required: params.required,
+      type: "string",
     })(target, propertyKey);
     Matches(pattern);
     Expose()(target, propertyKey);
@@ -324,15 +327,15 @@ export function IsJSONField(params?: {
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string): void {
+  return (target: any, propertyKey: string): void => {
     params ||= {};
     params.required = params.required ?? false;
 
     const { isArray } = getPropMetaData(params, target, propertyKey);
 
-    ApiProperty({ type: 'null', required: params.required, isArray })(
+    ApiProperty({ isArray, required: params.required, type: "null" })(
       target,
-      propertyKey,
+      propertyKey
     );
     Allow()(target, propertyKey);
     IsJSON({ each: isArray })(target, propertyKey);
@@ -349,15 +352,15 @@ export function IsObjectField(params?: {
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string): void {
+  return (target: any, propertyKey: string): void => {
     params ||= {};
     const { isArray } = getPropMetaData(params, target, propertyKey);
 
     IsOptional()(target, propertyKey);
     ApiProperty({
-      type: 'null',
-      required: params.required ?? false,
       isArray,
+      required: params.required ?? false,
+      type: "null",
     })(target, propertyKey);
     // IsObject({ each: isArray })(target, propertyKey);
     Allow({ always: true })(target, propertyKey);
@@ -367,7 +370,7 @@ export function IsObjectField(params?: {
 
 class MediaDTO {
   @IsNumberField()
-  id: number;
+  id!: number;
 
   @IsStringField()
   url?: string;
@@ -385,19 +388,19 @@ class MediaDTO {
   mimetype?: string;
 
   @IsStringField()
-  description: string;
+  description!: string;
 }
 
 export function IsMediaField(params?: {
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string): any {
-    const { isArray } = getPropMetaData(params, target, propertyKey);
+  return (target: any, propertyKey: string): any => {
+    const { isArray } = getPropMetaData(params as any, target, propertyKey);
 
-    ApiProperty({ type: MediaDTO, isArray, required: false })(
+    ApiProperty({ isArray, required: false, type: MediaDTO })(
       target,
-      propertyKey,
+      propertyKey
     );
     // IsObject({ each: isArray })(target, propertyKey);
     Type(() => MediaDTO)(target, propertyKey);
@@ -407,20 +410,20 @@ export function IsMediaField(params?: {
 }
 
 export function IsUUIDField(params?: {
-  version?: '3' | '4' | '5' | 3 | 4 | 5;
+  version?: "3" | "4" | "5" | 3 | 4 | 5;
   isArray?: boolean;
   required?: boolean;
 }) {
-  return function (target: any, propertyKey: string): void {
+  return (target: any, propertyKey: string): void => {
     params ||= {};
     params.required = params.required ?? false;
-    params.version = params.version ?? '4';
+    params.version = params.version ?? "4";
 
     const { isArray } = getPropMetaData(params, target, propertyKey);
 
-    ApiProperty({ type: String, required: params.required, isArray })(
+    ApiProperty({ isArray, required: params.required, type: String })(
       target,
-      propertyKey,
+      propertyKey
     );
     IsUUID(params.version, { each: isArray })(target, propertyKey);
     Expose()(target, propertyKey);
