@@ -49,6 +49,9 @@
 				"noUnusedPrivateClassMembers": "error",
 				"noUnusedVariables": "error"
 			},
+			"performance": {
+				"noAccumulatingSpread": "off"
+			},
 			"recommended": true,
 			"style": {
 				"useImportType": "off"

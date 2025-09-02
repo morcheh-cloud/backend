@@ -1,0 +1,11 @@
+- name: Run ls on remote server
+  become: true
+  hosts: all
+  tasks:
+    - name: Run ls command
+      command: ls -ltrha
+      register: ls_output
+
+    - name: Show ls output
+      debug:
+        var: ls_output.stdout_lines

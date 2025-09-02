@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
 } from "typeorm";
 
-export class BaseEntity {
+export class BaseEntityWithoutSoftDelete {
   @IsNumberField()
   @PrimaryGeneratedColumn()
   id!: number;
@@ -16,7 +16,9 @@ export class BaseEntity {
 
   @UpdateDateColumn()
   updatedAt!: Date;
+}
 
+export class BaseEntity extends BaseEntityWithoutSoftDelete {
   @DeleteDateColumn()
   deletedAt?: Date;
 }

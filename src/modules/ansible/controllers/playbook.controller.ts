@@ -1,7 +1,10 @@
-import { Controller, Post } from "@nestjs/common";
+import { Get, Post } from "@nestjs/common";
+import { BasicController } from "src/common/decorators/basicController.decorator";
+import { StandardApi } from "src/common/decorators/standard-api.decorator";
+import { PlaybookModel } from "src/modules/ansible/DTOs/playbook.dto";
 import { PlaybookService } from "src/modules/ansible/services/playbook.service";
 
-@Controller("ansible")
+@BasicController("playbooks")
 export class AnsibleController {
   constructor(private ansibleService: PlaybookService) {}
 
@@ -11,5 +14,11 @@ export class AnsibleController {
     return {
       success: true,
     };
+  }
+
+  @StandardApi({ type: PlaybookModel })
+  @Get()
+  async find() {
+    return this.ansibleService.find();
   }
 }

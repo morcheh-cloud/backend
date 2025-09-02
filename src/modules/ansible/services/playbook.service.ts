@@ -55,7 +55,7 @@ async function withRetry<T>(
 
 const DEFAULT_CONCURRENCY = Math.max(4, Math.min(16, os.cpus()?.length || 8));
 const CONCURRENCY = DEFAULT_CONCURRENCY;
-const MAX_BUFFER = 16 * 1024 * 1024; // 16MB, ansible-doc output can be large
+const MAX_BUFFER = 16 * 1024 * 1024;
 
 @Injectable()
 export class PlaybookService implements OnModuleInit {
@@ -107,11 +107,16 @@ export class PlaybookService implements OnModuleInit {
   async sync(): Promise<{ total: number; succeeded: number; failed: number }> {
     this.logger.log(`Starting ansible sync with concurrency=${CONCURRENCY}…`);
 
-    const { stdout: listStdout } = await execFileAsync(
+    const { stdout: listStdout, stderr } = await execFileAsync(
       "ansible-doc",
       ["-j", "-l"],
       { maxBuffer: MAX_BUFFER }
     );
+
+    if (stderr) {
+      throw new Error(`Failed to list ansible modules: ${stderr}`);
+    }
+
     const modules: AnyRecord = JSON.parse(listStdout);
     const moduleNames = Object.keys(modules);
 
@@ -183,5 +188,13 @@ export class PlaybookService implements OnModuleInit {
       total: this.ansibleModuleSize,
       updated: this.updatedModulesCount,
     };
+  }
+
+  async find() {
+    const playbooks = await this.playbookRepository.findAndCount({
+      limit: 10,
+      page: 0,
+    });
+    return playbooks;
   }
 }

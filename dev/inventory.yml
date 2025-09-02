@@ -1,0 +1,6 @@
+all:
+  hosts:
+    doctop:
+      ansible_host: 94.182.91.38
+      ansible_user: root
+      ansible_password: VKKYmuEibJbPnsPm

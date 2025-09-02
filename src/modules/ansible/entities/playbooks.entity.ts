@@ -1,6 +1,7 @@
 import { BaseEntity } from "src/common/base/base.entity";
 import {
   IsEnumField,
+  IsJSONField,
   IsReferenceField,
   IsStringField,
 } from "src/common/decorators/validation.decorator";
@@ -34,7 +35,7 @@ export class PlayBook extends BaseEntity {
   @Column({ enum: PlayBookType, type: "enum" })
   type!: PlayBookType;
 
-  @IsStringField()
+  @IsJSONField()
   @Column({ default: {}, type: "json" })
   schema!: Partial<IPlaybook>;
 }

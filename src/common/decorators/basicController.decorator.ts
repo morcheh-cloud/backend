@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
-export const BasicController = (route: string, apiTagName?: string): any => {
+export const BasicController = (route: string, apiTagName?: string) => {
   return applyDecorators(
     ApiBearerAuth(),
     UseInterceptors(ClassSerializerInterceptor),
