@@ -1,6 +1,6 @@
 export interface IHostEntry {
-  addr: string;
-  username: string;
-  password: string;
-  hostname: string;
+	addr: string
+	username: string
+	password: string
+	hostname: string
 }
