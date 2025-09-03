@@ -21,6 +21,8 @@
 	},
 	"javascript": {
 		"formatter": {
+			"arrowParentheses": "asNeeded",
+			"lineWidth": 120,
 			"quoteStyle": "double",
 			"semicolons": "asNeeded"
 		},
@@ -65,7 +67,7 @@
 	"vcs": {
 		"clientKind": "git",
 		"defaultBranch": "main",
-		"enabled": true,
-		"useIgnoreFile": true
+		"enabled": false,
+		"useIgnoreFile": false
 	}
 }

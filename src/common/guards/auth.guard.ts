@@ -1,52 +1,86 @@
 import {
-	type CanActivate,
-	type ExecutionContext,
-	Injectable,
-	UnauthorizedException,
-} from "@nestjs/common"
-import type { Reflector } from "@nestjs/core"
-import type { JwtService } from "@nestjs/jwt"
-import type { Request } from "express"
-import { IS_PUBLIC_KEY } from "src/common/decorators/isPublic.decorator"
-import { JWT_CONFIG } from "src/config/app.config"
+  type CanActivate,
+  type ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { JwtService } from "@nestjs/jwt";
+import { InjectDataSource } from "@nestjs/typeorm";
+import type { Request } from "express";
+import { omit } from "lodash";
+import { IS_PUBLIC_KEY } from "src/common/decorators/isPublic.decorator";
+import { JWT_CONFIG } from "src/config/app.config";
+import { JWTPayload } from "src/modules/auth/DTOs/auth.dto";
+import { User } from "src/modules/user/entities/user.entity";
+import { DataSource } from "typeorm";
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-	constructor(
-		private jwtService: JwtService,
-		private reflector: Reflector,
-	) {}
+  constructor(
+    private jwtService: JwtService,
+    private reflector: Reflector,
+    @InjectDataSource()
+    private datasource: DataSource
+  ) {}
 
-	private extractTokenFromHeader(request: Request): string | undefined {
-		const [type, token] = request.headers.authorization?.split(" ") ?? []
-		return type === "Bearer" ? token : undefined
-	}
+  private async getContextUserById(id: number): Promise<User | null> {
+    let user = await this.datasource.getRepository(User).findOne({
+      where: { id },
+    });
 
-	async canActivate(context: ExecutionContext): Promise<boolean> {
-		const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-			context.getHandler(),
-			context.getClass(),
-		])
-		if (isPublic) {
-			return true
-		}
+    user = omit(user, ["password"]) as User;
 
-		const request = context.switchToHttp().getRequest()
-		const token = this.extractTokenFromHeader(request)
-		if (!token) {
-			throw new UnauthorizedException("No token provided")
-		}
+    return user;
+  }
 
-		try {
-			const payload = await this.jwtService.verifyAsync(token, {
-				secret: JWT_CONFIG.secret,
-			})
-			request["user"] = payload
-		} catch {
-			throw new UnauthorizedException(
-				"Your session has expired. Please log in again.",
-			)
-		}
-		return true
-	}
+  private extractTokenFromHeader(request: Request): string | undefined {
+    const [type, token] = request.headers.authorization?.split(" ") ?? [];
+    return type === "Bearer" ? token : undefined;
+  }
+
+  private extractApiKeyFromHeader(request: Request): string | undefined {
+    return request.headers["x-api-key"] as string | undefined;
+  }
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+
+    const request = context.switchToHttp().getRequest();
+
+    const apiKey = this.extractApiKeyFromHeader(request);
+    if (apiKey) {
+      return true;
+    }
+
+    const jwtToken = this.extractTokenFromHeader(request);
+    if (!jwtToken) {
+      throw new UnauthorizedException("No token provided");
+    }
+
+    try {
+      const payload: JWTPayload = await this.jwtService.verifyAsync(jwtToken, {
+        secret: JWT_CONFIG.secret,
+      });
+
+      const user = await this.getContextUserById(payload.id);
+      if (!user) {
+        throw new UnauthorizedException("User not found");
+      }
+      request["user"] = user;
+
+      // Attach user information to the request object
+    } catch {
+      throw new UnauthorizedException(
+        "Your session has expired. Please log in again."
+      );
+    }
+    return true;
+  }
 }
