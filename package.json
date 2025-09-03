@@ -17,6 +17,7 @@
 		"compression": "^1.8.1",
 		"csrf-csrf": "^4.0.3",
 		"dotenv": "^17.2.2",
+		"encrypt-with-password": "^1.0.0",
 		"js-yaml": "^4.1.0",
 		"lodash": "^4.17.21",
 		"pg": "^8.16.3",

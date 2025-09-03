@@ -3,7 +3,10 @@ import {
   IsNumberField,
   IsStringField,
 } from "src/common/decorators/validation.decorator";
-import { ServerProtocol } from "src/modules/server/entities/server.entity";
+import {
+  Server,
+  ServerProtocol,
+} from "src/modules/server/entities/server.entity";
 
 export class SaveServerPayload {
   @IsStringField()
@@ -30,3 +33,5 @@ export class SaveServerPayload {
   @IsEnumField(ServerProtocol)
   protocol?: ServerProtocol;
 }
+
+export class ServerModel extends Server {}

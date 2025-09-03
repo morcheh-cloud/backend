@@ -4,7 +4,10 @@ import { GetUser } from "src/common/decorators/getUser.decorator";
 import { GetWorkspace } from "src/common/decorators/getWorkspace.decorator";
 import { ApiPermissions } from "src/common/decorators/permission.decorator";
 import { StandardApi } from "src/common/decorators/standard-api.decorator";
-import { SaveServerPayload } from "src/modules/server/DTOs/server.dto";
+import {
+  SaveServerPayload,
+  ServerModel,
+} from "src/modules/server/DTOs/server.dto";
 import { ServerService } from "src/modules/server/services/server.service";
 import { User } from "src/modules/user/entities/user.entity";
 import { Workspace } from "src/modules/workspace/entities/workspace.entity";
@@ -14,7 +17,7 @@ export class ServerController {
   constructor(private serverService: ServerService) {}
 
   @ApiPermissions("ansible:create")
-  @StandardApi()
+  @StandardApi({ type: ServerModel })
   @Post("create")
   async create(
     @GetUser() user: User,
