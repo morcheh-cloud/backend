@@ -1,6 +1,6 @@
 import { Body, Post } from "@nestjs/common";
 import { BasicController } from "src/common/decorators/basicController.decorator";
-import { GetUser } from "src/common/decorators/get-user.decorator";
+import { GetUser } from "src/common/decorators/getUser.decorator";
 import { ApiPermissions } from "src/common/decorators/permission.decorator";
 import { StandardApi } from "src/common/decorators/standard-api.decorator";
 import { User } from "src/modules/user/entities/user.entity";
@@ -11,7 +11,7 @@ import { WorkspaceService } from "src/modules/workspace/services/workspace.servi
 export class WorkspaceController {
   constructor(private workspaceService: WorkspaceService) {}
 
-  @ApiPermissions("s3:manage")
+  @ApiPermissions("ansible:create")
   @StandardApi()
   @Post("create")
   async create(@GetUser() user: User, @Body() body: CreateWorkSpacePayload) {

@@ -1,35 +1,43 @@
-import { BaseEntityWithoutSoftDelete } from "src/common/base/base.entity"
-import { Account } from "src/modules/account/entities/account.entity"
-import { Server } from "src/modules/server/entities/server.entity"
-import { User } from "src/modules/user/entities/user.entity"
-import { Column, Entity, ManyToOne, OneToOne } from "typeorm"
+import { BaseEntityWithoutSoftDelete } from "src/common/base/base.entity";
+import { Account } from "src/modules/account/entities/account.entity";
+import { Server } from "src/modules/server/entities/server.entity";
+import { User } from "src/modules/user/entities/user.entity";
+import { Workspace } from "src/modules/workspace/entities/workspace.entity";
+import { Column, Entity, JoinColumn, ManyToOne, OneToOne } from "typeorm";
 
 @Entity()
 export class Credential extends BaseEntityWithoutSoftDelete {
-	@Column({ nullable: true })
-	username?: string // encrypted
+  @ManyToOne(() => User, { nullable: false })
+  @JoinColumn()
+  user!: User;
 
-	@Column({ nullable: true })
-	password?: string // encrypted
+  @ManyToOne(() => Workspace, { nullable: false })
+  @JoinColumn()
+  workspace!: Workspace;
 
-	@Column({ nullable: true })
-	description?: string // encrypted
+  @OneToOne(() => Server, (s) => s.credential)
+  @JoinColumn()
+  server?: Server;
 
-	@Column({ nullable: true })
-	token?: string // encrypted
+  @OneToOne(() => Account, (a) => a.credential)
+  @JoinColumn()
+  account?: Account;
 
-	@Column({ nullable: true })
-	expiredAt?: Date
+  @Column({ nullable: true })
+  username?: string; // encrypted
 
-	@Column({ nullable: true, type: "varchar" })
-	metadata?: Record<string, unknown> // encrypted
+  @Column({ nullable: true })
+  password?: string; // encrypted
 
-	@ManyToOne(() => User, { nullable: false })
-	createdBy!: User
+  @Column({ nullable: true })
+  description?: string; // encrypted
 
-	@ManyToOne(() => Server)
-	server?: Server
+  @Column({ nullable: true })
+  token?: string; // encrypted
 
-	@OneToOne(() => Account)
-	account?: Account
+  @Column({ nullable: true })
+  expiredAt?: Date;
+
+  @Column({ nullable: true, type: "varchar" })
+  metadata?: Record<string, unknown>; // encrypted
 }

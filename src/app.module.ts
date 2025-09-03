@@ -9,6 +9,8 @@ import { AnsibleModule } from "src/modules/ansible/ansible.module";
 import { AuthModule } from "src/modules/auth/auth.module";
 import { ServerModule } from "src/modules/server/server.module";
 import { UserModule } from "src/modules/user/user.module";
+import { LogModule } from "./modules/log/log.module";
+import { NotificationModule } from "./modules/notification/notification.module";
 import { SettingModule } from "./modules/setting/setting.module";
 import { VaultModule } from "./modules/vault/vault.module";
 import { WorkspaceModule } from "./modules/workspace/workspace.module";
@@ -31,6 +33,8 @@ import { WorkspaceModule } from "./modules/workspace/workspace.module";
     WorkspaceModule,
     AccountModule,
     SettingModule,
+    NotificationModule,
+    LogModule,
   ],
   providers: [],
 })
