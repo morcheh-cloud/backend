@@ -1,33 +1,33 @@
-import { config } from "dotenv"
+import { config } from "dotenv";
 
-config()
+config();
 
-export const PORT: number = parseInt(process.env["PORT"] || "3000", 10)
-const isProd = process.env["NODE_ENV"] === "production"
+export const PORT: number = parseInt(process.env["PORT"] || "3000", 10);
+const isProd = process.env["NODE_ENV"] === "production";
 
 export const JWT_CONFIG = {
-	expiresIn: "365d",
-	secret: process.env["JWT_SECRET"] || "",
-}
+  expiresIn: "365d",
+  secret: process.env["JWT_SECRET"] || "",
+};
 if (!JWT_CONFIG.secret) {
-	throw new Error("JWT_SECRET is not defined")
+  throw new Error("JWT_SECRET is not defined");
 }
 
 export const CORS_CONFIG = {
-	enabled: process.env["CORS_ENABLED"] === "true" || isProd,
-	origin: process.env["CORS_ORIGIN"] || "*",
-}
+  enabled: process.env["CORS_ENABLED"] === "true" || isProd,
+  origin: process.env["CORS_ORIGIN"] || "*",
+};
 
-export const IP_HEADER_NAME = "ar-real-ip"
+export const IP_HEADER_NAME = "ar-real-ip";
 
-export const VAULT_SECRET = process.env["VAULT_SECRET"] || ""
+export const VAULT_SECRET = process.env["VAULT_SECRET"] || "";
 if (!VAULT_SECRET) {
-	throw new Error("VAULT_SECRET is not defined")
+  throw new Error("VAULT_SECRET is not defined");
 }
 // Vault Secret length must be 32
 if (VAULT_SECRET.length < 32) {
-	throw new Error("VAULT_SECRET must be 32 characters long")
+  throw new Error("VAULT_SECRET must be 32 characters long");
 }
 if (VAULT_SECRET === JWT_CONFIG.secret) {
-	throw new Error("VAULT_SECRET must not be the same as JWT_SECRET")
+  throw new Error("VAULT_SECRET must not be the same as JWT_SECRET");
 }

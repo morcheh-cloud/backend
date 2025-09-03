@@ -64,6 +64,7 @@
 	},
 	"vcs": {
 		"clientKind": "git",
+		"defaultBranch": "main",
 		"enabled": true,
 		"useIgnoreFile": true
 	}

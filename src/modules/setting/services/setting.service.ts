@@ -1,12 +1,12 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import { Injectable, OnModuleInit } from "@nestjs/common"
 
 @Injectable()
 export class SettingService implements OnModuleInit {
-  onModuleInit() {
-    this.initSettings();
-  }
+	onModuleInit() {
+		this.initSettings()
+	}
 
-  async initSettings() {
-    // Initialization logic here
-  }
+	async initSettings() {
+		// Initialization logic here
+	}
 }
