@@ -77,6 +77,9 @@ importers:
       socket.io:
         specifier: ^4.8.1
         version: 4.8.1
+      ssh2:
+        specifier: ^1.17.0
+        version: 1.17.0
       typeorm:
         specifier: ^0.3.26
         version: 0.3.26(pg@8.16.3)(reflect-metadata@0.2.2)(ts-node@10.9.2(@types/node@24.3.0)(typescript@5.9.2))
@@ -114,6 +117,9 @@ importers:
       '@types/node':
         specifier: ^24.3.0
         version: 24.3.0
+      '@types/ssh2':
+        specifier: ^1.15.5
+        version: 1.15.5
       '@types/supertest':
         specifier: ^6.0.3
         version: 6.0.3
@@ -747,6 +753,9 @@ packages:
   '@types/mime@1.3.5':
     resolution: {integrity: sha512-/pyBZWSLD2n0dcHE3hq8s8ZvcETHtEuF+3E7XVt0Ig2nvsVQXdghHVcEkIWjy9A0wKfTn97a/PSDYohKIlnP/w==, tarball: https://registry.npmjs.org/@types/mime/-/mime-1.3.5.tgz}
 
+  '@types/node@18.19.123':
+    resolution: {integrity: sha512-K7DIaHnh0mzVxreCR9qwgNxp3MH9dltPNIEddW9MYUlcKAzm+3grKNSTe2vCJHI1FaLpvpL5JGJrz1UZDKYvDg==, tarball: https://registry.npmjs.org/@types/node/-/node-18.19.123.tgz}
+
   '@types/node@24.3.0':
     resolution: {integrity: sha512-aPTXCrfwnDLj4VvXrm+UUCQjNEvJgNA8s5F1cvwQU+3KNltTOkBm1j30uNLyqqPNe7gE3KFzImYoZEfLhp4Yow==, tarball: https://registry.npmjs.org/@types/node/-/node-24.3.0.tgz}
 
@@ -761,6 +770,9 @@ packages:
 
   '@types/serve-static@1.15.8':
     resolution: {integrity: sha512-roei0UY3LhpOJvjbIP6ZZFngyLKl5dskOtDhxY5THRSpO+ZI+nzJ+m5yUMzGrp89YRa7lvknKkMYjqQFGwA7Sg==, tarball: https://registry.npmjs.org/@types/serve-static/-/serve-static-1.15.8.tgz}
+
+  '@types/ssh2@1.15.5':
+    resolution: {integrity: sha512-N1ASjp/nXH3ovBHddRJpli4ozpk6UdDYIX4RJWFa9L1YKnzdhTlVmiGHm4DZnj/jLbqZpes4aeR30EFGQtvhQQ==, tarball: https://registry.npmjs.org/@types/ssh2/-/ssh2-1.15.5.tgz}
 
   '@types/stack-utils@2.0.3':
     resolution: {integrity: sha512-9aEbYZ3TbYMznPdcdr3SmIrLXwC/AKZXQeCf9Pgao5CKb8CyHuEX5jzWPTkvregvhRJHcpRO6BFoGW9ycaOkYw==, tarball: https://registry.npmjs.org/@types/stack-utils/-/stack-utils-2.0.3.tgz}
@@ -982,6 +994,9 @@ packages:
   array-timsort@1.0.3:
     resolution: {integrity: sha512-/+3GRL7dDAGEfM6TseQk/U+mi18TU2Ms9I3UlLdUMhz2hbvGNTKdj9xniwXfUqgYhHxRx0+8UnKkvlNwVU+cWQ==, tarball: https://registry.npmjs.org/array-timsort/-/array-timsort-1.0.3.tgz}
 
+  asn1@0.2.6:
+    resolution: {integrity: sha512-ix/FxPn0MDjeyJ7i/yoHGFt/EX6LyNbxSEhPPXODPL+KB0VPk86UYfL0lMdy+KCnv+fmvIzySwaK5COwqVbWTQ==, tarball: https://registry.npmjs.org/asn1/-/asn1-0.2.6.tgz}
+
   assertion-error@1.1.0:
     resolution: {integrity: sha512-jgsaNduz+ndvGyFt3uSuWqvy4lCnIJiovtouQN5JZHOKCS2QuhEdbcQHFhVksz2N2U9hXJo8odG7ETyWlEeuDw==, tarball: https://registry.npmjs.org/assertion-error/-/assertion-error-1.1.0.tgz}
 
@@ -1006,6 +1021,9 @@ packages:
   base64id@2.0.0:
     resolution: {integrity: sha512-lGe34o6EHj9y3Kts9R4ZYs/Gr+6N7MCaMlIFA3F1R2O5/m7K06AxfSeO5530PEERE6/WyEg3lsuyw4GHlPZHog==, tarball: https://registry.npmjs.org/base64id/-/base64id-2.0.0.tgz}
     engines: {node: ^4.5.0 || >= 5.9}
+
+  bcrypt-pbkdf@1.0.2:
+    resolution: {integrity: sha512-qeFIXtP4MSoi6NLqO12WfqARWWuCKi2Rn/9hJLEmtB5yTNr9DqFWkJRCf2qShWzPeAMRnOgCrq0sg/KLv5ES9w==, tarball: https://registry.npmjs.org/bcrypt-pbkdf/-/bcrypt-pbkdf-1.0.2.tgz}
 
   bcrypt@6.0.0:
     resolution: {integrity: sha512-cU8v/EGSrnH+HnxV2z0J7/blxH8gq7Xh2JFT6Aroax7UohdmiJJlxApMxtKfuI7z68NvvVcmR78k2LbT6efhRg==, tarball: https://registry.npmjs.org/bcrypt/-/bcrypt-6.0.0.tgz}
@@ -1056,6 +1074,10 @@ packages:
 
   buffer@6.0.3:
     resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==, tarball: https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz}
+
+  buildcheck@0.0.6:
+    resolution: {integrity: sha512-8f9ZJCUXyT1M35Jx7MkBgmBMo3oHTTBIPLiY9xyL0pl3T5RwcPEY8cUHr5LBNfu/fk6c2T4DJZuVM/8ZZT2D2A==, tarball: https://registry.npmjs.org/buildcheck/-/buildcheck-0.0.6.tgz}
+    engines: {node: '>=10.0.0'}
 
   busboy@1.6.0:
     resolution: {integrity: sha512-8SFQbg/0hQ9xy3UNTB0YEnsNBbWfhf7RtnzpL7TkBiTBRfrQ9Fxcnz7VJsleJpyp6rVLvXiuORqjlHi5q+PYuA==, tarball: https://registry.npmjs.org/busboy/-/busboy-1.6.0.tgz}
@@ -1251,6 +1273,10 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  cpu-features@0.0.10:
+    resolution: {integrity: sha512-9IkYqtX3YHPCzoVg1Py+o9057a3i0fp7S530UWokCSaFVTc7CwXPRiOjRjBQQ18ZCNafx78YfnG+HALxtVmOGA==, tarball: https://registry.npmjs.org/cpu-features/-/cpu-features-0.0.10.tgz}
+    engines: {node: '>=10.0.0'}
 
   create-hash@1.1.3:
     resolution: {integrity: sha512-snRpch/kwQhcdlnZKYanNF1m0RDlrCdSKQaH87w1FCFPVPNCQ/Il9QJKAX2jVBZddRdaHBMC+zXa9Gw9tmkNUA==, tarball: https://registry.npmjs.org/create-hash/-/create-hash-1.1.3.tgz}
@@ -2073,6 +2099,9 @@ packages:
     resolution: {integrity: sha512-WWdIxpyjEn+FhQJQQv9aQAYlHoNVdzIzUySNV1gHUPDSdZJ3yZn7pAAbQcV7B56Mvu881q9FZV+0Vx2xC44VWA==, tarball: https://registry.npmjs.org/mute-stream/-/mute-stream-2.0.0.tgz}
     engines: {node: ^18.17.0 || >=20.5.0}
 
+  nan@2.23.0:
+    resolution: {integrity: sha512-1UxuyYGdoQHcGg87Lkqm3FzefucTa0NAiOcuRsDmysep3c1LVCRK2krrUDafMWtjSG04htvAmvg96+SDknOmgQ==, tarball: https://registry.npmjs.org/nan/-/nan-2.23.0.tgz}
+
   nanoid@3.1.20:
     resolution: {integrity: sha512-a1cQNyczgKbLX9jwbS/+d7W8fX/RfgYR7lVWwWOGIPNgK2m0MWvrGF6/m4kk6U3QcFMnZf3RIhL0v2Jgh/0Uxw==, tarball: https://registry.npmjs.org/nanoid/-/nanoid-3.1.20.tgz}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
@@ -2535,6 +2564,10 @@ packages:
     resolution: {integrity: sha512-ed7OK4e9ywpE7pgRMkMQmZDPKSVdm0oX5IEtZiKnFucSF0zu6c80GZBe38UqHuVhTWJ9xsKgSMjCG2bml86KvA==, tarball: https://registry.npmjs.org/sql-highlight/-/sql-highlight-6.1.0.tgz}
     engines: {node: '>=14'}
 
+  ssh2@1.17.0:
+    resolution: {integrity: sha512-wPldCk3asibAjQ/kziWQQt1Wh3PgDFpC0XpwclzKcdT1vql6KeYxf5LIt4nlFkUeR8WuphYMKqUA56X4rjbfgQ==, tarball: https://registry.npmjs.org/ssh2/-/ssh2-1.17.0.tgz}
+    engines: {node: '>=10.16.0'}
+
   stack-utils@2.0.6:
     resolution: {integrity: sha512-XlkWvfIm6RmsWtNJx+uqtKLS8eqFbxUg0ZzLXqY0caEy9l7hruX8IpiDnjsLavoBgqCCR71TqWO8MaXYheJ3RQ==, tarball: https://registry.npmjs.org/stack-utils/-/stack-utils-2.0.6.tgz}
     engines: {node: '>=10'}
@@ -2690,6 +2723,9 @@ packages:
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==, tarball: https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz}
 
+  tweetnacl@0.14.5:
+    resolution: {integrity: sha512-KXXFFdAbFXY4geFIwoyNK+f5Z1b7swfXABfL7HXCmoIWMKU3dmS26672A4EeQtDzLKy7SXmfBu51JolvEKwtGA==, tarball: https://registry.npmjs.org/tweetnacl/-/tweetnacl-0.14.5.tgz}
+
   type-detect@4.1.0:
     resolution: {integrity: sha512-Acylog8/luQ8L7il+geoSxhEkazvkslg7PSNKOX59mbB9cOveP5aq9h74Y7YU8yDpJwetzQQrfIwtf4Wp4LKcw==, tarball: https://registry.npmjs.org/type-detect/-/type-detect-4.1.0.tgz}
     engines: {node: '>=4'}
@@ -2793,6 +2829,9 @@ packages:
   uint8array-extras@1.5.0:
     resolution: {integrity: sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A==, tarball: https://registry.npmjs.org/uint8array-extras/-/uint8array-extras-1.5.0.tgz}
     engines: {node: '>=18'}
+
+  undici-types@5.26.5:
+    resolution: {integrity: sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==, tarball: https://registry.npmjs.org/undici-types/-/undici-types-5.26.5.tgz}
 
   undici-types@7.10.0:
     resolution: {integrity: sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag==, tarball: https://registry.npmjs.org/undici-types/-/undici-types-7.10.0.tgz}
@@ -3648,6 +3687,10 @@ snapshots:
 
   '@types/mime@1.3.5': {}
 
+  '@types/node@18.19.123':
+    dependencies:
+      undici-types: 5.26.5
+
   '@types/node@24.3.0':
     dependencies:
       undici-types: 7.10.0
@@ -3666,6 +3709,10 @@ snapshots:
       '@types/http-errors': 2.0.5
       '@types/node': 24.3.0
       '@types/send': 0.17.5
+
+  '@types/ssh2@1.15.5':
+    dependencies:
+      '@types/node': 18.19.123
 
   '@types/stack-utils@2.0.3': {}
 
@@ -3896,6 +3943,10 @@ snapshots:
 
   array-timsort@1.0.3: {}
 
+  asn1@0.2.6:
+    dependencies:
+      safer-buffer: 2.1.2
+
   assertion-error@1.1.0: {}
 
   asynckit@0.4.0: {}
@@ -3911,6 +3962,10 @@ snapshots:
   base64-js@1.5.1: {}
 
   base64id@2.0.0: {}
+
+  bcrypt-pbkdf@1.0.2:
+    dependencies:
+      tweetnacl: 0.14.5
 
   bcrypt@6.0.0:
     dependencies:
@@ -3976,6 +4031,9 @@ snapshots:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1
+
+  buildcheck@0.0.6:
+    optional: true
 
   busboy@1.6.0:
     dependencies:
@@ -4185,6 +4243,12 @@ snapshots:
       path-type: 4.0.0
     optionalDependencies:
       typescript: 5.8.3
+
+  cpu-features@0.0.10:
+    dependencies:
+      buildcheck: 0.0.6
+      nan: 2.23.0
+    optional: true
 
   create-hash@1.1.3:
     dependencies:
@@ -5046,6 +5110,9 @@ snapshots:
 
   mute-stream@2.0.0: {}
 
+  nan@2.23.0:
+    optional: true
+
   nanoid@3.1.20: {}
 
   negotiator@0.6.3: {}
@@ -5541,6 +5608,14 @@ snapshots:
 
   sql-highlight@6.1.0: {}
 
+  ssh2@1.17.0:
+    dependencies:
+      asn1: 0.2.6
+      bcrypt-pbkdf: 1.0.2
+    optionalDependencies:
+      cpu-features: 0.0.10
+      nan: 2.23.0
+
   stack-utils@2.0.6:
     dependencies:
       escape-string-regexp: 2.0.0
@@ -5695,6 +5770,8 @@ snapshots:
 
   tslib@2.8.1: {}
 
+  tweetnacl@0.14.5: {}
+
   type-detect@4.1.0: {}
 
   type-fest@0.21.3: {}
@@ -5757,6 +5834,8 @@ snapshots:
       '@lukeed/csprng': 1.1.0
 
   uint8array-extras@1.5.0: {}
+
+  undici-types@5.26.5: {}
 
   undici-types@7.10.0: {}
 

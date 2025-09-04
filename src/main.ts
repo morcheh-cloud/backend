@@ -7,6 +7,16 @@ import { AppModule } from "./app.module";
 
 const logger = new Logger("main");
 
+process.on("unhandledRejection", (error) => {
+  // eslint-disable-next-line no-console
+  console.error(error);
+});
+
+process.on("uncaughtException", (error) => {
+  // eslint-disable-next-line no-console
+  console.error(error);
+});
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -28,6 +38,8 @@ async function bootstrap() {
 
   if (CORS_CONFIG.enabled) {
     app.enableCors({ origin: CORS_CONFIG.origin });
+  } else {
+    app.enableCors();
   }
 
   // const {
