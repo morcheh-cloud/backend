@@ -1,9 +1,9 @@
-import { IsNumberField } from "src/common/decorators/validation.decorator"
+import { IsStringField } from "src/common/decorators/validation.decorator"
 import { BeforeInsert, CreateDateColumn, DeleteDateColumn, PrimaryColumn, UpdateDateColumn } from "typeorm"
 import { v7 as uuidv7 } from "uuid"
 
 export class BaseEntityWithoutSoftDelete {
-	@IsNumberField()
+	@IsStringField()
 	@PrimaryColumn()
 	id!: string
 
