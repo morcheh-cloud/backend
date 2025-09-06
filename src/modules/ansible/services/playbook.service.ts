@@ -5,6 +5,7 @@ import { Injectable, Logger, OnModuleInit } from "@nestjs/common"
 import { InjectDataSource } from "@nestjs/typeorm"
 import { PlaybookRepository } from "src/modules/ansible/repositories/playbook.repository"
 import type { DataSource } from "typeorm"
+import { v7 as uuidv7 } from "uuid"
 
 const execFileAsync = promisify(execFile)
 
@@ -47,7 +48,7 @@ async function withRetry<T>(
 			if (attempt === retries) break
 			const jitter = Math.floor(Math.random() * 100)
 			const delay = baseMs * 2 ** attempt + jitter
-			await new Promise((r) => setTimeout(r, delay))
+			await new Promise(r => setTimeout(r, delay))
 		}
 	}
 	throw lastErr
@@ -88,8 +89,8 @@ export class PlaybookService implements OnModuleInit {
 		schema: AnyRecord
 	}) {
 		const sql = `
-      INSERT INTO public.play_book (name, description, type, schema)
-      VALUES ($1, $2, $3, $4::jsonb)
+      INSERT INTO public.play_book (id,name, description, type, schema)
+      VALUES ($1, $2, $3,$4, $5::jsonb)
       ON CONFLICT (name) DO UPDATE
       SET description = EXCLUDED.description,
           type        = EXCLUDED.type,
@@ -97,6 +98,7 @@ export class PlaybookService implements OnModuleInit {
     `
 		// node-postgres under TypeORM will serialize objects; cast as jsonb for clarity
 		await this.dataSource.query(sql, [
+			uuidv7(),
 			input.name,
 			input.description,
 			input.type,
@@ -107,11 +109,7 @@ export class PlaybookService implements OnModuleInit {
 	async sync(): Promise<{ total: number; succeeded: number; failed: number }> {
 		this.logger.log(`Starting ansible sync with concurrency=${CONCURRENCY}…`)
 
-		const { stdout: listStdout, stderr } = await execFileAsync(
-			"ansible-doc",
-			["-j", "-l"],
-			{ maxBuffer: MAX_BUFFER },
-		)
+		const { stdout: listStdout, stderr } = await execFileAsync("ansible-doc", ["-j", "-l"], { maxBuffer: MAX_BUFFER })
 
 		if (stderr) {
 			throw new Error(`Failed to list ansible modules: ${stderr}`)
@@ -129,15 +127,11 @@ export class PlaybookService implements OnModuleInit {
 		let failures = 0
 		const total = moduleNames.length
 
-		const tasks = moduleNames.map((moduleName) =>
+		const tasks = moduleNames.map(moduleName =>
 			limit(async () => {
 				try {
 					const schema = await withRetry(async () => {
-						const { stdout } = await execFileAsync(
-							"ansible-doc",
-							["-j", moduleName],
-							{ maxBuffer: MAX_BUFFER },
-						)
+						const { stdout } = await execFileAsync("ansible-doc", ["-j", moduleName], { maxBuffer: MAX_BUFFER })
 						const parsed: AnyRecord = JSON.parse(stdout)
 						const s = parsed?.[moduleName]
 						if (!s) throw new Error(`No JSON payload for ${moduleName}`)
@@ -161,12 +155,7 @@ export class PlaybookService implements OnModuleInit {
 					}
 				} catch (err: unknown) {
 					failures++
-					const msg =
-						err instanceof Error
-							? err.message
-							: typeof err === "string"
-								? err
-								: "Unknown error"
+					const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error"
 					this.logger.error(`Failed "${moduleName}": ${msg}`)
 				}
 			}),
@@ -174,11 +163,7 @@ export class PlaybookService implements OnModuleInit {
 
 		await Promise.all(tasks)
 
-		this.logger.log(
-			`Ansible sync complete. ok=${
-				processed - failures
-			}, failed=${failures}, total=${total}`,
-		)
+		this.logger.log(`Ansible sync complete. ok=${processed - failures}, failed=${failures}, total=${total}`)
 
 		return { failed: failures, succeeded: total - failures, total }
 	}

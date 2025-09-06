@@ -1,21 +1,24 @@
 import { IsNumberField } from "src/common/decorators/validation.decorator"
-import {
-	CreateDateColumn,
-	DeleteDateColumn,
-	PrimaryGeneratedColumn,
-	UpdateDateColumn,
-} from "typeorm"
+import { BeforeInsert, CreateDateColumn, DeleteDateColumn, PrimaryColumn, UpdateDateColumn } from "typeorm"
+import { v7 as uuidv7 } from "uuid"
 
 export class BaseEntityWithoutSoftDelete {
 	@IsNumberField()
-	@PrimaryGeneratedColumn()
-	id!: number
+	@PrimaryColumn()
+	id!: string
 
 	@CreateDateColumn()
 	createdAt!: Date
 
 	@UpdateDateColumn()
 	updatedAt!: Date
+
+	@BeforeInsert()
+	generateId() {
+		if (!this.id) {
+			this.id = uuidv7()
+		}
+	}
 }
 
 export class BaseEntity extends BaseEntityWithoutSoftDelete {

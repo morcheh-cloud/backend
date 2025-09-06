@@ -26,7 +26,7 @@ export class AuthGuard implements CanActivate {
 		private datasource: DataSource,
 	) {}
 
-	private async getContextUserById(id: number): Promise<User | null> {
+	private async getContextUserById(id: string): Promise<User | null> {
 		let user = await this.datasource.getRepository(User).findOne({
 			where: { id },
 		})
@@ -36,7 +36,7 @@ export class AuthGuard implements CanActivate {
 		return user
 	}
 
-	private async getContextWorkspaceById(workspaceId: number, userId: number) {
+	private async getContextWorkspaceById(workspaceId: string, userId: string) {
 		const workspace = await this.datasource.getRepository(Workspace).findOne({
 			where: [
 				{
@@ -68,10 +68,10 @@ export class AuthGuard implements CanActivate {
 		return request.headers["x-api-key"] as string | undefined
 	}
 
-	private extractWorkspaceId(request: Request): number | undefined {
-		const workspaceId = request.query["workspaceId"] || request.headers["workspaceId"]
+	private extractWorkspaceId(request: Request): string | undefined {
+		const workspaceId = (request.query["workspaceId"] as string) || (request.headers["workspaceId"] as string)
 
-		return Number(workspaceId)
+		return workspaceId
 	}
 
 	async canActivate(context: ExecutionContext): Promise<boolean> {

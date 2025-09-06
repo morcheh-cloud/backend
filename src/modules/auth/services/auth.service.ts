@@ -84,7 +84,7 @@ export class AuthService {
 		}
 	}
 
-	async whoAmI(userId: number) {
+	async whoAmI(userId: string) {
 		const user = await this.userRepository.findOne({
 			relations: {},
 			where: {

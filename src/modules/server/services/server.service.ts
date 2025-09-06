@@ -10,7 +10,7 @@ export class ServerService implements OnModuleInit {
 		private credentialService: CredentialService,
 	) {}
 
-	async create(userId: number, workspaceId: number, payload: SaveServerPayload) {
+	async create(userId: string, workspaceId: string, payload: SaveServerPayload) {
 		const credential = await this.credentialService.create(userId, workspaceId, payload)
 
 		const server = await this.serverRepository.save({
