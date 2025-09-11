@@ -16,9 +16,7 @@ export class RatelimitGuard extends ThrottlerGuard {
 		return ip || "unknown"
 	}
 
-	protected override async handleRequest(
-		requestProps: ThrottlerRequest,
-	): Promise<boolean> {
+	protected override async handleRequest(requestProps: ThrottlerRequest): Promise<boolean> {
 		const req = requestProps.context.switchToHttp().getRequest<Request>()
 		const ip = await this.getTracker(req)
 

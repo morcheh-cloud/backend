@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common"
 import { decryptText, encryptText } from "src/lib/encryption"
-import { SaveCredentialPayload } from "src/modules/vault/DTOs/credentail.dto"
+import { SaveCredentialPayload } from "src/modules/vault/DTOs/credential.dto"
 import { Credential } from "src/modules/vault/entities/credential.entity"
 import { CredentialRepository } from "src/modules/vault/repositories/credential.repository"
 

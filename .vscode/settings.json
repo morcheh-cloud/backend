@@ -2,9 +2,24 @@
   "cSpell.words": [
     "ciphertext",
     "encryptpwd",
+    "ISSH",
     "morcheh",
     "splited",
     "topbar",
     "uuidv"
+  ],
+  "sqltools.connections": [
+    {
+      "database": "postgres",
+      "driver": "PostgreSQL",
+      "group": "local",
+      "name": "localhost",
+      "password": "postgres",
+      "port": 5432,
+      "previewLimit": 50,
+      "server": "localhost",
+      "ssh": "Disabled",
+      "username": "postgres"
+    }
   ]
 }

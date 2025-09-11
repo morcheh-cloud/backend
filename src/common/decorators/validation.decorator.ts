@@ -46,17 +46,10 @@ interface CommonDecoratorParam {
 }
 
 function isPlainFunction(fn: unknown): boolean {
-	return (
-		typeof fn === "function" &&
-		!/^class\s/.test(Function.prototype.toString.call(fn))
-	)
+	return typeof fn === "function" && !/^class\s/.test(Function.prototype.toString.call(fn))
 }
 
-export function IsReferenceField(params?: {
-	type?: object
-	isArray?: boolean
-	required?: boolean
-}) {
+export function IsReferenceField(params?: { type?: object; isArray?: boolean; required?: boolean }) {
 	return (target: object, propertyKey: string) => {
 		const { isArray, type } = getPropMetaData(params || {}, target, propertyKey)
 		const required = params?.required ?? false
@@ -79,19 +72,13 @@ export function IsReferenceField(params?: {
 	}
 }
 
-export function IsStringField(params?: {
-	isArray?: boolean
-	required?: boolean
-}) {
+export function IsStringField(params?: { isArray?: boolean; required?: boolean }) {
 	return (target: object, propertyKey: string) => {
 		params ||= {}
 		params.required = params.required ?? false
 		const { isArray } = getPropMetaData(params, target, propertyKey)
 
-		ApiProperty({ isArray, required: params.required, type: String })(
-			target,
-			propertyKey,
-		)
+		ApiProperty({ isArray, required: params.required, type: String })(target, propertyKey)
 		IsString({ each: isArray })(target, propertyKey)
 		Type(() => String)(target, propertyKey)
 		// IsNotEmpty({ each: isArray })(target, propertyKey);
@@ -103,20 +90,14 @@ export function IsStringField(params?: {
 	}
 }
 
-export function IsRegExpField(
-	pattern: RegExp,
-	params?: { isArray?: boolean; required?: boolean },
-) {
+export function IsRegExpField(pattern: RegExp, params?: { isArray?: boolean; required?: boolean }) {
 	return (target: object, propertyKey: string): void => {
 		params ||= {}
 		params.required = params.required ?? false
 
 		const { isArray } = getPropMetaData(params, target, propertyKey)
 
-		ApiProperty({ isArray, required: params.required, type: String })(
-			target,
-			propertyKey,
-		)
+		ApiProperty({ isArray, required: params.required, type: String })(target, propertyKey)
 		Matches(pattern, { each: isArray })(target, propertyKey)
 		Expose()(target, propertyKey)
 
@@ -126,21 +107,14 @@ export function IsRegExpField(
 	}
 }
 
-export function IsNumberField(params?: {
-	type?: object
-	isArray?: boolean
-	required?: boolean
-}) {
+export function IsNumberField(params?: { type?: object; isArray?: boolean; required?: boolean }) {
 	return (target: object, propertyKey: string) => {
 		params ||= {}
 		params.required = params.required ?? false
 
 		const { isArray } = getPropMetaData(params, target, propertyKey)
 
-		ApiProperty({ isArray, required: params.required, type: Number })(
-			target,
-			propertyKey,
-		)
+		ApiProperty({ isArray, required: params.required, type: Number })(target, propertyKey)
 		IsNumber({}, { each: isArray })(target, propertyKey)
 		Type(() => Number)(target, propertyKey)
 		// IsNotEmpty({ each: isArray })(target, propertyKey);
@@ -157,21 +131,14 @@ const optionalBooleanMapper = new Map([
 	["false", false],
 ])
 
-export function IsBooleanField(params?: {
-	type?: object
-	isArray?: boolean
-	required?: boolean
-}) {
+export function IsBooleanField(params?: { type?: object; isArray?: boolean; required?: boolean }) {
 	return (target: object, propertyKey: string) => {
 		params ||= {}
 		params.required = params.required ?? false
 		const { isArray } = getPropMetaData(params, target, propertyKey)
 
 		Expose()(target, propertyKey)
-		ApiProperty({ isArray, required: params.required, type: Boolean })(
-			target,
-			propertyKey,
-		)
+		ApiProperty({ isArray, required: params.required, type: Boolean })(target, propertyKey)
 		IsBoolean({ each: isArray })(target, propertyKey)
 		Transform(({ value }) => {
 			if (typeof value === "string") {
@@ -187,19 +154,13 @@ export function IsBooleanField(params?: {
 	}
 }
 
-export function IsDateField(params?: {
-	isArray?: boolean
-	required?: boolean
-}) {
+export function IsDateField(params?: { isArray?: boolean; required?: boolean }) {
 	return (target: object, propertyKey: string) => {
 		params ||= {}
 		params.required = params.required ?? false
 		const { isArray } = getPropMetaData(params, target, propertyKey)
 
-		ApiProperty({ isArray, required: params.required, type: Date })(
-			target,
-			propertyKey,
-		)
+		ApiProperty({ isArray, required: params.required, type: Date })(target, propertyKey)
 		IsDate({ each: isArray })(target, propertyKey)
 		Type(() => Date)(target, propertyKey)
 		// IsNotEmpty({ each: isArray })(target, propertyKey);
@@ -259,10 +220,7 @@ export function IsPrimaryKeyField(params?: CommonDecoratorParam) {
 		IsInt({ each: isArray })(target, propertyKey)
 		Type(() => Number)(target, propertyKey)
 		Expose()(target, propertyKey)
-		ApiProperty({ isArray, required: params?.required, type: Number })(
-			target,
-			propertyKey,
-		)
+		ApiProperty({ isArray, required: params?.required, type: Number })(target, propertyKey)
 	}
 }
 
@@ -289,20 +247,14 @@ export function IsTimeField(params?: CommonDecoratorParam) {
 	}
 }
 
-export function IsJSONField(params?: {
-	isArray?: boolean
-	required?: boolean
-}) {
+export function IsJSONField(params?: { isArray?: boolean; required?: boolean }) {
 	return (target: object, propertyKey: string): void => {
 		params ||= {}
 		params.required = params.required ?? false
 
 		const { isArray } = getPropMetaData(params, target, propertyKey)
 
-		ApiProperty({ isArray, required: params.required, type: "null" })(
-			target,
-			propertyKey,
-		)
+		ApiProperty({ isArray, required: params.required, type: "null" })(target, propertyKey)
 		Allow()(target, propertyKey)
 		IsJSON({ each: isArray })(target, propertyKey)
 		Expose()(target, propertyKey)
@@ -313,10 +265,7 @@ export function IsJSONField(params?: {
 	}
 }
 
-export function IsObjectField(params?: {
-	isArray?: boolean
-	required?: boolean
-}) {
+export function IsObjectField(params?: { isArray?: boolean; required?: boolean }) {
 	return (target: object, propertyKey: string): void => {
 		params ||= {}
 		const { isArray } = getPropMetaData(params, target, propertyKey)
@@ -374,11 +323,7 @@ export function IsObjectField(params?: {
 //   };
 // }
 
-export function IsUUIDField(params?: {
-	version?: "3" | "4" | "5" | 3 | 4 | 5
-	isArray?: boolean
-	required?: boolean
-}) {
+export function IsUUIDField(params?: { version?: "3" | "4" | "5" | 3 | 4 | 5; isArray?: boolean; required?: boolean }) {
 	return (target: object, propertyKey: string): void => {
 		params ||= {}
 		params.required = params.required ?? false
@@ -386,10 +331,7 @@ export function IsUUIDField(params?: {
 
 		const { isArray } = getPropMetaData(params, target, propertyKey)
 
-		ApiProperty({ isArray, required: params.required, type: String })(
-			target,
-			propertyKey,
-		)
+		ApiProperty({ isArray, required: params.required, type: String })(target, propertyKey)
 		IsUUID(params.version, { each: isArray })(target, propertyKey)
 		Expose()(target, propertyKey)
 

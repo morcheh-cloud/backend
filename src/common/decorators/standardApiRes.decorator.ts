@@ -9,12 +9,7 @@ interface IStandardApiResponse {
 	status: number
 }
 
-export const StandardApiResponse = ({
-	type,
-	isArray,
-	description,
-	status,
-}: IStandardApiResponse) => {
+export const StandardApiResponse = ({ type, isArray, description, status }: IStandardApiResponse) => {
 	return applyDecorators(
 		ApiExtraModels(type),
 		ApiResponse({

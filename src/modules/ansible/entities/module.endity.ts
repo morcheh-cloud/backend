@@ -1,34 +1,25 @@
 import { BaseEntity } from "src/common/base/base.entity"
-import { IsEnumField, IsJSONField, IsReferenceField, IsStringField } from "src/common/decorators/validation.decorator"
+import { IsEnumField, IsJSONField } from "src/common/decorators/validation.decorator"
 import type { IPlaybook } from "src/modules/ansible/interfaces/playbook.interface"
 import { Column, Entity } from "typeorm"
 
-export class Code {
-	@IsStringField()
-	content!: string
-}
-
-export enum PlayBookType {
+export enum ModuleType {
 	OFFICIAL = "official",
 	COMMUNITY = "community",
 	CUSTOM = "custom",
 }
 
 @Entity()
-export class PlayBook extends BaseEntity {
+export class Module extends BaseEntity {
 	@Column({ unique: true })
 	name!: string
 
 	@Column()
 	description!: string
 
-	@IsReferenceField()
-	@Column("jsonb", { default: {} })
-	content!: Code
-
-	@IsEnumField(PlayBookType)
-	@Column({ enum: PlayBookType, type: "enum" })
-	type!: PlayBookType
+	@IsEnumField(ModuleType)
+	@Column({ enum: ModuleType, type: "enum" })
+	type!: ModuleType
 
 	@IsJSONField()
 	@Column({ default: {}, type: "json" })

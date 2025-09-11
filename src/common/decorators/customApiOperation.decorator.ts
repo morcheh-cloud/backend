@@ -1,10 +1,6 @@
 import { ApiOperation } from "@nestjs/swagger"
 
-export function CustomApiOperation(options: {
-	operationId?: string
-	summary?: string
-	deprecated?: boolean
-}) {
+export function CustomApiOperation(options: { operationId?: string; summary?: string; deprecated?: boolean }) {
 	return (
 		// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 		target: any,

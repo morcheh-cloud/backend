@@ -1,37 +1,30 @@
-import {
-  IsEnumField,
-  IsNumberField,
-  IsStringField,
-} from "src/common/decorators/validation.decorator";
-import {
-  Server,
-  ServerProtocol,
-} from "src/modules/server/entities/server.entity";
+import { IsEnumField, IsNumberField, IsStringField } from "src/common/decorators/validation.decorator"
+import { Server, ServerProtocol } from "src/modules/server/entities/server.entity"
 
 export class SaveServerPayload {
-  @IsStringField()
-  username?: string;
+	@IsStringField()
+	username?: string
 
-  @IsStringField()
-  password?: string;
+	@IsStringField()
+	password?: string
 
-  @IsNumberField()
-  directoryId?: number;
+	@IsNumberField()
+	directoryId?: number
 
-  @IsStringField()
-  name?: string;
+	@IsStringField()
+	name?: string
 
-  @IsStringField()
-  description?: string;
+	@IsStringField()
+	description?: string
 
-  @IsStringField()
-  address?: string;
+	@IsStringField()
+	address?: string
 
-  @IsNumberField()
-  port?: number;
+	@IsNumberField()
+	port?: number
 
-  @IsEnumField(ServerProtocol)
-  protocol?: ServerProtocol;
+	@IsEnumField(ServerProtocol)
+	protocol?: ServerProtocol
 }
 
 export class ServerModel extends Server {}

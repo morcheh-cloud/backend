@@ -33,13 +33,7 @@ export class AnsibleService implements OnModuleInit {
 
 	constructor(private readonly gateway: AnsibleGateway) {}
 
-	private readonly inventoryFilePath = path.join(
-		"/",
-		"tmp",
-		"morcheh",
-		"ansible",
-		"inventory",
-	)
+	private readonly inventoryFilePath = path.join("/", "tmp", "morcheh", "ansible", "inventory")
 	// private readonly playbookPath = path.join(
 	//   "/",
 	//   "tmp",
@@ -125,11 +119,7 @@ export class AnsibleService implements OnModuleInit {
 		// Spawn ansible-playbook
 		const child = spawn(
 			"ansible-playbook",
-			[
-				"-i",
-				"/home/ali/w/morcheh/backend/dev/inventory.yml",
-				"/home/ali/w/morcheh/backend/dev/ls.yml",
-			],
+			["-i", "/home/ali/w/morcheh/backend/dev/inventory.yml", "/home/ali/w/morcheh/backend/dev/ls.yml"],
 			{
 				env: {
 					ANSIBLE_FORCE_COLOR: "1",
@@ -139,13 +129,13 @@ export class AnsibleService implements OnModuleInit {
 			},
 		)
 
-		child.stdout.on("data", (d) => {
+		child.stdout.on("data", d => {
 			const content = d.toString("utf-8")
 			const time = new Date().toISOString()
 			console.log(`[${time.padEnd(10)}] ${content}`)
 		})
 
-		child.stderr.on("data", (d) => {
+		child.stderr.on("data", d => {
 			const content = d.toString("utf-8")
 			const time = new Date().toISOString()
 			console.error(`[${time.padEnd(10)}] ${content}`)
@@ -159,17 +149,11 @@ export class AnsibleService implements OnModuleInit {
 				type: "exit",
 			})
 
-			this.logger.log(
-				`ansible-playbook (job ${jobId}) exited with code ${code}, signal ${
-					signal ?? "null"
-				}`,
-			)
+			this.logger.log(`ansible-playbook (job ${jobId}) exited with code ${code}, signal ${signal ?? "null"}`)
 		})
 
-		child.on("error", (err) => {
-			this.logger.error(
-				`Failed to start ansible-playbook (job ${jobId}): ${err.message}`,
-			)
+		child.on("error", err => {
+			this.logger.error(`Failed to start ansible-playbook (job ${jobId}): ${err.message}`)
 			this.gateway.emit(jobId, {
 				line: `Spawn error: ${err.message}`,
 				time: new Date().toISOString(),
@@ -195,17 +179,13 @@ export class AnsibleService implements OnModuleInit {
 		}
 
 		// TASK [something]
-		const taskMatch =
-			line.match(/^\s*TASK\s+\[(.+?)\]\s*\*{3,}\s*$/) ||
-			line.match(/^\s*TASK\s+\[(.+?)\]\s*$/)
+		const taskMatch = line.match(/^\s*TASK\s+\[(.+?)\]\s*\*{3,}\s*$/) || line.match(/^\s*TASK\s+\[(.+?)\]\s*$/)
 		if (taskMatch) {
 			return { task: taskMatch[1], time: ts, type: "task-start" }
 		}
 
 		// ok|changed|failed|skipped|unreachable: [host] ...
-		const resultMatch = line.match(
-			/^\s*(ok|changed|failed|skipped|unreachable):\s*\[(.+?)\](.*)$/i,
-		)
+		const resultMatch = line.match(/^\s*(ok|changed|failed|skipped|unreachable):\s*\[(.+?)\](.*)$/i)
 		if (resultMatch) {
 			const status = resultMatch?.at(1)?.toLowerCase() as any
 			// const status = resultMatch[1].toLowerCase() as any as AnsibleEvent["type"];

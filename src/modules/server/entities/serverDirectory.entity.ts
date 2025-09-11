@@ -10,7 +10,7 @@ export class ServerDirectory extends BaseEntityWithoutSoftDelete {
 
 	@ManyToOne(
 		() => ServerDirectory,
-		(directory) => directory.children,
+		directory => directory.children,
 		{
 			onDelete: "CASCADE",
 		},
@@ -19,7 +19,7 @@ export class ServerDirectory extends BaseEntityWithoutSoftDelete {
 
 	@OneToMany(
 		() => ServerDirectory,
-		(directory) => directory.parent,
+		directory => directory.parent,
 	)
 	children?: ServerDirectory[]
 

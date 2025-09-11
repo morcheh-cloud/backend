@@ -7,7 +7,5 @@ export const StandardSerializer = (
 	options?: ClassTransformOptions,
 	serialize?: boolean,
 ) => {
-	return applyDecorators(
-		UseInterceptors(new CustomSerializerInterceptor(type, options, serialize)),
-	)
+	return applyDecorators(UseInterceptors(new CustomSerializerInterceptor(type, options, serialize)))
 }

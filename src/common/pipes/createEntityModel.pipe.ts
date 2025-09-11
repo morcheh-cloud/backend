@@ -1,17 +1,12 @@
 import { ArgumentMetadata, Injectable, PipeTransform } from "@nestjs/common"
 import { isArray, isEmpty } from "lodash"
-import {
-	RelationalFieldMetaDataKey,
-	relationalFieldMetaData,
-} from "src/common/decorators/validation.decorator"
+import { RelationalFieldMetaDataKey, relationalFieldMetaData } from "src/common/decorators/validation.decorator"
 
 @Injectable()
 export class CreateEntityModelPipe implements PipeTransform {
-	private transferData(
-		ids: number[] | number,
-	): { id: number } | { id: number }[] {
+	private transferData(ids: number[] | number): { id: number } | { id: number }[] {
 		if (isArray(ids)) {
-			return ids.flatMap((i) => [{ id: +i }])
+			return ids.flatMap(i => [{ id: +i }])
 		} else {
 			return { id: +ids }
 		}
