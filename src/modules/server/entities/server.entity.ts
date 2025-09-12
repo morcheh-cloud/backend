@@ -1,5 +1,11 @@
 import { BaseEntity } from "src/common/base/base.entity"
-import { IsEnumField, IsNumberField, IsReferenceField, IsStringField } from "src/common/decorators/validation.decorator"
+import {
+	IsBooleanField,
+	IsEnumField,
+	IsNumberField,
+	IsReferenceField,
+	IsStringField,
+} from "src/common/decorators/validation.decorator"
 import { AuditLog } from "src/modules/log/entities/auditLog.entity"
 import { ServerDirectory } from "src/modules/server/entities/serverDirectory.entity"
 import { User } from "src/modules/user/entities/user.entity"
@@ -23,6 +29,11 @@ export enum ServerOS {
 	LINUX = "linux",
 	WINDOWS = "windows",
 	MACOS = "macos",
+}
+
+export enum ServerStatus {
+	CONNECTED = "connected",
+	UNKNOWN = "unknown",
 }
 
 @Entity()
@@ -83,4 +94,8 @@ export class Server extends BaseEntity {
 	@IsEnumField(ServerOS)
 	@Column({ enum: ServerOS, nullable: true, type: "enum" })
 	os?: ServerOS // fill automatic by OS detection
+
+	@IsBooleanField()
+	@Column({ default: false })
+	keepAlive!: boolean
 }

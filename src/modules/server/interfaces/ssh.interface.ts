@@ -5,7 +5,5 @@ export interface ISSHConnection {
 	config: SSHConfig
 	lastActivityAt: number
 	connection: SSH2Promise
-	status: "connected" | "disconnected" | "error"
 	connectedAt?: number
-	disconnectedAt?: number
 }

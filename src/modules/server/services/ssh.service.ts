@@ -1,7 +1,8 @@
 import { Injectable, Logger, OnApplicationShutdown } from "@nestjs/common"
 import { Cron, CronExpression } from "@nestjs/schedule"
-import { Command, CommandOptions } from "src/lib/ssh"
+import { Command, ICommand } from "src/lib/ssh"
 import { GenUUID } from "src/lib/utils"
+import { AuditLogsService } from "src/modules/log/services/auditLogs.service"
 import { ISSHConnection } from "src/modules/server/interfaces/ssh.interface"
 import { ServerRepository } from "src/modules/server/repositories/server.repository"
 import { CredentialService } from "src/modules/vault/services/vault.service"
@@ -16,6 +17,7 @@ export class SSHService implements OnApplicationShutdown {
 	constructor(
 		private serverRepository: ServerRepository,
 		private credentialService: CredentialService,
+		private auditLogsService: AuditLogsService,
 	) {}
 
 	async onApplicationShutdown(signal?: string) {
@@ -52,12 +54,12 @@ export class SSHService implements OnApplicationShutdown {
 		}
 	}
 
-	async initConnection(id: string) {
+	async initConnection(serverId: string) {
 		const server = await this.serverRepository.findOneOrFail({
 			relations: {
 				credential: {},
 			},
-			where: { id },
+			where: { id: serverId },
 		})
 
 		const credential = this.credentialService.decryptCredentials(server.credential)
@@ -66,28 +68,40 @@ export class SSHService implements OnApplicationShutdown {
 		const config: SSHConfig = {
 			host: server.address,
 			keepaliveInterval: 1000 * 1,
-			password: credential.password || "",
+			password: credential.password,
 			port: server.port,
 			readyTimeout: 10 * 1000,
 			reconnect: true,
 			reconnectDelay: 1000 * 3,
 			uniqueId: sessionUUID,
-			username: credential.username || "",
+			username: credential.username,
 		}
 
 		const conn = new SSH2Promise(config)
 
 		try {
 			await conn.connect()
-			this.logger.log(`SSH connection established for server ${id}`)
+			this.logger.log(`SSH connection established for server ${serverId}`)
+
+			this.auditLogsService.info({
+				message: "SSH connection established for server",
+				server,
+			})
+
+			//
 		} catch (error) {
-			this.logger.error(`Error establishing SSH connection for server ${id}`, error)
+			this.auditLogsService.error({
+				error: error as string,
+				message: "Error establishing SSH connection for server",
+				server,
+			})
+
 			return
 		}
 
 		// init events
 		conn.on("close", () => {
-			this.closeConnection(id)
+			this.closeConnection(serverId)
 		})
 
 		const client: ISSHConnection = {
@@ -95,10 +109,9 @@ export class SSHService implements OnApplicationShutdown {
 			connectedAt: Date.now(),
 			connection: conn,
 			lastActivityAt: Date.now(),
-			status: "connected",
 		}
 
-		this.connections.set(id, client)
+		this.connections.set(serverId, client)
 
 		return conn
 	}
@@ -113,7 +126,11 @@ export class SSHService implements OnApplicationShutdown {
 		try {
 			await client.connection.close()
 			this.connections.delete(id)
-			this.logger.log(`Closed SSH connection for server ${id}`)
+
+			this.auditLogsService.info({
+				message: "Closed SSH connection for server",
+				serverId: id,
+			})
 		} catch (error) {
 			this.logger.error(`Error closing SSH connection for server ${id}`, error)
 		}
@@ -127,33 +144,32 @@ export class SSHService implements OnApplicationShutdown {
 	async getOrCreateConnection(id: string) {
 		const client = this.connections.get(id)
 
-		if (client && client.status === "connected") {
+		if (client) {
 			client.lastActivityAt = Date.now()
 			return client.connection
-		}
-
-		if (client && client.status !== "connected") {
-			await this.closeConnection(id)
 		}
 
 		return this.initConnection(id)
 	}
 
-	async execCommand(id: string, cmd: string, args: string[], options: CommandOptions = {}) {
-		const client = this.connections.get(id)
+	async execCommand(serverId: string, commandOptions: ICommand) {
+		const client = this.connections.get(serverId)
 		if (!client) {
-			throw new Error(`No active SSH connection for server ${id}`)
+			throw new Error(`No active SSH connection for server ${serverId}`)
 		}
 
-		const exp = Command(cmd, args, options)
+		const exp = Command(commandOptions)
 
 		let stdout = ""
 		let stderr = ""
+
 		try {
 			stdout = await client.connection.exec(exp)
 		} catch (e) {
-			stderr = e as any
+			stderr = e as string
 		}
+
+		client.lastActivityAt = Date.now()
 
 		return { stderr, stdout }
 	}

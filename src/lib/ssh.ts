@@ -78,13 +78,17 @@ export function executeRemoteCommand(arg: ExecuteRemoteCommandOptions): Promise<
 	})
 }
 
-export type CommandOptions = {
+export interface ICommand {
+	cmd: string
+	args?: string[]
 	sudo?: boolean
 	cwd?: string
 	env?: Record<string, string>
 }
 
-export function Command(cmd: string, args: string[] = [], options: CommandOptions = {}): string {
+export function Command(params: ICommand): string {
+	const { args = [], cmd, cwd, env, sudo } = params
+
 	let finalCmd = cmd
 
 	// add args
@@ -93,14 +97,14 @@ export function Command(cmd: string, args: string[] = [], options: CommandOption
 	}
 
 	// handle options
-	if (options.sudo) {
+	if (sudo) {
 		finalCmd = `sudo ${finalCmd}`
 	}
-	if (options.cwd) {
-		finalCmd = `cd ${options.cwd} && ${finalCmd}`
+	if (cwd) {
+		finalCmd = `cd ${cwd} && ${finalCmd}`
 	}
-	if (options.env) {
-		const envStr = Object.entries(options.env)
+	if (env) {
+		const envStr = Object.entries(env)
 			.map(([k, v]) => `${k}="${v}"`)
 			.join(" ")
 		finalCmd = `${envStr} ${finalCmd}`
