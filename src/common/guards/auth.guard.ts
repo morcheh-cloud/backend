@@ -1,134 +1,143 @@
 import {
-	type CanActivate,
-	type ExecutionContext,
-	Injectable,
-	NotFoundException,
-	UnauthorizedException,
-} from "@nestjs/common"
-import { Reflector } from "@nestjs/core"
-import { JwtService } from "@nestjs/jwt"
-import { InjectDataSource } from "@nestjs/typeorm"
-import type { Request } from "express"
-import { omit } from "lodash"
-import { IS_PUBLIC_KEY } from "src/common/decorators/isPublic.decorator"
-import { JWT_CONFIG } from "src/config/app.config"
-import { JWTPayload } from "src/modules/auth/DTOs/auth.dto"
-import { User } from "src/modules/user/entities/user.entity"
-import { Workspace } from "src/modules/workspace/entities/workspace.entity"
-import { DataSource } from "typeorm"
+  type CanActivate,
+  type ExecutionContext,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { JwtService } from "@nestjs/jwt";
+import { InjectDataSource } from "@nestjs/typeorm";
+import type { Request } from "express";
+import { omit } from "lodash";
+import { IS_PUBLIC_KEY } from "src/common/decorators/isPublic.decorator";
+import { JWT_CONFIG } from "src/config/app.config";
+import { JWTPayload } from "src/modules/auth/DTOs/auth.dto";
+import { User } from "src/modules/user/entities/user.entity";
+import { Workspace } from "src/modules/workspace/entities/workspace.entity";
+import { DataSource } from "typeorm";
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-	constructor(
-		private jwtService: JwtService,
-		private reflector: Reflector,
-		@InjectDataSource()
-		private datasource: DataSource,
-	) {}
+  constructor(
+    private jwtService: JwtService,
+    private reflector: Reflector,
+    @InjectDataSource()
+    private datasource: DataSource
+  ) {}
 
-	private async getContextUserById(id: string): Promise<User | null> {
-		let user = await this.datasource.getRepository(User).findOne({
-			where: { id },
-		})
+  private async getContextUserById(id: string): Promise<User | null> {
+    let user = await this.datasource.getRepository(User).findOne({
+      where: { id },
+    });
 
-		user = omit(user, ["password"]) as User
+    user = omit(user, ["password"]) as User;
 
-		return user
-	}
+    return user;
+  }
 
-	private async getContextWorkspaceById(workspaceId: string, userId: string) {
-		const workspace = await this.datasource.getRepository(Workspace).findOne({
-			where: [
-				{
-					id: workspaceId,
-					owner: {
-						id: userId,
-					},
-				},
-				// {
-				//   id: workspaceId,
-				//   permission: {
-				//     user: {
-				//       id: userId,
-				//     },
-				//   },
-				// },
-			],
-		})
+  private async getContextWorkspaceById(workspaceId: string, userId: string) {
+    const workspace = await this.datasource.getRepository(Workspace).findOne({
+      where: [
+        {
+          id: workspaceId,
+          owner: {
+            id: userId,
+          },
+        },
+        // {
+        //   id: workspaceId,
+        //   permission: {
+        //     user: {
+        //       id: userId,
+        //     },
+        //   },
+        // },
+      ],
+    });
 
-		return workspace
-	}
+    return workspace;
+  }
 
-	private extractTokenFromHeader(request: Request): string | undefined {
-		const [type, token] = request.headers.authorization?.split(" ") ?? []
-		return type === "Bearer" ? token : undefined
-	}
+  private extractTokenFromHeader(request: Request): string | undefined {
+    const [type, token] = request.headers.authorization?.split(" ") ?? [];
+    return type === "Bearer" ? token : undefined;
+  }
 
-	private extractApiKeyFromHeader(request: Request): string | undefined {
-		return request.headers["x-api-key"] as string | undefined
-	}
+  private extractApiKeyFromHeader(request: Request): string | undefined {
+    return request.headers["x-api-key"] as string | undefined;
+  }
 
-	private extractWorkspaceId(request: Request): string | undefined {
-		const workspaceId = (request.query["workspaceId"] as string) || (request.headers["workspaceId"] as string)
+  private extractWorkspaceId(request: Request): string | undefined {
+    const workspaceId =
+      (request.query["workspaceId"] as string) ||
+      (request.query["workspaceid"] as string) ||
+      (request.headers["workspaceId"] as string) ||
+      (request.headers["workspaceid"] as string);
 
-		return workspaceId
-	}
+    return workspaceId;
+  }
 
-	async canActivate(context: ExecutionContext): Promise<boolean> {
-		let user: User | null
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    let user: User | null;
 
-		const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-			context.getHandler(),
-			context.getClass(),
-		])
-		if (isPublic) {
-			return true
-		}
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
 
-		const request = context.switchToHttp().getRequest()
+    const request = context.switchToHttp().getRequest();
 
-		const apiKey = this.extractApiKeyFromHeader(request)
-		if (apiKey) {
-			return true
-		}
+    const apiKey = this.extractApiKeyFromHeader(request);
+    if (apiKey) {
+      return true;
+    }
 
-		const jwtToken = this.extractTokenFromHeader(request)
-		if (!jwtToken) {
-			throw new UnauthorizedException("No token provided")
-		}
+    const jwtToken = this.extractTokenFromHeader(request);
+    if (!jwtToken) {
+      throw new UnauthorizedException("No token provided");
+    }
 
-		try {
-			const payload: JWTPayload = await this.jwtService.verifyAsync(jwtToken, {
-				secret: JWT_CONFIG.secret,
-			})
+    try {
+      const payload: JWTPayload = await this.jwtService.verifyAsync(jwtToken, {
+        secret: JWT_CONFIG.secret,
+      });
 
-			user = await this.getContextUserById(payload.id)
-			if (!user) {
-				throw new UnauthorizedException("User not found")
-			}
-			request["user"] = user
+      user = await this.getContextUserById(payload.id);
+      if (!user) {
+        throw new UnauthorizedException("User not found");
+      }
+      request["user"] = user;
 
-			// Attach user information to the request object
-		} catch {
-			throw new UnauthorizedException("Your session has expired. Please log in again.")
-		}
+      // Attach user information to the request object
+    } catch {
+      throw new UnauthorizedException(
+        "Your session has expired. Please log in again."
+      );
+    }
 
-		const workspaceId = this.extractWorkspaceId(request)
+    const workspaceId = this.extractWorkspaceId(request);
 
-		if (workspaceId && !user?.id) {
-			throw new NotFoundException("User not found")
-		}
+    if (workspaceId && !user?.id) {
+      throw new NotFoundException("User not found");
+    }
 
-		if (workspaceId) {
-			const workspace = await this.getContextWorkspaceById(workspaceId, user.id)
+    if (workspaceId) {
+      const workspace = await this.getContextWorkspaceById(
+        workspaceId,
+        user.id
+      );
 
-			if (!workspace) {
-				throw new NotFoundException("Workspace not found")
-			}
+      if (!workspace) {
+        throw new NotFoundException("Workspace not found");
+      }
 
-			request["workspace"] = workspace
-		}
+      request["workspace"] = workspace;
+    }
 
-		return true
-	}
+    return true;
+  }
 }

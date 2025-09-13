@@ -44,7 +44,7 @@ export class Server extends BaseEntity {
   @ManyToOne(() => User, { nullable: false })
   user!: User;
 
-  @ManyToOne(() => Directory, { nullable: false })
+  @ManyToOne(() => Directory)
   directory!: Directory;
 
   @OneToOne(() => Credential, (c) => c.server, {

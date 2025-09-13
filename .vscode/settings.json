@@ -6,7 +6,8 @@
     "morcheh",
     "splited",
     "topbar",
-    "uuidv"
+    "uuidv",
+    "workspaceid"
   ],
   "sqltools.connections": [
     {
