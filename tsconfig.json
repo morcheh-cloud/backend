@@ -13,7 +13,6 @@
     "moduleResolution": "nodenext",
     "noFallthroughCasesInSwitch": true,
     "noImplicitAny": true,
-    "noImplicitOverride": true,
     "noImplicitReturns": true,
     "noPropertyAccessFromIndexSignature": true,
     "noUncheckedIndexedAccess": true,
@@ -21,13 +20,15 @@
     "noUnusedParameters": true,
     "outDir": "./dist",
     "removeComments": true,
+    "resolveJsonModule": true,
     "resolvePackageJsonExports": true,
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
     "strictBindCallApply": true,
     "strictNullChecks": true,
-    "target": "ES2023",
+    "target": "ESNext",
+    "useDefineForClassFields": false,
     "useUnknownInCatchVariables": true
   }
 }
