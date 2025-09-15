@@ -1,15 +1,20 @@
-import { IsStringField } from "src/common/decorators/validation.decorator";
-import { Workspace } from "src/modules/workspace/entities/workspace.entity";
+import { IsStringField } from "src/common/decorators/validation.decorator"
+import { Workspace } from "src/modules/workspace/entities/workspace.entity"
 
 export class CreateWorkSpacePayload {
-  @IsStringField({ required: true })
-  name!: string;
+	@IsStringField({ required: true })
+	name!: string
 
-  @IsStringField({ required: false })
-  descriptions?: string;
+	@IsStringField({ required: false })
+	descriptions?: string
 
-  @IsStringField({ required: true })
-  timezone!: string;
+	@IsStringField({ required: true })
+	timezone!: string
 }
 
 export class WorkSpaceModel extends Workspace {}
+
+export class DeleteWorkSpacePayload {
+	@IsStringField({ required: true })
+	id!: string
+}

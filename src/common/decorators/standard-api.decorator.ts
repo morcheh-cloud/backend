@@ -1,5 +1,5 @@
 import { HttpCode, HttpStatus, Logger, RequestMethod, UsePipes, Version } from "@nestjs/common"
-import { ApiBody, ApiQuery } from "@nestjs/swagger"
+import { ApiBody } from "@nestjs/swagger"
 import { ClassTransformOptions } from "class-transformer"
 import { CreateEntityModelPipe } from "src/common/pipes/createEntityModel.pipe"
 import { CustomApiOperation } from "./customApiOperation.decorator"
@@ -7,7 +7,6 @@ import { StandardSerializer } from "./serializer.decorator"
 import { StandardApiResponse } from "./standardApiRes.decorator"
 
 interface StandardApiInterface {
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 	type?: any
 	resTypeOption?: ClassTransformOptions
 	statusCode?: HttpStatus
@@ -28,7 +27,7 @@ interface StandardApiInterface {
 	}
 }
 
-const logger = new Logger()
+const logger = new Logger("StandardApiDecorator")
 export const GlobalHandlerName: string[] = []
 
 function getMetaData(target: any, propertyKey: string, descriptor: any) {
@@ -36,7 +35,6 @@ function getMetaData(target: any, propertyKey: string, descriptor: any) {
 		constructorName: target.constructor.name,
 		method: Reflect.getMetadata("method", descriptor.value),
 		name: propertyKey,
-		params: Reflect.getMetadata("design:paramtypes", target, "getHostSitMap"),
 		return: Reflect.getMetadata("design:returntype", target, propertyKey),
 	}
 }
@@ -57,7 +55,7 @@ const getStatusCode = (code: any) => {
 	return statusCode
 }
 
-function defineDecorators(params: StandardApiInterface = {}, target: any, propertyKey: any, descriptor: any): any[] {
+function defineDecorators(params: StandardApiInterface = {}, target: any, propertyKey: string, descriptor: any): any[] {
 	let { statusCode: status, version, isArray, type } = params
 
 	const {
@@ -84,11 +82,7 @@ function defineDecorators(params: StandardApiInterface = {}, target: any, proper
 		HttpCode(status as number),
 		UsePipes(new CreateEntityModelPipe()),
 		Version(convertedVersion),
-		ApiQuery({
-			name: "workspaceId",
-			required: false,
-			type: Number,
-		}),
+
 		CustomApiOperation({
 			...(deprecated !== undefined && { deprecated }),
 			...(operationId !== undefined && { operationId }),
@@ -130,7 +124,7 @@ function defineDecorators(params: StandardApiInterface = {}, target: any, proper
 }
 
 export function StandardApi(params?: StandardApiInterface) {
-	return (target: any, propertyKey: string, descriptor: any) => {
+	return (target: object, propertyKey: string, descriptor: object) => {
 		const decorators = defineDecorators(params, target, propertyKey, descriptor)
 		for (const decorator of decorators) {
 			if (target instanceof Function && !descriptor) {

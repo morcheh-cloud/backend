@@ -6,13 +6,12 @@ import { RelationalFieldMetaDataKey, relationalFieldMetaData } from "src/common/
 export class CreateEntityModelPipe implements PipeTransform {
 	private transferData(ids: number[] | number): { id: number } | { id: number }[] {
 		if (isArray(ids)) {
-			return ids.flatMap(i => [{ id: +i }])
+			return ids.flatMap(i => [{ id: i }])
 		} else {
-			return { id: +ids }
+			return { id: ids }
 		}
 	}
 
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 	async transform(value: any, metaData: ArgumentMetadata): Promise<unknown> {
 		const payload = isArray(value) ? [...value] : [{ ...value }]
 

@@ -1,97 +1,135 @@
 // src/rbac/permissions.guard.ts
 import {
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-  Injectable,
-} from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
-import { InjectDataSource } from "@nestjs/typeorm";
-import { Request } from "express";
-import { API_PERMISSION_METADATA_KEY } from "src/common/decorators/permission.decorator";
-import { Permission } from "src/modules/auth/entities/permission.entity";
-import { User } from "src/modules/user/entities/user.entity";
-import { Workspace } from "src/modules/workspace/entities/workspace.entity";
-import { DataSource, Repository } from "typeorm";
+	CanActivate,
+	ExecutionContext,
+	ForbiddenException,
+	Injectable,
+	InternalServerErrorException,
+} from "@nestjs/common"
+import { InjectDataSource } from "@nestjs/typeorm"
+import { Request } from "express"
+import { User } from "src/modules/user/entities/user.entity"
+import { Workspace } from "src/modules/workspace/entities/workspace.entity"
+import { WorkspaceMember, WorkspaceRole } from "src/modules/workspace/entities/workspaceMember.entity"
+import { PermissionAction } from "src/permissions"
+import { DataSource, Repository } from "typeorm"
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
-  private readonly workspaceRepository: Repository<Workspace>;
-  private readonly permissionRepository: Repository<Permission>;
+	// private readonly workspaceRepository: Repository<Workspace>
+	// private readonly permissionRepository: Repository<Permission>
+	// private readonly teamRepository: Repository<Team>
+	private readonly workspaceMemberRepository: Repository<WorkspaceMember>
 
-  constructor(
-    private readonly reflector: Reflector,
-    @InjectDataSource()
-    private readonly dataSource: DataSource
-  ) {
-    this.workspaceRepository =
-      this.dataSource.getRepository<Workspace>(Workspace);
+	constructor(
+		@InjectDataSource()
+		private readonly dataSource: DataSource,
+		// private readonly reflector: Reflector,
+	) {
+		// this.workspaceRepository = this.dataSource.getRepository<Workspace>(Workspace)
+		// this.permissionRepository = this.dataSource.getRepository<Permission>(Permission)
+		// this.teamRepository = this.dataSource.getRepository<Team>(Team)
+		this.workspaceMemberRepository = this.dataSource.getRepository<WorkspaceMember>(WorkspaceMember)
+	}
 
-    this.permissionRepository =
-      this.dataSource.getRepository<Permission>(Permission);
-  }
+	private readonly rolePermissionsMap: Record<WorkspaceRole, PermissionAction[]> = {
+		[WorkspaceRole.MANAGER]: [
+			PermissionAction.READ,
+			PermissionAction.CREATE,
+			PermissionAction.UPDATE,
+			PermissionAction.DELETE,
+		],
+		[WorkspaceRole.EDITOR]: [PermissionAction.CREATE, PermissionAction.READ, PermissionAction.UPDATE],
+		[WorkspaceRole.VIEWER]: [PermissionAction.READ],
+	}
 
-  async checkUserWorkspacePermission(
-    workspaceId: string,
-    userId: string,
-    ability: string
-  ) {
-    const isOwner = await this.workspaceRepository
-      .createQueryBuilder("workspace")
-      .where("workspace.id = :workspaceId", { workspaceId })
-      .andWhere("workspace.ownerId = :userId", { userId })
-      .getCount();
+	private readonly actionResolver: Record<string, PermissionAction> = {
+		DELETE: PermissionAction.DELETE,
+		GET: PermissionAction.READ,
+		PATCH: PermissionAction.UPDATE,
+		POST: PermissionAction.CREATE,
+		PUT: PermissionAction.UPDATE,
+	}
 
-    if (isOwner) {
-      return true;
-    }
+	private isActionAllowedForRole(action: PermissionAction, role: WorkspaceRole): boolean {
+		const allowedActions = this.rolePermissionsMap[role]
+		return allowedActions.includes(action)
+	}
 
-    const isAllowed = await this.permissionRepository
-      .createQueryBuilder("permission")
-      .where("permission.workspaceId = :workspaceId", { workspaceId })
-      .andWhere("permission.userId = :userId", { userId })
-      .andWhere("permission.ability = :ability", { ability })
-      .getCount();
+	private async validateUserAccess(user: User, workspace: Workspace, action: PermissionAction): Promise<boolean> {
+		if (user.isAdmin) {
+			return true
+		}
 
-    return isAllowed > 0;
-  }
+		if (workspace.owner.id === user.id) {
+			return true
+		}
 
-  async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const request = ctx.switchToHttp().getRequest<Request>();
-    const user = (request as any)["user"] as User;
+		const workspaceMembership = await this.workspaceMemberRepository.findOne({
+			select: { expiredAt: true, id: true },
+			where: { user: { id: user.id }, workspace: { id: workspace.id } },
+		})
 
-    const ability = this.reflector.getAllAndOverride<string>(
-      API_PERMISSION_METADATA_KEY,
-      [ctx.getHandler(), ctx.getClass()]
-    );
+		if (workspaceMembership) {
+			const isExpired = workspaceMembership.expiredAt && workspaceMembership.expiredAt < new Date()
+			if (isExpired) {
+				return false
+			}
 
-    const workspaceId: string =
-      (request.query["workspaceId"] as string) ||
-      (request.query["workspaceid"] as string) ||
-      (request.headers["workspaceId"] as string) ||
-      (request.headers["workspaceid"] as string);
+			const role = workspaceMembership.role
+			const isAllowed = this.isActionAllowedForRole(action, role)
+			if (isAllowed) {
+				return true
+			}
+		}
 
-    if (!workspaceId) {
-      throw new ForbiddenException("Workspace ID is required");
-    }
+		// const teamMemberships = await this.teamRepository.find({
+		// 	where: {
+		// 		users: { id: user.id },
+		// 		workspace: { id: workspace.id },
+		// 	},
+		// })
 
-    if (user.isAdmin) {
-      return true;
-    }
+		// for (const team of teamMemberships) {
+		// }
 
-    const isAllowed = await this.checkUserWorkspacePermission(
-      workspaceId,
-      user.id,
-      ability
-    );
+		return false
+	}
 
-    if (isAllowed) {
-      return true;
-    }
+	async canActivate(ctx: ExecutionContext): Promise<boolean> {
+		const request = ctx.switchToHttp().getRequest<Request>()
+		const user = request.user
+		const method = request.method
+		const workspace = request.workspace
 
-    // access denied error
-    throw new ForbiddenException(
-      `User is not allowed to ${ability} on workspace ${workspaceId}`
-    );
-  }
+		// const workspaceIdRequired = this.reflector.getAllAndOverride<boolean>(WORKSPACE_ID_IS_REQUIRED_METADATA_KEY, [
+		// 	ctx.getHandler(),
+		// ])
+
+		// if (!workspaceIdRequired) {
+		// 	return true
+		// }
+
+		if (!user || !workspace) {
+			throw new InternalServerErrorException("User or workspace not found in request")
+		}
+
+		// const ability = this.reflector.getAllAndOverride<string>(API_PERMISSION_METADATA_KEY, [
+		// 	ctx.getHandler(),
+		// 	ctx.getClass(),
+		// ])
+
+		const action = this.actionResolver[method]
+		if (!action) {
+			throw new ForbiddenException(`Unsupported method ${method}`)
+		}
+
+		const isAllowed = await this.validateUserAccess(user, workspace, action)
+		if (isAllowed) {
+			return true
+		}
+
+		// access denied error
+		throw new ForbiddenException(`You don't have permission`)
+	}
 }

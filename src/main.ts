@@ -57,15 +57,6 @@ async function bootstrap() {
 		.setContact("Support Team", "https://morcheh.io/support", "support@morcheh.io")
 		.setLicense("MIT", "https://opensource.org/licenses/MIT")
 		.addBearerAuth()
-		// .addBearerAuth(
-		//   {
-		//     bearerFormat: "JWT",
-		//     description: "Enter JWT token",
-		//     scheme: "bearer",
-		//     type: "http",
-		//   },
-		//   "JWT-auth"
-		// )
 		.addServer("http://127.0.0.1:3000", "Local development")
 		.addServer("https://api.morcheh.io", "Production server")
 		.build()
@@ -73,7 +64,6 @@ async function bootstrap() {
 	const document = SwaggerModule.createDocument(app, swaggerConfig, {
 		deepScanRoutes: true,
 	})
-
 	SwaggerModule.setup("swagger", app, document, {
 		customCss: `
     .swagger-ui .topbar { display: none }

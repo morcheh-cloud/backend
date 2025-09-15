@@ -1,14 +1,13 @@
 import { BaseEntity } from "src/common/base/base.entity"
-import { IsEnumField } from "src/common/decorators/validation.decorator"
+import { IsDateField, IsEnumField } from "src/common/decorators/validation.decorator"
 import { User } from "src/modules/user/entities/user.entity"
 import { Workspace } from "src/modules/workspace/entities/workspace.entity"
 import { Column, Entity, JoinColumn, ManyToOne } from "typeorm"
 
 export enum WorkspaceRole {
-	OWNER = "owner",
-	ADMIN = "admin",
-	EDITOR = "editor",
-	GUEST = "guest",
+	MANAGER = "manager", // can manage members and settings
+	EDITOR = "editor", // can create and edit resources
+	VIEWER = "viewer", // can view resources
 }
 
 @Entity()
@@ -21,11 +20,19 @@ export class WorkspaceMember extends BaseEntity {
 	@JoinColumn()
 	user!: User
 
+	@ManyToOne(() => User, { nullable: false })
+	@JoinColumn()
+	invitedBy!: User
+
 	@IsEnumField(WorkspaceRole)
 	@Column({
-		default: WorkspaceRole.GUEST,
+		default: WorkspaceRole.VIEWER,
 		enum: WorkspaceRole,
 		type: "enum",
 	})
 	role!: WorkspaceRole
+
+	@IsDateField()
+	@Column({ nullable: true })
+	expiredAt?: Date
 }

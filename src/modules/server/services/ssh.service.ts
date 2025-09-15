@@ -54,7 +54,7 @@ export class SSHService implements OnApplicationShutdown {
 		}
 	}
 
-	async initConnection(serverId: string) {
+	async initConnection(serverId: string): Promise<ISSHConnection> {
 		const server = await this.serverRepository.findOneOrFail({
 			relations: {
 				credential: {},
@@ -96,10 +96,9 @@ export class SSHService implements OnApplicationShutdown {
 				server,
 			})
 
-			return
+			throw new Error(`Error connecting to SSH server ${serverId}: ${error}`)
 		}
 
-		// init events
 		conn.on("close", () => {
 			this.closeConnection(serverId)
 		})
@@ -113,7 +112,7 @@ export class SSHService implements OnApplicationShutdown {
 
 		this.connections.set(serverId, client)
 
-		return conn
+		return client
 	}
 
 	private async closeConnection(id: string) {
@@ -146,16 +145,17 @@ export class SSHService implements OnApplicationShutdown {
 
 		if (client) {
 			client.lastActivityAt = Date.now()
-			return client.connection
+			return client
 		}
 
-		return this.initConnection(id)
+		return await this.initConnection(id)
 	}
 
 	async execCommand(serverId: string, commandOptions: ICommand) {
-		const client = this.connections.get(serverId)
+		const client = await this.getOrCreateConnection(serverId)
+
 		if (!client) {
-			throw new Error(`No active SSH connection for server ${serverId}`)
+			throw new Error("No SSH connection available")
 		}
 
 		const exp = Command(commandOptions)

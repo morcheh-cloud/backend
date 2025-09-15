@@ -4,11 +4,12 @@ import { AnsibleController } from "src/modules/ansible/controllers/playbook.cont
 import { AnsibleGateway } from "src/modules/ansible/gateways/ansible.gateway"
 import { PlaybookRepository } from "src/modules/ansible/repositories/playbook.repository"
 import { AnsibleService } from "src/modules/ansible/services/ansible.service"
+import { ModuleService } from "src/modules/ansible/services/module.service"
 import { PlaybookService } from "src/modules/ansible/services/playbook.service"
 
 @Module({
 	controllers: [AnsibleController],
 	imports: [TypeOrmExModule.forFeature([PlaybookRepository])],
-	providers: [PlaybookService, AnsibleService, AnsibleGateway],
+	providers: [PlaybookService, AnsibleService, AnsibleGateway, ModuleService],
 })
 export class AnsibleModule {}
