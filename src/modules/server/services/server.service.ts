@@ -23,6 +23,7 @@ export class ServerService implements OnModuleInit {
 		const server = await this.serverRepository.createAndSave({
 			...payload,
 			credential,
+			directory: { id: payload.directoryId },
 			protocol: ServerProtocol.SSH,
 			user: { id: userId },
 			workspace: { id: workspaceId },

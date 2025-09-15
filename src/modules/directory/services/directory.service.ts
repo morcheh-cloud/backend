@@ -64,6 +64,11 @@ export class DirectoryService {
 				servers: {},
 			},
 			where: {
+				servers: {
+					workspace: {
+						id: workspaceId,
+					},
+				},
 				type: DirectoryType.SERVER,
 				workspace: {
 					id: workspaceId,
