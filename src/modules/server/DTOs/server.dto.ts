@@ -1,4 +1,5 @@
-import { IsEnumField, IsNumberField, IsStringField } from "src/common/decorators/validation.decorator"
+import { IsEnumField, IsNumberField, IsReferenceField, IsStringField } from "src/common/decorators/validation.decorator"
+import { DirectoryModel } from "src/modules/directory/DTOs/directory.dto"
 import { Server, ServerProtocol } from "src/modules/server/entities/server.entity"
 
 export class SaveServerPayload {
@@ -8,8 +9,8 @@ export class SaveServerPayload {
 	@IsStringField()
 	password?: string
 
-	@IsNumberField()
-	directoryId?: number
+	@IsStringField()
+	directoryId?: string
 
 	@IsStringField()
 	name?: string
@@ -28,3 +29,8 @@ export class SaveServerPayload {
 }
 
 export class ServerModel extends Server {}
+
+export class ServerDirectoryModel extends DirectoryModel {
+	@IsReferenceField({ type: ServerModel })
+	servers?: Server[]
+}

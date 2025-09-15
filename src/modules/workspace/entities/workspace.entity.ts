@@ -1,6 +1,7 @@
 import { BaseEntity } from "src/common/base/base.entity"
 import { IsReferenceField, IsStringField } from "src/common/decorators/validation.decorator"
 import { Permission } from "src/modules/auth/entities/permission.entity"
+import { Directory } from "src/modules/directory/entities/directory.entity"
 import { AuditLog } from "src/modules/log/entities/auditLog.entity"
 import { User } from "src/modules/user/entities/user.entity"
 import { WorkspaceMember } from "src/modules/workspace/entities/workspaceMember.entity"
@@ -38,6 +39,12 @@ export class Workspace extends BaseEntity {
 		member => member.workspace,
 	)
 	members?: WorkspaceMember[]
+
+	@OneToMany(
+		() => Directory,
+		directory => directory.workspace,
+	)
+	directories?: Directory[]
 
 	@IsStringField()
 	@Column()

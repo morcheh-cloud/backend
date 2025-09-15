@@ -1,8 +1,19 @@
 import { BaseEntity } from "src/common/base/base.entity"
-import { IsBooleanField, IsStringField } from "src/common/decorators/validation.decorator"
+import { IsBooleanField, IsEnumField, IsStringField } from "src/common/decorators/validation.decorator"
 import { Server } from "src/modules/server/entities/server.entity"
-import { Column, Entity, ManyToOne, OneToMany } from "typeorm"
+import { Workspace } from "src/modules/workspace/entities/workspace.entity"
+import { Column, Entity, Index, ManyToOne, OneToMany } from "typeorm"
 
+export enum DirectoryType {
+	SERVER = "server",
+	PLAYBOOK = "playbook",
+	ANSIBLE_MODULE = "ansible_module",
+	SECRETE = "secrete",
+	DATABASE = "database",
+	DOCUMENT = "document",
+}
+
+@Index(["workspace", "name"], { unique: true })
 @Entity()
 export class Directory extends BaseEntity {
 	@ManyToOne(
@@ -24,15 +35,19 @@ export class Directory extends BaseEntity {
 	@OneToMany(
 		() => Server,
 		server => server.directory,
-		{
-			onDelete: "CASCADE",
-		},
 	)
 	servers?: Server[]
+
+	@ManyToOne(() => Workspace)
+	workspace!: Workspace
 
 	@IsStringField()
 	@Column()
 	name!: string
+
+	@IsEnumField(DirectoryType)
+	@Column({ enum: DirectoryType, type: "enum" })
+	type!: DirectoryType
 
 	@IsBooleanField()
 	@Column({ default: true })
@@ -43,8 +58,8 @@ export class Directory extends BaseEntity {
 	isEditable!: boolean
 
 	@IsBooleanField()
-	@Column({ default: true })
-	isVisible!: boolean
+	@Column({ default: false })
+	isHidden!: boolean
 
 	@IsBooleanField()
 	@Column({ default: false })
