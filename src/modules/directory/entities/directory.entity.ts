@@ -1,6 +1,7 @@
 import { BaseEntity } from "src/common/base/base.entity"
 import { IsBooleanField, IsEnumField, IsStringField } from "src/common/decorators/validation.decorator"
 import { Server } from "src/modules/server/entities/server.entity"
+import { User } from "src/modules/user/entities/user.entity"
 import { Workspace } from "src/modules/workspace/entities/workspace.entity"
 import { Column, Entity, Index, ManyToOne, OneToMany } from "typeorm"
 
@@ -38,8 +39,11 @@ export class Directory extends BaseEntity {
 	)
 	servers?: Server[]
 
-	@ManyToOne(() => Workspace)
-	workspace!: Workspace
+	@ManyToOne(() => Workspace, { nullable: false })
+	workspace?: Workspace
+
+	@ManyToOne(() => User)
+	createdBy?: User
 
 	@IsStringField()
 	@Column()

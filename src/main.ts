@@ -95,4 +95,5 @@ async function bootstrap() {
 	logger.debug(`Application is running on: ${await app.getUrl()}`)
 	logger.debug(`Swagger is running on: ${await app.getUrl()}/swagger`)
 }
+
 bootstrap()

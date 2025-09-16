@@ -22,7 +22,7 @@
 	"javascript": {
 		"formatter": {
 			"arrowParentheses": "asNeeded",
-			"lineWidth": 120,
+			"lineWidth": 110,
 			"quoteStyle": "double",
 			"semicolons": "asNeeded"
 		},

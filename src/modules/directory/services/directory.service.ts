@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common"
+import { SaveDirectoryPayload } from "src/modules/directory/DTOs/directory.dto"
 import { Directory, DirectoryType } from "src/modules/directory/entities/directory.entity"
 import { DirectoryRepository } from "src/modules/directory/repositories/directory.repository"
 import { IsNull } from "typeorm"
@@ -64,19 +65,26 @@ export class DirectoryService {
 				servers: {},
 			},
 			where: {
-				servers: {
-					workspace: {
-						id: workspaceId,
-					},
-				},
 				type: DirectoryType.SERVER,
 				workspace: {
 					id: workspaceId,
 				},
 			},
 		})
+		console.log("🚀 ~ DirectoryService ~ getServerTree ~ directories:", directories)
 
 		const tree = this.buildTree(directories)
 		return tree
+	}
+
+	async create(userId: string, workspaceId: string, data: SaveDirectoryPayload) {
+		const result = await this.directoryRepository.createAndSave({
+			...data,
+			createdBy: { id: userId },
+			parent: { id: data.parentId },
+			workspace: { id: workspaceId },
+		})
+
+		return result
 	}
 }

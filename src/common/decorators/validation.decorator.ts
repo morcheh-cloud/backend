@@ -5,6 +5,7 @@ import {
 	IsArray,
 	IsBoolean,
 	IsDate,
+	IsEnum,
 	IsInt,
 	IsJSON,
 	IsNumber,
@@ -189,7 +190,6 @@ export function IsEnumField(enumObj: object, params: IEnumField = {}) {
 			required,
 			type: "string",
 		})(target, propertyKey)
-
 		Transform(({ value }) => {
 			if (isArray) {
 				return EnsureIsArray(value)
@@ -197,7 +197,9 @@ export function IsEnumField(enumObj: object, params: IEnumField = {}) {
 				return value
 			}
 		})(target, propertyKey)
-
+		if (!isArray) {
+			IsEnum(enumObj, { each: isArray })(target, propertyKey)
+		}
 		Expose()(target, propertyKey)
 
 		if (!required) {
@@ -323,7 +325,11 @@ export function IsObjectField(params?: { isArray?: boolean; required?: boolean }
 //   };
 // }
 
-export function IsUUIDField(params?: { version?: "3" | "4" | "5" | 3 | 4 | 5; isArray?: boolean; required?: boolean }) {
+export function IsUUIDField(params?: {
+	version?: "3" | "4" | "5" | 3 | 4 | 5
+	isArray?: boolean
+	required?: boolean
+}) {
 	return (target: object, propertyKey: string): void => {
 		params ||= {}
 		params.required = params.required ?? false
