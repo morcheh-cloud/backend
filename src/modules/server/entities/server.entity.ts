@@ -8,6 +8,7 @@ import {
 } from "src/common/decorators/validation.decorator"
 import { Directory } from "src/modules/directory/entities/directory.entity"
 import { AuditLog } from "src/modules/log/entities/auditLog.entity"
+import { Session } from "src/modules/server/entities/session.entity"
 import { User } from "src/modules/user/entities/user.entity"
 import { Credential } from "src/modules/vault/entities/credential.entity"
 import { Workspace } from "src/modules/workspace/entities/workspace.entity"
@@ -62,13 +63,19 @@ export class ServerInfo {
 @Entity()
 export class Server extends BaseEntity {
 	@ManyToOne(() => Workspace, { nullable: false })
-	workspace!: Workspace
+	workspace?: Workspace
 
 	@ManyToOne(() => User, { nullable: false })
-	user!: User
+	user?: User
+
+	@OneToMany(
+		() => Session,
+		s => s.server,
+	)
+	sessions?: Session[]
 
 	@ManyToOne(() => Directory)
-	directory!: Directory
+	directory?: Directory
 
 	@OneToOne(
 		() => Credential,
