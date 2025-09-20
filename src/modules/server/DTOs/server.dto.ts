@@ -1,4 +1,9 @@
-import { IsEnumField, IsNumberField, IsReferenceField, IsStringField } from "src/common/decorators/validation.decorator"
+import {
+	IsEnumField,
+	IsNumberField,
+	IsReferenceField,
+	IsStringField,
+} from "src/common/decorators/validation.decorator"
 import { DirectoryModel } from "src/modules/directory/DTOs/directory.dto"
 import { Directory } from "src/modules/directory/entities/directory.entity"
 import { Server, ServerProtocol } from "src/modules/server/entities/server.entity"

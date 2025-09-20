@@ -8,6 +8,7 @@ import {
 } from "src/common/decorators/validation.decorator"
 import { Directory } from "src/modules/directory/entities/directory.entity"
 import { AuditLog } from "src/modules/log/entities/auditLog.entity"
+import { CronJob } from "src/modules/server/entities/cronjob.entity"
 import { Session } from "src/modules/server/entities/session.entity"
 import { User } from "src/modules/user/entities/user.entity"
 import { Credential } from "src/modules/vault/entities/credential.entity"
@@ -111,6 +112,12 @@ export class Server extends BaseEntity {
 		a => a.server,
 	)
 	logs!: AuditLog[]
+
+	@OneToMany(
+		() => CronJob,
+		c => c.server,
+	)
+	cronJobs?: CronJob[]
 
 	@IsStringField()
 	@Column()

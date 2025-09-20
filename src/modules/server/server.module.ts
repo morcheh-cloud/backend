@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common"
 import { TypeOrmExModule } from "src/common/typeorm-ex.module"
 import { ServerController } from "src/modules/server/controllers/server.controller"
+import { CronJobExecutionRepository } from "src/modules/server/repositories/cronJobExecution.repository"
+import { CronJobRepository } from "src/modules/server/repositories/cronjob.repository"
 import { ServerRepository } from "src/modules/server/repositories/server.repository"
 import { SessionRepository } from "src/modules/server/repositories/session.repository"
 import { sessionLogRepository } from "src/modules/server/repositories/sessionLog.repository"
@@ -10,7 +12,15 @@ import { SSHService } from "src/modules/server/services/ssh.service"
 
 @Module({
 	controllers: [ServerController],
-	imports: [TypeOrmExModule.forFeature([ServerRepository, SessionRepository, sessionLogRepository])],
+	imports: [
+		TypeOrmExModule.forFeature([
+			ServerRepository,
+			SessionRepository,
+			sessionLogRepository,
+			CronJobExecutionRepository,
+			CronJobRepository,
+		]),
+	],
 	providers: [ServerService, SSHService, SessionService],
 })
 export class ServerModule {}
