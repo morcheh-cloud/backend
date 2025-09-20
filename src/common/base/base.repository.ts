@@ -1,5 +1,5 @@
 import { BadRequestException, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common"
-import { isEmpty, isNumber, isUndefined, omitBy } from "lodash"
+import { isEmpty, isString, isUndefined, omitBy } from "lodash"
 import { IPagination, Paginate } from "src/lib/pagination"
 import { User } from "src/modules/user/entities/user.entity"
 import {
@@ -189,7 +189,7 @@ export class BaseRepository<Entity extends ObjectLiteral> extends Repository<Ent
 			// delete options.user;
 		}
 
-		if (!isNumber(id) || Number.isNaN(id)) {
+		if (!isString(id)) {
 			throw new BadRequestException("Invalid id")
 		}
 

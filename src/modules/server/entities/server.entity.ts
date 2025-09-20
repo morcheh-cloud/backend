@@ -38,26 +38,44 @@ export enum ServerStatus {
 }
 
 export class ServerInfo {
-	@IsNumberField()
-	cpu?: number
+	@IsStringField()
+	cpuCoreCount?: string
 
 	@IsStringField()
-	memory?: string
+	diskSize?: string
 
-	@IsNumberField()
-	storage?: number
+	@IsStringField()
+	diskUsed?: string
+
+	@IsStringField()
+	diskAvail?: string
 
 	@IsStringField()
 	distribution?: string
 
 	@IsStringField()
-	uptime?: string
+	OSPrettyName?: string
 
 	@IsStringField()
 	kernel?: string
 
 	@IsStringField()
 	architecture?: string
+
+	@IsEnumField(ServerOS)
+	os?: ServerOS
+
+	@IsStringField()
+	hostname?: string
+
+	@IsStringField()
+	memorySize?: string
+
+	@IsStringField()
+	memoryUsage?: string
+
+	@IsStringField()
+	memoryAvailable?: string
 }
 
 @Entity()
@@ -117,10 +135,6 @@ export class Server extends BaseEntity {
 	@IsEnumField(ServerProtocol)
 	@Column({ enum: ServerProtocol, type: "enum" })
 	protocol!: ServerProtocol
-
-	@IsEnumField(ServerOS)
-	@Column({ enum: ServerOS, nullable: true, type: "enum" })
-	os?: ServerOS
 
 	@IsBooleanField()
 	@Column({ default: false })

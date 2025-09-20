@@ -1,4 +1,5 @@
-import { Body, Get, Post } from "@nestjs/common"
+import { Body, Delete, Get, Param, Post } from "@nestjs/common"
+import { SuccessModel } from "src/common/DTOs/std.dto"
 import { BasicController } from "src/common/decorators/basicController.decorator"
 import { GetUser } from "src/common/decorators/getUser.decorator"
 import { GetWorkspace } from "src/common/decorators/getWorkspace.decorator"
@@ -18,6 +19,9 @@ export class ServerController {
 	@Post("create")
 	async create(@GetUser() user: User, @GetWorkspace() workspace: Workspace, @Body() body: SaveServerPayload) {
 		const server = await this.serverService.create(user.id, workspace.id, body)
+
+		await this.serverService.getServerStats(server.id)
+
 		return server
 	}
 
@@ -27,5 +31,12 @@ export class ServerController {
 	async tree(@GetWorkspace() workspace: Workspace) {
 		const tree = await this.serverService.getTree(workspace.id)
 		return tree
+	}
+
+	@StandardApi({ type: SuccessModel })
+	@Delete(":id")
+	async delete(@Param("id") id: string, @GetWorkspace() workspace: Workspace) {
+		await this.serverService.delete(id, workspace.id)
+		return new SuccessModel()
 	}
 }

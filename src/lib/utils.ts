@@ -21,3 +21,13 @@ export function Sleep(ms: number): Promise<void> {
 export function GenUUID(): string {
 	return uuidv7()
 }
+
+export function ParseJson(str?: string) {
+	if (!str) return {}
+
+	try {
+		return JSON.parse(str)
+	} catch {
+		return {}
+	}
+}

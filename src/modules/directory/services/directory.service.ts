@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common"
+import { Injectable, NotFoundException } from "@nestjs/common"
 import { SaveDirectoryPayload } from "src/modules/directory/DTOs/directory.dto"
 import { Directory, DirectoryType } from "src/modules/directory/entities/directory.entity"
 import { DirectoryRepository } from "src/modules/directory/repositories/directory.repository"
@@ -71,7 +71,6 @@ export class DirectoryService {
 				},
 			},
 		})
-		console.log("🚀 ~ DirectoryService ~ getServerTree ~ directories:", directories)
 
 		const tree = this.buildTree(directories)
 		return tree
@@ -86,5 +85,18 @@ export class DirectoryService {
 		})
 
 		return result
+	}
+
+	async delete(directoryId: string, workspaceId: string) {
+		const res = await this.directoryRepository.softDelete({
+			id: directoryId,
+			workspace: { id: workspaceId },
+		})
+
+		if (!res.affected) {
+			throw new NotFoundException("Directory not found")
+		}
+
+		return res
 	}
 }

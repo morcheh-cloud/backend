@@ -25,7 +25,6 @@ export class AnsibleGateway implements OnGatewayInit {
 	handleJoin() {
 		// @ConnectedSocket() client: Socket,
 		// @MessageBody() data: { room: string }
-		console.log("here")
 		// client.join(data.room);
 	}
 }

@@ -1,5 +1,4 @@
-import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from "@nestjs/common"
-import { AuditLogsService } from "src/modules/log/services/auditLogs.service"
+import { BadRequestException, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from "@nestjs/common"
 import { SessionStatus } from "src/modules/server/entities/session.entity"
 import { IActiveSession } from "src/modules/server/interfaces/ssh.interface"
 import { ServerRepository } from "src/modules/server/repositories/server.repository"
@@ -19,7 +18,6 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
 		private serverRepository: ServerRepository,
 		private sessionRepository: SessionRepository,
 		private credentialService: CredentialService,
-		private auditLogsService: AuditLogsService,
 		private sessionLogRepository: sessionLogRepository,
 	) {}
 
@@ -60,12 +58,13 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
 
 		const config: SSHConfig = {
 			host: server.address,
-			keepaliveInterval: 1000 * 1,
+			keepaliveInterval: 1000 * 3,
 			password: credential.password,
 			port: server.port,
 			readyTimeout: 10 * 1000,
 			reconnect: true,
 			reconnectDelay: 1000 * 3,
+			reconnectTries: 3,
 			uniqueId: session.id,
 			username: credential.username,
 		}
@@ -81,10 +80,10 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
 			await conn.connect()
 			this.logger.log(`SSH connection established for server ${serverId}`)
 
-			this.auditLogsService.info({
-				message: "SSH connection established for server",
-				server,
-			})
+			// this.auditLogsService.info({
+			// 	message: "SSH connection established for server",
+			// 	server,
+			// })
 
 			await this.sessionRepository.updateById(session.id, {
 				startedAt: new Date(),
@@ -93,11 +92,11 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
 
 			//
 		} catch (error) {
-			this.auditLogsService.error({
-				error: error as string,
-				message: "Error establishing SSH connection for server",
-				server,
-			})
+			// this.auditLogsService.error({
+			// 	error: error as string,
+			// 	message: "Error establishing SSH connection for server",
+			// 	server,
+			// })
 
 			await this.sessionRepository.updateById(session.id, {
 				finishedAt: new Date(),
@@ -105,7 +104,7 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
 				status: SessionStatus.FAILED,
 			})
 
-			throw new Error(`Error connecting to SSH server ${serverId}: ${error}`)
+			throw new BadRequestException(`Error connecting to SSH server ${serverId}: ${error}`)
 		}
 
 		conn.on("close", () => {
@@ -169,11 +168,12 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
 		}
 	}
 
-	async logOutput(sessionId: string, output: string, isError = false) {
+	async logCommand(sessionId: string, command: string, stdout: string, stderr: string) {
 		const log = this.sessionLogRepository.create({
+			command,
 			session: { id: sessionId },
-			stderr: isError ? output : undefined,
-			stdout: isError ? undefined : output,
+			stderr,
+			stdout,
 		})
 
 		return await this.sessionLogRepository.save(log)

@@ -9,11 +9,15 @@ export class SessionLog extends BaseEntityWithoutSoftDelete {
 	session?: Session
 
 	@IsStringField()
-	@Column({ type: "text" })
+	@Column({ nullable: true, type: "text" })
+	command?: string
+
+	@IsStringField()
+	@Column({ nullable: true, type: "text" })
 	stdout?: string
 
 	@IsStringField()
-	@Column({ type: "text" })
+	@Column({ nullable: true, type: "text" })
 	stderr?: string
 
 	@IsNumberField()

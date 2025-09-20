@@ -142,7 +142,7 @@ function parseLogicalLine(line: string): [key: string, value: string] | null {
 	return [rawKey, rawValue]
 }
 
-export function ParseKeyValueConfig(text: string): KeyValueConfig {
+export function ParseKeyValueConfig(text?: string): KeyValueConfig {
 	const result: KeyValueConfig = {}
 	if (!text) return result
 
