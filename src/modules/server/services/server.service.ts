@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from "@nestjs/common"
+import { Injectable } from "@nestjs/common"
 import { DirectoryService } from "src/modules/directory/services/directory.service"
 import { SaveServerPayload } from "src/modules/server/DTOs/server.dto"
 import { ServerProtocol } from "src/modules/server/entities/server.entity"
@@ -6,7 +6,7 @@ import { ServerRepository } from "src/modules/server/repositories/server.reposit
 import { CredentialService } from "src/modules/vault/services/vault.service"
 
 @Injectable()
-export class ServerService implements OnModuleInit {
+export class ServerService {
 	constructor(
 		private readonly serverRepository: ServerRepository,
 		private credentialService: CredentialService,
@@ -30,10 +30,6 @@ export class ServerService implements OnModuleInit {
 		})
 
 		return server
-	}
-
-	onModuleInit() {
-		this.getTree("019942ff-edbb-7575-8418-c1de3bfa746b")
 	}
 
 	async getTree(workspaceId: string) {

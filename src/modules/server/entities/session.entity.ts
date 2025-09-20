@@ -1,11 +1,12 @@
 import { BaseEntityWithoutSoftDelete } from "src/common/base/base.entity"
 import { IsDateField, IsEnumField, IsStringField } from "src/common/decorators/validation.decorator"
 import { Server } from "src/modules/server/entities/server.entity"
-import { SessionChunks } from "src/modules/server/entities/sessionChunk.entity"
+import { SessionLog } from "src/modules/server/entities/sessionLog.entity"
 import { User } from "src/modules/user/entities/user.entity"
 import { Column, Entity, ManyToOne, OneToMany } from "typeorm"
 
 export enum SessionStatus {
+	INITIALIZING = "initializing",
 	CONNECTED = "connected",
 	CONNECTING = "connecting",
 	FAILED = "failed",
@@ -18,10 +19,10 @@ export class Session extends BaseEntityWithoutSoftDelete {
 	server?: Server
 
 	@OneToMany(
-		() => SessionChunks,
+		() => SessionLog,
 		c => c.session,
 	)
-	chunks?: SessionChunks[]
+	logs?: SessionLog[]
 
 	@ManyToOne(() => User)
 	user?: User

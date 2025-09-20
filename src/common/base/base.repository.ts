@@ -22,7 +22,10 @@ export interface PaginationInterface {
 }
 
 interface SQB<Entity extends ObjectLiteral> extends SelectQueryBuilder<Entity> {
-	pagination(this: SQB<Entity>, params: { page: number; limit?: number; mode?: "legacy" | "modern" }): SQB<Entity>
+	pagination(
+		this: SQB<Entity>,
+		params: { page: number; limit?: number; mode?: "legacy" | "modern" },
+	): SQB<Entity>
 }
 
 export interface CustomFindManyOptions<Entity> extends FindManyOptions<Entity> {
@@ -89,7 +92,9 @@ export class BaseRepository<Entity extends ObjectLiteral> extends Repository<Ent
 		return result
 	}
 
-	override async findAndCount(optionsOrConditions?: CustomFindManyOptions<Entity>): Promise<[Entity[], number]> {
+	override async findAndCount(
+		optionsOrConditions?: CustomFindManyOptions<Entity>,
+	): Promise<[Entity[], number]> {
 		//
 		const order: FindOptionsOrder<any> = optionsOrConditions?.order || {
 			id: "desc",
@@ -164,7 +169,7 @@ export class BaseRepository<Entity extends ObjectLiteral> extends Repository<Ent
 	}
 
 	async updateById(
-		id: number,
+		id: string,
 		data: QueryDeepPartialEntity<Entity>,
 		options?: CustomSaveOptions<Entity>,
 	): Promise<Entity> {
@@ -175,7 +180,6 @@ export class BaseRepository<Entity extends ObjectLiteral> extends Repository<Ent
 
 		const clearedData = omitBy(data, key => isUndefined(key))
 		delete clearedData["id"]
-		id = +id
 
 		const entityData: any = super.create(clearedData as any)
 
