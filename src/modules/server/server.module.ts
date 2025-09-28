@@ -6,6 +6,7 @@ import { CronJobRepository } from "src/modules/server/repositories/cronjob.repos
 import { ServerRepository } from "src/modules/server/repositories/server.repository"
 import { SessionRepository } from "src/modules/server/repositories/session.repository"
 import { sessionLogRepository } from "src/modules/server/repositories/sessionLog.repository"
+import { CronJobService } from "src/modules/server/services/cronjob.service"
 import { ServerService } from "src/modules/server/services/server.service"
 import { SessionService } from "src/modules/server/services/session.service"
 import { SSHService } from "src/modules/server/services/ssh.service"
@@ -21,6 +22,6 @@ import { SSHService } from "src/modules/server/services/ssh.service"
 			CronJobRepository,
 		]),
 	],
-	providers: [ServerService, SSHService, SessionService],
+	providers: [ServerService, SSHService, SessionService, CronJobService],
 })
 export class ServerModule {}

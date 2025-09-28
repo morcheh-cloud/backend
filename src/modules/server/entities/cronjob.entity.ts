@@ -7,8 +7,9 @@ import { Column, Entity, ManyToOne, OneToMany } from "typeorm"
 export enum CronJobType {
 	ANSIBLE = "ansible",
 	SHELL = "shell",
+	SSH = "ssh",
 	PYTHON = "python",
-	NODEJS = "nodejs",
+	JAVASCRIPT = "javascript",
 }
 
 @Entity()
@@ -35,7 +36,7 @@ export class CronJob extends BaseEntity {
 
 	@IsStringField()
 	@Column()
-	schedule?: string
+	cronTime?: string
 
 	@IsStringField()
 	@Column()
@@ -55,11 +56,11 @@ export class CronJob extends BaseEntity {
 	})
 	timeout?: number
 
-	@IsNumberField()
-	@Column({ default: 0 })
-	retryCount?: number
+	// @IsNumberField()
+	// @Column({ default: 0 })
+	// retryCount?: number
 
-	@IsNumberField()
-	@Column({ default: 0 })
-	maxRetries?: number
+	// @IsNumberField()
+	// @Column({ default: 0 })
+	// maxRetries?: number
 }
