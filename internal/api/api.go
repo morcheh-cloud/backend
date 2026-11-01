@@ -12,6 +12,10 @@ import (
 
 	"github.com/morcheh/backend/internal/cache"
 	"github.com/morcheh/backend/internal/config"
+	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morcheh/backend/internal/secrets"
+	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morcheh/backend/internal/terminal"
 )
 
 const (
@@ -21,7 +25,7 @@ const (
 
 // NewRouter builds the HTTP handler. OpenAPI spec is served at /openapi.json
 // and Swagger UI at /docs.
-func NewRouter(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache) http.Handler {
+func NewRouter(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.Box) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -35,11 +39,30 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache) http.Hand
 		MaxAge:           300,
 	}))
 
+	// Our handlers never return null arrays; keep them non-nullable in the
+	// spec so the generated client types them as plain arrays.
+	huma.DefaultArrayNullable = false
+
 	hc := huma.DefaultConfig(title, version)
 	hc.DocsRenderer = huma.DocsRendererSwaggerUI
 	api := humachi.New(r, hc)
 
 	registerHealth(api, db, rdb)
+	registerFolders(api, db)
+	servers := &serverHandler{
+		db: db, q: sqlc.New(db), box: box,
+		pool:  sshpool.New(),
+		terms: terminal.NewManager(cfg.TerminalDetachedTimeout),
+	}
+	servers.stats = newStatsHub(servers)
+	registerServers(api, servers)
+	registerTerminals(api, r, servers, cfg.CORSOrigins)
+	registerFiles(api, servers)
+	registerCron(api, servers)
+	registerPorts(api, servers)
+	registerStats(api, servers)
+	registerFail2ban(api, servers)
+	registerUsers(api, servers)
 
 	return r
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/morcheh/backend/internal/cache"
 	"github.com/morcheh/backend/internal/config"
 	"github.com/morcheh/backend/internal/database"
+	"github.com/morcheh/backend/internal/secrets"
 )
 
 func main() {
@@ -34,6 +35,11 @@ func run() error {
 		return err
 	}
 
+	box, err := secrets.New(cfg.SecretsKey)
+	if err != nil {
+		return err
+	}
+
 	db, err := database.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
@@ -48,7 +54,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.NewRouter(cfg, db, rdb),
+		Handler:           api.NewRouter(cfg, db, rdb, box),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
