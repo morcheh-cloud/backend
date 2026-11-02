@@ -13,10 +13,11 @@ const (
 	kindActive
 	// A system admin.
 	kindAdmin
-	// A level on the server, storage or workspace in the path's {id}.
+	// A level on the server, storage, workspace or database in the path's {id}.
 	kindServer
 	kindStorage
 	kindWorkspace
+	kindDatabase
 )
 
 type policy struct {
@@ -27,6 +28,7 @@ type policy struct {
 func onServer(l auth.Level) policy    { return policy{kindServer, l} }
 func onStorage(l auth.Level) policy   { return policy{kindStorage, l} }
 func onWorkspace(l auth.Level) policy { return policy{kindWorkspace, l} }
+func onDatabase(l auth.Level) policy  { return policy{kindDatabase, l} }
 
 var (
 	public  = policy{kind: kindPublic}
@@ -224,6 +226,27 @@ var policies = map[string]policy{
 	"storage-delete":         onStorage(auth.Engineer),
 	"share-storage-file":     onStorage(auth.Engineer),
 	"transfer-files":         active,
+
+	// Databases: a database's level is its workspace's, or that of the
+	// server it's reached through when higher.
+	"list-databases":              active,
+	"create-database":             active,
+	"test-database-connection":    active,
+	"get-database-outbound-ip":    active,
+	"list-database-checks":        active,
+	"get-database":                onDatabase(auth.Viewer),
+	"get-database-live":           onDatabase(auth.Viewer),
+	"list-database-events":        onDatabase(auth.Viewer),
+	"get-database-history":        onDatabase(auth.Viewer),
+	"set-database-favorite":       onDatabase(auth.Operator),
+	"check-database":              onDatabase(auth.Operator),
+	"set-database-paused":         onDatabase(auth.Engineer),
+	"update-database-monitoring":  onDatabase(auth.Engineer),
+	"kill-database-session":       onDatabase(auth.Engineer),
+	"explain-database-query":      onDatabase(auth.Engineer),
+	"update-database":             onDatabase(auth.Owner),
+	"delete-database":             onDatabase(auth.Owner),
+	"reveal-database-credentials": onDatabase(auth.Owner),
 
 	// Jobs: everyone sees their own, admins all.
 	"list-jobs":   active,

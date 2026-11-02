@@ -99,6 +99,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerStorages(api, st)
 	registerStorageCredentials(api, st)
 	registerStorageFiles(api, st)
+	registerDatabases(api, newDatabaseHandler(sqlc.New(db), box, servers))
 	registerJobs(api, a)
 
 	return r, api

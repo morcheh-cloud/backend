@@ -177,7 +177,8 @@ SELECT count(*)::int FROM workspaces;
 
 -- name: CountWorkspaceResources :one
 SELECT (SELECT count(*) FROM servers s WHERE s.workspace_id = $1)::int AS servers,
-       (SELECT count(*) FROM storages t WHERE t.workspace_id = $1)::int AS storages;
+       (SELECT count(*) FROM storages t WHERE t.workspace_id = $1)::int AS storages,
+       (SELECT count(*) FROM databases d WHERE d.workspace_id = $1)::int AS databases;
 
 -- name: MoveServersToWorkspace :execrows
 -- Folders belong to one workspace, so moved servers leave theirs.

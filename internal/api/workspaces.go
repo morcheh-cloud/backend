@@ -357,8 +357,8 @@ func registerWorkspaces(api huma.API, a *authz) {
 			if err != nil {
 				return internalError(err)
 			}
-			if counts.Servers > 0 || counts.Storages > 0 {
-				return huma.Error409Conflict("Move its servers and storages to another workspace first.")
+			if counts.Servers > 0 || counts.Storages > 0 || counts.Databases > 0 {
+				return huma.Error409Conflict("Move or remove its servers, storages and databases first.")
 			}
 			total, err := q.CountWorkspaces(ctx)
 			if err != nil {

@@ -23,10 +23,131 @@ type AccessGrant struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+type AlertChannel struct {
+	ID          uuid.UUID  `json:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	Name        string     `json:"name"`
+	Kind        string     `json:"kind"`
+	ConfigEnc   []byte     `json:"config_enc"`
+	Target      string     `json:"target"`
+	MinSeverity string     `json:"min_severity"`
+	Enabled     bool       `json:"enabled"`
+	LastSentAt  *time.Time `json:"last_sent_at"`
+	LastError   string     `json:"last_error"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
 type AppSetting struct {
 	ID               bool      `json:"id"`
 	RegistrationOpen bool      `json:"registration_open"`
 	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type Database struct {
+	ID              uuid.UUID  `json:"id"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	Name            string     `json:"name"`
+	Engine          string     `json:"engine"`
+	Mode            string     `json:"mode"`
+	ServerID        *uuid.UUID `json:"server_id"`
+	Host            string     `json:"host"`
+	Port            int32      `json:"port"`
+	Username        string     `json:"username"`
+	PasswordEnc     []byte     `json:"password_enc"`
+	Dbname          string     `json:"dbname"`
+	Tls             string     `json:"tls"`
+	CaCert          string     `json:"ca_cert"`
+	AllowInternal   bool       `json:"allow_internal"`
+	Container       string     `json:"container"`
+	Description     string     `json:"description"`
+	Favorite        bool       `json:"favorite"`
+	Paused          bool       `json:"paused"`
+	IntervalSeconds int32      `json:"interval_seconds"`
+	Thresholds      []byte     `json:"thresholds"`
+	MutedChecks     []string   `json:"muted_checks"`
+	AlertsEnabled   bool       `json:"alerts_enabled"`
+	Status          string     `json:"status"`
+	StatusMessage   string     `json:"status_message"`
+	Version         string     `json:"version"`
+	Flavor          string     `json:"flavor"`
+	Role            string     `json:"role"`
+	LatencyMs       *int32     `json:"latency_ms"`
+	SizeBytes       *int64     `json:"size_bytes"`
+	Connections     *int32     `json:"connections"`
+	MaxConnections  *int32     `json:"max_connections"`
+	LastCheckedAt   *time.Time `json:"last_checked_at"`
+	LastOnlineAt    *time.Time `json:"last_online_at"`
+	Health          string     `json:"health"`
+	Checks          []byte     `json:"checks"`
+	Baseline        []byte     `json:"baseline"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type DatabaseBackup struct {
+	ID           uuid.UUID  `json:"id"`
+	DatabaseID   uuid.UUID  `json:"database_id"`
+	JobID        *uuid.UUID `json:"job_id"`
+	Trigger      string     `json:"trigger"`
+	StorageID    *uuid.UUID `json:"storage_id"`
+	Path         string     `json:"path"`
+	Dbname       string     `json:"dbname"`
+	Status       string     `json:"status"`
+	SizeBytes    int64      `json:"size_bytes"`
+	Error        string     `json:"error"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	VerifyStatus string     `json:"verify_status"`
+	VerifyDetail string     `json:"verify_detail"`
+	VerifiedAt   *time.Time `json:"verified_at"`
+}
+
+type DatabaseBackupPlan struct {
+	DatabaseID     uuid.UUID  `json:"database_id"`
+	Enabled        bool       `json:"enabled"`
+	StorageID      uuid.UUID  `json:"storage_id"`
+	Folder         string     `json:"folder"`
+	RunnerServerID *uuid.UUID `json:"runner_server_id"`
+	Dbnames        []string   `json:"dbnames"`
+	Frequency      string     `json:"frequency"`
+	Hour           int32      `json:"hour"`
+	Weekday        int32      `json:"weekday"`
+	Keep           int32      `json:"keep"`
+	NextRunAt      time.Time  `json:"next_run_at"`
+	CreatedBy      *uuid.UUID `json:"created_by"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+type DatabaseEvent struct {
+	ID         uuid.UUID `json:"id"`
+	DatabaseID uuid.UUID `json:"database_id"`
+	At         time.Time `json:"at"`
+	Kind       string    `json:"kind"`
+	Severity   string    `json:"severity"`
+	CheckID    string    `json:"check_id"`
+	Title      string    `json:"title"`
+	Detail     string    `json:"detail"`
+}
+
+type DatabaseSample struct {
+	DatabaseID     uuid.UUID `json:"database_id"`
+	At             time.Time `json:"at"`
+	Online         bool      `json:"online"`
+	LatencyMs      *int32    `json:"latency_ms"`
+	Connections    *int32    `json:"connections"`
+	Active         *int32    `json:"active"`
+	MaxConnections *int32    `json:"max_connections"`
+	Qps            *float64  `json:"qps"`
+	Tps            *float64  `json:"tps"`
+	CacheHit       *float64  `json:"cache_hit"`
+	SizeBytes      *int64    `json:"size_bytes"`
+	DiskFreeBytes  *int64    `json:"disk_free_bytes"`
+	DiskTotalBytes *int64    `json:"disk_total_bytes"`
+	ReplicationLag *float64  `json:"replication_lag"`
+	Blocked        *int32    `json:"blocked"`
+	Deadlocks      *int64    `json:"deadlocks"`
+	MemoryBytes    *int64    `json:"memory_bytes"`
 }
 
 type Folder struct {

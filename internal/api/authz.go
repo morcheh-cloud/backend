@@ -203,7 +203,7 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 		return auth.Owner, nil
 	}
 
-	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace"}[pol.kind]
+	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database"}[pol.kind]
 	missing := &denied{http.StatusNotFound, noun + " not found"}
 	id, err := uuid.Parse(rawID)
 	if err != nil {
@@ -236,6 +236,15 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 			return auth.None, err
 		}
 		level = acc.WorkspaceLevel(id)
+	case kindDatabase:
+		d, err := a.q.GetDatabaseWorkspace(ctx, id)
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		level = databaseLevel(acc, d.WorkspaceID, d.ServerID)
 	default:
 		return auth.None, &denied{http.StatusForbidden, "This action isn't available."}
 	}
@@ -267,6 +276,17 @@ func (a *authz) serverLevel(ctx context.Context, acc *auth.Access, id uuid.UUID)
 		return auth.None, err
 	}
 	return acc.ServerLevel(ws, id), nil
+}
+
+// databaseLevel is what someone has on a database: its workspace's level, or
+// the level on the server it goes through when that's higher (whoever runs the
+// server may watch what runs on it).
+func databaseLevel(acc *auth.Access, workspace uuid.UUID, server *uuid.UUID) auth.Level {
+	l := acc.WorkspaceLevel(workspace)
+	if server != nil {
+		l = max(l, acc.ServerLevel(workspace, *server))
+	}
+	return l
 }
 
 // storageLevel is the caller's level on one storage (0 when it doesn't exist).

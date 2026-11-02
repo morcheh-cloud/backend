@@ -6,6 +6,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -21,6 +22,9 @@ type Querier interface {
 	CountUsers(ctx context.Context) (int32, error)
 	CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error)
 	CountWorkspaces(ctx context.Context) (int32, error)
+	CreateAlertChannel(ctx context.Context, arg CreateAlertChannelParams) (AlertChannel, error)
+	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
+	CreateDatabaseBackup(ctx context.Context, arg CreateDatabaseBackupParams) (DatabaseBackup, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (UserGroup, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
@@ -30,6 +34,17 @@ type Querier interface {
 	CreateStorage(ctx context.Context, arg CreateStorageParams) (Storage, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error)
+	// What this hour normally looks like: the same hour on earlier days.
+	DatabaseAverages(ctx context.Context, arg DatabaseAveragesParams) (DatabaseAveragesRow, error)
+	// Averages per bucket; peaks where an average would hide the problem. NaN =
+	// nothing measured in the bucket (sqlc can't type a nullable aggregate).
+	DatabaseHistory(ctx context.Context, arg DatabaseHistoryParams) ([]DatabaseHistoryRow, error)
+	// Oldest first: what the "fills up in N days" estimates fit a line through.
+	DatabaseSizeTrend(ctx context.Context, arg DatabaseSizeTrendParams) ([]DatabaseSizeTrendRow, error)
+	DeleteAlertChannel(ctx context.Context, arg DeleteAlertChannelParams) (int64, error)
+	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteDatabaseBackup(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteFinishedJobs(ctx context.Context, arg DeleteFinishedJobsParams) (int64, error)
 	DeleteFolder(ctx context.Context, id uuid.UUID) (int64, error)
@@ -43,11 +58,21 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
 	DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, error)
+	// Whatever a restart cut off never ends by itself.
+	FailStaleDatabaseBackups(ctx context.Context) error
 	FindGrant(ctx context.Context, arg FindGrantParams) (AccessGrant, error)
+	FinishDatabaseBackup(ctx context.Context, arg FinishDatabaseBackupParams) (DatabaseBackup, error)
 	FinishJob(ctx context.Context, arg FinishJobParams) error
 	// Whether candidate is folder_id itself or one of its descendants; moving a
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
+	GetAlertChannel(ctx context.Context, id uuid.UUID) (AlertChannel, error)
+	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
+	GetDatabaseBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error)
+	GetDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (DatabaseBackupPlan, error)
+	// What access to a database follows: its workspace, and the server it goes
+	// through.
+	GetDatabaseWorkspace(ctx context.Context, id uuid.UUID) (GetDatabaseWorkspaceRow, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
 	GetGroup(ctx context.Context, id uuid.UUID) (UserGroup, error)
@@ -65,10 +90,20 @@ type Querier interface {
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
 	GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error)
+	InsertDatabaseEvent(ctx context.Context, arg InsertDatabaseEventParams) (DatabaseEvent, error)
+	InsertDatabaseSample(ctx context.Context, arg InsertDatabaseSampleParams) error
 	// At startup: whatever was running died with the last process.
 	InterruptRunningJobs(ctx context.Context) (int64, error)
+	LastGoodDatabaseBackup(ctx context.Context, databaseID uuid.UUID) (DatabaseBackup, error)
 	ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error)
+	ListAlertChannels(ctx context.Context, workspaceID uuid.UUID) ([]AlertChannel, error)
 	ListAllGroupMembers(ctx context.Context) ([]GroupMember, error)
+	ListDatabaseBackups(ctx context.Context, arg ListDatabaseBackupsParams) ([]DatabaseBackup, error)
+	ListDatabaseEvents(ctx context.Context, arg ListDatabaseEventsParams) ([]DatabaseEvent, error)
+	ListDatabases(ctx context.Context, arg ListDatabasesParams) ([]Database, error)
+	// What the monitor should look at now.
+	ListDatabasesDue(ctx context.Context) ([]Database, error)
+	ListDueBackupPlans(ctx context.Context) ([]DatabaseBackupPlan, error)
 	// server_count counts only the folder's own servers the caller can see; the
 	// client sums subtrees. folder_workspace_ids also lists workspaces the caller
 	// only reaches through single servers: the handler prunes those to the folders
@@ -108,6 +143,10 @@ type Querier interface {
 	// Folders belong to one workspace, so moved servers leave theirs.
 	MoveServersToWorkspace(ctx context.Context, arg MoveServersToWorkspaceParams) (int64, error)
 	MoveStoragesToWorkspace(ctx context.Context, arg MoveStoragesToWorkspaceParams) (int64, error)
+	PruneDatabaseEvents(ctx context.Context, before time.Time) error
+	PruneDatabaseSamples(ctx context.Context, before time.Time) error
+	RecordAlertDelivery(ctx context.Context, arg RecordAlertDeliveryParams) error
+	RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseCheckParams) (Database, error)
 	// Stores a connection check. OS fields are only overwritten when the check
 	// got far enough to read them (detected = true).
 	RecordServerCheck(ctx context.Context, arg RecordServerCheckParams) (Server, error)
@@ -121,6 +160,10 @@ type Querier interface {
 	ServerOSFacets(ctx context.Context, arg ServerOSFacetsParams) ([]ServerOSFacetsRow, error)
 	ServerStatusFacets(ctx context.Context, arg ServerStatusFacetsParams) ([]ServerStatusFacetsRow, error)
 	ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams) ([]ServerTagFacetsRow, error)
+	SetBackupPlanNextRun(ctx context.Context, arg SetBackupPlanNextRunParams) error
+	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
+	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)
+	SetDatabasePaused(ctx context.Context, arg SetDatabasePausedParams) (Database, error)
 	SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error)
 	SetServerFavorite(ctx context.Context, arg SetServerFavoriteParams) (Server, error)
 	SetStorageFavorite(ctx context.Context, arg SetStorageFavoriteParams) (Storage, error)
@@ -133,6 +176,9 @@ type Querier interface {
 	StartJob(ctx context.Context, id uuid.UUID) error
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	TouchUserLogin(ctx context.Context, id uuid.UUID) error
+	UpdateAlertChannel(ctx context.Context, arg UpdateAlertChannelParams) (AlertChannel, error)
+	// Full replace of the editable fields; the handler resolves the password first.
+	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)
 	UpdateGroup(ctx context.Context, arg UpdateGroupParams) (UserGroup, error)
 	// Full replace of the editable fields. The handler resolves secrets first:
@@ -142,8 +188,10 @@ type Querier interface {
 	UpdateStorage(ctx context.Context, arg UpdateStorageParams) (Storage, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
+	UpsertDatabaseBackupPlan(ctx context.Context, arg UpsertDatabaseBackupPlanParams) (DatabaseBackupPlan, error)
 	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)
 	UserStatusCounts(ctx context.Context) ([]UserStatusCountsRow, error)
+	VerifyDatabaseBackup(ctx context.Context, arg VerifyDatabaseBackupParams) (DatabaseBackup, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -72,18 +72,20 @@ func (q *Queries) CountUsers(ctx context.Context) (int32, error) {
 
 const countWorkspaceResources = `-- name: CountWorkspaceResources :one
 SELECT (SELECT count(*) FROM servers s WHERE s.workspace_id = $1)::int AS servers,
-       (SELECT count(*) FROM storages t WHERE t.workspace_id = $1)::int AS storages
+       (SELECT count(*) FROM storages t WHERE t.workspace_id = $1)::int AS storages,
+       (SELECT count(*) FROM databases d WHERE d.workspace_id = $1)::int AS databases
 `
 
 type CountWorkspaceResourcesRow struct {
-	Servers  int32 `json:"servers"`
-	Storages int32 `json:"storages"`
+	Servers   int32 `json:"servers"`
+	Storages  int32 `json:"storages"`
+	Databases int32 `json:"databases"`
 }
 
 func (q *Queries) CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error) {
 	row := q.db.QueryRow(ctx, countWorkspaceResources, workspaceID)
 	var i CountWorkspaceResourcesRow
-	err := row.Scan(&i.Servers, &i.Storages)
+	err := row.Scan(&i.Servers, &i.Storages, &i.Databases)
 	return i, err
 }
 

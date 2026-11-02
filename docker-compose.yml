@@ -103,6 +103,106 @@ services:
       timeout: 3s
       retries: 10
 
+  # Local targets for the Database section (monitored databases, not the app's
+  # own Postgres and Redis). Reachable directly on localhost, or as
+  # test-postgres:5432 and so on through test-ssh.
+  test-postgres:
+    image: postgres:18-alpine
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    environment:
+      POSTGRES_USER: ant
+      POSTGRES_PASSWORD: colony
+      POSTGRES_DB: shop
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - testpgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ant -d shop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  test-mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: colony
+      MYSQL_DATABASE: shop
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - testmysqldata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -pcolony --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  test-mariadb:
+    image: mariadb:11.8
+    environment:
+      MARIADB_ROOT_PASSWORD: colony
+      MARIADB_DATABASE: shop
+    ports:
+      - "127.0.0.1:3308:3306"
+    volumes:
+      - testmariadata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # sa / Colony-2026! (SQL Server refuses weak passwords).
+  test-mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: Colony-2026!
+      MSSQL_PID: Developer
+      MSSQL_MEMORY_LIMIT_MB: "1536"
+    ports:
+      - "127.0.0.1:14330:1433"
+    volumes:
+      - testmssqldata:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Colony-2026!' -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  test-mongo:
+    # 8.0+ refuses to start on Linux 6.19+ kernels (SERVER-121912).
+    image: mongo:7.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ant
+      MONGO_INITDB_ROOT_PASSWORD: colony
+    ports:
+      - "127.0.0.1:27018:27017"
+    volumes:
+      - testmongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  test-redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--requirepass", "colony"]
+    ports:
+      - "127.0.0.1:6381:6379"
+    volumes:
+      - testredisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "colony", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pgdata:
   redisdata:
@@ -110,3 +210,9 @@ volumes:
   miniodata:
   ftpdata:
   webdavdata:
+  testpgdata:
+  testmysqldata:
+  testmariadata:
+  testmssqldata:
+  testmongodata:
+  testredisdata:
