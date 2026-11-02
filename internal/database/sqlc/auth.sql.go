@@ -1212,6 +1212,35 @@ func (q *Queries) SetUserStatus(ctx context.Context, arg SetUserStatusParams) (U
 	return i, err
 }
 
+const setUsername = `-- name: SetUsername :one
+UPDATE users SET username = $1, updated_at = now() WHERE id = $2 RETURNING id, username, email, first_name, full_name, password_hash, role, status, must_change_password, last_login_at, created_at, updated_at
+`
+
+type SetUsernameParams struct {
+	Username string    `json:"username"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) SetUsername(ctx context.Context, arg SetUsernameParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUsername, arg.Username, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.FirstName,
+		&i.FullName,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.MustChangePassword,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const touchSession = `-- name: TouchSession :exec
 UPDATE sessions SET last_seen_at = now() WHERE id = $1
 `

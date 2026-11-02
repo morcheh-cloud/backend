@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -223,6 +224,14 @@ func VerifyPassword(hash, password string) bool {
 func BurnPassword(password string) {
 	VerifyPassword(dummyHash, password)
 }
+
+// UsernameRule says what ValidUsername accepts.
+const UsernameRule = "Use 3–32 letters, digits, dots, dashes or underscores, starting with a letter or digit."
+
+var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$`)
+
+// ValidUsername reports whether a new username is acceptable.
+func ValidUsername(name string) bool { return usernamePattern.MatchString(name) }
 
 // CheckPassword returns why a new password isn't acceptable, or nil.
 func CheckPassword(password, username string) error {

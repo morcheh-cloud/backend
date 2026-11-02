@@ -45,6 +45,7 @@ make run                # API on :8080 — Swagger UI /docs, spec /openapi.json
 make psql / make redis-cli
 make sqlc               # regenerate internal/database/sqlc after changing migrations/ or queries/
 make build              # → bin/server
+make reset-admin        # new password for an admin when nobody can sign in (bin/server reset-admin -h; args="-user x -rename y -temporary")
 make migrate-new name=create_servers
 make migrate-up / migrate-down
 go vet ./... && go build ./...   # run before declaring work done
@@ -67,6 +68,7 @@ go vet ./... && go build ./...   # run before declaring work done
 - `make migrate-up` errors with "no migration files found" until the first migration exists.
 - Postgres 18 image: volume mounts at `/var/lib/postgresql` (not `/var/lib/postgresql/data`).
 - `SETUP_TOKEN`: set it on anything but a laptop, or whoever reaches a fresh install first becomes its admin. `TRUST_PROXY=true` only behind a proxy that sets `X-Forwarded-For`, or login limits can be dodged. `COOKIE_INSECURE=true` sends the session cookie over plain HTTP outside development. The panel and API must be same-site for the cookie to work.
+- `server reset-admin` (`cmd/server/reset_admin.go`) runs outside the server process, so it can't call `invalidate`/`KillOwner`: deleted sessions end open connections at the next sweep (≤1 min) and a detached shell lives until `TERMINAL_DETACHED_TIMEOUT`. It clears the account's login limits in Redis (`api.ForgetLoginLimits`; keep it in step with the keys in `auth-login`), not the per-address counter. The password is never a flag.
 - `SECRETS_KEY` (base64 32 bytes, `openssl rand -base64 32`) is required; changing it makes every stored credential unreadable.
 - Local SSH target for testing: compose service `test-ssh` (`make up`; `127.0.0.1:2222`, user `ant` / `colony`, passwordless sudo baked into its inline Dockerfile; `/config` volume `sshconfig` keeps host keys + home across recreates). Alpine/busybox crond (no syslog → cron history empty); seeded crontabs (root, `/etc/cron.d`) live outside `/config`, so they're lost on recreate. Its sshd runs as non-root, so only `ant` can run anything: other users log in but every session is dropped ("Failed to set uids"; we report it via `sshprobe.SessionClosed`). Test other users on `morcheh-test-systemd` (:2223, `ant`/`colony`, real systemd; has a `broken-demo` unit that always fails and an nginx override — use it for services/power/users).
 - **Dev services are containers in this `docker-compose.yml` (user rule):** any service needed for development or testing (S3, later databases, …) gets a compose service here and comes up with `make up`, not a plain `docker run`.

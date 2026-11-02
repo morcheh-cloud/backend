@@ -1,13 +1,17 @@
 -include .env
 export
 
-.PHONY: run build tidy up down db-up db-down psql redis-cli migrate-up migrate-down migrate-new sqlc
+.PHONY: run build reset-admin tidy up down db-up db-down psql redis-cli migrate-up migrate-down migrate-new sqlc
 
 run:
 	go run ./cmd/server
 
 build:
 	go build -o bin/server ./cmd/server
+
+# usage: make reset-admin  (or args="-user alice -rename bob")
+reset-admin:
+	go run ./cmd/server reset-admin $(args)
 
 tidy:
 	go mod tidy

@@ -22,6 +22,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "reset-admin" {
+		if err := resetAdmin(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "reset-admin:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		slog.Error("server stopped", "error", err)
 		os.Exit(1)

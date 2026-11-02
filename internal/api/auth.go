@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/mail"
-	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -76,8 +75,6 @@ func (b *PanelProfile) clean() error {
 	return nil
 }
 
-var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$`)
-
 // PanelSignup is what creating an account takes.
 type PanelSignup struct {
 	Username string `json:"username" maxLength:"32"`
@@ -87,8 +84,8 @@ type PanelSignup struct {
 
 func (b *PanelSignup) clean() error {
 	b.Username = strings.TrimSpace(b.Username)
-	if !usernamePattern.MatchString(b.Username) {
-		return fieldError("body.username", "Use 3–32 letters, digits, dots, dashes or underscores, starting with a letter or digit.", nil)
+	if !auth.ValidUsername(b.Username) {
+		return fieldError("body.username", auth.UsernameRule, nil)
 	}
 	if err := b.PanelProfile.clean(); err != nil {
 		return err

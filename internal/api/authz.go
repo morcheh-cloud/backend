@@ -598,6 +598,21 @@ func (a *authz) forget(ctx context.Context, key string) {
 	a.rdb.Client.Del(ctx, "ratelimit:"+key)
 }
 
+// ForgetLoginLimits clears the sign-in and password counters of one account.
+// A counter per address is left alone: it covers everyone behind that address.
+func ForgetLoginLimits(ctx context.Context, rdb *cache.Cache, id uuid.UUID, username string) error {
+	name := strings.ToLower(username)
+	keys := []string{"ratelimit:login:name:" + name, "ratelimit:password:" + id.String()}
+	it := rdb.Client.Scan(ctx, 0, "ratelimit:login:pair:"+name+":*", 100).Iterator()
+	for it.Next(ctx) {
+		keys = append(keys, it.Val())
+	}
+	if err := it.Err(); err != nil {
+		return err
+	}
+	return rdb.Client.Del(ctx, keys...).Err()
+}
+
 func errTooMany() error {
 	return huma.NewError(http.StatusTooManyRequests, "Too many attempts. Wait a few minutes and try again.")
 }

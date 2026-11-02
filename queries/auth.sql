@@ -48,6 +48,9 @@ UPDATE users SET password_hash = @password_hash, must_change_password = @must_ch
 WHERE id = @id
 RETURNING *;
 
+-- name: SetUsername :one
+UPDATE users SET username = @username, updated_at = now() WHERE id = @id RETURNING *;
+
 -- name: TouchUserLogin :exec
 UPDATE users SET last_login_at = now() WHERE id = $1;
 
