@@ -41,7 +41,7 @@ Go 1.27 · Chi router · Huma v2 (OpenAPI 3.1 + Swagger UI) · PostgreSQL 18 via
 ```bash
 cp .env.example .env    # first time
 make up                 # Postgres, Redis, test-ssh, MinIO, test-ftp, test-webdav in docker compose (waits for healthy); `make down` stops
-make run                # API on :8080 — Swagger UI /docs, spec /openapi.json
+make run                # API on :8080 — Swagger UI /docs, spec /openapi.json; stops an earlier server on the port first (`make stop` = just that)
 make psql / make redis-cli
 make sqlc               # regenerate internal/database/sqlc after changing migrations/ or queries/
 make build              # → bin/server
