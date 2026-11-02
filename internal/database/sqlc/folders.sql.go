@@ -13,18 +13,19 @@ import (
 )
 
 const createFolder = `-- name: CreateFolder :one
-INSERT INTO folders (name, parent_id)
-VALUES ($1, $2)
-RETURNING id, parent_id, name, created_at, updated_at
+INSERT INTO folders (workspace_id, name, parent_id)
+VALUES ($1, $2, $3)
+RETURNING id, parent_id, name, created_at, updated_at, workspace_id
 `
 
 type CreateFolderParams struct {
-	Name     string     `json:"name"`
-	ParentID *uuid.UUID `json:"parent_id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	Name        string     `json:"name"`
+	ParentID    *uuid.UUID `json:"parent_id"`
 }
 
 func (q *Queries) CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error) {
-	row := q.db.QueryRow(ctx, createFolder, arg.Name, arg.ParentID)
+	row := q.db.QueryRow(ctx, createFolder, arg.WorkspaceID, arg.Name, arg.ParentID)
 	var i Folder
 	err := row.Scan(
 		&i.ID,
@@ -32,6 +33,7 @@ func (q *Queries) CreateFolder(ctx context.Context, arg CreateFolderParams) (Fol
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkspaceID,
 	)
 	return i, err
 }
@@ -72,7 +74,7 @@ func (q *Queries) FolderSubtreeContains(ctx context.Context, arg FolderSubtreeCo
 }
 
 const getFolder = `-- name: GetFolder :one
-SELECT id, parent_id, name, created_at, updated_at FROM folders WHERE id = $1
+SELECT id, parent_id, name, created_at, updated_at, workspace_id FROM folders WHERE id = $1
 `
 
 func (q *Queries) GetFolder(ctx context.Context, id uuid.UUID) (Folder, error) {
@@ -84,17 +86,29 @@ func (q *Queries) GetFolder(ctx context.Context, id uuid.UUID) (Folder, error) {
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkspaceID,
 	)
 	return i, err
 }
 
 const listFolders = `-- name: ListFolders :many
-SELECT f.id, f.parent_id, f.name, f.created_at, f.updated_at, count(s.id)::int AS server_count
+SELECT f.id, f.parent_id, f.name, f.created_at, f.updated_at, f.workspace_id, count(s.id)::int AS server_count
 FROM folders f
 LEFT JOIN servers s ON s.folder_id = f.id
+    AND ($1::bool OR s.workspace_id = ANY ($2::uuid[]) OR s.id = ANY ($3::uuid[]))
+WHERE ($1::bool OR f.workspace_id = ANY ($4::uuid[]))
+  AND ($5::uuid IS NULL OR f.workspace_id = $5::uuid)
 GROUP BY f.id
 ORDER BY lower(f.name)
 `
+
+type ListFoldersParams struct {
+	SeeAll             bool        `json:"see_all"`
+	WorkspaceIds       []uuid.UUID `json:"workspace_ids"`
+	ServerIds          []uuid.UUID `json:"server_ids"`
+	FolderWorkspaceIds []uuid.UUID `json:"folder_workspace_ids"`
+	WorkspaceID        *uuid.UUID  `json:"workspace_id"`
+}
 
 type ListFoldersRow struct {
 	ID          uuid.UUID  `json:"id"`
@@ -102,12 +116,22 @@ type ListFoldersRow struct {
 	Name        string     `json:"name"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
 	ServerCount int32      `json:"server_count"`
 }
 
-// server_count counts only the folder's own servers; the client sums subtrees.
-func (q *Queries) ListFolders(ctx context.Context) ([]ListFoldersRow, error) {
-	rows, err := q.db.Query(ctx, listFolders)
+// server_count counts only the folder's own servers the caller can see; the
+// client sums subtrees. folder_workspace_ids also lists workspaces the caller
+// only reaches through single servers: the handler prunes those to the folders
+// leading to their servers.
+func (q *Queries) ListFolders(ctx context.Context, arg ListFoldersParams) ([]ListFoldersRow, error) {
+	rows, err := q.db.Query(ctx, listFolders,
+		arg.SeeAll,
+		arg.WorkspaceIds,
+		arg.ServerIds,
+		arg.FolderWorkspaceIds,
+		arg.WorkspaceID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +145,7 @@ func (q *Queries) ListFolders(ctx context.Context) ([]ListFoldersRow, error) {
 			&i.Name,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.WorkspaceID,
 			&i.ServerCount,
 		); err != nil {
 			return nil, err
@@ -167,7 +192,7 @@ const updateFolder = `-- name: UpdateFolder :one
 UPDATE folders
 SET name = $1, parent_id = $2, updated_at = now()
 WHERE id = $3
-RETURNING id, parent_id, name, created_at, updated_at
+RETURNING id, parent_id, name, created_at, updated_at, workspace_id
 `
 
 type UpdateFolderParams struct {
@@ -185,6 +210,7 @@ func (q *Queries) UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Fol
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkspaceID,
 	)
 	return i, err
 }

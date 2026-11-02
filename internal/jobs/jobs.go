@@ -81,6 +81,8 @@ type Spec struct {
 	// Where its output lands, for links; nil for none.
 	Target  any
 	RetryOf *uuid.UUID
+	// CreatedBy is the user who started it; only they and admins see it.
+	CreatedBy *uuid.UUID
 	// Quick starts it at once, past both limits: for work that normally takes
 	// no time and shouldn't wait behind long jobs (a rename). Not stored, so
 	// after a restart or a retry it waits its turn like any other.
@@ -197,7 +199,7 @@ func (r *Runner) Submit(ctx context.Context, s Spec) (sqlc.Job, error) {
 		refs = []uuid.UUID{}
 	}
 	j, err := r.q.CreateJob(ctx, sqlc.CreateJobParams{
-		Kind: s.Kind, Title: s.Title, Params: params, Refs: refs, Target: target, RetryOf: s.RetryOf,
+		Kind: s.Kind, Title: s.Title, Params: params, Refs: refs, Target: target, RetryOf: s.RetryOf, CreatedBy: s.CreatedBy,
 	})
 	if err != nil {
 		return j, err
@@ -212,7 +214,7 @@ func (r *Runner) Submit(ctx context.Context, s Spec) (sqlc.Job, error) {
 }
 
 // Retry submits a finished job again with the same params.
-func (r *Runner) Retry(ctx context.Context, id uuid.UUID) (sqlc.Job, error) {
+func (r *Runner) Retry(ctx context.Context, id uuid.UUID, by *uuid.UUID) (sqlc.Job, error) {
 	j, err := r.Get(ctx, id)
 	if err != nil {
 		return j, err
@@ -220,7 +222,7 @@ func (r *Runner) Retry(ctx context.Context, id uuid.UUID) (sqlc.Job, error) {
 	if Active(j.State) {
 		return j, ErrActive
 	}
-	spec := Spec{Kind: j.Kind, Title: j.Title, Params: json.RawMessage(j.Params), Refs: j.Refs, RetryOf: &j.ID}
+	spec := Spec{Kind: j.Kind, Title: j.Title, Params: json.RawMessage(j.Params), Refs: j.Refs, RetryOf: &j.ID, CreatedBy: by}
 	if j.Target != nil {
 		spec.Target = json.RawMessage(j.Target)
 	}
@@ -318,8 +320,8 @@ func (r *Runner) Delete(ctx context.Context, id uuid.UUID) error {
 
 // Clear removes finished jobs, those touching ref when it's set. Watchers
 // are told to reload rather than sent one event per job.
-func (r *Runner) Clear(ctx context.Context, ref *uuid.UUID) (int64, error) {
-	n, err := r.q.DeleteFinishedJobs(ctx, sqlc.DeleteFinishedJobsParams{Ref: ref})
+func (r *Runner) Clear(ctx context.Context, ref, createdBy *uuid.UUID) (int64, error) {
+	n, err := r.q.DeleteFinishedJobs(ctx, sqlc.DeleteFinishedJobsParams{Ref: ref, CreatedBy: createdBy})
 	if err == nil && n > 0 {
 		r.mu.Lock()
 		r.broadcast(Event{Removed: uuid.Nil})

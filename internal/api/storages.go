@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/morcheh/backend/internal/auth"
 	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/secrets"
 	"github.com/morcheh/backend/internal/sshprobe"
@@ -28,6 +29,7 @@ type StorageCapabilities struct {
 
 type Storage struct {
 	ID          string `json:"id" format:"uuid"`
+	WorkspaceID string `json:"workspace_id" format:"uuid"`
 	Name        string `json:"name" example:"Backups"`
 	Protocol    string `json:"protocol" enum:"s3,ftp,sftp,webdav"`
 	Provider    string `json:"provider" doc:"Preset the settings came from (aws, minio, r2, nextcloud…)" example:"minio"`
@@ -74,6 +76,7 @@ func capabilities(s sqlc.Storage) StorageCapabilities {
 
 func toStorage(s sqlc.Storage) Storage {
 	return Storage{
+		WorkspaceID:        s.WorkspaceID.String(),
 		ID:                 s.ID.String(),
 		Name:               s.Name,
 		Protocol:           s.Protocol,
@@ -450,7 +453,10 @@ func registerStorages(api huma.API, h *storageHandler) {
 			Items []Storage `json:"items"`
 		}
 	}, error) {
-		rows, err := h.q.ListStorages(ctx)
+		sc := principalOf(ctx).scope()
+		rows, err := h.q.ListStorages(ctx, sqlc.ListStoragesParams{
+			SeeAll: sc.seeAll, WorkspaceIds: sc.workspaces, StorageIds: sc.storages, WorkspaceID: sc.current,
+		})
 		if err != nil {
 			return nil, internalError(err)
 		}
@@ -566,6 +572,9 @@ func registerStorages(api huma.API, h *storageHandler) {
 			return nil, err
 		}
 		if in.TrustNewHostKey {
+			if principalOf(ctx).Level < auth.Owner {
+				return nil, forbidden(auth.Owner)
+			}
 			s.HostKey = ""
 			if err := h.q.ResetStorageHostKey(ctx, s.ID); err != nil {
 				return nil, internalError(err)
@@ -585,6 +594,11 @@ func registerStorages(api huma.API, h *storageHandler) {
 }
 
 func (h *storageHandler) create(ctx context.Context, in *struct{ Body StorageBody }) (*StorageOutput, error) {
+	p := principalOf(ctx)
+	ws, err := h.servers.authz.createTarget(ctx, p)
+	if err != nil {
+		return nil, err
+	}
 	b := in.Body
 	if err := b.normalize(); err != nil {
 		return nil, err
@@ -593,8 +607,15 @@ func (h *storageHandler) create(ctx context.Context, in *struct{ Body StorageBod
 	if err != nil {
 		return nil, err
 	}
-	s, err := h.q.CreateStorage(ctx, sqlc.CreateStorageParams{
-		Name: strings.TrimSpace(b.Name), Protocol: b.Protocol, Provider: b.Provider,
+	tx, err := h.servers.db.Begin(ctx)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	defer tx.Rollback(ctx)
+	q := h.q.WithTx(tx)
+	s, err := q.CreateStorage(ctx, sqlc.CreateStorageParams{
+		WorkspaceID: ws,
+		Name:        strings.TrimSpace(b.Name), Protocol: b.Protocol, Provider: b.Provider,
 		Host: b.Host, Port: b.Port, Username: b.Username, AuthMethod: b.AuthMethod,
 		SecretEnc: sec.secret, PrivateKeyEnc: sec.privateKey, PassphraseEnc: sec.passphrase,
 		Bucket: b.Bucket, Region: b.Region, PathStyle: b.PathStyle, Tls: b.TLS,
@@ -605,6 +626,12 @@ func (h *storageHandler) create(ctx context.Context, in *struct{ Body StorageBod
 		return nil, fieldError("body.name", "A storage with this name already exists", b.Name)
 	}
 	if err != nil {
+		return nil, internalError(err)
+	}
+	if err := grantCreator(ctx, q, p, ws, nil, &s.ID); err != nil {
+		return nil, internalError(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, internalError(err)
 	}
 	return &StorageOutput{Body: toStorage(s)}, nil
@@ -661,14 +688,27 @@ func (h *storageHandler) testConnection(ctx context.Context, in *struct{ Body St
 		return nil, err
 	}
 	var prev *sqlc.Storage
+	acc := principalOf(ctx).Access
 	if id := parseOptionalID(in.Body.StorageID); id != nil {
 		s, err := h.q.GetStorage(ctx, *id)
 		if err != nil && !isNotFound(err) {
 			return nil, internalError(err)
 		}
 		if err == nil {
+			// Reusing stored secrets against an address of their choosing would
+			// hand them over, so only someone who could read them may.
+			switch acc.StorageLevel(s.WorkspaceID, s.ID) {
+			case auth.Owner:
+			case auth.None:
+				return nil, huma.Error404NotFound("storage not found")
+			default:
+				return nil, forbidden(auth.Owner)
+			}
 			prev = &s
 		}
+	}
+	if prev == nil && !acc.CanCreateAnywhere() {
+		return nil, huma.Error403Forbidden("You can't add storages.")
 	}
 	sec, err := h.resolveSecrets(c, prev)
 	if err != nil {

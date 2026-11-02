@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/morcheh/backend/internal/auth"
 	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/jobs"
 	"github.com/morcheh/backend/internal/sshpool"
@@ -99,6 +100,9 @@ func jobProblem(err error) error {
 
 // submit queues a job and answers with it.
 func submit(ctx context.Context, r *jobs.Runner, s jobs.Spec) (*JobOutput, error) {
+	if p := principalOf(ctx); p != nil {
+		s.CreatedBy = p.ID()
+	}
 	j, err := r.Submit(ctx, s)
 	if err != nil {
 		return nil, internalError(err)
@@ -110,7 +114,52 @@ type JobIDPath struct {
 	ID string `path:"id" format:"uuid"`
 }
 
-func registerJobs(api huma.API, r *jobs.Runner) {
+// ownsJob says whether they may see a job: who started it, and admins.
+func ownsJob(p *principal, j sqlc.Job) bool {
+	return p.Access.Admin || (j.CreatedBy != nil && *j.CreatedBy == p.User.ID)
+}
+
+// ownJob loads a job they may see. Someone else's looks like no job at all.
+func ownJob(ctx context.Context, r *jobs.Runner, raw string) (sqlc.Job, error) {
+	j, err := r.Get(ctx, uuid.MustParse(raw))
+	if err != nil {
+		return j, jobProblem(err)
+	}
+	if !ownsJob(principalOf(ctx), j) {
+		return j, huma.Error404NotFound("job not found")
+	}
+	return j, nil
+}
+
+// mayRetry checks they could still start this job today: retrying must not
+// outlive the access it was started with. A job touching nothing they can reach
+// stays with admins.
+func (a *authz) mayRetry(ctx context.Context, p *principal, j sqlc.Job) error {
+	if p.Access.Admin {
+		return nil
+	}
+	if len(j.Refs) == 0 {
+		return forbidden(auth.Owner)
+	}
+	for _, ref := range j.Refs {
+		level, err := a.serverLevel(ctx, p.Access, ref)
+		if err != nil {
+			return internalError(err)
+		}
+		if level == auth.None {
+			if level, err = a.storageLevel(ctx, p.Access, ref); err != nil {
+				return internalError(err)
+			}
+		}
+		if level < auth.Engineer {
+			return forbidden(auth.Engineer)
+		}
+	}
+	return nil
+}
+
+func registerJobs(api huma.API, a *authz) {
+	r := a.runner
 	tags := []string{"Jobs"}
 
 	huma.Register(api, huma.Operation{
@@ -131,6 +180,9 @@ func registerJobs(api huma.API, r *jobs.Runner) {
 		}
 	}, error) {
 		p := sqlc.ListJobsParams{Lim: in.Limit}
+		if who := principalOf(ctx); !who.Access.Admin {
+			p.CreatedBy = who.ID()
+		}
 		if in.Ref != "" {
 			id := uuid.MustParse(in.Ref)
 			p.Ref = &id
@@ -165,9 +217,9 @@ func registerJobs(api huma.API, r *jobs.Runner) {
 		Summary:     "Get a job with its log",
 		Tags:        tags,
 	}, func(ctx context.Context, in *JobIDPath) (*JobOutput, error) {
-		j, err := r.Get(ctx, uuid.MustParse(in.ID))
+		j, err := ownJob(ctx, r, in.ID)
 		if err != nil {
-			return nil, jobProblem(err)
+			return nil, err
 		}
 		return &JobOutput{toJob(j, true)}, nil
 	})
@@ -180,6 +232,9 @@ func registerJobs(api huma.API, r *jobs.Runner) {
 		Description: "A queued job is dropped at once; a running one stops as soon as it can (its state changes on the stream). 409 when it has already finished, or while progress.locked is true (a package manager running).",
 		Tags:        tags,
 	}, func(ctx context.Context, in *JobIDPath) (*JobOutput, error) {
+		if _, err := ownJob(ctx, r, in.ID); err != nil {
+			return nil, err
+		}
 		j, err := r.Cancel(ctx, uuid.MustParse(in.ID))
 		if err != nil {
 			return nil, jobProblem(err)
@@ -196,7 +251,15 @@ func registerJobs(api huma.API, r *jobs.Runner) {
 		Tags:          tags,
 		DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *JobIDPath) (*JobOutput, error) {
-		j, err := r.Retry(ctx, uuid.MustParse(in.ID))
+		old, err := ownJob(ctx, r, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		p := principalOf(ctx)
+		if err := a.mayRetry(ctx, p, old); err != nil {
+			return nil, err
+		}
+		j, err := r.Retry(ctx, old.ID, p.ID())
 		if err != nil {
 			return nil, jobProblem(err)
 		}
@@ -211,6 +274,9 @@ func registerJobs(api huma.API, r *jobs.Runner) {
 		Tags:          tags,
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *JobIDPath) (*struct{}, error) {
+		if _, err := ownJob(ctx, r, in.ID); err != nil {
+			return nil, err
+		}
 		return nil, jobProblem(r.Delete(ctx, uuid.MustParse(in.ID)))
 	})
 
@@ -232,7 +298,11 @@ func registerJobs(api huma.API, r *jobs.Runner) {
 			id := uuid.MustParse(in.Ref)
 			ref = &id
 		}
-		n, err := r.Clear(ctx, ref)
+		var by *uuid.UUID
+		if p := principalOf(ctx); !p.Access.Admin {
+			by = p.ID()
+		}
+		n, err := r.Clear(ctx, ref, by)
 		if err != nil {
 			return nil, internalError(err)
 		}
@@ -255,6 +325,7 @@ func registerJobs(api huma.API, r *jobs.Runner) {
 		Tags: tags,
 	}, map[string]any{"job": Job{}, "removed": JobRemoved{}},
 		func(ctx context.Context, _ *struct{}, send sse.Sender) {
+			p := principalOf(ctx)
 			ready, take, leave := r.Subscribe()
 			defer leave()
 			// Tell the client it's connected, so it loads the list.
@@ -271,6 +342,9 @@ func registerJobs(api huma.API, r *jobs.Runner) {
 				case <-ready:
 					for _, ev := range take() {
 						if ev.Job != nil {
+							if !ownsJob(p, *ev.Job) {
+								continue
+							}
 							err = send.Data(toJob(*ev.Job, false))
 						} else if ev.Removed == uuid.Nil {
 							err = send.Data(JobRemoved{})

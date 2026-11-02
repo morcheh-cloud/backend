@@ -9,7 +9,9 @@ WITH RECURSIVE subtree AS (
 )
 SELECT sqlc.embed(s), count(*) OVER ()::int AS total
 FROM servers s
-WHERE (sqlc.narg('folder_id')::uuid IS NULL OR s.folder_id IN (SELECT id FROM subtree))
+WHERE (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id = ANY (@server_ids::uuid[]))
+  AND (sqlc.narg('workspace_id')::uuid IS NULL OR s.workspace_id = sqlc.narg('workspace_id')::uuid)
+  AND (sqlc.narg('folder_id')::uuid IS NULL OR s.folder_id IN (SELECT id FROM subtree))
   AND (NOT @unfiled::bool OR s.folder_id IS NULL)
   AND (NOT @favorites_only::bool OR s.favorite)
   AND (sqlc.narg('q')::text IS NULL
@@ -46,10 +48,10 @@ SELECT * FROM servers WHERE id = ANY (@ids::uuid[]) ORDER BY lower(name);
 
 -- name: CreateServer :one
 INSERT INTO servers (
-    folder_id, name, host, port, username, auth_method,
+    workspace_id, folder_id, name, host, port, username, auth_method,
     password_enc, private_key_enc, passphrase_enc, description, tags, favorite
 ) VALUES (
-    sqlc.narg('folder_id'), @name, @host, @port, @username, @auth_method,
+    @workspace_id, sqlc.narg('folder_id'), @name, @host, @port, @username, @auth_method,
     sqlc.narg('password_enc'), sqlc.narg('private_key_enc'), sqlc.narg('passphrase_enc'),
     @description, @tags, @favorite
 )
@@ -129,25 +131,33 @@ DELETE FROM servers WHERE id = ANY (@ids::uuid[]);
 SELECT count(*)::int AS total,
        count(*) FILTER (WHERE favorite)::int AS favorites,
        count(*) FILTER (WHERE folder_id IS NULL)::int AS unfiled
-FROM servers;
+FROM servers s
+WHERE (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id = ANY (@server_ids::uuid[]))
+  AND (sqlc.narg('workspace_id')::uuid IS NULL OR s.workspace_id = sqlc.narg('workspace_id')::uuid);
 
 -- name: ServerOSFacets :many
 SELECT coalesce(nullif(os_id, ''), 'unknown')::text AS value,
        max(os_name)::text AS label,
        max(os_family)::text AS family,
        count(*)::int AS count
-FROM servers
+FROM servers s
+WHERE (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id = ANY (@server_ids::uuid[]))
+  AND (sqlc.narg('workspace_id')::uuid IS NULL OR s.workspace_id = sqlc.narg('workspace_id')::uuid)
 GROUP BY 1
 ORDER BY count(*) DESC, 1;
 
 -- name: ServerStatusFacets :many
 SELECT status AS value, count(*)::int AS count
-FROM servers
+FROM servers s
+WHERE (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id = ANY (@server_ids::uuid[]))
+  AND (sqlc.narg('workspace_id')::uuid IS NULL OR s.workspace_id = sqlc.narg('workspace_id')::uuid)
 GROUP BY status
 ORDER BY count(*) DESC;
 
 -- name: ServerTagFacets :many
 SELECT t::text AS value, count(*)::int AS count
-FROM servers, unnest(tags) AS t
+FROM servers s, unnest(s.tags) AS t
+WHERE (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id = ANY (@server_ids::uuid[]))
+  AND (sqlc.narg('workspace_id')::uuid IS NULL OR s.workspace_id = sqlc.narg('workspace_id')::uuid)
 GROUP BY t
 ORDER BY count(*) DESC, t;

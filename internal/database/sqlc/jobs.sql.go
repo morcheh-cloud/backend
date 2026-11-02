@@ -26,18 +26,19 @@ func (q *Queries) CancelQueuedJob(ctx context.Context, id uuid.UUID) (int64, err
 }
 
 const createJob = `-- name: CreateJob :one
-INSERT INTO jobs (kind, title, params, refs, target, retry_of)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, kind, title, params, refs, target, state, progress, result, error, log, retry_of, created_at, started_at, finished_at
+INSERT INTO jobs (kind, title, params, refs, target, retry_of, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, kind, title, params, refs, target, state, progress, result, error, log, retry_of, created_at, started_at, finished_at, created_by
 `
 
 type CreateJobParams struct {
-	Kind    string      `json:"kind"`
-	Title   string      `json:"title"`
-	Params  []byte      `json:"params"`
-	Refs    []uuid.UUID `json:"refs"`
-	Target  []byte      `json:"target"`
-	RetryOf *uuid.UUID  `json:"retry_of"`
+	Kind      string      `json:"kind"`
+	Title     string      `json:"title"`
+	Params    []byte      `json:"params"`
+	Refs      []uuid.UUID `json:"refs"`
+	Target    []byte      `json:"target"`
+	RetryOf   *uuid.UUID  `json:"retry_of"`
+	CreatedBy *uuid.UUID  `json:"created_by"`
 }
 
 func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, error) {
@@ -48,6 +49,7 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		arg.Refs,
 		arg.Target,
 		arg.RetryOf,
+		arg.CreatedBy,
 	)
 	var i Job
 	err := row.Scan(
@@ -66,6 +68,7 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		&i.CreatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
@@ -73,17 +76,19 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 const deleteFinishedJobs = `-- name: DeleteFinishedJobs :execrows
 DELETE FROM jobs
 WHERE state NOT IN ('queued', 'running')
-  AND ($1::uuid IS NULL OR $1::uuid = ANY(refs))
-  AND ($2::timestamptz IS NULL OR finished_at < $2::timestamptz)
+  AND ($1::uuid IS NULL OR created_by = $1::uuid)
+  AND ($2::uuid IS NULL OR $2::uuid = ANY(refs))
+  AND ($3::timestamptz IS NULL OR finished_at < $3::timestamptz)
 `
 
 type DeleteFinishedJobsParams struct {
-	Ref    *uuid.UUID `json:"ref"`
-	Before *time.Time `json:"before"`
+	CreatedBy *uuid.UUID `json:"created_by"`
+	Ref       *uuid.UUID `json:"ref"`
+	Before    *time.Time `json:"before"`
 }
 
 func (q *Queries) DeleteFinishedJobs(ctx context.Context, arg DeleteFinishedJobsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteFinishedJobs, arg.Ref, arg.Before)
+	result, err := q.db.Exec(ctx, deleteFinishedJobs, arg.CreatedBy, arg.Ref, arg.Before)
 	if err != nil {
 		return 0, err
 	}
@@ -135,7 +140,7 @@ func (q *Queries) FinishJob(ctx context.Context, arg FinishJobParams) error {
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, kind, title, params, refs, target, state, progress, result, error, log, retry_of, created_at, started_at, finished_at FROM jobs WHERE id = $1
+SELECT id, kind, title, params, refs, target, state, progress, result, error, log, retry_of, created_at, started_at, finished_at, created_by FROM jobs WHERE id = $1
 `
 
 func (q *Queries) GetJob(ctx context.Context, id uuid.UUID) (Job, error) {
@@ -157,6 +162,7 @@ func (q *Queries) GetJob(ctx context.Context, id uuid.UUID) (Job, error) {
 		&i.CreatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
@@ -176,27 +182,54 @@ func (q *Queries) InterruptRunningJobs(ctx context.Context) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+const listActiveJobsBy = `-- name: ListActiveJobsBy :many
+SELECT id FROM jobs WHERE created_by = $1 AND state IN ('queued', 'running')
+`
+
+func (q *Queries) ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveJobsBy, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listJobs = `-- name: ListJobs :many
-SELECT id, kind, title, params, refs, target, state, progress, result, error, log, retry_of, created_at, started_at, finished_at FROM jobs
-WHERE ($1::uuid IS NULL OR $1::uuid = ANY(refs))
-  AND ($2::text IS NULL OR kind = $2::text)
-  AND ($3::boolean IS NULL
-       OR (state IN ('queued', 'running')) = $3::boolean)
+SELECT id, kind, title, params, refs, target, state, progress, result, error, log, retry_of, created_at, started_at, finished_at, created_by FROM jobs
+WHERE ($1::uuid IS NULL OR created_by = $1::uuid)
+  AND ($2::uuid IS NULL OR $2::uuid = ANY(refs))
+  AND ($3::text IS NULL OR kind = $3::text)
+  AND ($4::boolean IS NULL
+       OR (state IN ('queued', 'running')) = $4::boolean)
 ORDER BY created_at DESC, id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListJobsParams struct {
-	Ref    *uuid.UUID `json:"ref"`
-	Kind   *string    `json:"kind"`
-	Active *bool      `json:"active"`
-	Lim    int32      `json:"lim"`
+	CreatedBy *uuid.UUID `json:"created_by"`
+	Ref       *uuid.UUID `json:"ref"`
+	Kind      *string    `json:"kind"`
+	Active    *bool      `json:"active"`
+	Lim       int32      `json:"lim"`
 }
 
 // Newest first. ref narrows to one server or storage; active to queued and
-// running jobs, finished to the rest.
+// running jobs, finished to the rest; created_by to one person's.
 func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error) {
 	rows, err := q.db.Query(ctx, listJobs,
+		arg.CreatedBy,
 		arg.Ref,
 		arg.Kind,
 		arg.Active,
@@ -225,6 +258,7 @@ func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, erro
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.CreatedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -237,7 +271,7 @@ func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, erro
 }
 
 const listQueuedJobs = `-- name: ListQueuedJobs :many
-SELECT id, kind, title, params, refs, target, state, progress, result, error, log, retry_of, created_at, started_at, finished_at FROM jobs WHERE state = 'queued' ORDER BY created_at, id
+SELECT id, kind, title, params, refs, target, state, progress, result, error, log, retry_of, created_at, started_at, finished_at, created_by FROM jobs WHERE state = 'queued' ORDER BY created_at, id
 `
 
 func (q *Queries) ListQueuedJobs(ctx context.Context) ([]Job, error) {
@@ -265,6 +299,7 @@ func (q *Queries) ListQueuedJobs(ctx context.Context) ([]Job, error) {
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.CreatedBy,
 		); err != nil {
 			return nil, err
 		}

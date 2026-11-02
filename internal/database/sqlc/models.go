@@ -10,12 +10,37 @@ import (
 	"github.com/google/uuid"
 )
 
+type AccessGrant struct {
+	ID          uuid.UUID  `json:"id"`
+	UserID      *uuid.UUID `json:"user_id"`
+	GroupID     *uuid.UUID `json:"group_id"`
+	WorkspaceID *uuid.UUID `json:"workspace_id"`
+	ServerID    *uuid.UUID `json:"server_id"`
+	StorageID   *uuid.UUID `json:"storage_id"`
+	Level       string     `json:"level"`
+	CanCreate   bool       `json:"can_create"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type AppSetting struct {
+	ID               bool      `json:"id"`
+	RegistrationOpen bool      `json:"registration_open"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
 type Folder struct {
-	ID        uuid.UUID  `json:"id"`
-	ParentID  *uuid.UUID `json:"parent_id"`
-	Name      string     `json:"name"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	ID          uuid.UUID  `json:"id"`
+	ParentID    *uuid.UUID `json:"parent_id"`
+	Name        string     `json:"name"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+}
+
+type GroupMember struct {
+	GroupID uuid.UUID `json:"group_id"`
+	UserID  uuid.UUID `json:"user_id"`
 }
 
 type Job struct {
@@ -34,6 +59,7 @@ type Job struct {
 	CreatedAt  time.Time   `json:"created_at"`
 	StartedAt  *time.Time  `json:"started_at"`
 	FinishedAt *time.Time  `json:"finished_at"`
+	CreatedBy  *uuid.UUID  `json:"created_by"`
 }
 
 type Server struct {
@@ -65,6 +91,19 @@ type Server struct {
 	LastSeenAt    *time.Time `json:"last_seen_at"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+}
+
+type Session struct {
+	ID         uuid.UUID `json:"id"`
+	UserID     uuid.UUID `json:"user_id"`
+	TokenHash  []byte    `json:"token_hash"`
+	Remember   bool      `json:"remember"`
+	UserAgent  string    `json:"user_agent"`
+	Ip         string    `json:"ip"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type Storage struct {
@@ -96,4 +135,36 @@ type Storage struct {
 	LastCheckedAt *time.Time `json:"last_checked_at"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+}
+
+type User struct {
+	ID                 uuid.UUID  `json:"id"`
+	Username           string     `json:"username"`
+	Email              string     `json:"email"`
+	FirstName          string     `json:"first_name"`
+	FullName           string     `json:"full_name"`
+	PasswordHash       string     `json:"password_hash"`
+	Role               string     `json:"role"`
+	Status             string     `json:"status"`
+	MustChangePassword bool       `json:"must_change_password"`
+	LastLoginAt        *time.Time `json:"last_login_at"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+type UserGroup struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type Workspace struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }

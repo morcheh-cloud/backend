@@ -23,14 +23,14 @@ import (
 const (
 	// Output kept for replay when a client attaches.
 	scrollback = 512 << 10
-	// Per-server limit, so a stuck client can't open shells forever.
+	// Limit per person on a server, so a stuck client can't open shells forever.
 	MaxPerServer = 10
 	// Events queued for one client before it counts as too slow.
 	subBuffer = 512
 )
 
 var (
-	ErrTooMany = fmt.Errorf("a server can have at most %d open terminals", MaxPerServer)
+	ErrTooMany = fmt.Errorf("you can have at most %d open terminals on a server", MaxPerServer)
 	ErrNoPTY   = errors.New("the server refused a terminal (PTY)")
 )
 
@@ -54,7 +54,9 @@ type Sub struct {
 type Session struct {
 	ID       string
 	ServerID string
-	Created  time.Time
+	// Owner is the user who opened it; nobody else can see or attach to it.
+	Owner   string
+	Created time.Time
 
 	m     *Manager
 	conn  *sshpool.Conn
@@ -99,6 +101,8 @@ type Options struct {
 	Cols, Rows int
 	// Cwd, if set, is where the shell starts.
 	Cwd string
+	// Owner is the user opening it.
+	Owner string
 }
 
 // Start opens a shell over conn. The session holds the connection (Acquire)
@@ -109,7 +113,7 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 	m.mu.Lock()
 	used := map[int]bool{}
 	for _, s := range m.sessions {
-		if s.ServerID == serverID {
+		if s.ServerID == serverID && s.Owner == o.Owner {
 			used[s.number] = true
 		}
 	}
@@ -150,7 +154,7 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 	}
 
 	s := &Session{
-		ID: uuid.NewString(), ServerID: serverID, Created: time.Now(),
+		ID: uuid.NewString(), ServerID: serverID, Owner: o.Owner, Created: time.Now(),
 		m: m, conn: conn, ssh: sess, stdin: stdin,
 		cols: o.Cols, rows: o.Rows, subs: map[*Sub]struct{}{}, detached: time.Now(),
 	}
@@ -318,22 +322,42 @@ func (s *Session) info() Info {
 	return Info{ID: s.ID, Title: s.title, Created: s.Created, Cols: s.cols, Rows: s.rows, Clients: len(s.subs)}
 }
 
-// Get finds a running session of the server.
-func (m *Manager) Get(serverID, id string) *Session {
+// Get finds a running session of the server opened by owner.
+func (m *Manager) Get(serverID, owner, id string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if s := m.sessions[id]; s != nil && s.ServerID == serverID {
+	if s := m.sessions[id]; s != nil && s.ServerID == serverID && s.Owner == owner {
 		return s
 	}
 	return nil
 }
 
-// List returns the server's running sessions, oldest first.
-func (m *Manager) List(serverID string) []Info {
+// All returns every running session.
+func (m *Manager) All() []*Session {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	all := make([]*Session, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		all = append(all, s)
+	}
+	return all
+}
+
+// KillOwner ends every session someone opened, e.g. when they are blocked.
+func (m *Manager) KillOwner(owner string) {
+	for _, s := range m.All() {
+		if s.Owner == owner {
+			s.Kill()
+		}
+	}
+}
+
+// List returns the sessions owner has on the server, oldest first.
+func (m *Manager) List(serverID, owner string) []Info {
 	m.mu.Lock()
 	var sessions []*Session
 	for _, s := range m.sessions {
-		if s.ServerID == serverID {
+		if s.ServerID == serverID && s.Owner == owner {
 			sessions = append(sessions, s)
 		}
 	}

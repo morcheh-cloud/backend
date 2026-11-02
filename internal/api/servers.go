@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/morcheh/backend/internal/auth"
 	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/jobs"
 	"github.com/morcheh/backend/internal/secrets"
@@ -35,13 +36,14 @@ type ServerOS struct {
 }
 
 type Server struct {
-	ID         string  `json:"id" format:"uuid"`
-	FolderID   *string `json:"folder_id" format:"uuid" nullable:"true"`
-	Name       string  `json:"name" example:"web-01"`
-	Host       string  `json:"host" doc:"IP address or DNS name" example:"10.0.0.12"`
-	Port       int32   `json:"port" example:"22"`
-	Username   string  `json:"username" example:"root"`
-	AuthMethod string  `json:"auth_method" enum:"password,private_key"`
+	ID          string  `json:"id" format:"uuid"`
+	WorkspaceID string  `json:"workspace_id" format:"uuid"`
+	FolderID    *string `json:"folder_id" format:"uuid" nullable:"true"`
+	Name        string  `json:"name" example:"web-01"`
+	Host        string  `json:"host" doc:"IP address or DNS name" example:"10.0.0.12"`
+	Port        int32   `json:"port" example:"22"`
+	Username    string  `json:"username" example:"root"`
+	AuthMethod  string  `json:"auth_method" enum:"password,private_key"`
 	// Secrets are write-only; these flags say which ones are stored.
 	HasPassword        bool       `json:"has_password"`
 	HasPrivateKey      bool       `json:"has_private_key"`
@@ -68,6 +70,7 @@ func toServer(s sqlc.Server) Server {
 	}
 	return Server{
 		ID:                 s.ID.String(),
+		WorkspaceID:        s.WorkspaceID.String(),
 		FolderID:           optionalIDString(s.FolderID),
 		Name:               s.Name,
 		Host:               s.Host,
@@ -269,6 +272,7 @@ type serverHandler struct {
 	stats *statsHub
 	privs privileges
 	jobs  *jobs.Runner
+	authz *authz
 }
 
 // forget closes everything still connected to deleted servers.
@@ -409,6 +413,10 @@ func registerServers(api huma.API, h *serverHandler) {
 			return nil, err
 		}
 		if in.TrustNewHostKey {
+			// Vouching for a machine's identity decides where its credentials go.
+			if principalOf(ctx).Level < auth.Owner {
+				return nil, forbidden(auth.Owner)
+			}
 			s.HostKey = ""
 			if err := h.q.ResetServerHostKey(ctx, s.ID); err != nil {
 				return nil, internalError(err)
@@ -442,11 +450,27 @@ func registerServers(api huma.API, h *serverHandler) {
 			FolderID *string `json:"folder_id,omitempty" format:"uuid" nullable:"true" doc:"Target folder; leave out or null to take them out of every folder"`
 		}
 	}) (*AffectedOutput, error) {
-		folder := parseOptionalID(in.Body.FolderID)
-		if err := checkParent(ctx, h.q, folder); err != nil {
+		ids := parseIDs(in.Body.IDs)
+		where, err := h.authz.requireServers(ctx, ids, auth.Owner)
+		if err != nil {
 			return nil, err
 		}
-		n, err := h.q.MoveServers(ctx, sqlc.MoveServersParams{Ids: parseIDs(in.Body.IDs), FolderID: folder})
+		folder := parseOptionalID(in.Body.FolderID)
+		if folder != nil {
+			f, err := h.q.GetFolder(ctx, *folder)
+			if isNotFound(err) {
+				return nil, fieldError("body.folder_id", "Folder not found", folder.String())
+			}
+			if err != nil {
+				return nil, internalError(err)
+			}
+			for _, ws := range where {
+				if ws != f.WorkspaceID {
+					return nil, fieldError("body.folder_id", "That folder is in a different workspace", folder.String())
+				}
+			}
+		}
+		n, err := h.q.MoveServers(ctx, sqlc.MoveServersParams{Ids: ids, FolderID: folder})
 		if err != nil {
 			return nil, internalError(err)
 		}
@@ -475,6 +499,9 @@ func registerServers(api huma.API, h *serverHandler) {
 			return nil, err
 		}
 		ids := parseIDs(in.Body.IDs)
+		if _, err := h.authz.requireServers(ctx, ids, auth.Owner); err != nil {
+			return nil, err
+		}
 		var n int64
 		if len(add) > 0 {
 			if n, err = h.q.AddServerTags(ctx, sqlc.AddServerTagsParams{Ids: ids, Tags: add}); err != nil {
@@ -497,6 +524,9 @@ func registerServers(api huma.API, h *serverHandler) {
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct{ Body IDsBody }) (*AffectedOutput, error) {
 		ids := parseIDs(in.Body.IDs)
+		if _, err := h.authz.requireServers(ctx, ids, auth.Owner); err != nil {
+			return nil, err
+		}
 		n, err := h.q.DeleteServers(ctx, ids)
 		if err != nil {
 			return nil, internalError(err)
@@ -526,7 +556,12 @@ func (h *serverHandler) get(ctx context.Context, rawID string) (sqlc.Server, err
 }
 
 func (h *serverHandler) list(ctx context.Context, in *ListServersInput) (*ServerListOutput, error) {
+	sc := principalOf(ctx).scope()
 	params := sqlc.ListServersParams{
+		SeeAll:        sc.seeAll,
+		WorkspaceIds:  sc.workspaces,
+		ServerIds:     sc.servers,
+		WorkspaceID:   sc.current,
 		FavoritesOnly: in.Favorites,
 		OsIds:         nonNil(in.OS),
 		Statuses:      nonNil(in.Status),
@@ -575,19 +610,28 @@ func nonNil(s []string) []string {
 }
 
 func (h *serverHandler) facets(ctx context.Context, _ *struct{}) (*FacetsOutput, error) {
-	counts, err := h.q.CountServers(ctx)
+	sc := principalOf(ctx).scope()
+	counts, err := h.q.CountServers(ctx, sqlc.CountServersParams{
+		SeeAll: sc.seeAll, WorkspaceIds: sc.workspaces, ServerIds: sc.servers, WorkspaceID: sc.current,
+	})
 	if err != nil {
 		return nil, internalError(err)
 	}
-	osRows, err := h.q.ServerOSFacets(ctx)
+	osRows, err := h.q.ServerOSFacets(ctx, sqlc.ServerOSFacetsParams{
+		SeeAll: sc.seeAll, WorkspaceIds: sc.workspaces, ServerIds: sc.servers, WorkspaceID: sc.current,
+	})
 	if err != nil {
 		return nil, internalError(err)
 	}
-	statusRows, err := h.q.ServerStatusFacets(ctx)
+	statusRows, err := h.q.ServerStatusFacets(ctx, sqlc.ServerStatusFacetsParams{
+		SeeAll: sc.seeAll, WorkspaceIds: sc.workspaces, ServerIds: sc.servers, WorkspaceID: sc.current,
+	})
 	if err != nil {
 		return nil, internalError(err)
 	}
-	tagRows, err := h.q.ServerTagFacets(ctx)
+	tagRows, err := h.q.ServerTagFacets(ctx, sqlc.ServerTagFacetsParams{
+		SeeAll: sc.seeAll, WorkspaceIds: sc.workspaces, ServerIds: sc.servers, WorkspaceID: sc.current,
+	})
 	if err != nil {
 		return nil, internalError(err)
 	}
@@ -660,6 +704,11 @@ func (h *serverHandler) resolveSecrets(c Connection, prev *sqlc.Server) (sealed,
 }
 
 func (h *serverHandler) create(ctx context.Context, in *struct{ Body ServerBody }) (*ServerOutput, error) {
+	p := principalOf(ctx)
+	ws, err := h.authz.createTarget(ctx, p)
+	if err != nil {
+		return nil, err
+	}
 	b := in.Body
 	if err := b.normalize(); err != nil {
 		return nil, err
@@ -669,14 +718,15 @@ func (h *serverHandler) create(ctx context.Context, in *struct{ Body ServerBody 
 		return nil, err
 	}
 	folder := parseOptionalID(b.FolderID)
-	if err := checkFolder(ctx, h.q, folder); err != nil {
+	if err := checkFolder(ctx, h.q, folder, ws); err != nil {
 		return nil, err
 	}
 	sec, err := h.resolveSecrets(b.Connection, nil)
 	if err != nil {
 		return nil, err
 	}
-	s, err := h.q.CreateServer(ctx, sqlc.CreateServerParams{
+	s, err := h.insert(ctx, p, sqlc.CreateServerParams{
+		WorkspaceID:   ws,
 		FolderID:      folder,
 		Name:          strings.TrimSpace(b.Name),
 		Host:          b.Host,
@@ -699,6 +749,24 @@ func (h *serverHandler) create(ctx context.Context, in *struct{ Body ServerBody 
 	return &ServerOutput{Body: toServer(s)}, nil
 }
 
+// insert saves a new server and makes its creator able to manage it.
+func (h *serverHandler) insert(ctx context.Context, p *principal, params sqlc.CreateServerParams) (sqlc.Server, error) {
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		return sqlc.Server{}, err
+	}
+	defer tx.Rollback(ctx)
+	q := h.q.WithTx(tx)
+	s, err := q.CreateServer(ctx, params)
+	if err != nil {
+		return s, err
+	}
+	if err := grantCreator(ctx, q, p, s.WorkspaceID, &s.ID, nil); err != nil {
+		return s, err
+	}
+	return s, tx.Commit(ctx)
+}
+
 func (h *serverHandler) update(ctx context.Context, in *struct {
 	ServerIDPath
 	Body ServerBody
@@ -716,7 +784,7 @@ func (h *serverHandler) update(ctx context.Context, in *struct {
 		return nil, err
 	}
 	folder := parseOptionalID(b.FolderID)
-	if err := checkFolder(ctx, h.q, folder); err != nil {
+	if err := checkFolder(ctx, h.q, folder, prev.WorkspaceID); err != nil {
 		return nil, err
 	}
 	sec, err := h.resolveSecrets(b.Connection, &prev)
@@ -762,8 +830,8 @@ func (h *serverHandler) update(ctx context.Context, in *struct {
 	return &ServerOutput{Body: toServer(s)}, nil
 }
 
-func checkFolder(ctx context.Context, q *sqlc.Queries, folder *uuid.UUID) error {
-	if err := checkParent(ctx, q, folder); err != nil {
+func checkFolder(ctx context.Context, q *sqlc.Queries, folder *uuid.UUID, ws uuid.UUID) error {
+	if err := checkParent(ctx, q, folder, ws); err != nil {
 		if se, ok := err.(huma.StatusError); ok && se.GetStatus() == http.StatusUnprocessableEntity {
 			return fieldError("body.folder_id", "Folder not found", folder.String())
 		}
@@ -777,7 +845,12 @@ func (h *serverHandler) duplicate(ctx context.Context, in *ServerIDPath) (*Serve
 	if err != nil {
 		return nil, err
 	}
+	p := principalOf(ctx)
+	if !p.Access.CanCreateIn(src.WorkspaceID) {
+		return nil, huma.Error403Forbidden("You can't add servers to this workspace.")
+	}
 	params := sqlc.CreateServerParams{
+		WorkspaceID:   src.WorkspaceID,
 		FolderID:      src.FolderID,
 		Host:          src.Host,
 		Port:          src.Port,
@@ -799,7 +872,7 @@ func (h *serverHandler) duplicate(ctx context.Context, in *ServerIDPath) (*Serve
 			base = base[:64-len(suffix)]
 		}
 		params.Name = base + suffix
-		s, err := h.q.CreateServer(ctx, params)
+		s, err := h.insert(ctx, p, params)
 		if isUniqueViolation(err) {
 			continue
 		}
@@ -871,7 +944,11 @@ func (h *serverHandler) check(ctx context.Context, s sqlc.Server) (sqlc.Server, 
 const checkConcurrency = 8
 
 func (h *serverHandler) bulkCheck(ctx context.Context, in *struct{ Body IDsBody }) (*ServerItemsOutput, error) {
-	servers, err := h.q.GetServers(ctx, parseIDs(in.Body.IDs))
+	ids := parseIDs(in.Body.IDs)
+	if _, err := h.authz.requireServers(ctx, ids, auth.Operator); err != nil {
+		return nil, err
+	}
+	servers, err := h.q.GetServers(ctx, ids)
 	if err != nil {
 		return nil, internalError(err)
 	}
@@ -905,16 +982,29 @@ func (h *serverHandler) testConnection(ctx context.Context, in *struct{ Body Con
 	t := sshprobe.Target{Host: c.Host, Port: int(c.Port), User: c.Username}
 
 	var prev *sqlc.Server
+	acc := principalOf(ctx).Access
 	if in.Body.ServerID != nil && *in.Body.ServerID != "" {
 		s, err := h.get(ctx, *in.Body.ServerID)
 		if err != nil {
 			return nil, err
+		}
+		// Reusing stored secrets against an address of their choosing would hand
+		// them over, so only someone who could read them may.
+		switch acc.ServerLevel(s.WorkspaceID, s.ID) {
+		case auth.Owner:
+		case auth.None:
+			return nil, huma.Error404NotFound("server not found")
+		default:
+			return nil, forbidden(auth.Owner)
 		}
 		prev = &s
 		// The stored host key only vouches for the stored address.
 		if s.Host == c.Host && s.Port == c.Port {
 			t.KnownHostKey = s.HostKey
 		}
+	} else if !acc.CanCreateAnywhere() {
+		// The panel connects out for them, so this stays with those who may add.
+		return nil, huma.Error403Forbidden("You can't add servers.")
 	}
 
 	switch c.AuthMethod {

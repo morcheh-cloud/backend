@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
 
+	"github.com/morcheh/backend/internal/auth"
 	"github.com/morcheh/backend/internal/services"
 	"github.com/morcheh/backend/internal/sshpool"
 )
@@ -206,6 +207,11 @@ func registerServices(api huma.API, h *serverHandler) {
 		ServicePath
 		Body ServiceActionBody
 	}) (*serviceOutput, error) {
+		// Operators keep services running; changing how they run is for Engineers.
+		routine := slices.Contains([]string{"start", "stop", "restart", "reload"}, in.Body.Action)
+		if (!routine || in.Body.Force) && principalOf(ctx).Level < auth.Engineer {
+			return nil, forbidden(auth.Engineer)
+		}
 		out := &serviceOutput{}
 		err := h.withService(ctx, &in.ServicePath, true, func(sh *rootShell, init, unit string) error {
 			b := in.Body

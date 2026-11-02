@@ -35,8 +35,17 @@ const countServers = `-- name: CountServers :one
 SELECT count(*)::int AS total,
        count(*) FILTER (WHERE favorite)::int AS favorites,
        count(*) FILTER (WHERE folder_id IS NULL)::int AS unfiled
-FROM servers
+FROM servers s
+WHERE ($1::bool OR s.workspace_id = ANY ($2::uuid[]) OR s.id = ANY ($3::uuid[]))
+  AND ($4::uuid IS NULL OR s.workspace_id = $4::uuid)
 `
+
+type CountServersParams struct {
+	SeeAll       bool        `json:"see_all"`
+	WorkspaceIds []uuid.UUID `json:"workspace_ids"`
+	ServerIds    []uuid.UUID `json:"server_ids"`
+	WorkspaceID  *uuid.UUID  `json:"workspace_id"`
+}
 
 type CountServersRow struct {
 	Total     int32 `json:"total"`
@@ -44,8 +53,13 @@ type CountServersRow struct {
 	Unfiled   int32 `json:"unfiled"`
 }
 
-func (q *Queries) CountServers(ctx context.Context) (CountServersRow, error) {
-	row := q.db.QueryRow(ctx, countServers)
+func (q *Queries) CountServers(ctx context.Context, arg CountServersParams) (CountServersRow, error) {
+	row := q.db.QueryRow(ctx, countServers,
+		arg.SeeAll,
+		arg.WorkspaceIds,
+		arg.ServerIds,
+		arg.WorkspaceID,
+	)
 	var i CountServersRow
 	err := row.Scan(&i.Total, &i.Favorites, &i.Unfiled)
 	return i, err
@@ -53,17 +67,18 @@ func (q *Queries) CountServers(ctx context.Context) (CountServersRow, error) {
 
 const createServer = `-- name: CreateServer :one
 INSERT INTO servers (
-    folder_id, name, host, port, username, auth_method,
+    workspace_id, folder_id, name, host, port, username, auth_method,
     password_enc, private_key_enc, passphrase_enc, description, tags, favorite
 ) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9,
-    $10, $11, $12
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10,
+    $11, $12, $13
 )
-RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id
 `
 
 type CreateServerParams struct {
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
 	FolderID      *uuid.UUID `json:"folder_id"`
 	Name          string     `json:"name"`
 	Host          string     `json:"host"`
@@ -80,6 +95,7 @@ type CreateServerParams struct {
 
 func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Server, error) {
 	row := q.db.QueryRow(ctx, createServer,
+		arg.WorkspaceID,
 		arg.FolderID,
 		arg.Name,
 		arg.Host,
@@ -123,6 +139,7 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkspaceID,
 	)
 	return i, err
 }
@@ -140,7 +157,7 @@ func (q *Queries) DeleteServers(ctx context.Context, ids []uuid.UUID) (int64, er
 }
 
 const getServer = `-- name: GetServer :one
-SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at FROM servers WHERE id = $1
+SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id FROM servers WHERE id = $1
 `
 
 func (q *Queries) GetServer(ctx context.Context, id uuid.UUID) (Server, error) {
@@ -175,12 +192,13 @@ func (q *Queries) GetServer(ctx context.Context, id uuid.UUID) (Server, error) {
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkspaceID,
 	)
 	return i, err
 }
 
 const getServers = `-- name: GetServers :many
-SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at FROM servers WHERE id = ANY ($1::uuid[]) ORDER BY lower(name)
+SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id FROM servers WHERE id = ANY ($1::uuid[]) ORDER BY lower(name)
 `
 
 func (q *Queries) GetServers(ctx context.Context, ids []uuid.UUID) ([]Server, error) {
@@ -221,6 +239,7 @@ func (q *Queries) GetServers(ctx context.Context, ids []uuid.UUID) ([]Server, er
 			&i.LastSeenAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}
@@ -234,55 +253,61 @@ func (q *Queries) GetServers(ctx context.Context, ids []uuid.UUID) ([]Server, er
 
 const listServers = `-- name: ListServers :many
 WITH RECURSIVE subtree AS (
-    SELECT id FROM folders WHERE folders.id = $1::uuid
+    SELECT id FROM folders WHERE folders.id = $5::uuid
     UNION ALL
     SELECT f.id FROM folders f JOIN subtree t ON f.parent_id = t.id
 )
-SELECT s.id, s.folder_id, s.name, s.host, s.port, s.username, s.auth_method, s.password_enc, s.private_key_enc, s.passphrase_enc, s.host_key, s.description, s.tags, s.favorite, s.status, s.status_message, s.latency_ms, s.os_family, s.os_id, s.os_name, s.os_version, s.kernel, s.arch, s.hostname, s.last_checked_at, s.last_seen_at, s.created_at, s.updated_at, count(*) OVER ()::int AS total
+SELECT s.id, s.folder_id, s.name, s.host, s.port, s.username, s.auth_method, s.password_enc, s.private_key_enc, s.passphrase_enc, s.host_key, s.description, s.tags, s.favorite, s.status, s.status_message, s.latency_ms, s.os_family, s.os_id, s.os_name, s.os_version, s.kernel, s.arch, s.hostname, s.last_checked_at, s.last_seen_at, s.created_at, s.updated_at, s.workspace_id, count(*) OVER ()::int AS total
 FROM servers s
-WHERE ($1::uuid IS NULL OR s.folder_id IN (SELECT id FROM subtree))
-  AND (NOT $2::bool OR s.folder_id IS NULL)
-  AND (NOT $3::bool OR s.favorite)
-  AND ($4::text IS NULL
-       OR s.name ILIKE '%' || $4::text || '%'
-       OR s.host ILIKE '%' || $4::text || '%'
-       OR s.hostname ILIKE '%' || $4::text || '%'
-       OR s.description ILIKE '%' || $4::text || '%'
-       OR $4::text = ANY (s.tags))
-  AND (cardinality($5::text[]) = 0 OR coalesce(nullif(s.os_id, ''), 'unknown') = ANY ($5::text[]))
-  AND (cardinality($6::text[]) = 0 OR s.status = ANY ($6::text[]))
-  AND (cardinality($7::text[]) = 0 OR s.tags && $7::text[])
-  AND (cardinality($8::text[]) = 0 OR s.auth_method = ANY ($8::text[]))
+WHERE ($1::bool OR s.workspace_id = ANY ($2::uuid[]) OR s.id = ANY ($3::uuid[]))
+  AND ($4::uuid IS NULL OR s.workspace_id = $4::uuid)
+  AND ($5::uuid IS NULL OR s.folder_id IN (SELECT id FROM subtree))
+  AND (NOT $6::bool OR s.folder_id IS NULL)
+  AND (NOT $7::bool OR s.favorite)
+  AND ($8::text IS NULL
+       OR s.name ILIKE '%' || $8::text || '%'
+       OR s.host ILIKE '%' || $8::text || '%'
+       OR s.hostname ILIKE '%' || $8::text || '%'
+       OR s.description ILIKE '%' || $8::text || '%'
+       OR $8::text = ANY (s.tags))
+  AND (cardinality($9::text[]) = 0 OR coalesce(nullif(s.os_id, ''), 'unknown') = ANY ($9::text[]))
+  AND (cardinality($10::text[]) = 0 OR s.status = ANY ($10::text[]))
+  AND (cardinality($11::text[]) = 0 OR s.tags && $11::text[])
+  AND (cardinality($12::text[]) = 0 OR s.auth_method = ANY ($12::text[]))
 ORDER BY
-    CASE WHEN $9::text = 'name' AND NOT $10::bool THEN lower(s.name) END,
-    CASE WHEN $9::text = 'name' AND $10::bool THEN lower(s.name) END DESC,
-    CASE WHEN $9::text = 'host' AND NOT $10::bool THEN s.host END,
-    CASE WHEN $9::text = 'host' AND $10::bool THEN s.host END DESC,
-    CASE WHEN $9::text = 'os' AND NOT $10::bool THEN nullif(s.os_name || ' ' || s.os_version, ' ') END NULLS LAST,
-    CASE WHEN $9::text = 'os' AND $10::bool THEN nullif(s.os_name || ' ' || s.os_version, ' ') END DESC NULLS LAST,
-    CASE WHEN $9::text = 'status' AND NOT $10::bool THEN s.status END,
-    CASE WHEN $9::text = 'status' AND $10::bool THEN s.status END DESC,
-    CASE WHEN $9::text = 'last_checked' AND NOT $10::bool THEN s.last_checked_at END NULLS LAST,
-    CASE WHEN $9::text = 'last_checked' AND $10::bool THEN s.last_checked_at END DESC NULLS LAST,
-    CASE WHEN $9::text = 'created' AND NOT $10::bool THEN s.created_at END,
-    CASE WHEN $9::text = 'created' AND $10::bool THEN s.created_at END DESC,
+    CASE WHEN $13::text = 'name' AND NOT $14::bool THEN lower(s.name) END,
+    CASE WHEN $13::text = 'name' AND $14::bool THEN lower(s.name) END DESC,
+    CASE WHEN $13::text = 'host' AND NOT $14::bool THEN s.host END,
+    CASE WHEN $13::text = 'host' AND $14::bool THEN s.host END DESC,
+    CASE WHEN $13::text = 'os' AND NOT $14::bool THEN nullif(s.os_name || ' ' || s.os_version, ' ') END NULLS LAST,
+    CASE WHEN $13::text = 'os' AND $14::bool THEN nullif(s.os_name || ' ' || s.os_version, ' ') END DESC NULLS LAST,
+    CASE WHEN $13::text = 'status' AND NOT $14::bool THEN s.status END,
+    CASE WHEN $13::text = 'status' AND $14::bool THEN s.status END DESC,
+    CASE WHEN $13::text = 'last_checked' AND NOT $14::bool THEN s.last_checked_at END NULLS LAST,
+    CASE WHEN $13::text = 'last_checked' AND $14::bool THEN s.last_checked_at END DESC NULLS LAST,
+    CASE WHEN $13::text = 'created' AND NOT $14::bool THEN s.created_at END,
+    CASE WHEN $13::text = 'created' AND $14::bool THEN s.created_at END DESC,
     lower(s.name), s.id
-LIMIT $12 OFFSET $11
+LIMIT $16 OFFSET $15
 `
 
 type ListServersParams struct {
-	FolderID      *uuid.UUID `json:"folder_id"`
-	Unfiled       bool       `json:"unfiled"`
-	FavoritesOnly bool       `json:"favorites_only"`
-	Q             *string    `json:"q"`
-	OsIds         []string   `json:"os_ids"`
-	Statuses      []string   `json:"statuses"`
-	Tags          []string   `json:"tags"`
-	AuthMethods   []string   `json:"auth_methods"`
-	Sort          string     `json:"sort"`
-	Descending    bool       `json:"descending"`
-	Off           int32      `json:"off"`
-	Lim           int32      `json:"lim"`
+	SeeAll        bool        `json:"see_all"`
+	WorkspaceIds  []uuid.UUID `json:"workspace_ids"`
+	ServerIds     []uuid.UUID `json:"server_ids"`
+	WorkspaceID   *uuid.UUID  `json:"workspace_id"`
+	FolderID      *uuid.UUID  `json:"folder_id"`
+	Unfiled       bool        `json:"unfiled"`
+	FavoritesOnly bool        `json:"favorites_only"`
+	Q             *string     `json:"q"`
+	OsIds         []string    `json:"os_ids"`
+	Statuses      []string    `json:"statuses"`
+	Tags          []string    `json:"tags"`
+	AuthMethods   []string    `json:"auth_methods"`
+	Sort          string      `json:"sort"`
+	Descending    bool        `json:"descending"`
+	Off           int32       `json:"off"`
+	Lim           int32       `json:"lim"`
 }
 
 type ListServersRow struct {
@@ -295,6 +320,10 @@ type ListServersRow struct {
 // match count before LIMIT/OFFSET.
 func (q *Queries) ListServers(ctx context.Context, arg ListServersParams) ([]ListServersRow, error) {
 	rows, err := q.db.Query(ctx, listServers,
+		arg.SeeAll,
+		arg.WorkspaceIds,
+		arg.ServerIds,
+		arg.WorkspaceID,
 		arg.FolderID,
 		arg.Unfiled,
 		arg.FavoritesOnly,
@@ -344,6 +373,7 @@ func (q *Queries) ListServers(ctx context.Context, arg ListServersParams) ([]Lis
 			&i.Server.LastSeenAt,
 			&i.Server.CreatedAt,
 			&i.Server.UpdatedAt,
+			&i.Server.WorkspaceID,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -390,7 +420,7 @@ UPDATE servers SET
     last_checked_at = now(),
     last_seen_at = CASE WHEN $1 = 'online' THEN now() ELSE last_seen_at END
 WHERE id = $13
-RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id
 `
 
 type RecordServerCheckParams struct {
@@ -457,6 +487,7 @@ func (q *Queries) RecordServerCheck(ctx context.Context, arg RecordServerCheckPa
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkspaceID,
 	)
 	return i, err
 }
@@ -495,10 +526,19 @@ SELECT coalesce(nullif(os_id, ''), 'unknown')::text AS value,
        max(os_name)::text AS label,
        max(os_family)::text AS family,
        count(*)::int AS count
-FROM servers
+FROM servers s
+WHERE ($1::bool OR s.workspace_id = ANY ($2::uuid[]) OR s.id = ANY ($3::uuid[]))
+  AND ($4::uuid IS NULL OR s.workspace_id = $4::uuid)
 GROUP BY 1
 ORDER BY count(*) DESC, 1
 `
+
+type ServerOSFacetsParams struct {
+	SeeAll       bool        `json:"see_all"`
+	WorkspaceIds []uuid.UUID `json:"workspace_ids"`
+	ServerIds    []uuid.UUID `json:"server_ids"`
+	WorkspaceID  *uuid.UUID  `json:"workspace_id"`
+}
 
 type ServerOSFacetsRow struct {
 	Value  string `json:"value"`
@@ -507,8 +547,13 @@ type ServerOSFacetsRow struct {
 	Count  int32  `json:"count"`
 }
 
-func (q *Queries) ServerOSFacets(ctx context.Context) ([]ServerOSFacetsRow, error) {
-	rows, err := q.db.Query(ctx, serverOSFacets)
+func (q *Queries) ServerOSFacets(ctx context.Context, arg ServerOSFacetsParams) ([]ServerOSFacetsRow, error) {
+	rows, err := q.db.Query(ctx, serverOSFacets,
+		arg.SeeAll,
+		arg.WorkspaceIds,
+		arg.ServerIds,
+		arg.WorkspaceID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -534,18 +579,32 @@ func (q *Queries) ServerOSFacets(ctx context.Context) ([]ServerOSFacetsRow, erro
 
 const serverStatusFacets = `-- name: ServerStatusFacets :many
 SELECT status AS value, count(*)::int AS count
-FROM servers
+FROM servers s
+WHERE ($1::bool OR s.workspace_id = ANY ($2::uuid[]) OR s.id = ANY ($3::uuid[]))
+  AND ($4::uuid IS NULL OR s.workspace_id = $4::uuid)
 GROUP BY status
 ORDER BY count(*) DESC
 `
+
+type ServerStatusFacetsParams struct {
+	SeeAll       bool        `json:"see_all"`
+	WorkspaceIds []uuid.UUID `json:"workspace_ids"`
+	ServerIds    []uuid.UUID `json:"server_ids"`
+	WorkspaceID  *uuid.UUID  `json:"workspace_id"`
+}
 
 type ServerStatusFacetsRow struct {
 	Value string `json:"value"`
 	Count int32  `json:"count"`
 }
 
-func (q *Queries) ServerStatusFacets(ctx context.Context) ([]ServerStatusFacetsRow, error) {
-	rows, err := q.db.Query(ctx, serverStatusFacets)
+func (q *Queries) ServerStatusFacets(ctx context.Context, arg ServerStatusFacetsParams) ([]ServerStatusFacetsRow, error) {
+	rows, err := q.db.Query(ctx, serverStatusFacets,
+		arg.SeeAll,
+		arg.WorkspaceIds,
+		arg.ServerIds,
+		arg.WorkspaceID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -566,18 +625,32 @@ func (q *Queries) ServerStatusFacets(ctx context.Context) ([]ServerStatusFacetsR
 
 const serverTagFacets = `-- name: ServerTagFacets :many
 SELECT t::text AS value, count(*)::int AS count
-FROM servers, unnest(tags) AS t
+FROM servers s, unnest(s.tags) AS t
+WHERE ($1::bool OR s.workspace_id = ANY ($2::uuid[]) OR s.id = ANY ($3::uuid[]))
+  AND ($4::uuid IS NULL OR s.workspace_id = $4::uuid)
 GROUP BY t
 ORDER BY count(*) DESC, t
 `
+
+type ServerTagFacetsParams struct {
+	SeeAll       bool        `json:"see_all"`
+	WorkspaceIds []uuid.UUID `json:"workspace_ids"`
+	ServerIds    []uuid.UUID `json:"server_ids"`
+	WorkspaceID  *uuid.UUID  `json:"workspace_id"`
+}
 
 type ServerTagFacetsRow struct {
 	Value string `json:"value"`
 	Count int32  `json:"count"`
 }
 
-func (q *Queries) ServerTagFacets(ctx context.Context) ([]ServerTagFacetsRow, error) {
-	rows, err := q.db.Query(ctx, serverTagFacets)
+func (q *Queries) ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams) ([]ServerTagFacetsRow, error) {
+	rows, err := q.db.Query(ctx, serverTagFacets,
+		arg.SeeAll,
+		arg.WorkspaceIds,
+		arg.ServerIds,
+		arg.WorkspaceID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -599,7 +672,7 @@ func (q *Queries) ServerTagFacets(ctx context.Context) ([]ServerTagFacetsRow, er
 const setServerFavorite = `-- name: SetServerFavorite :one
 UPDATE servers SET favorite = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id
 `
 
 type SetServerFavoriteParams struct {
@@ -639,6 +712,7 @@ func (q *Queries) SetServerFavorite(ctx context.Context, arg SetServerFavoritePa
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkspaceID,
 	)
 	return i, err
 }
@@ -662,7 +736,7 @@ UPDATE servers SET
     favorite = $15,
     updated_at = now()
 WHERE id = $16
-RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id
 `
 
 type UpdateServerParams struct {
@@ -735,6 +809,7 @@ func (q *Queries) UpdateServer(ctx context.Context, arg UpdateServerParams) (Ser
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkspaceID,
 	)
 	return i, err
 }

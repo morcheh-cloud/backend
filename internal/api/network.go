@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 
+	"github.com/morcheh/backend/internal/auth"
 	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/netmap"
 	"github.com/morcheh/backend/internal/sshpool"
@@ -61,12 +63,74 @@ func registerNetwork(api huma.API, h *serverHandler) {
 			"Returns the last scan unless `refresh` is set or there is none; a scan takes a few seconds.",
 		Tags: []string{"Network"},
 	}, func(ctx context.Context, in *NetworkMapInput) (*struct{ Body NetworkMap }, error) {
+		p := principalOf(ctx)
+		// A scan logs in to every server, so it isn't for read-only people.
+		if in.Refresh && p.Access.Highest() < auth.Operator {
+			return nil, forbidden(auth.Operator)
+		}
 		m, err := st.get(ctx, h, in.Refresh)
 		if err != nil {
 			return nil, err
 		}
-		return &struct{ Body NetworkMap }{*m}, nil
+		seen, err := h.visibleMap(ctx, p, m)
+		if err != nil {
+			return nil, err
+		}
+		return &struct{ Body NetworkMap }{*seen}, nil
 	})
+}
+
+// visibleMap is the part of a scan they may see. The scan is shared and cached,
+// so this builds a copy, and asks the database where servers are today rather
+// than trusting a scan that may be old.
+func (h *serverHandler) visibleMap(ctx context.Context, p *principal, m *NetworkMap) (*NetworkMap, error) {
+	ids := make([]uuid.UUID, 0, len(m.Servers))
+	for _, s := range m.Servers {
+		if id, err := uuid.Parse(s.Server.ID); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows, err := h.q.ListServerWorkspaces(ctx, ids)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	visible := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		if p.Workspace != nil && r.WorkspaceID != *p.Workspace {
+			continue
+		}
+		if p.Access.ServerLevel(r.WorkspaceID, r.ID) > auth.None {
+			visible[r.ID.String()] = true
+		}
+	}
+
+	out := *m
+	out.Servers = make([]NetworkServer, 0, len(m.Servers))
+	for _, s := range m.Servers {
+		if visible[s.Server.ID] {
+			out.Servers = append(out.Servers, s)
+		}
+	}
+	out.Networks = make([]netmap.Subnet, 0, len(m.Networks))
+	for _, n := range m.Networks {
+		members := make([]netmap.SubnetMember, 0, len(n.Members))
+		for _, member := range n.Members {
+			if visible[member.ServerID] {
+				members = append(members, member)
+			}
+		}
+		if len(members) > 0 {
+			n.Members = members
+			out.Networks = append(out.Networks, n)
+		}
+	}
+	out.Links = make([]netmap.Reach, 0, len(m.Links))
+	for _, l := range m.Links {
+		if visible[l.From] && visible[l.To] {
+			out.Links = append(out.Links, l)
+		}
+	}
+	return &out, nil
 }
 
 func (st *netmapState) get(ctx context.Context, h *serverHandler, refresh bool) (*NetworkMap, error) {
@@ -117,6 +181,7 @@ func scanNetwork(ctx context.Context, h *serverHandler) (*NetworkMap, error) {
 	// The filters need empty (not nil) arrays: cardinality(NULL) is NULL.
 	none := []string{}
 	rows, err := h.q.ListServers(ctx, sqlc.ListServersParams{
+		SeeAll: true, WorkspaceIds: []uuid.UUID{}, ServerIds: []uuid.UUID{},
 		OsIds: none, Statuses: none, Tags: none, AuthMethods: none,
 		Sort: "name", Lim: 10_000,
 	})

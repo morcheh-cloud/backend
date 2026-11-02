@@ -20,6 +20,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/pkg/sftp"
 
+	"github.com/morcheh/backend/internal/auth"
 	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/jobs"
 	"github.com/morcheh/backend/internal/sshpool"
@@ -811,7 +812,7 @@ func (h *storageHandler) download(ctx context.Context, in *StorageDownloadInput)
 		}
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Disposition", disposition("attachment", name))
-		writeStorageZip(r.Context(), w, f, paths)
+		writeStorageZip(hctx.Context(), w, f, paths)
 	}}, nil
 }
 
@@ -1094,6 +1095,17 @@ func (h *storageHandler) plan(ctx context.Context, b StorageTransferBody, fn fun
 // after the browser leaves and shows its progress.
 func (h *storageHandler) transfer(ctx context.Context, in *struct{ Body StorageTransferBody }) (*JobOutput, error) {
 	b := in.Body
+	// Taking files out needs reading them, or deleting them when it's a move.
+	from := auth.Operator
+	if b.Move {
+		from = auth.Engineer
+	}
+	if err := h.mayReach(ctx, b.Source.StorageTransferEnd, from); err != nil {
+		return nil, err
+	}
+	if err := h.mayReach(ctx, b.Destination.StorageTransferEnd, auth.Engineer); err != nil {
+		return nil, err
+	}
 	var spec jobs.Spec
 	err := h.plan(ctx, b, func(p transferPlan) error {
 		target := &JobPlace{Path: p.dest, Name: p.dst.name}
@@ -1113,6 +1125,32 @@ func (h *storageHandler) transfer(ctx context.Context, in *struct{ Body StorageT
 		return nil, err
 	}
 	return submit(ctx, h.servers.jobs, spec)
+}
+
+// mayReach checks their level on one end of a transfer.
+func (h *storageHandler) mayReach(ctx context.Context, end StorageTransferEnd, need auth.Level) error {
+	a, acc := h.servers.authz, principalOf(ctx).Access
+	var level auth.Level
+	var err error
+	noun := "server"
+	if id := parseOptionalID(end.ServerID); id != nil {
+		level, err = a.serverLevel(ctx, acc, *id)
+	} else if id := parseOptionalID(end.StorageID); id != nil {
+		noun = "storage"
+		level, err = a.storageLevel(ctx, acc, *id)
+	} else {
+		// plan reports the missing end.
+		return nil
+	}
+	switch {
+	case err != nil:
+		return internalError(err)
+	case level == auth.None:
+		return huma.Error404NotFound(noun + " not found")
+	case level < need:
+		return forbidden(need)
+	}
+	return nil
 }
 
 // runTransfer is the transfer job: it checks again (things may have changed

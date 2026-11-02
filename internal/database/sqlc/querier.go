@@ -11,42 +11,103 @@ import (
 )
 
 type Querier interface {
+	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
 	CancelQueuedJob(ctx context.Context, id uuid.UUID) (int64, error)
-	CountServers(ctx context.Context) (CountServersRow, error)
+	ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error
+	CountActiveAdmins(ctx context.Context) (int32, error)
+	CountServers(ctx context.Context, arg CountServersParams) (CountServersRow, error)
+	CountUserSessions(ctx context.Context, userID uuid.UUID) (int32, error)
+	CountUsers(ctx context.Context) (int32, error)
+	CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error)
+	CountWorkspaces(ctx context.Context) (int32, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
+	CreateGroup(ctx context.Context, arg CreateGroupParams) (UserGroup, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
 	CreateServer(ctx context.Context, arg CreateServerParams) (Server, error)
+	// ---- Sessions ----
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateStorage(ctx context.Context, arg CreateStorageParams) (Storage, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error)
+	DeleteExpiredSessions(ctx context.Context) error
 	DeleteFinishedJobs(ctx context.Context, arg DeleteFinishedJobsParams) (int64, error)
 	DeleteFolder(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteGrant(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteGroup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteJob(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeleteServers(ctx context.Context, ids []uuid.UUID) (int64, error)
+	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteStorage(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteUser(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
+	DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, error)
+	FindGrant(ctx context.Context, arg FindGrantParams) (AccessGrant, error)
 	FinishJob(ctx context.Context, arg FinishJobParams) error
 	// Whether candidate is folder_id itself or one of its descendants; moving a
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
+	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
+	GetGroup(ctx context.Context, id uuid.UUID) (UserGroup, error)
 	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
 	GetServer(ctx context.Context, id uuid.UUID) (Server, error)
+	GetServerWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetServers(ctx context.Context, ids []uuid.UUID) ([]Server, error)
+	GetSessionByHash(ctx context.Context, tokenHash []byte) (GetSessionByHashRow, error)
+	// For re-checking a session someone is still connected with.
+	GetSessionUser(ctx context.Context, id uuid.UUID) (GetSessionUserRow, error)
+	// ---- Settings ----
+	GetSettings(ctx context.Context) (AppSetting, error)
 	GetStorage(ctx context.Context, id uuid.UUID) (Storage, error)
+	GetStorageWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetUser(ctx context.Context, id uuid.UUID) (User, error)
+	GetUserByUsername(ctx context.Context, username string) (User, error)
+	GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error)
 	// At startup: whatever was running died with the last process.
 	InterruptRunningJobs(ctx context.Context) (int64, error)
-	// server_count counts only the folder's own servers; the client sums subtrees.
-	ListFolders(ctx context.Context) ([]ListFoldersRow, error)
+	ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error)
+	ListAllGroupMembers(ctx context.Context) ([]GroupMember, error)
+	// server_count counts only the folder's own servers the caller can see; the
+	// client sums subtrees. folder_workspace_ids also lists workspaces the caller
+	// only reaches through single servers: the handler prunes those to the folders
+	// leading to their servers.
+	ListFolders(ctx context.Context, arg ListFoldersParams) ([]ListFoldersRow, error)
+	// Filters combine with AND. Joins give the names a screen shows.
+	ListGrants(ctx context.Context, arg ListGrantsParams) ([]ListGrantsRow, error)
+	ListGroupMembers(ctx context.Context, groupID uuid.UUID) ([]uuid.UUID, error)
+	// ---- Groups ----
+	ListGroups(ctx context.Context) ([]ListGroupsRow, error)
 	// Newest first. ref narrows to one server or storage; active to queued and
-	// running jobs, finished to the rest.
+	// running jobs, finished to the rest; created_by to one person's.
 	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
+	// People an owner can give access to.
+	ListPrincipalUsers(ctx context.Context) ([]ListPrincipalUsersRow, error)
 	ListQueuedJobs(ctx context.Context) ([]Job, error)
+	ListServerWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListServerWorkspacesRow, error)
 	// Filters combine with AND; values inside one filter (os, status, tags)
 	// combine with OR. A folder filter includes its subfolders. total is the
 	// match count before LIMIT/OFFSET.
 	ListServers(ctx context.Context, arg ListServersParams) ([]ListServersRow, error)
-	ListStorages(ctx context.Context) ([]Storage, error)
+	ListStorageWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListStorageWorkspacesRow, error)
+	ListStorages(ctx context.Context, arg ListStoragesParams) ([]Storage, error)
+	// ---- Grants ----
+	// Every grant that applies to a user, directly or through a group.
+	ListUserGrants(ctx context.Context, userID *uuid.UUID) ([]AccessGrant, error)
+	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
+	// The light list for an access page: never the sealed credentials.
+	ListWorkspaceServers(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceServersRow, error)
+	ListWorkspaceStorages(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceStoragesRow, error)
+	// ---- Workspaces ----
+	ListWorkspaces(ctx context.Context) ([]ListWorkspacesRow, error)
+	// Serializes first-run setup and last-admin checks for the transaction.
+	LockAuth(ctx context.Context) error
 	MoveFolderServers(ctx context.Context, arg MoveFolderServersParams) error
 	MoveServers(ctx context.Context, arg MoveServersParams) (int64, error)
+	// Folders belong to one workspace, so moved servers leave theirs.
+	MoveServersToWorkspace(ctx context.Context, arg MoveServersToWorkspaceParams) (int64, error)
+	MoveStoragesToWorkspace(ctx context.Context, arg MoveStoragesToWorkspaceParams) (int64, error)
 	// Stores a connection check. OS fields are only overwritten when the check
 	// got far enough to read them (detected = true).
 	RecordServerCheck(ctx context.Context, arg RecordServerCheckParams) (Server, error)
@@ -57,18 +118,31 @@ type Querier interface {
 	ResetServerHostKey(ctx context.Context, id uuid.UUID) error
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
-	ServerOSFacets(ctx context.Context) ([]ServerOSFacetsRow, error)
-	ServerStatusFacets(ctx context.Context) ([]ServerStatusFacetsRow, error)
-	ServerTagFacets(ctx context.Context) ([]ServerTagFacetsRow, error)
+	ServerOSFacets(ctx context.Context, arg ServerOSFacetsParams) ([]ServerOSFacetsRow, error)
+	ServerStatusFacets(ctx context.Context, arg ServerStatusFacetsParams) ([]ServerStatusFacetsRow, error)
+	ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams) ([]ServerTagFacetsRow, error)
+	SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error)
 	SetServerFavorite(ctx context.Context, arg SetServerFavoriteParams) (Server, error)
 	SetStorageFavorite(ctx context.Context, arg SetStorageFavoriteParams) (Storage, error)
+	// Replaces the groups of one user (approving someone, editing them).
+	SetUserGroups(ctx context.Context, arg SetUserGroupsParams) error
+	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (User, error)
+	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
+	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
 	StartJob(ctx context.Context, id uuid.UUID) error
+	TouchSession(ctx context.Context, id uuid.UUID) error
+	TouchUserLogin(ctx context.Context, id uuid.UUID) error
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)
+	UpdateGroup(ctx context.Context, arg UpdateGroupParams) (UserGroup, error)
 	// Full replace of the editable fields. The handler resolves secrets first:
 	// it passes the stored ones back unchanged when the request leaves them out.
 	UpdateServer(ctx context.Context, arg UpdateServerParams) (Server, error)
 	// Full replace of the editable fields; the handler resolves secrets first.
 	UpdateStorage(ctx context.Context, arg UpdateStorageParams) (Storage, error)
+	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
+	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
+	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)
+	UserStatusCounts(ctx context.Context) ([]UserStatusCountsRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

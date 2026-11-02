@@ -1,16 +1,19 @@
 -- name: ListStorages :many
-SELECT * FROM storages ORDER BY favorite DESC, lower(name);
+SELECT * FROM storages s
+WHERE (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id = ANY (@storage_ids::uuid[]))
+  AND (sqlc.narg('workspace_id')::uuid IS NULL OR s.workspace_id = sqlc.narg('workspace_id')::uuid)
+ORDER BY s.favorite DESC, lower(s.name);
 
 -- name: GetStorage :one
 SELECT * FROM storages WHERE id = $1;
 
 -- name: CreateStorage :one
 INSERT INTO storages (
-    name, protocol, provider, host, port, username, auth_method,
+    workspace_id, name, protocol, provider, host, port, username, auth_method,
     secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style,
     tls, insecure_tls, host_key, root_path, read_only, description, favorite
 ) VALUES (
-    @name, @protocol, @provider, @host, @port, @username, @auth_method,
+    @workspace_id, @name, @protocol, @provider, @host, @port, @username, @auth_method,
     sqlc.narg('secret_enc'), sqlc.narg('private_key_enc'), sqlc.narg('passphrase_enc'),
     @bucket, @region, @path_style, @tls, @insecure_tls, @host_key, @root_path,
     @read_only, @description, @favorite

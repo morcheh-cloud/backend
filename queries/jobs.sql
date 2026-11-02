@@ -1,6 +1,6 @@
 -- name: CreateJob :one
-INSERT INTO jobs (kind, title, params, refs, target, retry_of)
-VALUES (@kind, @title, @params, @refs, sqlc.narg('target'), sqlc.narg('retry_of'))
+INSERT INTO jobs (kind, title, params, refs, target, retry_of, created_by)
+VALUES (@kind, @title, @params, @refs, sqlc.narg('target'), sqlc.narg('retry_of'), sqlc.narg('created_by'))
 RETURNING *;
 
 -- name: GetJob :one
@@ -8,9 +8,10 @@ SELECT * FROM jobs WHERE id = $1;
 
 -- name: ListJobs :many
 -- Newest first. ref narrows to one server or storage; active to queued and
--- running jobs, finished to the rest.
+-- running jobs, finished to the rest; created_by to one person's.
 SELECT * FROM jobs
-WHERE (sqlc.narg('ref')::uuid IS NULL OR sqlc.narg('ref')::uuid = ANY(refs))
+WHERE (sqlc.narg('created_by')::uuid IS NULL OR created_by = sqlc.narg('created_by')::uuid)
+  AND (sqlc.narg('ref')::uuid IS NULL OR sqlc.narg('ref')::uuid = ANY(refs))
   AND (sqlc.narg('kind')::text IS NULL OR kind = sqlc.narg('kind')::text)
   AND (sqlc.narg('active')::boolean IS NULL
        OR (state IN ('queued', 'running')) = sqlc.narg('active')::boolean)
@@ -52,5 +53,9 @@ DELETE FROM jobs WHERE id = $1 AND state NOT IN ('queued', 'running');
 -- name: DeleteFinishedJobs :execrows
 DELETE FROM jobs
 WHERE state NOT IN ('queued', 'running')
+  AND (sqlc.narg('created_by')::uuid IS NULL OR created_by = sqlc.narg('created_by')::uuid)
   AND (sqlc.narg('ref')::uuid IS NULL OR sqlc.narg('ref')::uuid = ANY(refs))
   AND (sqlc.narg('before')::timestamptz IS NULL OR finished_at < sqlc.narg('before')::timestamptz);
+
+-- name: ListActiveJobsBy :many
+SELECT id FROM jobs WHERE created_by = $1 AND state IN ('queued', 'running');

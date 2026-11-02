@@ -1,8 +1,14 @@
 -- name: ListFolders :many
--- server_count counts only the folder's own servers; the client sums subtrees.
+-- server_count counts only the folder's own servers the caller can see; the
+-- client sums subtrees. folder_workspace_ids also lists workspaces the caller
+-- only reaches through single servers: the handler prunes those to the folders
+-- leading to their servers.
 SELECT f.*, count(s.id)::int AS server_count
 FROM folders f
 LEFT JOIN servers s ON s.folder_id = f.id
+    AND (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id = ANY (@server_ids::uuid[]))
+WHERE (@see_all::bool OR f.workspace_id = ANY (@folder_workspace_ids::uuid[]))
+  AND (sqlc.narg('workspace_id')::uuid IS NULL OR f.workspace_id = sqlc.narg('workspace_id')::uuid)
 GROUP BY f.id
 ORDER BY lower(f.name);
 
@@ -10,8 +16,8 @@ ORDER BY lower(f.name);
 SELECT * FROM folders WHERE id = $1;
 
 -- name: CreateFolder :one
-INSERT INTO folders (name, parent_id)
-VALUES (@name, sqlc.narg('parent_id'))
+INSERT INTO folders (workspace_id, name, parent_id)
+VALUES (@workspace_id, @name, sqlc.narg('parent_id'))
 RETURNING *;
 
 -- name: UpdateFolder :one

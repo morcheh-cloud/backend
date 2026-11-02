@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/morcheh/backend/internal/auth"
 	"github.com/morcheh/backend/internal/terminal"
 )
 
@@ -81,7 +82,7 @@ func registerTerminals(api huma.API, r chi.Router, h *serverHandler, origins []s
 			}
 		}{}
 		out.Body.Items = []TerminalSession{}
-		for _, i := range h.terms.List(in.ID) {
+		for _, i := range h.terms.List(in.ID, principalOf(ctx).User.ID.String()) {
 			out.Body.Items = append(out.Body.Items, toTerminal(i))
 		}
 		return out, nil
@@ -99,7 +100,8 @@ func registerTerminals(api huma.API, r chi.Router, h *serverHandler, origins []s
 			Title string `json:"title" minLength:"1" maxLength:"64"`
 		}
 	}) (*struct{ Body TerminalSession }, error) {
-		s := h.terms.Get(in.ID, in.Session)
+		owner := principalOf(ctx).User.ID.String()
+		s := h.terms.Get(in.ID, owner, in.Session)
 		if s == nil {
 			return nil, huma.Error404NotFound("terminal not found")
 		}
@@ -108,7 +110,7 @@ func registerTerminals(api huma.API, r chi.Router, h *serverHandler, origins []s
 			return nil, fieldError("body.title", "Enter a name", in.Body.Title)
 		}
 		s.SetTitle(title)
-		for _, i := range h.terms.List(in.ID) {
+		for _, i := range h.terms.List(in.ID, owner) {
 			if i.ID == s.ID {
 				return &struct{ Body TerminalSession }{Body: toTerminal(i)}, nil
 			}
@@ -125,7 +127,7 @@ func registerTerminals(api huma.API, r chi.Router, h *serverHandler, origins []s
 		Tags:          tags,
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *TerminalPath) (*struct{}, error) {
-		s := h.terms.Get(in.ID, in.Session)
+		s := h.terms.Get(in.ID, principalOf(ctx).User.ID.String(), in.Session)
 		if s == nil {
 			return nil, huma.Error404NotFound("terminal not found")
 		}
@@ -176,10 +178,27 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 		}
 
 		serverID := chi.URLParam(r, "id")
+
+		// This route sits outside the API, so it makes the same check by hand.
+		// Answering after Accept lets the browser read why it was refused.
+		token := ""
+		if c, err := r.Cookie(sessionCookie); err == nil {
+			token = c.Value
+		}
+		pol := onServer(auth.Engineer)
+		p, denial := h.authz.authorize(ctx, token, pol, serverID, "")
+		if denial != nil {
+			fail(denial.status, denial.message)
+			return
+		}
+		ctx, stop := h.authz.track(ctx, p, pol, serverID)
+		defer stop()
+		owner := p.User.ID.String()
+
 		q := r.URL.Query()
 		var sess *terminal.Session
 		if sid := q.Get("session"); sid != "" {
-			if sess = h.terms.Get(serverID, sid); sess == nil {
+			if sess = h.terms.Get(serverID, owner, sid); sess == nil {
 				fail(http.StatusNotFound, "This terminal has ended.")
 				return
 			}
@@ -192,7 +211,7 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 			}
 			cols, _ := strconv.Atoi(q.Get("cols"))
 			rows, _ := strconv.Atoi(q.Get("rows"))
-			sess, err = h.terms.Start(serverID, conn, terminal.Options{Cols: cols, Rows: rows, Cwd: q.Get("cwd")})
+			sess, err = h.terms.Start(serverID, conn, terminal.Options{Owner: owner, Cols: cols, Rows: rows, Cwd: q.Get("cwd")})
 			if errors.Is(err, terminal.ErrTooMany) {
 				fail(http.StatusTooManyRequests, err.Error())
 				return

@@ -54,7 +54,12 @@ func run() error {
 	}
 	defer rdb.Close()
 
-	runner := jobs.New(sqlc.New(db))
+	queries := sqlc.New(db)
+	if n, err := queries.CountUsers(ctx); err == nil && n == 0 && !cfg.Development() && cfg.SetupToken == "" {
+		slog.Warn("no users yet and no SETUP_TOKEN: whoever reaches this server first becomes its admin")
+	}
+
+	runner := jobs.New(queries)
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           api.NewRouter(cfg, db, rdb, box, runner),
