@@ -16,6 +16,8 @@ import (
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/morcheh/backend/internal/sshprobe"
 )
 
 const (
@@ -325,5 +327,6 @@ func Lost(err error) bool {
 	return errors.Is(err, sftp.ErrSSHFxConnectionLost) ||
 		errors.Is(err, io.EOF) ||
 		errors.Is(err, io.ErrUnexpectedEOF) ||
-		errors.Is(err, net.ErrClosed)
+		errors.Is(err, net.ErrClosed) ||
+		sshprobe.SessionClosed(err)
 }

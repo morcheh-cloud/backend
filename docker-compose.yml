@@ -30,6 +30,24 @@ services:
       timeout: 3s
       retries: 10
 
+  # Local SSH target for testing (user ant / colony, passwordless sudo).
+  # /config keeps the host keys and home across recreates.
+  test-ssh:
+    build:
+      dockerfile_inline: |
+        FROM lscr.io/linuxserver/openssh-server
+        RUN echo "ant ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ant \
+          && chmod 440 /etc/sudoers.d/ant
+    environment:
+      USER_NAME: ant
+      USER_PASSWORD: colony
+      PASSWORD_ACCESS: "true"
+    ports:
+      - "127.0.0.1:2222:2222"
+    volumes:
+      - sshconfig:/config
+
 volumes:
   pgdata:
   redisdata:
+  sshconfig:

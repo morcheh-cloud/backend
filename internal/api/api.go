@@ -13,6 +13,7 @@ import (
 	"github.com/morcheh/backend/internal/cache"
 	"github.com/morcheh/backend/internal/config"
 	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morcheh/backend/internal/jobs"
 	"github.com/morcheh/backend/internal/secrets"
 	"github.com/morcheh/backend/internal/sshpool"
 	"github.com/morcheh/backend/internal/terminal"
@@ -24,8 +25,9 @@ const (
 )
 
 // NewRouter builds the HTTP handler. OpenAPI spec is served at /openapi.json
-// and Swagger UI at /docs.
-func NewRouter(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.Box) http.Handler {
+// and Swagger UI at /docs. It registers the job handlers on runner; start
+// the runner after this.
+func NewRouter(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.Box, runner *jobs.Runner) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -53,16 +55,25 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secr
 		db: db, q: sqlc.New(db), box: box,
 		pool:  sshpool.New(),
 		terms: terminal.NewManager(cfg.TerminalDetachedTimeout),
+		jobs:  runner,
 	}
 	servers.stats = newStatsHub(servers)
 	registerServers(api, servers)
 	registerTerminals(api, r, servers, cfg.CORSOrigins)
 	registerFiles(api, servers)
+	registerDiskUsage(api, servers)
 	registerCron(api, servers)
 	registerPorts(api, servers)
+	registerNetwork(api, servers)
 	registerStats(api, servers)
 	registerFail2ban(api, servers)
 	registerUsers(api, servers)
+	registerServices(api, servers)
+	registerPower(api, servers)
+	st := newStorageHandler(sqlc.New(db), box, servers)
+	registerStorages(api, st)
+	registerStorageFiles(api, st)
+	registerJobs(api, runner)
 
 	return r
 }

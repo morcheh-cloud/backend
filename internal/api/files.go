@@ -27,6 +27,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morcheh/backend/internal/sshprobe"
 	"github.com/morcheh/backend/internal/terminal"
 )
 
@@ -579,117 +580,7 @@ func registerFiles(api huma.API, h *serverHandler) {
 		return affected(n), toProblem(err)
 	})
 
-	huma.Register(api, huma.Operation{
-		OperationID: "compress-files",
-		Method:      http.MethodPost,
-		Path:        "/servers/{id}/files/compress",
-		Summary:     "Pack files into an archive",
-		Description: "All paths must be in one folder. The archive goes next to them unless destination is given; an existing name gets a number.",
-		Tags:        tags,
-	}, func(ctx context.Context, in *struct {
-		ServerIDPath
-		Body struct {
-			FilePathsBody
-			Format      string `json:"format" enum:"tar.gz,zip" default:"tar.gz"`
-			Destination string `json:"destination,omitempty" doc:"Archive path; default is next to the files"`
-		}
-	}) (*FileEntryOutput, error) {
-		out := &FileEntryOutput{}
-		b := in.Body
-		err := h.withSFTP(ctx, in.ID, func(c *sshpool.Conn, s *sftp.Client) error {
-			paths, err := resolvePaths(s, b.Paths)
-			if err != nil {
-				return err
-			}
-			dir := path.Dir(paths[0])
-			names := make([]string, len(paths))
-			for i, p := range paths {
-				if path.Dir(p) != dir || p == "/" {
-					return huma.Error422UnprocessableEntity("Pick files from one folder")
-				}
-				names[i] = path.Base(p)
-			}
-			dest := b.Destination
-			if dest == "" {
-				base := "archive"
-				if len(paths) == 1 {
-					base = names[0]
-				}
-				dest = freeName(s, path.Join(dir, base+"."+b.Format), "")
-			} else if _, dest, err = resolvePath(s, dest); err != nil {
-				return err
-			} else if _, err := s.Lstat(dest); err == nil {
-				return huma.Error409Conflict(path.Base(dest) + " already exists")
-			}
-			var cmd string
-			if b.Format == "zip" {
-				cmd = "cd -- " + terminal.ShellQuote(dir) + " && zip -qry -- " + terminal.ShellQuote(dest) + " " + quoteAll(names)
-			} else {
-				cmd = "tar -czf " + terminal.ShellQuote(dest) + " -C " + terminal.ShellQuote(dir) + " -- " + quoteAll(names)
-			}
-			if _, err := run(ctx, c, cmd); err != nil {
-				return err
-			}
-			out.Body, err = stat(c, s, dest)
-			return err
-		})
-		return out, toProblem(err)
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID: "extract-archive",
-		Method:      http.MethodPost,
-		Path:        "/servers/{id}/files/extract",
-		Summary:     "Unpack an archive",
-		Description: "Handles .tar, .tar.gz/.tgz, .tar.bz2, .tar.xz, .zip and .gz with the server's tar, unzip and gzip. Existing files are overwritten.",
-		Tags:        tags,
-	}, func(ctx context.Context, in *struct {
-		ServerIDPath
-		Body struct {
-			Path        string `json:"path" minLength:"1"`
-			Destination string `json:"destination,omitempty" doc:"Folder to unpack into; default is the archive's folder"`
-		}
-	}) (*struct{ Body ExtractResult }, error) {
-		out := &struct{ Body ExtractResult }{}
-		b := in.Body
-		err := h.withSFTP(ctx, in.ID, func(c *sshpool.Conn, s *sftp.Client) error {
-			_, p, err := resolvePath(s, b.Path)
-			if err != nil {
-				return err
-			}
-			dest := path.Dir(p)
-			if b.Destination != "" {
-				if _, dest, err = resolvePath(s, b.Destination); err != nil {
-					return err
-				}
-			}
-			qp, qd := terminal.ShellQuote(p), terminal.ShellQuote(dest)
-			var cmd string
-			switch name := strings.ToLower(path.Base(p)); {
-			case strings.HasSuffix(name, ".tar.gz"), strings.HasSuffix(name, ".tgz"):
-				cmd = "tar -xzf " + qp + " -C " + qd
-			case strings.HasSuffix(name, ".tar.bz2"), strings.HasSuffix(name, ".tbz2"):
-				cmd = "tar -xjf " + qp + " -C " + qd
-			case strings.HasSuffix(name, ".tar.xz"), strings.HasSuffix(name, ".txz"):
-				cmd = "tar -xJf " + qp + " -C " + qd
-			case strings.HasSuffix(name, ".tar"):
-				cmd = "tar -xf " + qp + " -C " + qd
-			case strings.HasSuffix(name, ".zip"):
-				cmd = "unzip -oq " + qp + " -d " + qd
-			case strings.HasSuffix(name, ".gz"):
-				target := path.Join(dest, strings.TrimSuffix(path.Base(p), path.Ext(p)))
-				cmd = "gzip -dc -- " + qp + " > " + terminal.ShellQuote(target)
-			default:
-				return huma.Error422UnprocessableEntity("Not an archive Morcheh can unpack (tar, tar.gz, tar.bz2, tar.xz, zip, gz)")
-			}
-			if _, err := run(ctx, c, "mkdir -p -- "+qd+" && "+cmd); err != nil {
-				return err
-			}
-			out.Body.Destination = dest
-			return nil
-		})
-		return out, toProblem(err)
-	})
+	registerFileJobs(api, h, tags)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "search-files",
@@ -1408,6 +1299,9 @@ func toProblem(err error) error {
 	var ce *cmdError
 	if errors.As(err, &ce) {
 		return huma.Error422UnprocessableEntity(ce.msg)
+	}
+	if sshprobe.SessionClosed(err) { // still failing on a fresh connection
+		return huma.Error502BadGateway(sshprobe.SessionClosedMessage)
 	}
 	if sshpool.Lost(err) {
 		return huma.Error502BadGateway("Lost the connection to the server")

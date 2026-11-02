@@ -16,6 +16,8 @@ import (
 	"github.com/morcheh/backend/internal/cache"
 	"github.com/morcheh/backend/internal/config"
 	"github.com/morcheh/backend/internal/database"
+	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morcheh/backend/internal/jobs"
 	"github.com/morcheh/backend/internal/secrets"
 )
 
@@ -52,10 +54,14 @@ func run() error {
 	}
 	defer rdb.Close()
 
+	runner := jobs.New(sqlc.New(db))
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.NewRouter(cfg, db, rdb, box),
+		Handler:           api.NewRouter(cfg, db, rdb, box, runner),
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+	if err := runner.Start(ctx); err != nil {
+		return err
 	}
 
 	ln, err := net.Listen("tcp", cfg.HTTPAddr)
@@ -81,6 +87,11 @@ func run() error {
 	}
 
 	slog.Info("shutting down")
+	// Running jobs stop and are marked interrupted; queued ones wait for the
+	// next start.
+	jobsCtx, cancelJobs := context.WithTimeout(context.Background(), 5*time.Second)
+	runner.Close(jobsCtx)
+	cancelJobs()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)

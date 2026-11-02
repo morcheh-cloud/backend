@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morcheh/backend/internal/jobs"
 	"github.com/morcheh/backend/internal/secrets"
 	"github.com/morcheh/backend/internal/sshpool"
 	"github.com/morcheh/backend/internal/sshprobe"
@@ -267,6 +268,7 @@ type serverHandler struct {
 	terms *terminal.Manager
 	stats *statsHub
 	privs privileges
+	jobs  *jobs.Runner
 }
 
 // forget closes everything still connected to deleted servers.
@@ -502,6 +504,8 @@ func registerServers(api huma.API, h *serverHandler) {
 		h.forget(ids)
 		return affected(n), nil
 	})
+
+	registerCredentials(api, h)
 }
 
 func affected(n int64) *AffectedOutput {

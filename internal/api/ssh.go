@@ -99,7 +99,7 @@ func (h *serverHandler) withSFTP(ctx context.Context, rawID string, fn func(c *s
 			}
 			return huma.Error502BadGateway("The server doesn't offer SFTP: " + err.Error())
 		}
-		err = fn(c, s)
+		err = hold(c, func() error { return fn(c, s) })
 		if err != nil && attempt == 0 && sshpool.Lost(err) {
 			h.pool.Drop(rawID)
 			continue
@@ -116,11 +116,19 @@ func (h *serverHandler) withConn(ctx context.Context, rawID string, fn func(c *s
 		if err != nil {
 			return err
 		}
-		err = fn(c)
+		err = hold(c, func() error { return fn(c) })
 		if err != nil && attempt == 0 && sshpool.Lost(err) {
 			h.pool.Drop(rawID)
 			continue
 		}
 		return err
 	}
+}
+
+// hold keeps the pool from closing c as idle while fn runs: a transfer or a
+// job can take far longer than the idle timeout.
+func hold(c *sshpool.Conn, fn func() error) error {
+	c.Acquire()
+	defer c.Release()
+	return fn()
 }

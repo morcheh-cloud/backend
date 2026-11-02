@@ -105,7 +105,11 @@ func s3Endpoint(raw string, port int) (string, bool, error) {
 func s3ConnError(err error) error {
 	code := minio.ToErrorResponse(err).Code
 	switch code {
-	case "InvalidAccessKeyId", "SignatureDoesNotMatch", "AccessDenied", "InvalidToken", "ExpiredToken":
+	case "InvalidAccessKeyId":
+		return &ConnError{StatusAuthFailed, "Unknown access key", err}
+	case "SignatureDoesNotMatch":
+		return &ConnError{StatusAuthFailed, "Wrong secret key", err}
+	case "AccessDenied", "InvalidToken", "ExpiredToken":
 		return &ConnError{StatusAuthFailed, s3Text(err), err}
 	}
 	var ne net.Error

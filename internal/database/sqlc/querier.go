@@ -12,22 +12,34 @@ import (
 
 type Querier interface {
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
+	CancelQueuedJob(ctx context.Context, id uuid.UUID) (int64, error)
 	CountServers(ctx context.Context) (CountServersRow, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
+	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
 	CreateServer(ctx context.Context, arg CreateServerParams) (Server, error)
 	CreateStorage(ctx context.Context, arg CreateStorageParams) (Storage, error)
+	DeleteFinishedJobs(ctx context.Context, arg DeleteFinishedJobsParams) (int64, error)
 	DeleteFolder(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteJob(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteServers(ctx context.Context, ids []uuid.UUID) (int64, error)
 	DeleteStorage(ctx context.Context, id uuid.UUID) (int64, error)
+	FinishJob(ctx context.Context, arg FinishJobParams) error
 	// Whether candidate is folder_id itself or one of its descendants; moving a
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
+	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
 	GetServer(ctx context.Context, id uuid.UUID) (Server, error)
 	GetServers(ctx context.Context, ids []uuid.UUID) ([]Server, error)
 	GetStorage(ctx context.Context, id uuid.UUID) (Storage, error)
+	// At startup: whatever was running died with the last process.
+	InterruptRunningJobs(ctx context.Context) (int64, error)
 	// server_count counts only the folder's own servers; the client sums subtrees.
 	ListFolders(ctx context.Context) ([]ListFoldersRow, error)
+	// Newest first. ref narrows to one server or storage; active to queued and
+	// running jobs, finished to the rest.
+	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
+	ListQueuedJobs(ctx context.Context) ([]Job, error)
 	// Filters combine with AND; values inside one filter (os, status, tags)
 	// combine with OR. A folder filter includes its subfolders. total is the
 	// match count before LIMIT/OFFSET.
@@ -44,11 +56,13 @@ type Querier interface {
 	ReparentFolderChildren(ctx context.Context, arg ReparentFolderChildrenParams) error
 	ResetServerHostKey(ctx context.Context, id uuid.UUID) error
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
+	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
 	ServerOSFacets(ctx context.Context) ([]ServerOSFacetsRow, error)
 	ServerStatusFacets(ctx context.Context) ([]ServerStatusFacetsRow, error)
 	ServerTagFacets(ctx context.Context) ([]ServerTagFacetsRow, error)
 	SetServerFavorite(ctx context.Context, arg SetServerFavoriteParams) (Server, error)
 	SetStorageFavorite(ctx context.Context, arg SetStorageFavoriteParams) (Storage, error)
+	StartJob(ctx context.Context, id uuid.UUID) error
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)
 	// Full replace of the editable fields. The handler resolves secrets first:
 	// it passes the stored ones back unchanged when the request leaves them out.

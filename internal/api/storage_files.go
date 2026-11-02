@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/sftp"
 
 	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morcheh/backend/internal/jobs"
 	"github.com/morcheh/backend/internal/sshpool"
 	"github.com/morcheh/backend/internal/storage"
 )
@@ -74,7 +75,7 @@ type StorageAffectedOutput struct {
 	}
 }
 
-type TransferResult struct {
+type StorageTransferResult struct {
 	Files int   `json:"files" doc:"Files copied"`
 	Bytes int64 `json:"bytes" doc:"Bytes streamed through Morcheh (0 when the storage copied by itself)"`
 }
@@ -599,7 +600,7 @@ func registerStorageFiles(api huma.API, h *storageHandler) {
 		return out, err
 	})
 
-	type transferBody struct {
+	type StorageMoveBody struct {
 		Paths       []string `json:"paths" minItems:"1" maxItems:"1000"`
 		Destination string   `json:"destination" doc:"Folder to put them in"`
 	}
@@ -613,7 +614,7 @@ func registerStorageFiles(api huma.API, h *storageHandler) {
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct {
 		StorageIDPath
-		Body transferBody
+		Body StorageMoveBody
 	}) (*StorageAffectedOutput, error) {
 		out := &StorageAffectedOutput{}
 		err := h.withFS(ctx, in.ID, func(row sqlc.Storage, f storage.FS) error {
@@ -644,9 +645,9 @@ func registerStorageFiles(api huma.API, h *storageHandler) {
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct {
 		StorageIDPath
-		Body transferBody
-	}) (*struct{ Body TransferResult }, error) {
-		out := &struct{ Body TransferResult }{}
+		Body StorageMoveBody
+	}) (*struct{ Body StorageTransferResult }, error) {
+		out := &struct{ Body StorageTransferResult }{}
 		err := h.withFS(ctx, in.ID, func(row sqlc.Storage, f storage.FS) error {
 			if err := writable(row); err != nil {
 				return err
@@ -661,7 +662,7 @@ func registerStorageFiles(api huma.API, h *storageHandler) {
 					return storageProblem(pr[0], err)
 				}
 			}
-			out.Body = TransferResult{Files: prog.Files, Bytes: prog.Bytes}
+			out.Body = StorageTransferResult{Files: prog.Files, Bytes: prog.Bytes}
 			return nil
 		})
 		return out, err
@@ -760,9 +761,12 @@ func registerStorageFiles(api huma.API, h *storageHandler) {
 		Path:        "/storages/transfer",
 		Summary:     "Copy or move files between storages and servers",
 		Description: "Each end is a storage or a server (over SFTP). Files stream through Morcheh; two places on one storage copy on the storage itself when it can. " +
-			"Server paths are absolute or relative to the login user's home. A name already in the destination is 409 unless overwrite is set.",
-		Tags: tags,
+			"Server paths are absolute or relative to the login user's home. A name already in the destination is 409 unless overwrite is set. " +
+			"The request is checked at once, then the copy runs as a background job (kind `transfer`, result StorageTransferResult); follow it on /jobs/stream.",
+		Tags:          tags,
+		DefaultStatus: http.StatusAccepted,
 	}, h.transfer)
+	h.servers.jobs.Handle("transfer", h.runTransfer)
 }
 
 // ---- Download & upload ----
@@ -985,18 +989,18 @@ func (h *storageHandler) upload(ctx context.Context, in *StorageUploadInput) (*S
 
 // ---- Transfers between storages and servers ----
 
-type TransferEnd struct {
+type StorageTransferEnd struct {
 	StorageID *string `json:"storage_id,omitempty" format:"uuid"`
 	ServerID  *string `json:"server_id,omitempty" format:"uuid"`
 }
 
-type TransferBody struct {
+type StorageTransferBody struct {
 	Source struct {
-		TransferEnd
+		StorageTransferEnd
 		Paths []string `json:"paths" minItems:"1" maxItems:"1000"`
 	} `json:"source"`
 	Destination struct {
-		TransferEnd
+		StorageTransferEnd
 		Path string `json:"path" doc:"Folder to put them in"`
 	} `json:"destination"`
 	Move      bool `json:"move,omitempty" doc:"Delete each source once it's copied"`
@@ -1013,7 +1017,7 @@ type place struct {
 }
 
 // with opens one end of a transfer for the duration of fn.
-func (h *storageHandler) with(ctx context.Context, end TransferEnd, fn func(place) error) error {
+func (h *storageHandler) with(ctx context.Context, end StorageTransferEnd, fn func(place) error) error {
 	switch {
 	case end.StorageID != nil && *end.StorageID != "" && (end.ServerID == nil || *end.ServerID == ""):
 		return h.withFS(ctx, *end.StorageID, func(row sqlc.Storage, f storage.FS) error {
@@ -1034,14 +1038,34 @@ func (h *storageHandler) with(ctx context.Context, end TransferEnd, fn func(plac
 	return huma.Error422UnprocessableEntity("Each end needs exactly one of storage_id or server_id")
 }
 
-func (h *storageHandler) transfer(ctx context.Context, in *struct{ Body TransferBody }) (*struct{ Body TransferResult }, error) {
-	b := in.Body
-	out := &struct{ Body TransferResult }{}
-	err := h.with(ctx, b.Source.TransferEnd, func(src place) error {
+// transferPlan is a checked transfer with both ends open.
+type transferPlan struct {
+	src, dst place
+	dest     string
+	mkdir    bool        // dest doesn't exist yet
+	pairs    [][2]string // source path → path in dest
+}
+
+func (p transferPlan) title(move bool) string {
+	verb := "Copy"
+	if move {
+		verb = "Move"
+	}
+	what := path.Base(p.pairs[0][0])
+	if len(p.pairs) > 1 {
+		what = strconv.Itoa(len(p.pairs)) + " items"
+	}
+	return fmt.Sprintf("%s %s from %s to %s", verb, what, p.src.name, p.dst.name)
+}
+
+// plan opens both ends, checks the request and calls fn while they're open.
+// It changes nothing.
+func (h *storageHandler) plan(ctx context.Context, b StorageTransferBody, fn func(transferPlan) error) error {
+	return h.with(ctx, b.Source.StorageTransferEnd, func(src place) error {
 		if b.Move && src.readOnly {
 			return huma.Error403Forbidden(src.name + " is read-only, so files can't be moved out of it. Copy them instead.")
 		}
-		return h.with(ctx, b.Destination.TransferEnd, func(dst place) error {
+		return h.with(ctx, b.Destination.StorageTransferEnd, func(dst place) error {
 			if dst.readOnly {
 				return huma.Error403Forbidden(dst.name + " is read-only in Morcheh")
 			}
@@ -1049,56 +1073,140 @@ func (h *storageHandler) transfer(ctx context.Context, in *struct{ Body Transfer
 			if err != nil {
 				return err
 			}
-			if e, err := dst.fs.Stat(ctx, dest); err != nil {
+			p := transferPlan{src: src, dst: dst, dest: dest}
+			if e, ok, err := exists(ctx, dst.fs, dest); err != nil {
 				return storageProblem(dest, err)
+			} else if !ok {
+				p.mkdir = true
 			} else if !e.Dir {
 				return huma.Error422UnprocessableEntity("Not a folder: " + dest)
 			}
-			var pairs [][2]string
 			var clashes []string
 			for _, raw := range b.Source.Paths {
-				p, err := src.resolve(raw)
+				sp, err := src.resolve(raw)
 				if err != nil {
 					return err
 				}
-				if p == "/" {
+				if sp == "/" {
 					return huma.Error422UnprocessableEntity("Pick files or folders, not the top folder")
 				}
-				target := path.Join(dest, path.Base(p))
-				if src.fs == dst.fs && storage.Within(target, p) {
-					return huma.Error422UnprocessableEntity("Can't put " + path.Base(p) + " inside itself")
+				target := path.Join(dest, path.Base(sp))
+				if src.fs == dst.fs && storage.Within(target, sp) {
+					return huma.Error422UnprocessableEntity("Can't put " + path.Base(sp) + " inside itself")
 				}
-				if _, ok, err := exists(ctx, dst.fs, target); err != nil {
-					return storageProblem(target, err)
-				} else if ok && !b.Overwrite {
-					clashes = append(clashes, path.Base(p))
+				if !p.mkdir {
+					if _, ok, err := exists(ctx, dst.fs, target); err != nil {
+						return storageProblem(target, err)
+					} else if ok && !b.Overwrite {
+						clashes = append(clashes, path.Base(sp))
+					}
 				}
-				pairs = append(pairs, [2]string{p, target})
+				p.pairs = append(p.pairs, [2]string{sp, target})
 			}
 			if len(clashes) > 0 {
 				return huma.Error409Conflict("Already in " + dest + ": " + strings.Join(clashes, ", "))
 			}
-			var prog storage.Progress
-			for _, pr := range pairs {
-				if b.Overwrite {
-					if e, ok, _ := exists(ctx, dst.fs, pr[1]); ok && e.Dir {
-						if err := dst.fs.Remove(ctx, pr[1]); err != nil {
-							return storageProblem(pr[1], err)
-						}
-					}
-				}
-				if err := storage.CopyTree(ctx, src.fs, pr[0], dst.fs, pr[1], &prog); err != nil {
-					return storageProblem(pr[0], fmt.Errorf("%s → %s: %w", src.name, dst.name, err))
-				}
-				if b.Move {
-					if err := src.fs.Remove(ctx, pr[0]); err != nil {
-						return storageProblem(pr[0], err)
+			return fn(p)
+		})
+	})
+}
+
+// transfer checks the request and queues it as a job, so the copy goes on
+// after the browser leaves and shows its progress.
+func (h *storageHandler) transfer(ctx context.Context, in *struct{ Body StorageTransferBody }) (*JobOutput, error) {
+	b := in.Body
+	var spec jobs.Spec
+	err := h.plan(ctx, b, func(p transferPlan) error {
+		target := &JobPlace{Path: p.dest, Name: p.dst.name}
+		if id := b.Destination.ServerID; id != nil && *id != "" {
+			target.ServerID = *id
+		} else {
+			target.StorageID = *b.Destination.StorageID
+		}
+		spec = jobs.Spec{
+			Kind: "transfer", Title: p.title(b.Move), Params: b, Target: target,
+			Refs: placeRefs(deref(b.Source.ServerID), deref(b.Source.StorageID),
+				deref(b.Destination.ServerID), deref(b.Destination.StorageID)),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return submit(ctx, h.servers.jobs, spec)
+}
+
+// runTransfer is the transfer job: it checks again (things may have changed
+// while it was queued), counts what's to copy, then copies it.
+func (h *storageHandler) runTransfer(ctx context.Context, t *jobs.Task) (any, error) {
+	var b StorageTransferBody
+	if err := t.Decode(&b); err != nil {
+		return nil, err
+	}
+	var out StorageTransferResult
+	err := h.plan(ctx, b, func(p transferPlan) error {
+		src, dst := p.src, p.dst
+		t.Update(func(pr *jobs.Progress) { pr.Phase = "Counting files" })
+		var files int
+		var bytes int64
+		for _, pr := range p.pairs {
+			n, size, err := storage.Measure(ctx, src.fs, pr[0])
+			if err != nil {
+				return storageProblem(pr[0], err)
+			}
+			files, bytes = files+n, bytes+size
+		}
+		phase := "Copying"
+		if b.Move {
+			phase = "Moving"
+		}
+		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Total, pr.ItemsTotal = phase, bytes, files })
+		t.Logf("%s %d files (%s) from %s to %s:%s", phase, files, humanBytes(bytes), src.name, dst.name, p.dest)
+
+		if p.mkdir {
+			if err := dst.fs.Mkdir(ctx, p.dest); err != nil {
+				return storageProblem(p.dest, err)
+			}
+		}
+		var prog storage.Progress
+		prog.OnBytes = t.Add
+		for _, pr := range p.pairs {
+			base := path.Dir(pr[0])
+			prog.OnFile = func(f string) {
+				done := prog.Files
+				t.Update(func(p *jobs.Progress) {
+					p.Current = strings.TrimPrefix(strings.TrimPrefix(f, base), "/")
+					p.Items = done
+				})
+			}
+			if b.Overwrite {
+				if e, ok, _ := exists(ctx, dst.fs, pr[1]); ok && e.Dir {
+					if err := dst.fs.Remove(ctx, pr[1]); err != nil {
+						return storageProblem(pr[1], err)
 					}
 				}
 			}
-			out.Body = TransferResult{Files: prog.Files, Bytes: prog.Bytes}
-			return nil
-		})
+			if err := storage.CopyTree(ctx, src.fs, pr[0], dst.fs, pr[1], &prog); err != nil {
+				return storageProblem(pr[0], fmt.Errorf("%s → %s: %w", src.name, dst.name, err))
+			}
+			t.Logf("%s → %s", pr[0], pr[1])
+			if b.Move {
+				if err := src.fs.Remove(ctx, pr[0]); err != nil {
+					return storageProblem(pr[0], err)
+				}
+				t.Logf("Removed %s from %s", pr[0], src.name)
+			}
+		}
+		t.Update(func(p *jobs.Progress) { p.Items = prog.Files })
+		out = StorageTransferResult{Files: prog.Files, Bytes: prog.Bytes}
+		return nil
 	})
 	return out, err
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

@@ -116,22 +116,22 @@ type StorageIDPath struct {
 
 // StorageSettings is how to reach a storage.
 type StorageSettings struct {
-	Protocol   string `json:"protocol" enum:"s3,ftp,sftp,webdav"`
-	Provider   string `json:"provider,omitempty" maxLength:"32"`
-	Host       string `json:"host" minLength:"1" maxLength:"500" doc:"S3: endpoint URL or host (https unless given); WebDAV: the folder's URL; FTP/SFTP: host name or IP"`
-	Port       int32  `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"0 or left out = the default (21, 990 for implicit FTPS, 22; S3 and WebDAV take it from the URL)"`
-	Username   string `json:"username,omitempty" maxLength:"256" doc:"S3: access key id. Empty FTP user logs in anonymously"`
-	AuthMethod string `json:"auth_method,omitempty" enum:"password,private_key" default:"password" doc:"private_key is SFTP only"`
-	Secret     string `json:"secret,omitempty" maxLength:"4096" doc:"Password, or S3 secret key. On update, leave out to keep the stored one"`
-	ClearSecret bool  `json:"clear_secret,omitempty" doc:"On update: forget the stored password / secret key"`
-	PrivateKey string `json:"private_key,omitempty" maxLength:"16384" doc:"On update, leave out to keep the stored one"`
-	Passphrase string `json:"passphrase,omitempty" maxLength:"1024"`
-	Bucket     string `json:"bucket,omitempty" maxLength:"63" doc:"S3: stay in one bucket; empty lists every bucket"`
-	Region     string `json:"region,omitempty" maxLength:"64"`
-	PathStyle  bool   `json:"path_style,omitempty" doc:"S3: endpoint/bucket/key URLs (MinIO and most self-hosted servers)"`
-	TLS        string `json:"tls,omitempty" enum:"none,explicit,implicit" default:"none" doc:"FTP: explicit = AUTH TLS on the normal port, implicit = FTPS (990)"`
-	InsecureTLS bool  `json:"insecure_tls,omitempty" doc:"Accept any TLS certificate (self-signed). Anyone on the path can then read the traffic"`
-	RootPath   string `json:"root_path,omitempty" maxLength:"1024" doc:"Folder to show as the top (S3: bucket/prefix)"`
+	Protocol    string `json:"protocol" enum:"s3,ftp,sftp,webdav"`
+	Provider    string `json:"provider,omitempty" maxLength:"32"`
+	Host        string `json:"host" minLength:"1" maxLength:"500" doc:"S3: endpoint URL or host (https unless given); WebDAV: the folder's URL; FTP/SFTP: host name or IP"`
+	Port        int32  `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"0 or left out = the default (21, 990 for implicit FTPS, 22; S3 and WebDAV take it from the URL)"`
+	Username    string `json:"username,omitempty" maxLength:"256" doc:"S3: access key id. Empty FTP user logs in anonymously"`
+	AuthMethod  string `json:"auth_method,omitempty" enum:"password,private_key" default:"password" doc:"private_key is SFTP only"`
+	Secret      string `json:"secret,omitempty" maxLength:"4096" doc:"Password, or S3 secret key. On update, leave out to keep the stored one"`
+	ClearSecret bool   `json:"clear_secret,omitempty" doc:"On update: forget the stored password / secret key"`
+	PrivateKey  string `json:"private_key,omitempty" maxLength:"16384" doc:"On update, leave out to keep the stored one"`
+	Passphrase  string `json:"passphrase,omitempty" maxLength:"1024"`
+	Bucket      string `json:"bucket,omitempty" maxLength:"63" doc:"S3: stay in one bucket; empty lists every bucket"`
+	Region      string `json:"region,omitempty" maxLength:"64"`
+	PathStyle   bool   `json:"path_style,omitempty" doc:"S3: endpoint/bucket/key URLs (MinIO and most self-hosted servers)"`
+	TLS         string `json:"tls,omitempty" enum:"none,explicit,implicit" default:"none" doc:"FTP: explicit = AUTH TLS on the normal port, implicit = FTPS (990)"`
+	InsecureTLS bool   `json:"insecure_tls,omitempty" doc:"Accept any TLS certificate (self-signed). Anyone on the path can then read the traffic"`
+	RootPath    string `json:"root_path,omitempty" maxLength:"1024" doc:"Folder to show as the top (S3: bucket/prefix)"`
 }
 
 type StorageBody struct {

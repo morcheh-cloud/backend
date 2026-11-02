@@ -18,6 +18,24 @@ type Folder struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 }
 
+type Job struct {
+	ID         uuid.UUID   `json:"id"`
+	Kind       string      `json:"kind"`
+	Title      string      `json:"title"`
+	Params     []byte      `json:"params"`
+	Refs       []uuid.UUID `json:"refs"`
+	Target     []byte      `json:"target"`
+	State      string      `json:"state"`
+	Progress   []byte      `json:"progress"`
+	Result     []byte      `json:"result"`
+	Error      string      `json:"error"`
+	Log        string      `json:"log"`
+	RetryOf    *uuid.UUID  `json:"retry_of"`
+	CreatedAt  time.Time   `json:"created_at"`
+	StartedAt  *time.Time  `json:"started_at"`
+	FinishedAt *time.Time  `json:"finished_at"`
+}
+
 type Server struct {
 	ID            uuid.UUID  `json:"id"`
 	FolderID      *uuid.UUID `json:"folder_id"`

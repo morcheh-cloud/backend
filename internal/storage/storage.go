@@ -253,10 +253,39 @@ func walkList(ctx context.Context, f FS, dir string, fn func(Entry) error) error
 // ErrSkip from a Walk callback stops the walk without an error.
 var ErrSkip = errors.New("skip")
 
-// Progress counts what a copy moved.
+// Progress counts what a copy moved. The hooks, when set, see it happen:
+// OnFile as each file starts, OnBytes as its contents go through.
 type Progress struct {
-	Files int
-	Bytes int64
+	Files   int
+	Bytes   int64
+	OnFile  func(path string)
+	OnBytes func(n int64)
+}
+
+func (p *Progress) file(path string) {
+	if p != nil && p.OnFile != nil {
+		p.OnFile(path)
+	}
+}
+
+// Measure counts the files under p (p itself when it's a file) and their
+// bytes, for a progress bar's total.
+func Measure(ctx context.Context, f FS, p string) (files int, bytes int64, err error) {
+	e, err := f.Stat(ctx, p)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !e.Dir {
+		return 1, e.Size, nil
+	}
+	err = Walk(ctx, f, p, func(e Entry) error {
+		if !e.Dir {
+			files++
+			bytes += e.Size
+		}
+		return nil
+	})
+	return files, bytes, err
 }
 
 // CopyTree copies a file or folder from one storage (or the same one) to
@@ -264,6 +293,7 @@ type Progress struct {
 // storage's own copy when both ends are the same storage.
 func CopyTree(ctx context.Context, src FS, from string, dst FS, to string, p *Progress) error {
 	if src == dst {
+		p.file(from)
 		if err := src.Copy(ctx, from, to); !errors.Is(err, ErrUnsupported) {
 			if err == nil && p != nil {
 				p.Files++
@@ -300,7 +330,11 @@ func copyFile(ctx context.Context, src FS, e Entry, dst FS, to string, p *Progre
 	if size == 0 && e.Modified.IsZero() {
 		size = -1
 	}
+	p.file(e.Path)
 	cr := &countingReader{r: r}
+	if p != nil {
+		cr.on = p.OnBytes
+	}
 	if err := dst.Put(ctx, to, cr, size); err != nil {
 		return err
 	}
@@ -312,13 +346,17 @@ func copyFile(ctx context.Context, src FS, e Entry, dst FS, to string, p *Progre
 }
 
 type countingReader struct {
-	r io.Reader
-	n int64
+	r  io.Reader
+	n  int64
+	on func(int64)
 }
 
 func (c *countingReader) Read(b []byte) (int, error) {
 	n, err := c.r.Read(b)
 	c.n += int64(n)
+	if c.on != nil && n > 0 {
+		c.on(int64(n))
+	}
 	return n, err
 }
 

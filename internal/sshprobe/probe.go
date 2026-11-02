@@ -203,12 +203,29 @@ func Probe(ctx context.Context, t Target) Result {
 	stop := context.AfterFunc(ctx, func() { client.Close() })
 	defer stop()
 
-	if osInfo, err := detectOS(client); err == nil {
+	switch osInfo, err := detectOS(client); {
+	case err == nil:
 		res.OS, res.Detected = osInfo, true
-	} else {
+	case SessionClosed(err):
+		// Logging in isn't enough: nothing else would work on this server.
+		res.Status, res.Message = StatusError, SessionClosedMessage
+	default:
 		res.Message = "Connected, but couldn't detect the OS: " + err.Error()
 	}
 	return res
+}
+
+// SessionClosedMessage explains SessionClosed errors to the user.
+const SessionClosedMessage = "Logged in, but the server closed the connection " +
+	"when starting a session. Its SSH server may be unable to switch to this " +
+	"user (e.g. sshd isn't running as root); check its auth log."
+
+// SessionClosed reports whether the server dropped the connection while a
+// session was being opened, which x/crypto reports as a nil packet. sshd does
+// this after login when it can't set up the user (e.g. it can't switch uid).
+func SessionClosed(err error) bool {
+	return err != nil &&
+		strings.Contains(err.Error(), "unexpected packet in response to channel open")
 }
 
 func dialMessage(err error) string {

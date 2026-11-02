@@ -43,7 +43,7 @@ func openWebDAV(_ context.Context, cfg Config) (FS, Info, error) {
 	}
 	tr.ResponseHeaderTimeout = dialTimeout
 	c := gowebdav.NewClient(u.String(), cfg.Username, cfg.Secret)
-	c.SetTransport(tr)
+	c.SetTransport(slashRedirects{tr})
 	d := &davfs{c: c, tr: tr}
 
 	fi, err := c.Stat("/")
@@ -65,6 +65,36 @@ func openWebDAV(_ context.Context, cfg Config) (FS, Info, error) {
 		return nil, Info{}, &ConnError{StatusError, "That URL is a file, not a folder", nil}
 	}
 	return d, Info{}, nil
+}
+
+// slashRedirects repeats a request on "dir/" when the server redirects
+// "dir" there (Apache mod_dav does). Go's client would follow the 301 as a
+// GET, so PROPFIND sees HTML and DELETE "succeeds" without deleting.
+type slashRedirects struct{ base http.RoundTripper }
+
+func (t slashRedirects) RoundTrip(r *http.Request) (*http.Response, error) {
+	res, err := t.base.RoundTrip(r)
+	if err != nil || r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return res, err
+	}
+	switch res.StatusCode {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+	default:
+		return res, nil
+	}
+	loc, err := res.Location()
+	if err != nil || loc.Host != r.URL.Host || loc.Path != r.URL.Path+"/" || (r.Body != nil && r.GetBody == nil) {
+		return res, nil
+	}
+	again := r.Clone(r.Context())
+	again.URL = loc
+	if r.GetBody != nil {
+		if again.Body, err = r.GetBody(); err != nil {
+			return res, nil
+		}
+	}
+	res.Body.Close()
+	return t.base.RoundTrip(again)
 }
 
 func davText(err error) string {

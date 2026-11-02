@@ -12,7 +12,7 @@ build:
 tidy:
 	go mod tidy
 
-# Postgres + Redis; waits until both are healthy.
+# Postgres + Redis + the SSH test server; waits until they are up.
 up:
 	docker compose up -d --wait
 
