@@ -72,6 +72,7 @@ func NewRouter(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secr
 	registerPower(api, servers)
 	st := newStorageHandler(sqlc.New(db), box, servers)
 	registerStorages(api, st)
+	registerStorageCredentials(api, st)
 	registerStorageFiles(api, st)
 	registerJobs(api, runner)
 

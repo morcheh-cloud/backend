@@ -66,8 +66,47 @@ services:
       timeout: 3s
       retries: 10
 
+  # Local FTP target for testing (ant / colony).
+  # Passive data ports need the same numbers inside and out.
+  test-ftp:
+    image: docker.arvancloud.ir/delfer/alpine-ftp-server:latest
+    environment:
+      ADDRESS: 127.0.0.1
+      MIN_PORT: 21000
+      MAX_PORT: 21010
+      USERS: ant|colony|/ftp/ant
+    ports:
+      - "127.0.0.1:2121:21"
+      - "127.0.0.1:21000-21010:21000-21010"
+    volumes:
+      - ftpdata:/ftp
+    healthcheck:
+      test: ["CMD-SHELL", "nc -w 2 127.0.0.1 21 </dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Local WebDAV target for testing (ant / colony).
+  test-webdav:
+    image: docker.arvancloud.ir/bytemark/webdav:latest
+    environment:
+      AUTH_TYPE: Basic
+      USERNAME: ant
+      PASSWORD: colony
+    ports:
+      - "127.0.0.1:8090:80"
+    volumes:
+      - webdavdata:/var/lib/dav
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/80"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pgdata:
   redisdata:
   sshconfig:
   miniodata:
+  ftpdata:
+  webdavdata:

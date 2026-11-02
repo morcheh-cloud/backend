@@ -12,7 +12,7 @@ build:
 tidy:
 	go mod tidy
 
-# Postgres + Redis + the SSH and S3 test servers; waits until they are up.
+# Postgres + Redis + the SSH, S3, FTP and WebDAV test servers; waits until they are up.
 up:
 	docker compose up -d --wait
 
