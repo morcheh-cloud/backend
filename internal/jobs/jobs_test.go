@@ -141,6 +141,66 @@ func TestPerRefLimitAndCancel(t *testing.T) {
 	wait(t, r, other.ID, Succeeded)
 }
 
+func TestQuickSkipsTheLimits(t *testing.T) {
+	r, _ := newRunner(t)
+	r.Limit, r.PerRef = 1, 1
+	release := make(chan struct{})
+	r.Handle("block", func(context.Context, *Task) (any, error) {
+		<-release
+		return nil, nil
+	})
+	r.Handle("noop", func(context.Context, *Task) (any, error) { return nil, nil })
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	server := uuid.New()
+	long, _ := r.Submit(context.Background(), Spec{Kind: "block", Refs: []uuid.UUID{server}})
+	wait(t, r, long.ID, Running)
+	waiting, _ := r.Submit(context.Background(), Spec{Kind: "noop", Refs: []uuid.UUID{server}})
+	quick, _ := r.Submit(context.Background(), Spec{Kind: "noop", Refs: []uuid.UUID{server}, Quick: true})
+	wait(t, r, quick.ID, Succeeded)
+	if j, _ := r.Get(context.Background(), waiting.ID); j.State != Queued {
+		t.Errorf("the ordinary job is %s, want queued", j.State)
+	}
+	close(release)
+	wait(t, r, waiting.ID, Succeeded)
+}
+
+func TestLockedRefusesCancel(t *testing.T) {
+	r, _ := newRunner(t)
+	locked, release := make(chan struct{}), make(chan struct{})
+	r.Handle("lock", func(ctx context.Context, t *Task) (any, error) {
+		t.Update(func(p *Progress) { p.Locked = true })
+		close(locked)
+		<-release
+		t.Update(func(p *Progress) { p.Locked = false })
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	j, _ := r.Submit(context.Background(), Spec{Kind: "lock"})
+	<-locked
+	if _, err := r.Cancel(context.Background(), j.ID); !errors.Is(err, ErrLocked) {
+		t.Fatalf("cancel while locked: %v", err)
+	}
+	if got, _ := r.Get(context.Background(), j.ID); got.State != Running {
+		t.Fatalf("state = %s, want still running", got.State)
+	}
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := r.Cancel(context.Background(), j.ID); err == nil {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatalf("cancel after unlock: %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	wait(t, r, j.ID, Canceled)
+}
+
 func TestSubscribeCoalesces(t *testing.T) {
 	r, _ := newRunner(t)
 	r.Handle("noop", func(context.Context, *Task) (any, error) { return nil, nil })

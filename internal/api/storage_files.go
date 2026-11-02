@@ -75,6 +75,19 @@ type StorageAffectedOutput struct {
 	}
 }
 
+// StorageMoveBody is what to copy or move inside one storage, and where to.
+type StorageMoveBody struct {
+	Paths       []string `json:"paths" minItems:"1" maxItems:"1000"`
+	Destination string   `json:"destination" doc:"Folder to put them in"`
+}
+
+// sameStorageParams is a copy or move inside one storage. The names are
+// planned again when the job runs.
+type sameStorageParams struct {
+	StorageID string `json:"storage_id"`
+	StorageMoveBody
+}
+
 type StorageTransferResult struct {
 	Files int   `json:"files" doc:"Files copied"`
 	Bytes int64 `json:"bytes" doc:"Bytes streamed through Morcheh (0 when the storage copied by itself)"`
@@ -600,73 +613,39 @@ func registerStorageFiles(api huma.API, h *storageHandler) {
 		return out, err
 	})
 
-	type StorageMoveBody struct {
-		Paths       []string `json:"paths" minItems:"1" maxItems:"1000"`
-		Destination string   `json:"destination" doc:"Folder to put them in"`
-	}
-
 	huma.Register(api, huma.Operation{
 		OperationID: "storage-move",
 		Method:      http.MethodPost,
 		Path:        "/storages/{id}/files/move",
 		Summary:     "Move files into a folder",
-		Description: "A name already in the destination is 409 and nothing moves.",
-		Tags:        tags,
+		Description: "A name already in the destination is 409 and nothing moves; 422 when they're already there. " +
+			"Runs as a background job (kind `storage-move`) that starts at once.",
+		Tags:          tags,
+		DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *struct {
 		StorageIDPath
 		Body StorageMoveBody
-	}) (*StorageAffectedOutput, error) {
-		out := &StorageAffectedOutput{}
-		err := h.withFS(ctx, in.ID, func(row sqlc.Storage, f storage.FS) error {
-			if err := writable(row); err != nil {
-				return err
-			}
-			pairs, err := planStorageTransfer(ctx, f, in.Body.Paths, in.Body.Destination, false)
-			if err != nil {
-				return err
-			}
-			for _, pr := range pairs {
-				if err := f.Rename(ctx, pr[0], pr[1]); err != nil {
-					return storageProblem(pr[0], err)
-				}
-				out.Body.Affected++
-			}
-			return nil
-		})
-		return out, err
+	}) (*JobOutput, error) {
+		return h.submitSameStorage(ctx, in.ID, "storage-move", in.Body)
 	})
+	h.servers.jobs.Handle("storage-move", h.runStorageMove)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "storage-copy",
 		Method:      http.MethodPost,
 		Path:        "/storages/{id}/files/copy",
 		Summary:     "Copy files into a folder",
-		Description: "Copies into their own folder get a free \"copy\" name; any other clash is 409.",
-		Tags:        tags,
+		Description: "Copies into their own folder get a free \"copy\" name; any other clash is 409. " +
+			"Runs as a background job (kind `storage-copy`, result StorageTransferResult).",
+		Tags:          tags,
+		DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *struct {
 		StorageIDPath
 		Body StorageMoveBody
-	}) (*struct{ Body StorageTransferResult }, error) {
-		out := &struct{ Body StorageTransferResult }{}
-		err := h.withFS(ctx, in.ID, func(row sqlc.Storage, f storage.FS) error {
-			if err := writable(row); err != nil {
-				return err
-			}
-			pairs, err := planStorageTransfer(ctx, f, in.Body.Paths, in.Body.Destination, true)
-			if err != nil {
-				return err
-			}
-			var prog storage.Progress
-			for _, pr := range pairs {
-				if err := storage.CopyTree(ctx, f, pr[0], f, pr[1], &prog); err != nil {
-					return storageProblem(pr[0], err)
-				}
-			}
-			out.Body = StorageTransferResult{Files: prog.Files, Bytes: prog.Bytes}
-			return nil
-		})
-		return out, err
+	}) (*JobOutput, error) {
+		return h.submitSameStorage(ctx, in.ID, "storage-copy", in.Body)
 	})
+	h.servers.jobs.Handle("storage-copy", h.runStorageCopy)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "storage-delete",
@@ -1202,6 +1181,151 @@ func (h *storageHandler) runTransfer(ctx context.Context, t *jobs.Task) (any, er
 		return nil
 	})
 	return out, err
+}
+
+// ---- Copy & move inside one storage ----
+
+// submitSameStorage checks a copy or move at once and queues it.
+func (h *storageHandler) submitSameStorage(ctx context.Context, id, kind string, b StorageMoveBody) (*JobOutput, error) {
+	copying := kind == "storage-copy"
+	var name, dest string
+	var names []string
+	err := h.withFS(ctx, id, func(row sqlc.Storage, f storage.FS) error {
+		if err := writable(row); err != nil {
+			return err
+		}
+		pairs, err := planStorageTransfer(ctx, f, b.Paths, b.Destination, copying)
+		if err != nil {
+			return err
+		}
+		if len(pairs) == 0 {
+			return huma.Error422UnprocessableEntity("Already in that folder")
+		}
+		name, dest = row.Name, path.Dir(pairs[0][1])
+		names = names[:0]
+		for _, pr := range pairs {
+			names = append(names, path.Base(pr[0]))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	verb := "Move "
+	if copying {
+		verb = "Copy "
+	}
+	b.Destination = dest
+	return submit(ctx, h.servers.jobs, jobs.Spec{
+		Kind: kind, Title: verb + what(names) + " to " + dest, Refs: placeRefs(id),
+		Params: sameStorageParams{id, b},
+		Target: &JobPlace{StorageID: id, Path: dest, Name: name},
+		Quick:  !copying,
+	})
+}
+
+func (h *storageHandler) runStorageMove(ctx context.Context, t *jobs.Task) (any, error) {
+	var p sameStorageParams
+	if err := t.Decode(&p); err != nil {
+		return nil, err
+	}
+	var started bool
+	return nil, h.withFS(ctx, p.StorageID, func(row sqlc.Storage, f storage.FS) error {
+		if started {
+			return errLostPartWay
+		}
+		if err := writable(row); err != nil {
+			return err
+		}
+		pairs, err := planStorageTransfer(ctx, f, p.Paths, p.Destination, false)
+		if err != nil {
+			return err
+		}
+		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.ItemsTotal = "Moving", len(pairs) })
+		started = true
+		for _, pair := range pairs {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			t.Update(func(pr *jobs.Progress) { pr.Current = path.Base(pair[0]) })
+			if err := f.Rename(ctx, pair[0], pair[1]); err != nil {
+				return storageProblem(pair[0], err)
+			}
+			t.Logf("%s → %s", pair[0], pair[1])
+			t.Update(func(pr *jobs.Progress) { pr.Items++ })
+		}
+		return nil
+	})
+}
+
+func (h *storageHandler) runStorageCopy(ctx context.Context, t *jobs.Task) (any, error) {
+	var p sameStorageParams
+	if err := t.Decode(&p); err != nil {
+		return nil, err
+	}
+	var out StorageTransferResult
+	var started bool
+	err := h.withFS(ctx, p.StorageID, func(row sqlc.Storage, f storage.FS) error {
+		if started {
+			return errLostPartWay
+		}
+		if err := writable(row); err != nil {
+			return err
+		}
+		pairs, err := planStorageTransfer(ctx, f, p.Paths, p.Destination, true)
+		if err != nil {
+			return err
+		}
+		t.Update(func(pr *jobs.Progress) { pr.Phase = "Counting files" })
+		var files int
+		var bytes int64
+		for _, pair := range pairs {
+			n, size, err := storage.Measure(ctx, f, pair[0])
+			if err != nil {
+				return storageProblem(pair[0], err)
+			}
+			files, bytes = files+n, bytes+size
+		}
+		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Total, pr.ItemsTotal = "Copying", bytes, files })
+		t.Logf("Copying %d files (%s) to %s", files, humanBytes(bytes), p.Destination)
+		started = true
+		var prog storage.Progress
+		prog.OnBytes = t.Add
+		for _, pair := range pairs {
+			// The clean-up below must only ever remove what this copy made.
+			if _, ok, err := exists(ctx, f, pair[1]); err != nil {
+				return storageProblem(pair[1], err)
+			} else if ok {
+				return huma.Error409Conflict(path.Base(pair[1]) + " already exists")
+			}
+			base := path.Dir(pair[0])
+			prog.OnFile = func(file string) {
+				done := prog.Files
+				t.Update(func(pr *jobs.Progress) {
+					pr.Current = strings.TrimPrefix(strings.TrimPrefix(file, base), "/")
+					pr.Items = done
+				})
+			}
+			if err := storage.CopyTree(ctx, f, pair[0], f, pair[1], &prog); err != nil {
+				rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+				defer cancel()
+				if rerr := f.Remove(rctx, pair[1]); rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
+					t.Logf("Couldn't remove the unfinished %s: %v", pair[1], rerr)
+				} else {
+					t.Logf("Removed the unfinished %s", pair[1])
+				}
+				return storageProblem(pair[0], err)
+			}
+			t.Logf("%s → %s", pair[0], pair[1])
+		}
+		t.Update(func(pr *jobs.Progress) { pr.Items = prog.Files })
+		out = StorageTransferResult{Files: prog.Files, Bytes: prog.Bytes}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func deref(s *string) string {

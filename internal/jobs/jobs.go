@@ -50,6 +50,7 @@ var (
 	ErrNotFound = errors.New("job not found")
 	ErrFinished = errors.New("the job has already finished")
 	ErrActive   = errors.New("the job is still queued or running")
+	ErrLocked   = errors.New("the job is at a step that can't be stopped safely")
 )
 
 // Progress is what a running job reports. Every field is optional; Total 0
@@ -62,6 +63,7 @@ type Progress struct {
 	Items      int     `json:"items" doc:"Files (or other units) done"`
 	ItemsTotal int     `json:"items_total" doc:"Files in all; 0 = not known"`
 	Rate       float64 `json:"rate" doc:"Bytes per second, smoothed"`
+	Locked     bool    `json:"locked" doc:"At a step that can't be stopped safely; cancel answers 409 until it's over"`
 }
 
 // Handler runs one job. It returns what the job produced (stored as JSON) or
@@ -79,6 +81,10 @@ type Spec struct {
 	// Where its output lands, for links; nil for none.
 	Target  any
 	RetryOf *uuid.UUID
+	// Quick starts it at once, past both limits: for work that normally takes
+	// no time and shouldn't wait behind long jobs (a rename). Not stored, so
+	// after a restart or a retry it waits its turn like any other.
+	Quick bool
 }
 
 // Event is one change: Job is set when a job changed, Removed when one was
@@ -113,6 +119,7 @@ type entry struct {
 	cancel   context.CancelFunc
 	canceled bool // by the user, as opposed to a shutdown
 	dirty    bool // changed since the last event
+	quick    bool
 	saved    time.Time
 	// For the rate.
 	lastDone int64
@@ -197,7 +204,7 @@ func (r *Runner) Submit(ctx context.Context, s Spec) (sqlc.Job, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	e := &entry{job: j}
+	e := &entry{job: j, quick: s.Quick}
 	r.queue = append(r.queue, e)
 	r.emit(e)
 	r.schedule()
@@ -255,11 +262,18 @@ func (r *Runner) List(ctx context.Context, p sqlc.ListJobsParams) ([]sqlc.Job, e
 func (r *Runner) Cancel(ctx context.Context, id uuid.UUID) (sqlc.Job, error) {
 	r.mu.Lock()
 	if e := r.running[id]; e != nil {
+		defer r.mu.Unlock()
+		// It stays in running until its final state is saved.
+		if e.job.FinishedAt != nil {
+			return r.snapshot(e), ErrFinished
+		}
+		if e.progress.Locked {
+			return r.snapshot(e), ErrLocked
+		}
 		e.canceled = true
 		e.progress.Phase = "Canceling"
 		e.dirty = true
 		e.cancel()
-		defer r.mu.Unlock()
 		return r.snapshot(e), nil
 	}
 	if i := slices.IndexFunc(r.queue, func(e *entry) bool { return e.job.ID == id }); i >= 0 {
@@ -335,9 +349,11 @@ func (r *Runner) schedule() {
 	if r.base.Err() != nil {
 		return
 	}
-	for i := 0; i < len(r.queue) && len(r.running) < r.Limit; {
+	for i := 0; i < len(r.queue); {
 		e := r.queue[i]
-		if slices.ContainsFunc(e.job.Refs, func(ref uuid.UUID) bool { return r.busy[ref] >= r.PerRef }) {
+		full := len(r.running) >= r.Limit ||
+			slices.ContainsFunc(e.job.Refs, func(ref uuid.UUID) bool { return r.busy[ref] >= r.PerRef })
+		if full && !e.quick {
 			i++
 			continue
 		}
@@ -400,7 +416,7 @@ func (r *Runner) finish(e *entry, result any, err error) {
 	if err == nil && e.progress.Total > 0 {
 		e.progress.Done = e.progress.Total
 	}
-	e.progress.Phase, e.progress.Current, e.progress.Rate = "", "", 0
+	e.progress.Phase, e.progress.Current, e.progress.Rate, e.progress.Locked = "", "", 0, false
 	var res []byte
 	if err == nil && result != nil {
 		var merr error

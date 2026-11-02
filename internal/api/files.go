@@ -387,70 +387,6 @@ func registerFiles(api huma.API, h *serverHandler) {
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "move-files",
-		Method:      http.MethodPost,
-		Path:        "/servers/{id}/files/move",
-		Summary:     "Move files into a folder",
-		Description: "Nothing moves if any name already exists in the destination (409).",
-		Tags:        tags,
-	}, func(ctx context.Context, in *struct {
-		ServerIDPath
-		Body struct {
-			FilePathsBody
-			Destination string `json:"destination" minLength:"1"`
-		}
-	}) (*AffectedOutput, error) {
-		var n int64
-		err := h.withSFTP(ctx, in.ID, func(c *sshpool.Conn, s *sftp.Client) error {
-			pairs, err := planTransfer(s, in.Body.Paths, in.Body.Destination, false)
-			if err != nil {
-				return err
-			}
-			for _, pair := range pairs {
-				if err := move(ctx, c, s, pair[0], pair[1]); err != nil {
-					return err
-				}
-				n++
-			}
-			return nil
-		})
-		return affected(n), toProblem(err)
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID: "copy-files",
-		Method:      http.MethodPost,
-		Path:        "/servers/{id}/files/copy",
-		Summary:     "Copy files into a folder",
-		Description: "Copies with `cp -a` (keeps permissions and times). Copying into the same folder makes \"name copy\", \"name copy 2\"…; elsewhere an existing name is 409.",
-		Tags:        tags,
-	}, func(ctx context.Context, in *struct {
-		ServerIDPath
-		Body struct {
-			FilePathsBody
-			Destination string `json:"destination" minLength:"1"`
-		}
-	}) (*AffectedOutput, error) {
-		var n int64
-		err := h.withSFTP(ctx, in.ID, func(c *sshpool.Conn, s *sftp.Client) error {
-			pairs, err := planTransfer(s, in.Body.Paths, in.Body.Destination, true)
-			if err != nil {
-				return err
-			}
-			cmds := make([]string, len(pairs))
-			for i, pair := range pairs {
-				cmds[i] = "cp -a -- " + terminal.ShellQuote(pair[0]) + " " + terminal.ShellQuote(pair[1])
-			}
-			if _, err := run(ctx, c, strings.Join(cmds, " && ")); err != nil {
-				return err
-			}
-			n = int64(len(pairs))
-			return nil
-		})
-		return affected(n), toProblem(err)
-	})
-
-	huma.Register(api, huma.Operation{
 		OperationID: "delete-files",
 		Method:      http.MethodPost,
 		Path:        "/servers/{id}/files/delete",
@@ -1027,8 +963,7 @@ func move(ctx context.Context, c *sshpool.Conn, s *sftp.Client, from, to string)
 	if !errors.As(err, &se) {
 		return fsError(from, err)
 	}
-	_, err = run(ctx, c, "mv -- "+terminal.ShellQuote(from)+" "+terminal.ShellQuote(to))
-	return err
+	return runStream(ctx, c, "mv -- "+terminal.ShellQuote(from)+" "+terminal.ShellQuote(to), nil, nil)
 }
 
 func stat(c *sshpool.Conn, s *sftp.Client, p string) (FileEntry, error) {

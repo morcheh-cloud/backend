@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -150,14 +151,25 @@ type execResult struct {
 // exec runs script and collects stdout and stderr together, keeping at most
 // limit bytes. A non-zero exit is a result, not an error.
 func (r *rootShell) exec(ctx context.Context, script string, timeout time.Duration, limit int) (*execResult, error) {
+	out := &cappedBuffer{limit: limit}
+	res, err := r.execTo(ctx, script, timeout, out)
+	if err != nil {
+		return nil, err
+	}
+	res.output, res.truncated = out.bytes()
+	return res, nil
+}
+
+// execTo is exec writing stdout and stderr to w as they come. w is written
+// from two goroutines; res.output stays empty.
+func (r *rootShell) execTo(ctx context.Context, script string, timeout time.Duration, w io.Writer) (*execResult, error) {
 	cmd, stdin := r.command(script)
 	sess, err := r.c.Client.NewSession()
 	if err != nil {
 		return nil, err
 	}
 	defer sess.Close()
-	out := &cappedBuffer{limit: limit}
-	sess.Stdout, sess.Stderr = out, out
+	sess.Stdout, sess.Stderr = w, w
 	if stdin != "" {
 		sess.Stdin = strings.NewReader(stdin)
 	}
@@ -170,7 +182,6 @@ func (r *rootShell) exec(ctx context.Context, script string, timeout time.Durati
 	start := time.Now()
 	err = sess.Run(cmd)
 	res := &execResult{duration: time.Since(start)}
-	res.output, res.truncated = out.bytes()
 	var exit *ssh.ExitError
 	switch {
 	case err == nil:
@@ -210,4 +221,47 @@ func (b *cappedBuffer) bytes() ([]byte, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.Bytes(), b.dropped
+}
+
+// lineWriter hands each non-blank line written to it to fn, from any number
+// of goroutines (stdout and stderr share one). A progress bar's \r ends a
+// line too. Call flush for a last line with no newline.
+type lineWriter struct {
+	fn  func(string)
+	mu  sync.Mutex
+	buf []byte
+}
+
+const maxLine = 64 << 10
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.buf = append(w.buf, p...)
+	for {
+		i := bytes.IndexAny(w.buf, "\r\n")
+		if i < 0 {
+			break
+		}
+		w.emit(w.buf[:i])
+		w.buf = w.buf[i+1:]
+	}
+	if len(w.buf) > maxLine {
+		w.emit(w.buf)
+		w.buf = nil
+	}
+	return len(p), nil
+}
+
+func (w *lineWriter) flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.emit(w.buf)
+	w.buf = nil
+}
+
+func (w *lineWriter) emit(line []byte) {
+	if s := strings.TrimSpace(string(line)); s != "" {
+		w.fn(s)
+	}
 }

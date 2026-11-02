@@ -26,7 +26,7 @@ import (
 // reports progress and can be canceled.
 type Job struct {
 	ID         string         `json:"id" format:"uuid"`
-	Kind       string         `json:"kind" doc:"What it does: transfer, compress, extract or fetch" example:"transfer"`
+	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install or fail2ban-uninstall" example:"transfer"`
 	Title      string         `json:"title" example:"Copy backup.tar.gz from MinIO to web-01"`
 	State      string         `json:"state" enum:"queued,running,succeeded,failed,canceled,interrupted"`
 	Refs       []string       `json:"refs" doc:"Servers and storages it touches"`
@@ -91,6 +91,8 @@ func jobProblem(err error) error {
 		return huma.Error409Conflict("The job has already finished")
 	case errors.Is(err, jobs.ErrActive):
 		return huma.Error409Conflict("The job is still queued or running; cancel it first")
+	case errors.Is(err, jobs.ErrLocked):
+		return huma.Error409Conflict("This step can't be stopped safely. It will finish on its own.")
 	}
 	return internalError(err)
 }
@@ -175,7 +177,7 @@ func registerJobs(api huma.API, r *jobs.Runner) {
 		Method:      http.MethodPost,
 		Path:        "/jobs/{id}/cancel",
 		Summary:     "Cancel a job",
-		Description: "A queued job is dropped at once; a running one stops as soon as it can (its state changes on the stream). 409 when it has already finished.",
+		Description: "A queued job is dropped at once; a running one stops as soon as it can (its state changes on the stream). 409 when it has already finished, or while progress.locked is true (a package manager running).",
 		Tags:        tags,
 	}, func(ctx context.Context, in *JobIDPath) (*JobOutput, error) {
 		j, err := r.Cancel(ctx, uuid.MustParse(in.ID))

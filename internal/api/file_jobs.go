@@ -2,11 +2,15 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -40,6 +44,20 @@ type fetchParams struct {
 	Dir       string `json:"dir"`
 	Name      string `json:"name"`
 	Overwrite bool   `json:"overwrite"`
+}
+
+// transferParams is a copy or move inside one server. The names are planned
+// again when the job runs: things may have changed while it waited.
+type transferParams struct {
+	ServerID    string   `json:"server_id"`
+	Paths       []string `json:"paths"`
+	Destination string   `json:"destination"`
+}
+
+// TransferFilesBody is what to copy or move, and where to.
+type TransferFilesBody struct {
+	FilePathsBody
+	Destination string `json:"destination" minLength:"1"`
 }
 
 // FetchBody asks a server to download a file from the web itself.
@@ -199,6 +217,40 @@ func registerFileJobs(api huma.API, h *serverHandler, tags []string) {
 		return h.submitFileJob(ctx, in.ID, "fetch", "Download "+name+" from "+u.Host, p.Dir, p)
 	})
 	h.jobs.Handle("fetch", h.runFetch)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "move-files",
+		Method:      http.MethodPost,
+		Path:        "/servers/{id}/files/move",
+		Summary:     "Move files into a folder",
+		Description: "Nothing moves if any name already exists in the destination (409); 422 when they're already there. " +
+			"Runs as a background job (kind `move`) that starts at once: a rename takes no time. Between filesystems it's `mv`, which can take long.",
+		Tags:          tags,
+		DefaultStatus: http.StatusAccepted,
+	}, func(ctx context.Context, in *struct {
+		ServerIDPath
+		Body TransferFilesBody
+	}) (*JobOutput, error) {
+		return h.submitTransfer(ctx, in.ID, "move", in.Body)
+	})
+	h.jobs.Handle("move", h.runMove)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "copy-files",
+		Method:      http.MethodPost,
+		Path:        "/servers/{id}/files/copy",
+		Summary:     "Copy files into a folder",
+		Description: "Copies with `cp -a` (keeps permissions and times). Copying into the same folder makes \"name copy\", \"name copy 2\"…; elsewhere an existing name is 409. " +
+			"Runs as a background job (kind `copy`, result StorageTransferResult).",
+		Tags:          tags,
+		DefaultStatus: http.StatusAccepted,
+	}, func(ctx context.Context, in *struct {
+		ServerIDPath
+		Body TransferFilesBody
+	}) (*JobOutput, error) {
+		return h.submitTransfer(ctx, in.ID, "copy", in.Body)
+	})
+	h.jobs.Handle("copy", h.runCopy)
 }
 
 func (h *serverHandler) submitFileJob(ctx context.Context, id, kind, title, dir string, params any) (*JobOutput, error) {
@@ -359,6 +411,214 @@ func (h *serverHandler) runExtract(ctx context.Context, t *jobs.Task) (any, erro
 	}
 	t.Logf("Unpacked %s into %s", path.Base(p.Path), p.Dest)
 	return ExtractResult{Destination: p.Dest}, nil
+}
+
+// ---- Copy & move ----
+
+// submitTransfer checks a copy or move at once and queues it.
+func (h *serverHandler) submitTransfer(ctx context.Context, id, kind string, b TransferFilesBody) (*JobOutput, error) {
+	copying := kind == "copy"
+	var dest string
+	var names []string
+	err := h.withSFTP(ctx, id, func(_ *sshpool.Conn, s *sftp.Client) error {
+		pairs, err := planTransfer(s, b.Paths, b.Destination, copying)
+		if err != nil {
+			return err
+		}
+		if len(pairs) == 0 {
+			return huma.Error422UnprocessableEntity("Already in that folder")
+		}
+		dest = path.Dir(pairs[0][1])
+		names = names[:0]
+		for _, pr := range pairs {
+			names = append(names, path.Base(pr[0]))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, toProblem(err)
+	}
+	s, err := h.get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	verb := "Move "
+	if copying {
+		verb = "Copy "
+	}
+	return submit(ctx, h.jobs, jobs.Spec{
+		Kind: kind, Title: verb + what(names) + " to " + dest, Refs: placeRefs(id),
+		Params: transferParams{ServerID: id, Paths: b.Paths, Destination: dest},
+		Target: &JobPlace{ServerID: id, Path: dest, Name: s.Name},
+		Quick:  !copying,
+	})
+}
+
+// errLostPartWay stops withSFTP's retry once work has begun: run again, the
+// job would find its own half-done files and call them a clash.
+var errLostPartWay = errors.New("The connection to the server was lost part way through")
+
+func (h *serverHandler) runMove(ctx context.Context, t *jobs.Task) (any, error) {
+	var p transferParams
+	if err := t.Decode(&p); err != nil {
+		return nil, err
+	}
+	var started bool
+	err := h.withSFTP(ctx, p.ServerID, func(c *sshpool.Conn, s *sftp.Client) error {
+		if started {
+			return errLostPartWay
+		}
+		pairs, err := planTransfer(s, p.Paths, p.Destination, false)
+		if err != nil {
+			return err
+		}
+		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.ItemsTotal = "Moving", len(pairs) })
+		started = true
+		for _, pair := range pairs {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			t.Update(func(pr *jobs.Progress) { pr.Current = path.Base(pair[0]) })
+			if err := move(ctx, c, s, pair[0], pair[1]); err != nil {
+				// mv between filesystems copies, then deletes: stopped half way
+				// its target may be all that's left of a file, so it stays.
+				var failed *cmdError
+				if ctx.Err() != nil || errors.As(err, &failed) {
+					t.Logf("Stopped moving %s: some of it may be in both places", pair[0])
+				}
+				return err
+			}
+			t.Logf("%s → %s", pair[0], pair[1])
+			t.Update(func(pr *jobs.Progress) { pr.Items++ })
+		}
+		return nil
+	})
+	return nil, jobError(err)
+}
+
+func (h *serverHandler) runCopy(ctx context.Context, t *jobs.Task) (any, error) {
+	var p transferParams
+	if err := t.Decode(&p); err != nil {
+		return nil, err
+	}
+	var out StorageTransferResult
+	var started bool
+	err := h.withSFTP(ctx, p.ServerID, func(c *sshpool.Conn, s *sftp.Client) error {
+		if started {
+			return errLostPartWay
+		}
+		pairs, err := planTransfer(s, p.Paths, p.Destination, true)
+		if err != nil {
+			return err
+		}
+		sources := make([]string, len(pairs))
+		for i, pair := range pairs {
+			sources[i] = pair[0]
+		}
+		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.ItemsTotal = "Measuring", len(pairs) })
+		files, bytes := measure(ctx, c, sources)
+		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Total = "Copying", bytes })
+		if bytes > 0 {
+			t.Logf("Copying %d files (%s) to %s", files, humanBytes(bytes), p.Destination)
+		}
+		started = true
+
+		var mu sync.Mutex
+		var targets []string
+		stop := everyAdaptive(ctx, func() {
+			mu.Lock()
+			list := slices.Clone(targets)
+			mu.Unlock()
+			if len(list) == 0 {
+				return
+			}
+			if _, done := measure(ctx, c, list); done > 0 {
+				t.Update(func(pr *jobs.Progress) {
+					if pr.Total > 0 {
+						done = min(done, pr.Total)
+					}
+					pr.Done = max(pr.Done, done)
+				})
+			}
+		})
+		defer stop()
+		for _, pair := range pairs {
+			from, to := pair[0], pair[1]
+			// cp would put it inside an existing folder, and the clean-up below
+			// must only ever remove what this copy made.
+			if _, err := s.Lstat(to); err == nil {
+				return huma.Error409Conflict(path.Base(to) + " already exists")
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return fsError(to, err)
+			}
+			t.Update(func(pr *jobs.Progress) { pr.Current = path.Base(from) })
+			mu.Lock()
+			targets = append(targets, to)
+			mu.Unlock()
+			err := runStream(ctx, c, "cp -a -- "+terminal.ShellQuote(from)+" "+terminal.ShellQuote(to), nil, nil)
+			if err != nil {
+				stop()
+				removeUnfinished(ctx, t, c, to)
+				return err
+			}
+			t.Logf("%s → %s", from, to)
+			t.Update(func(pr *jobs.Progress) { pr.Items++ })
+		}
+		out = StorageTransferResult{Files: files, Bytes: bytes}
+		return nil
+	})
+	if err != nil {
+		return nil, jobError(err)
+	}
+	return out, nil
+}
+
+// removeUnfinished cleans up after a copy that stopped, even when it was
+// canceled. It must only be given a path the copy itself created.
+func removeUnfinished(ctx context.Context, t *jobs.Task, c *sshpool.Conn, target string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	if _, err := run(ctx, c, "rm -rf -- "+terminal.ShellQuote(target)); err != nil {
+		t.Logf("Couldn't remove the unfinished %s: %v", target, err)
+		return
+	}
+	t.Logf("Removed the unfinished %s", target)
+}
+
+// measure counts the files under paths and their bytes for a progress bar;
+// zeros when it can't within the time (a slow disk shouldn't hold up the copy).
+func measure(ctx context.Context, c *sshpool.Conn, paths []string) (files int, bytes int64) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	q := quoteAll(paths)
+	out, err := run(ctx, c, "du -sk -- "+q+" 2>/dev/null; echo @files; find "+q+" ! -type d 2>/dev/null | wc -l")
+	if err != nil {
+		return 0, 0
+	}
+	sizes, count, _ := strings.Cut(out, "@files")
+	for line := range strings.SplitSeq(sizes, "\n") {
+		if f := strings.Fields(line); len(f) > 0 {
+			if kb, err := strconv.ParseInt(f[0], 10, 64); err == nil {
+				bytes += kb * 1024
+			}
+		}
+	}
+	files, _ = strconv.Atoi(strings.TrimSpace(count))
+	return files, bytes
+}
+
+// everyAdaptive is every for work that loads the server: it runs fn no more
+// than a tenth of the time, and at most every 3 seconds.
+func everyAdaptive(ctx context.Context, fn func()) (stop func()) {
+	var next time.Time
+	return every(ctx, func() {
+		if time.Now().Before(next) {
+			return
+		}
+		start := time.Now()
+		fn()
+		next = time.Now().Add(max(3*time.Second, 10*time.Since(start)))
+	})
 }
 
 // ---- Fetch ----

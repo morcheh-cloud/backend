@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/netip"
 	"path"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/fail2ban"
+	"github.com/morcheh/backend/internal/jobs"
 	"github.com/morcheh/backend/internal/sshpool"
 	"github.com/morcheh/backend/internal/terminal"
 )
@@ -189,65 +192,33 @@ func registerFail2ban(api huma.API, h *serverHandler) {
 		Path:        base + "/install",
 		Summary:     "Install fail2ban",
 		Description: "With the server's package manager (EPEL on RHEL-likes), then starts it and enables it at boot. " +
-			"Can take minutes. A failed install answers 200 with ok=false and the output.",
-		Tags: tags,
+			"Checked at once, then runs as a background job (kind `fail2ban-install`); it can't be canceled once the package manager is running. " +
+			"409 when an install or removal is already under way.",
+		Tags:          tags,
+		DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *struct {
 		ServerIDPath
 		Body Fail2banInstallBody
-	}) (*struct{ Body Fail2banTask }, error) {
-		return h.fail2banTask(ctx, in.ID, func(f hostFacts) (string, error) {
-			install, err := packageScript(f.pm, "install", "fail2ban")
-			if err != nil {
-				return "", err
-			}
-			s := install + " || exit $?\n"
-			if in.Body.ProtectSSH {
-				// The sshd jail fails fail2ban's start without a log to watch:
-				// point it at the one the server has, else the journal
-				// (Debian 12+ has no auth.log), else leave it off.
-				s += "if [ ! -e " + f2bJailLocal + " ]; then\n" +
-					"  l=''; for f in /var/log/auth.log /var/log/secure /var/log/messages; do [ -f \"$f\" ] && { l=$f; break; }; done\n" +
-					"  if [ -n \"$l\" ]; then printf '[sshd]\\nenabled = true\\nlogpath = %s\\n' \"$l\" > " + f2bJailLocal + "\n" +
-					"  elif [ -d /run/systemd/system ]; then printf '[sshd]\\nenabled = true\\nbackend = systemd\\n' > " + f2bJailLocal + "\n" +
-					"  else echo 'Morcheh: no SSH log on this server (no syslog or journal), so the sshd jail stays off.'; fi\n" +
-					"fi\n"
-			}
-			switch f.init {
-			case "systemd":
-				s += "systemctl enable fail2ban && systemctl restart fail2ban\n"
-			case "openrc":
-				s += "rc-update add fail2ban default && rc-service fail2ban restart\n"
-			default:
-				s += f2bDirect["restart"] + "\n"
-			}
-			return s, nil
-		})
+	}) (*JobOutput, error) {
+		return h.submitF2bPackage(ctx, in.ID, f2bInstallKind, f2bPackageParams{ServerID: in.ID, ProtectSSH: in.Body.ProtectSSH})
 	})
+	h.jobs.Handle(f2bInstallKind, h.runF2bPackage("Installing", f2bInstallScript))
 
 	huma.Register(api, huma.Operation{
-		OperationID: "uninstall-fail2ban",
-		Method:      http.MethodPost,
-		Path:        base + "/uninstall",
-		Summary:     "Remove fail2ban",
-		Description: "Stops it (lifting every ban) and removes the package.",
-		Tags:        tags,
+		OperationID:   "uninstall-fail2ban",
+		Method:        http.MethodPost,
+		Path:          base + "/uninstall",
+		Summary:       "Remove fail2ban",
+		Description:   "Stops it (lifting every ban) and removes the package. Runs as a background job (kind `fail2ban-uninstall`), like install.",
+		Tags:          tags,
+		DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *struct {
 		ServerIDPath
 		Body Fail2banUninstallBody
-	}) (*struct{ Body Fail2banTask }, error) {
-		return h.fail2banTask(ctx, in.ID, func(f hostFacts) (string, error) {
-			op := "remove"
-			if in.Body.Purge {
-				op = "purge"
-			}
-			remove, err := packageScript(f.pm, op, "fail2ban")
-			if err != nil {
-				return "", err
-			}
-			stop, _ := serviceScript(f.init, f2bService, "stop", f2bDirect)
-			return stop + " >/dev/null 2>&1\n" + remove + "\n", nil
-		})
+	}) (*JobOutput, error) {
+		return h.submitF2bPackage(ctx, in.ID, f2bRemoveKind, f2bPackageParams{ServerID: in.ID, Purge: in.Body.Purge})
 	})
+	h.jobs.Handle(f2bRemoveKind, h.runF2bPackage("Removing", f2bRemoveScript))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "fail2ban-service",
@@ -747,6 +718,156 @@ func (h *serverHandler) fail2banTask(ctx context.Context, id string, build func(
 		return nil
 	})
 	return out, toProblem(err)
+}
+
+// ---- Install & remove (background jobs) ----
+
+const (
+	f2bInstallKind = "fail2ban-install"
+	f2bRemoveKind  = "fail2ban-uninstall"
+)
+
+type f2bPackageParams struct {
+	ServerID   string `json:"server_id"`
+	ProtectSSH bool   `json:"protect_ssh,omitempty"`
+	Purge      bool   `json:"purge,omitempty"`
+}
+
+// f2bStartFailed is the install script's exit code when the package went on
+// but the service wouldn't start, which is a different thing to tell the user.
+const f2bStartFailed = 90
+
+func f2bInstallScript(f hostFacts, p f2bPackageParams) (string, error) {
+	install, err := packageScript(f.pm, "install", "fail2ban")
+	if err != nil {
+		return "", err
+	}
+	s := install + " || exit $?\n"
+	if p.ProtectSSH {
+		// The sshd jail fails fail2ban's start without a log to watch:
+		// point it at the one the server has, else the journal
+		// (Debian 12+ has no auth.log), else leave it off.
+		s += "if [ ! -e " + f2bJailLocal + " ]; then\n" +
+			"  l=''; for f in /var/log/auth.log /var/log/secure /var/log/messages; do [ -f \"$f\" ] && { l=$f; break; }; done\n" +
+			"  if [ -n \"$l\" ]; then printf '[sshd]\\nenabled = true\\nlogpath = %s\\n' \"$l\" > " + f2bJailLocal + "\n" +
+			"  elif [ -d /run/systemd/system ]; then printf '[sshd]\\nenabled = true\\nbackend = systemd\\n' > " + f2bJailLocal + "\n" +
+			"  else echo 'Morcheh: no SSH log on this server (no syslog or journal), so the sshd jail stays off.'; fi\n" +
+			"fi\n"
+	}
+	code := " || exit " + strconv.Itoa(f2bStartFailed) + "\n"
+	switch f.init {
+	case "systemd":
+		s += "{ systemctl enable fail2ban && systemctl restart fail2ban; }" + code
+	case "openrc":
+		s += "{ rc-update add fail2ban default && rc-service fail2ban restart; }" + code
+	default:
+		s += "{ " + f2bDirect["restart"] + "; }" + code
+	}
+	return s, nil
+}
+
+func f2bRemoveScript(f hostFacts, p f2bPackageParams) (string, error) {
+	op := "remove"
+	if p.Purge {
+		op = "purge"
+	}
+	remove, err := packageScript(f.pm, op, "fail2ban")
+	if err != nil {
+		return "", err
+	}
+	stop, _ := serviceScript(f.init, f2bService, "stop", f2bDirect)
+	return stop + " >/dev/null 2>&1\n" + remove + "\n", nil
+}
+
+// submitF2bPackage answers what it can at once (no root, no package manager,
+// one already running), then queues the job.
+func (h *serverHandler) submitF2bPackage(ctx context.Context, id, kind string, p f2bPackageParams) (*JobOutput, error) {
+	build := f2bInstallScript
+	title := "Install fail2ban on "
+	if kind == f2bRemoveKind {
+		build, title = f2bRemoveScript, "Remove fail2ban from "
+	}
+	err := h.withConn(ctx, id, func(c *sshpool.Conn) error {
+		sh, err := h.f2bRoot(ctx, id, c)
+		if err != nil {
+			return err
+		}
+		facts, err := sh.run(ctx, hostScript)
+		if err != nil {
+			return err
+		}
+		_, err = build(parseHost(facts), p)
+		return err
+	})
+	if err != nil {
+		return nil, toProblem(err)
+	}
+	refs := placeRefs(id)
+	active := true
+	list, err := h.jobs.List(ctx, sqlc.ListJobsParams{Ref: &refs[0], Active: &active, Lim: 200})
+	if err != nil {
+		return nil, internalError(err)
+	}
+	if slices.ContainsFunc(list, func(j sqlc.Job) bool { return j.Kind == f2bInstallKind || j.Kind == f2bRemoveKind }) {
+		return nil, huma.Error409Conflict("Fail2ban is already being installed or removed on this server")
+	}
+	s, err := h.get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return submit(ctx, h.jobs, jobs.Spec{Kind: kind, Title: title + s.Name, Params: p, Refs: refs})
+}
+
+// runF2bPackage runs the package manager. Stopping one half way can leave the
+// server's packages broken, and a process under sudo isn't ours to kill, so
+// the job can't be canceled from then on; packageTimeout is its limit.
+func (h *serverHandler) runF2bPackage(phase string, build func(hostFacts, f2bPackageParams) (string, error)) jobs.Handler {
+	return func(ctx context.Context, t *jobs.Task) (any, error) {
+		var p f2bPackageParams
+		if err := t.Decode(&p); err != nil {
+			return nil, err
+		}
+		err := h.withConn(ctx, p.ServerID, func(c *sshpool.Conn) error {
+			sh, err := h.f2bRoot(ctx, p.ServerID, c)
+			if err != nil {
+				return err
+			}
+			facts, err := sh.run(ctx, hostScript)
+			if err != nil {
+				return err
+			}
+			script, err := build(parseHost(facts), p)
+			if err != nil {
+				return err
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Locked = phase, true })
+			var last string
+			lines := &lineWriter{fn: func(l string) {
+				last = l
+				t.Logf("%s", l)
+				t.Update(func(pr *jobs.Progress) { pr.Current = l })
+			}}
+			res, err := sh.execTo(ctx, script, packageTimeout, lines)
+			lines.flush()
+			switch {
+			case err != nil:
+				return err
+			case ctx.Err() != nil:
+				return ctx.Err()
+			case res.timedOut:
+				return fmt.Errorf("It took longer than %d minutes, so Morcheh stopped waiting", int(packageTimeout.Minutes()))
+			case res.code == f2bStartFailed:
+				return fmt.Errorf("Fail2ban was installed but didn't start: %s", last)
+			case res.code != 0:
+				return fmt.Errorf("The package manager failed (exit %d): %s", res.code, last)
+			}
+			return nil
+		})
+		return nil, jobError(err)
+	}
 }
 
 func checkJailName(name string) error {
