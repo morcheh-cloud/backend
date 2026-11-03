@@ -30,10 +30,11 @@ func startServerMonitor(h *serverHandler, every time.Duration) {
 }
 
 // loop looks for servers due every few seconds and checks them a few at a
-// time. A server still being checked from the last round is skipped.
+// time. A server still being checked from the last round is skipped (an
+// unreachable one takes up to the probe's 15 s timeout).
 func (m *serverMonitor) loop() {
 	sem := make(chan struct{}, checkConcurrency)
-	for range time.Tick(15 * time.Second) {
+	for range time.Tick(min(m.every, 5*time.Second)) {
 		due, err := m.h.q.ListServersDueForCheck(context.Background(), time.Now().Add(-m.every))
 		if err != nil {
 			slog.Warn("list servers due for check", "error", err)
