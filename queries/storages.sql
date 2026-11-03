@@ -66,6 +66,13 @@ UPDATE storages SET
 WHERE id = @id
 RETURNING *;
 
+-- name: ListStoragesDueForCheck :many
+-- Storages whose last check is older than @before (or that were never
+-- checked), the longest waiting first.
+SELECT * FROM storages
+WHERE last_checked_at IS NULL OR last_checked_at < @before::timestamptz
+ORDER BY last_checked_at NULLS FIRST;
+
 -- name: ResetStorageHostKey :exec
 UPDATE storages SET host_key = '', updated_at = now() WHERE id = $1;
 

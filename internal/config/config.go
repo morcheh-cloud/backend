@@ -24,6 +24,9 @@ type Config struct {
 	// Every server's connection is re-checked this often in the background,
 	// so a status doesn't stay "online" after the server went away. 0 = off.
 	ServerCheckInterval time.Duration `env:"SERVER_CHECK_INTERVAL" envDefault:"15s"`
+	// Same for storages. Slower than servers: each check signs in to the
+	// remote service (an S3 request, an FTP/SFTP login). 0 = off.
+	StorageCheckInterval time.Duration `env:"STORAGE_CHECK_INTERVAL" envDefault:"30s"`
 	// If set, the first-run form asks for it, so a stranger who reaches a fresh
 	// install can't become its admin.
 	SetupToken string `env:"SETUP_TOKEN"`

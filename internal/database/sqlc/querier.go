@@ -152,6 +152,9 @@ type Querier interface {
 	ListServersDueForCheck(ctx context.Context, before time.Time) ([]Server, error)
 	ListStorageWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListStorageWorkspacesRow, error)
 	ListStorages(ctx context.Context, arg ListStoragesParams) ([]Storage, error)
+	// Storages whose last check is older than @before (or that were never
+	// checked), the longest waiting first.
+	ListStoragesDueForCheck(ctx context.Context, before time.Time) ([]Storage, error)
 	// ---- Grants ----
 	// Every grant that applies to a user, directly or through a group.
 	ListUserGrants(ctx context.Context, userID *uuid.UUID) ([]AccessGrant, error)

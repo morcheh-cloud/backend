@@ -97,6 +97,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerServices(api, servers)
 	registerPower(api, servers)
 	st := newStorageHandler(sqlc.New(db), box, servers)
+	startStorageMonitor(st, cfg.StorageCheckInterval)
 	registerStorages(api, st)
 	registerStorageCredentials(api, st)
 	registerStorageFiles(api, st)

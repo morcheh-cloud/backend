@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -182,6 +183,64 @@ func (q *Queries) ListStorages(ctx context.Context, arg ListStoragesParams) ([]S
 		arg.StorageIds,
 		arg.WorkspaceID,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Storage{}
+	for rows.Next() {
+		var i Storage
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Protocol,
+			&i.Provider,
+			&i.Host,
+			&i.Port,
+			&i.Username,
+			&i.AuthMethod,
+			&i.SecretEnc,
+			&i.PrivateKeyEnc,
+			&i.PassphraseEnc,
+			&i.Bucket,
+			&i.Region,
+			&i.PathStyle,
+			&i.Tls,
+			&i.InsecureTls,
+			&i.HostKey,
+			&i.RootPath,
+			&i.ReadOnly,
+			&i.Description,
+			&i.Favorite,
+			&i.Status,
+			&i.StatusMessage,
+			&i.Detail,
+			&i.LatencyMs,
+			&i.LastCheckedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.WorkspaceID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStoragesDueForCheck = `-- name: ListStoragesDueForCheck :many
+SELECT id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id FROM storages
+WHERE last_checked_at IS NULL OR last_checked_at < $1::timestamptz
+ORDER BY last_checked_at NULLS FIRST
+`
+
+// Storages whose last check is older than @before (or that were never
+// checked), the longest waiting first.
+func (q *Queries) ListStoragesDueForCheck(ctx context.Context, before time.Time) ([]Storage, error) {
+	rows, err := q.db.Query(ctx, listStoragesDueForCheck, before)
 	if err != nil {
 		return nil, err
 	}
