@@ -25,6 +25,8 @@ type Querier interface {
 	CreateAlertChannel(ctx context.Context, arg CreateAlertChannelParams) (AlertChannel, error)
 	CreateApp(ctx context.Context, arg CreateAppParams) (App, error)
 	CreateAppAccount(ctx context.Context, arg CreateAppAccountParams) (AppAccount, error)
+	// New categories go last.
+	CreateAppCategory(ctx context.Context, arg CreateAppCategoryParams) (AppCategory, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
 	CreateDatabaseBackup(ctx context.Context, arg CreateDatabaseBackupParams) (DatabaseBackup, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
@@ -46,6 +48,7 @@ type Querier interface {
 	DeleteAlertChannel(ctx context.Context, arg DeleteAlertChannelParams) (int64, error)
 	DeleteApp(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteAppAccountsExcept(ctx context.Context, arg DeleteAppAccountsExceptParams) error
+	DeleteAppCategory(ctx context.Context, arg DeleteAppCategoryParams) (int64, error)
 	DeleteAppLogo(ctx context.Context, arg DeleteAppLogoParams) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDatabaseBackup(ctx context.Context, id uuid.UUID) (int64, error)
@@ -180,6 +183,9 @@ type Querier interface {
 	ServerOSFacets(ctx context.Context, arg ServerOSFacetsParams) ([]ServerOSFacetsRow, error)
 	ServerStatusFacets(ctx context.Context, arg ServerStatusFacetsParams) ([]ServerStatusFacetsRow, error)
 	ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams) ([]ServerTagFacetsRow, error)
+	SetAppCategoryPosition(ctx context.Context, arg SetAppCategoryPositionParams) error
+	// A service of another workspace (or one already removed) is left alone.
+	SetAppPlace(ctx context.Context, arg SetAppPlaceParams) error
 	SetBackupPlanNextRun(ctx context.Context, arg SetBackupPlanNextRunParams) error
 	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
 	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)
@@ -199,6 +205,7 @@ type Querier interface {
 	UpdateAlertChannel(ctx context.Context, arg UpdateAlertChannelParams) (AlertChannel, error)
 	UpdateApp(ctx context.Context, arg UpdateAppParams) (App, error)
 	UpdateAppAccount(ctx context.Context, arg UpdateAppAccountParams) (AppAccount, error)
+	UpdateAppCategory(ctx context.Context, arg UpdateAppCategoryParams) (AppCategory, error)
 	// Full replace of the editable fields; the handler resolves the password first.
 	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)

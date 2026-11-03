@@ -78,3 +78,27 @@ SELECT * FROM app_categories WHERE id = $1;
 -- name: ListAppCategories :many
 SELECT * FROM app_categories WHERE workspace_id = ANY (@workspace_ids::uuid[])
 ORDER BY workspace_id, position, lower(name);
+
+-- name: CreateAppCategory :one
+-- New categories go last.
+INSERT INTO app_categories (workspace_id, name, color, position)
+VALUES (@workspace_id, @name, @color,
+    (SELECT COALESCE(MAX(position) + 1, 0)::int FROM app_categories WHERE workspace_id = @workspace_id))
+RETURNING *;
+
+-- name: UpdateAppCategory :one
+UPDATE app_categories SET name = @name, color = @color, updated_at = now()
+WHERE id = @id AND workspace_id = @workspace_id
+RETURNING *;
+
+-- name: DeleteAppCategory :execrows
+DELETE FROM app_categories WHERE id = @id AND workspace_id = @workspace_id;
+
+-- name: SetAppCategoryPosition :exec
+UPDATE app_categories SET position = @position
+WHERE id = @id AND workspace_id = @workspace_id;
+
+-- name: SetAppPlace :exec
+-- A service of another workspace (or one already removed) is left alone.
+UPDATE apps SET category_id = sqlc.narg('category_id'), position = @position
+WHERE id = @id AND workspace_id = @workspace_id;

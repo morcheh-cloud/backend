@@ -102,6 +102,35 @@ func (q *Queries) CreateAppAccount(ctx context.Context, arg CreateAppAccountPara
 	return i, err
 }
 
+const createAppCategory = `-- name: CreateAppCategory :one
+INSERT INTO app_categories (workspace_id, name, color, position)
+VALUES ($1, $2, $3,
+    (SELECT COALESCE(MAX(position) + 1, 0)::int FROM app_categories WHERE workspace_id = $1))
+RETURNING id, workspace_id, name, color, position, created_at, updated_at
+`
+
+type CreateAppCategoryParams struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	Name        string    `json:"name"`
+	Color       string    `json:"color"`
+}
+
+// New categories go last.
+func (q *Queries) CreateAppCategory(ctx context.Context, arg CreateAppCategoryParams) (AppCategory, error) {
+	row := q.db.QueryRow(ctx, createAppCategory, arg.WorkspaceID, arg.Name, arg.Color)
+	var i AppCategory
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Color,
+		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const deleteApp = `-- name: DeleteApp :execrows
 DELETE FROM apps WHERE id = $1
 `
@@ -126,6 +155,23 @@ type DeleteAppAccountsExceptParams struct {
 func (q *Queries) DeleteAppAccountsExcept(ctx context.Context, arg DeleteAppAccountsExceptParams) error {
 	_, err := q.db.Exec(ctx, deleteAppAccountsExcept, arg.AppID, arg.Keep)
 	return err
+}
+
+const deleteAppCategory = `-- name: DeleteAppCategory :execrows
+DELETE FROM app_categories WHERE id = $1 AND workspace_id = $2
+`
+
+type DeleteAppCategoryParams struct {
+	ID          uuid.UUID `json:"id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) DeleteAppCategory(ctx context.Context, arg DeleteAppCategoryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAppCategory, arg.ID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteAppLogo = `-- name: DeleteAppLogo :exec
@@ -359,6 +405,45 @@ func (q *Queries) NextAppPosition(ctx context.Context, arg NextAppPositionParams
 	return column_1, err
 }
 
+const setAppCategoryPosition = `-- name: SetAppCategoryPosition :exec
+UPDATE app_categories SET position = $1
+WHERE id = $2 AND workspace_id = $3
+`
+
+type SetAppCategoryPositionParams struct {
+	Position    int32     `json:"position"`
+	ID          uuid.UUID `json:"id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) SetAppCategoryPosition(ctx context.Context, arg SetAppCategoryPositionParams) error {
+	_, err := q.db.Exec(ctx, setAppCategoryPosition, arg.Position, arg.ID, arg.WorkspaceID)
+	return err
+}
+
+const setAppPlace = `-- name: SetAppPlace :exec
+UPDATE apps SET category_id = $1, position = $2
+WHERE id = $3 AND workspace_id = $4
+`
+
+type SetAppPlaceParams struct {
+	CategoryID  *uuid.UUID `json:"category_id"`
+	Position    int32      `json:"position"`
+	ID          uuid.UUID  `json:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+}
+
+// A service of another workspace (or one already removed) is left alone.
+func (q *Queries) SetAppPlace(ctx context.Context, arg SetAppPlaceParams) error {
+	_, err := q.db.Exec(ctx, setAppPlace,
+		arg.CategoryID,
+		arg.Position,
+		arg.ID,
+		arg.WorkspaceID,
+	)
+	return err
+}
+
 const updateApp = `-- name: UpdateApp :one
 UPDATE apps SET
     category_id = $1,
@@ -456,6 +541,39 @@ func (q *Queries) UpdateAppAccount(ctx context.Context, arg UpdateAppAccountPara
 		&i.Username,
 		&i.PasswordEnc,
 		&i.Position,
+	)
+	return i, err
+}
+
+const updateAppCategory = `-- name: UpdateAppCategory :one
+UPDATE app_categories SET name = $1, color = $2, updated_at = now()
+WHERE id = $3 AND workspace_id = $4
+RETURNING id, workspace_id, name, color, position, created_at, updated_at
+`
+
+type UpdateAppCategoryParams struct {
+	Name        string    `json:"name"`
+	Color       string    `json:"color"`
+	ID          uuid.UUID `json:"id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) UpdateAppCategory(ctx context.Context, arg UpdateAppCategoryParams) (AppCategory, error) {
+	row := q.db.QueryRow(ctx, updateAppCategory,
+		arg.Name,
+		arg.Color,
+		arg.ID,
+		arg.WorkspaceID,
+	)
+	var i AppCategory
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Color,
+		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
