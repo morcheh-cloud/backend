@@ -67,6 +67,7 @@ type Querier interface {
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
 	GetAlertChannel(ctx context.Context, id uuid.UUID) (AlertChannel, error)
+	GetAppWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
 	GetDatabaseBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error)
 	GetDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (DatabaseBackupPlan, error)
@@ -98,6 +99,7 @@ type Querier interface {
 	ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error)
 	ListAlertChannels(ctx context.Context, workspaceID uuid.UUID) ([]AlertChannel, error)
 	ListAllGroupMembers(ctx context.Context) ([]GroupMember, error)
+	ListAppWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListAppWorkspacesRow, error)
 	ListDatabaseBackups(ctx context.Context, arg ListDatabaseBackupsParams) ([]DatabaseBackup, error)
 	ListDatabaseEvents(ctx context.Context, arg ListDatabaseEventsParams) ([]DatabaseEvent, error)
 	ListDatabases(ctx context.Context, arg ListDatabasesParams) ([]Database, error)
@@ -131,6 +133,7 @@ type Querier interface {
 	// Every grant that applies to a user, directly or through a group.
 	ListUserGrants(ctx context.Context, userID *uuid.UUID) ([]AccessGrant, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
+	ListWorkspaceApps(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceAppsRow, error)
 	// The light list for an access page: never the sealed credentials.
 	ListWorkspaceServers(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceServersRow, error)
 	ListWorkspaceStorages(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceStoragesRow, error)
@@ -138,6 +141,8 @@ type Querier interface {
 	ListWorkspaces(ctx context.Context) ([]ListWorkspacesRow, error)
 	// Serializes first-run setup and last-admin checks for the transaction.
 	LockAuth(ctx context.Context) error
+	// Categories belong to one workspace, so moved services leave theirs.
+	MoveAppsToWorkspace(ctx context.Context, arg MoveAppsToWorkspaceParams) (int64, error)
 	MoveFolderServers(ctx context.Context, arg MoveFolderServersParams) error
 	MoveServers(ctx context.Context, arg MoveServersParams) (int64, error)
 	// Folders belong to one workspace, so moved servers leave theirs.

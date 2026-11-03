@@ -73,19 +73,26 @@ func (q *Queries) CountUsers(ctx context.Context) (int32, error) {
 const countWorkspaceResources = `-- name: CountWorkspaceResources :one
 SELECT (SELECT count(*) FROM servers s WHERE s.workspace_id = $1)::int AS servers,
        (SELECT count(*) FROM storages t WHERE t.workspace_id = $1)::int AS storages,
-       (SELECT count(*) FROM databases d WHERE d.workspace_id = $1)::int AS databases
+       (SELECT count(*) FROM databases d WHERE d.workspace_id = $1)::int AS databases,
+       (SELECT count(*) FROM apps a WHERE a.workspace_id = $1)::int AS apps
 `
 
 type CountWorkspaceResourcesRow struct {
 	Servers   int32 `json:"servers"`
 	Storages  int32 `json:"storages"`
 	Databases int32 `json:"databases"`
+	Apps      int32 `json:"apps"`
 }
 
 func (q *Queries) CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error) {
 	row := q.db.QueryRow(ctx, countWorkspaceResources, workspaceID)
 	var i CountWorkspaceResourcesRow
-	err := row.Scan(&i.Servers, &i.Storages, &i.Databases)
+	err := row.Scan(
+		&i.Servers,
+		&i.Storages,
+		&i.Databases,
+		&i.Apps,
+	)
 	return i, err
 }
 
@@ -321,12 +328,13 @@ func (q *Queries) DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, err
 }
 
 const findGrant = `-- name: FindGrant :one
-SELECT id, user_id, group_id, workspace_id, server_id, storage_id, level, can_create, created_at, updated_at FROM access_grants
+SELECT id, user_id, group_id, workspace_id, server_id, storage_id, level, can_create, created_at, updated_at, app_id FROM access_grants
 WHERE user_id IS NOT DISTINCT FROM $1::uuid
   AND group_id IS NOT DISTINCT FROM $2::uuid
   AND workspace_id IS NOT DISTINCT FROM $3::uuid
   AND server_id IS NOT DISTINCT FROM $4::uuid
   AND storage_id IS NOT DISTINCT FROM $5::uuid
+  AND app_id IS NOT DISTINCT FROM $6::uuid
 `
 
 type FindGrantParams struct {
@@ -335,6 +343,7 @@ type FindGrantParams struct {
 	WorkspaceID *uuid.UUID `json:"workspace_id"`
 	ServerID    *uuid.UUID `json:"server_id"`
 	StorageID   *uuid.UUID `json:"storage_id"`
+	AppID       *uuid.UUID `json:"app_id"`
 }
 
 func (q *Queries) FindGrant(ctx context.Context, arg FindGrantParams) (AccessGrant, error) {
@@ -344,6 +353,7 @@ func (q *Queries) FindGrant(ctx context.Context, arg FindGrantParams) (AccessGra
 		arg.WorkspaceID,
 		arg.ServerID,
 		arg.StorageID,
+		arg.AppID,
 	)
 	var i AccessGrant
 	err := row.Scan(
@@ -357,12 +367,24 @@ func (q *Queries) FindGrant(ctx context.Context, arg FindGrantParams) (AccessGra
 		&i.CanCreate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AppID,
 	)
 	return i, err
 }
 
+const getAppWorkspace = `-- name: GetAppWorkspace :one
+SELECT workspace_id FROM apps WHERE id = $1
+`
+
+func (q *Queries) GetAppWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getAppWorkspace, id)
+	var workspace_id uuid.UUID
+	err := row.Scan(&workspace_id)
+	return workspace_id, err
+}
+
 const getGrant = `-- name: GetGrant :one
-SELECT id, user_id, group_id, workspace_id, server_id, storage_id, level, can_create, created_at, updated_at FROM access_grants WHERE id = $1
+SELECT id, user_id, group_id, workspace_id, server_id, storage_id, level, can_create, created_at, updated_at, app_id FROM access_grants WHERE id = $1
 `
 
 func (q *Queries) GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error) {
@@ -379,6 +401,7 @@ func (q *Queries) GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, erro
 		&i.CanCreate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AppID,
 	)
 	return i, err
 }
@@ -597,21 +620,53 @@ func (q *Queries) ListAllGroupMembers(ctx context.Context) ([]GroupMember, error
 	return items, nil
 }
 
+const listAppWorkspaces = `-- name: ListAppWorkspaces :many
+SELECT id, workspace_id FROM apps WHERE id = ANY ($1::uuid[])
+`
+
+type ListAppWorkspacesRow struct {
+	ID          uuid.UUID `json:"id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) ListAppWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListAppWorkspacesRow, error) {
+	rows, err := q.db.Query(ctx, listAppWorkspaces, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAppWorkspacesRow{}
+	for rows.Next() {
+		var i ListAppWorkspacesRow
+		if err := rows.Scan(&i.ID, &i.WorkspaceID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGrants = `-- name: ListGrants :many
-SELECT g.id, g.user_id, g.group_id, g.workspace_id, g.server_id, g.storage_id, g.level, g.can_create, g.created_at, g.updated_at,
+SELECT g.id, g.user_id, g.group_id, g.workspace_id, g.server_id, g.storage_id, g.level, g.can_create, g.created_at, g.updated_at, g.app_id,
        u.username, u.full_name, u.status AS user_status, ug.name AS group_name,
-       w.name AS workspace_name, s.name AS server_name, t.name AS storage_name
+       w.name AS workspace_name, s.name AS server_name, t.name AS storage_name,
+       a.name AS app_name
 FROM access_grants g
 LEFT JOIN users u ON u.id = g.user_id
 LEFT JOIN user_groups ug ON ug.id = g.group_id
 LEFT JOIN workspaces w ON w.id = g.workspace_id
 LEFT JOIN servers s ON s.id = g.server_id
 LEFT JOIN storages t ON t.id = g.storage_id
+LEFT JOIN apps a ON a.id = g.app_id
 WHERE ($1::uuid IS NULL OR g.user_id = $1::uuid)
   AND ($2::uuid IS NULL OR g.group_id = $2::uuid)
   AND ($3::uuid IS NULL OR g.workspace_id = $3::uuid)
   AND ($4::uuid IS NULL OR g.server_id = $4::uuid)
   AND ($5::uuid IS NULL OR g.storage_id = $5::uuid)
+  AND ($6::uuid IS NULL OR g.app_id = $6::uuid)
 ORDER BY g.created_at, g.id
 `
 
@@ -621,6 +676,7 @@ type ListGrantsParams struct {
 	WorkspaceID *uuid.UUID `json:"workspace_id"`
 	ServerID    *uuid.UUID `json:"server_id"`
 	StorageID   *uuid.UUID `json:"storage_id"`
+	AppID       *uuid.UUID `json:"app_id"`
 }
 
 type ListGrantsRow struct {
@@ -634,6 +690,7 @@ type ListGrantsRow struct {
 	CanCreate     bool       `json:"can_create"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	AppID         *uuid.UUID `json:"app_id"`
 	Username      *string    `json:"username"`
 	FullName      *string    `json:"full_name"`
 	UserStatus    *string    `json:"user_status"`
@@ -641,6 +698,7 @@ type ListGrantsRow struct {
 	WorkspaceName *string    `json:"workspace_name"`
 	ServerName    *string    `json:"server_name"`
 	StorageName   *string    `json:"storage_name"`
+	AppName       *string    `json:"app_name"`
 }
 
 // Filters combine with AND. Joins give the names a screen shows.
@@ -651,6 +709,7 @@ func (q *Queries) ListGrants(ctx context.Context, arg ListGrantsParams) ([]ListG
 		arg.WorkspaceID,
 		arg.ServerID,
 		arg.StorageID,
+		arg.AppID,
 	)
 	if err != nil {
 		return nil, err
@@ -670,6 +729,7 @@ func (q *Queries) ListGrants(ctx context.Context, arg ListGrantsParams) ([]ListG
 			&i.CanCreate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AppID,
 			&i.Username,
 			&i.FullName,
 			&i.UserStatus,
@@ -677,6 +737,7 @@ func (q *Queries) ListGrants(ctx context.Context, arg ListGrantsParams) ([]ListG
 			&i.WorkspaceName,
 			&i.ServerName,
 			&i.StorageName,
+			&i.AppName,
 		); err != nil {
 			return nil, err
 		}
@@ -849,7 +910,7 @@ func (q *Queries) ListStorageWorkspaces(ctx context.Context, ids []uuid.UUID) ([
 
 const listUserGrants = `-- name: ListUserGrants :many
 
-SELECT g.id, g.user_id, g.group_id, g.workspace_id, g.server_id, g.storage_id, g.level, g.can_create, g.created_at, g.updated_at
+SELECT g.id, g.user_id, g.group_id, g.workspace_id, g.server_id, g.storage_id, g.level, g.can_create, g.created_at, g.updated_at, g.app_id
 FROM access_grants g
 WHERE g.user_id = $1
    OR g.group_id IN (SELECT m.group_id FROM group_members m WHERE m.user_id = $1)
@@ -877,6 +938,7 @@ func (q *Queries) ListUserGrants(ctx context.Context, userID *uuid.UUID) ([]Acce
 			&i.CanCreate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AppID,
 		); err != nil {
 			return nil, err
 		}
@@ -927,6 +989,36 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkspaceApps = `-- name: ListWorkspaceApps :many
+SELECT id, name, address FROM apps WHERE workspace_id = $1 ORDER BY lower(name)
+`
+
+type ListWorkspaceAppsRow struct {
+	ID      uuid.UUID `json:"id"`
+	Name    string    `json:"name"`
+	Address string    `json:"address"`
+}
+
+func (q *Queries) ListWorkspaceApps(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceAppsRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceApps, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkspaceAppsRow{}
+	for rows.Next() {
+		var i ListWorkspaceAppsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Address); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1002,7 +1094,8 @@ const listWorkspaces = `-- name: ListWorkspaces :many
 
 SELECT w.id, w.name, w.description, w.created_at, w.updated_at,
        (SELECT count(*) FROM servers s WHERE s.workspace_id = w.id)::int AS server_count,
-       (SELECT count(*) FROM storages t WHERE t.workspace_id = w.id)::int AS storage_count
+       (SELECT count(*) FROM storages t WHERE t.workspace_id = w.id)::int AS storage_count,
+       (SELECT count(*) FROM apps a WHERE a.workspace_id = w.id)::int AS app_count
 FROM workspaces w
 ORDER BY lower(w.name)
 `
@@ -1015,6 +1108,7 @@ type ListWorkspacesRow struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 	ServerCount  int32     `json:"server_count"`
 	StorageCount int32     `json:"storage_count"`
+	AppCount     int32     `json:"app_count"`
 }
 
 // ---- Workspaces ----
@@ -1035,6 +1129,7 @@ func (q *Queries) ListWorkspaces(ctx context.Context) ([]ListWorkspacesRow, erro
 			&i.UpdatedAt,
 			&i.ServerCount,
 			&i.StorageCount,
+			&i.AppCount,
 		); err != nil {
 			return nil, err
 		}
@@ -1054,6 +1149,25 @@ SELECT pg_advisory_xact_lock(7264001)
 func (q *Queries) LockAuth(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, lockAuth)
 	return err
+}
+
+const moveAppsToWorkspace = `-- name: MoveAppsToWorkspace :execrows
+UPDATE apps SET workspace_id = $1, category_id = NULL, updated_at = now()
+WHERE id = ANY ($2::uuid[]) AND workspace_id <> $1
+`
+
+type MoveAppsToWorkspaceParams struct {
+	WorkspaceID uuid.UUID   `json:"workspace_id"`
+	Ids         []uuid.UUID `json:"ids"`
+}
+
+// Categories belong to one workspace, so moved services leave theirs.
+func (q *Queries) MoveAppsToWorkspace(ctx context.Context, arg MoveAppsToWorkspaceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveAppsToWorkspace, arg.WorkspaceID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const moveServersToWorkspace = `-- name: MoveServersToWorkspace :execrows
@@ -1350,11 +1464,11 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 }
 
 const upsertGrant = `-- name: UpsertGrant :one
-INSERT INTO access_grants (user_id, group_id, workspace_id, server_id, storage_id, level, can_create)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (user_id, group_id, workspace_id, server_id, storage_id)
+INSERT INTO access_grants (user_id, group_id, workspace_id, server_id, storage_id, app_id, level, can_create)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (user_id, group_id, workspace_id, server_id, storage_id, app_id)
 DO UPDATE SET level = EXCLUDED.level, can_create = EXCLUDED.can_create, updated_at = now()
-RETURNING id, user_id, group_id, workspace_id, server_id, storage_id, level, can_create, created_at, updated_at
+RETURNING id, user_id, group_id, workspace_id, server_id, storage_id, level, can_create, created_at, updated_at, app_id
 `
 
 type UpsertGrantParams struct {
@@ -1363,6 +1477,7 @@ type UpsertGrantParams struct {
 	WorkspaceID *uuid.UUID `json:"workspace_id"`
 	ServerID    *uuid.UUID `json:"server_id"`
 	StorageID   *uuid.UUID `json:"storage_id"`
+	AppID       *uuid.UUID `json:"app_id"`
 	Level       string     `json:"level"`
 	CanCreate   bool       `json:"can_create"`
 }
@@ -1374,6 +1489,7 @@ func (q *Queries) UpsertGrant(ctx context.Context, arg UpsertGrantParams) (Acces
 		arg.WorkspaceID,
 		arg.ServerID,
 		arg.StorageID,
+		arg.AppID,
 		arg.Level,
 		arg.CanCreate,
 	)
@@ -1389,6 +1505,7 @@ func (q *Queries) UpsertGrant(ctx context.Context, arg UpsertGrantParams) (Acces
 		&i.CanCreate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AppID,
 	)
 	return i, err
 }

@@ -70,7 +70,7 @@ func TestEveryOperationHasAPolicy(t *testing.T) {
 		}
 		hasID := strings.Contains(op.path, "{id}")
 		switch pol.kind {
-		case kindServer, kindStorage, kindWorkspace, kindDatabase:
+		case kindServer, kindStorage, kindWorkspace, kindDatabase, kindApp:
 			if !hasID {
 				t.Errorf("%s checks the path's {id}, but %s has none", op.id, op.path)
 			}
@@ -79,7 +79,7 @@ func TestEveryOperationHasAPolicy(t *testing.T) {
 			}
 		case kindActive, kindSession, kindPublic:
 			if hasID && !slices.Contains(checkedInside, op.id) {
-				t.Errorf("%s takes an {id} that nothing checks: give it a server, storage or workspace policy", op.id)
+				t.Errorf("%s takes an {id} that nothing checks: give it a server, storage, app or workspace policy", op.id)
 			}
 		}
 	}
@@ -121,7 +121,7 @@ func TestSignedOutRequestsAreRefused(t *testing.T) {
 		if policies[op.id].kind == kindPublic {
 			continue
 		}
-		path := strings.NewReplacer("{id}", id, "{session}", "x", "{unit}", "x", "{jail}", "x", "{name}", "x").Replace(op.path)
+		path := strings.NewReplacer("{id}", id, "{session}", "x", "{unit}", "x", "{jail}", "x", "{name}", "x", "{accountId}", id, "{categoryId}", id).Replace(op.path)
 		req := httptest.NewRequest(op.method, path, nil)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)

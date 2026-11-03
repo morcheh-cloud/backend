@@ -90,3 +90,33 @@ func TestAdminHasEverything(t *testing.T) {
 		t.Fatal("admin should have owner level everywhere")
 	}
 }
+
+func TestAppLevel(t *testing.T) {
+	ws, other, app, another := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	a := NewAccess(false, []sqlc.AccessGrant{
+		{WorkspaceID: &ws, Level: "viewer"},
+		{AppID: &app, Level: "engineer"},
+	})
+	if got := a.AppLevel(ws, app); got != Engineer {
+		t.Fatalf("direct app grant over a workspace viewer = %v", got)
+	}
+	if got := a.AppLevel(ws, another); got != Viewer {
+		t.Fatalf("app through workspace = %v", got)
+	}
+	if got := a.AppLevel(other, another); got != None {
+		t.Fatalf("no grant = %v", got)
+	}
+	if a.WorkspaceLevel(other) != None {
+		t.Fatal("an app grant must not count as the whole workspace")
+	}
+	if NewAccess(true, nil).AppLevel(uuid.New(), uuid.New()) != Owner {
+		t.Fatal("admin should own every app")
+	}
+}
+
+func TestHighestCountsApps(t *testing.T) {
+	app := uuid.New()
+	if got := NewAccess(false, []sqlc.AccessGrant{{AppID: &app, Level: "owner"}}).Highest(); got != Owner {
+		t.Fatalf("highest = %v", got)
+	}
+}

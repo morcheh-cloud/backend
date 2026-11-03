@@ -73,6 +73,8 @@ type Access struct {
 	Workspaces map[uuid.UUID]WorkspaceGrant
 	Servers    map[uuid.UUID]Level
 	Storages   map[uuid.UUID]Level
+	// Apps are the web services on the Services page.
+	Apps map[uuid.UUID]Level
 }
 
 // NewAccess combines a person's grants (their own and their groups').
@@ -82,6 +84,7 @@ func NewAccess(admin bool, grants []sqlc.AccessGrant) *Access {
 		Workspaces: map[uuid.UUID]WorkspaceGrant{},
 		Servers:    map[uuid.UUID]Level{},
 		Storages:   map[uuid.UUID]Level{},
+		Apps:       map[uuid.UUID]Level{},
 	}
 	for _, g := range grants {
 		l := ParseLevel(g.Level)
@@ -95,6 +98,8 @@ func NewAccess(admin bool, grants []sqlc.AccessGrant) *Access {
 			a.Servers[*g.ServerID] = max(a.Servers[*g.ServerID], l)
 		case g.StorageID != nil:
 			a.Storages[*g.StorageID] = max(a.Storages[*g.StorageID], l)
+		case g.AppID != nil:
+			a.Apps[*g.AppID] = max(a.Apps[*g.AppID], l)
 		}
 	}
 	return a
@@ -125,12 +130,20 @@ func (a *Access) StorageLevel(workspace, storage uuid.UUID) Level {
 	return max(a.Workspaces[workspace].Level, a.Storages[storage])
 }
 
+// AppLevel is the level on a web service in the given workspace.
+func (a *Access) AppLevel(workspace, app uuid.UUID) Level {
+	if a.Admin {
+		return Owner
+	}
+	return max(a.Workspaces[workspace].Level, a.Apps[app])
+}
+
 // CanCreateIn says whether they may add servers and storages to a workspace.
 func (a *Access) CanCreateIn(workspace uuid.UUID) bool {
 	return a.Admin || a.Workspaces[workspace].CanCreate
 }
 
-// CanCreateAnywhere says whether they may add servers or storages at all.
+// CanCreateAnywhere says whether they may add servers, storages or services at all.
 func (a *Access) CanCreateAnywhere() bool {
 	if a.Admin {
 		return true
@@ -157,6 +170,9 @@ func (a *Access) Highest() Level {
 		best = max(best, l)
 	}
 	for _, l := range a.Storages {
+		best = max(best, l)
+	}
+	for _, l := range a.Apps {
 		best = max(best, l)
 	}
 	return best

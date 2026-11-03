@@ -237,6 +237,7 @@ type MyAccess struct {
 	Workspaces []WorkspaceAccess `json:"workspaces"`
 	Servers    []ResourceAccess  `json:"servers"`
 	Storages   []ResourceAccess  `json:"storages"`
+	Apps       []ResourceAccess  `json:"apps" doc:"Services on the Services page."`
 }
 
 type MyAccessOutput struct{ Body MyAccess }
@@ -525,7 +526,7 @@ func registerAuth(api huma.API, a *authz) {
 		out := &MyAccessOutput{}
 		out.Body = MyAccess{
 			Admin: acc.Admin, CanCreate: acc.CanCreateAnywhere(),
-			Workspaces: []WorkspaceAccess{}, Servers: []ResourceAccess{}, Storages: []ResourceAccess{},
+			Workspaces: []WorkspaceAccess{}, Servers: []ResourceAccess{}, Storages: []ResourceAccess{}, Apps: []ResourceAccess{},
 		}
 		for id, w := range acc.Workspaces {
 			out.Body.Workspaces = append(out.Body.Workspaces, WorkspaceAccess{ID: id.String(), Level: w.Level.String(), CanCreate: w.CanCreate})
@@ -535,6 +536,9 @@ func registerAuth(api huma.API, a *authz) {
 		}
 		for id, l := range acc.Storages {
 			out.Body.Storages = append(out.Body.Storages, ResourceAccess{ID: id.String(), Level: l.String()})
+		}
+		for id, l := range acc.Apps {
+			out.Body.Apps = append(out.Body.Apps, ResourceAccess{ID: id.String(), Level: l.String()})
 		}
 		return out, nil
 	})

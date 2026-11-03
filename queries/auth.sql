@@ -154,7 +154,8 @@ ON CONFLICT DO NOTHING;
 -- name: ListWorkspaces :many
 SELECT w.*,
        (SELECT count(*) FROM servers s WHERE s.workspace_id = w.id)::int AS server_count,
-       (SELECT count(*) FROM storages t WHERE t.workspace_id = w.id)::int AS storage_count
+       (SELECT count(*) FROM storages t WHERE t.workspace_id = w.id)::int AS storage_count,
+       (SELECT count(*) FROM apps a WHERE a.workspace_id = w.id)::int AS app_count
 FROM workspaces w
 ORDER BY lower(w.name);
 
@@ -178,7 +179,8 @@ SELECT count(*)::int FROM workspaces;
 -- name: CountWorkspaceResources :one
 SELECT (SELECT count(*) FROM servers s WHERE s.workspace_id = $1)::int AS servers,
        (SELECT count(*) FROM storages t WHERE t.workspace_id = $1)::int AS storages,
-       (SELECT count(*) FROM databases d WHERE d.workspace_id = $1)::int AS databases;
+       (SELECT count(*) FROM databases d WHERE d.workspace_id = $1)::int AS databases,
+       (SELECT count(*) FROM apps a WHERE a.workspace_id = $1)::int AS apps;
 
 -- name: MoveServersToWorkspace :execrows
 -- Folders belong to one workspace, so moved servers leave theirs.
@@ -189,11 +191,19 @@ WHERE id = ANY (@ids::uuid[]) AND workspace_id <> @workspace_id;
 UPDATE storages SET workspace_id = @workspace_id, updated_at = now()
 WHERE id = ANY (@ids::uuid[]) AND workspace_id <> @workspace_id;
 
+-- name: MoveAppsToWorkspace :execrows
+-- Categories belong to one workspace, so moved services leave theirs.
+UPDATE apps SET workspace_id = @workspace_id, category_id = NULL, updated_at = now()
+WHERE id = ANY (@ids::uuid[]) AND workspace_id <> @workspace_id;
+
 -- name: GetServerWorkspace :one
 SELECT workspace_id FROM servers WHERE id = $1;
 
 -- name: GetStorageWorkspace :one
 SELECT workspace_id FROM storages WHERE id = $1;
+
+-- name: GetAppWorkspace :one
+SELECT workspace_id FROM apps WHERE id = $1;
 
 -- name: ListServerWorkspaces :many
 SELECT id, workspace_id FROM servers WHERE id = ANY (@ids::uuid[]);
@@ -201,12 +211,18 @@ SELECT id, workspace_id FROM servers WHERE id = ANY (@ids::uuid[]);
 -- name: ListStorageWorkspaces :many
 SELECT id, workspace_id FROM storages WHERE id = ANY (@ids::uuid[]);
 
+-- name: ListAppWorkspaces :many
+SELECT id, workspace_id FROM apps WHERE id = ANY (@ids::uuid[]);
+
 -- name: ListWorkspaceServers :many
 -- The light list for an access page: never the sealed credentials.
 SELECT id, name, host FROM servers WHERE workspace_id = $1 ORDER BY lower(name);
 
 -- name: ListWorkspaceStorages :many
 SELECT id, name, protocol FROM storages WHERE workspace_id = $1 ORDER BY lower(name);
+
+-- name: ListWorkspaceApps :many
+SELECT id, name, address FROM apps WHERE workspace_id = $1 ORDER BY lower(name);
 
 -- ---- Grants ----
 
@@ -221,18 +237,21 @@ WHERE g.user_id = @user_id
 -- Filters combine with AND. Joins give the names a screen shows.
 SELECT g.*,
        u.username, u.full_name, u.status AS user_status, ug.name AS group_name,
-       w.name AS workspace_name, s.name AS server_name, t.name AS storage_name
+       w.name AS workspace_name, s.name AS server_name, t.name AS storage_name,
+       a.name AS app_name
 FROM access_grants g
 LEFT JOIN users u ON u.id = g.user_id
 LEFT JOIN user_groups ug ON ug.id = g.group_id
 LEFT JOIN workspaces w ON w.id = g.workspace_id
 LEFT JOIN servers s ON s.id = g.server_id
 LEFT JOIN storages t ON t.id = g.storage_id
+LEFT JOIN apps a ON a.id = g.app_id
 WHERE (sqlc.narg('user_id')::uuid IS NULL OR g.user_id = sqlc.narg('user_id')::uuid)
   AND (sqlc.narg('group_id')::uuid IS NULL OR g.group_id = sqlc.narg('group_id')::uuid)
   AND (sqlc.narg('workspace_id')::uuid IS NULL OR g.workspace_id = sqlc.narg('workspace_id')::uuid)
   AND (sqlc.narg('server_id')::uuid IS NULL OR g.server_id = sqlc.narg('server_id')::uuid)
   AND (sqlc.narg('storage_id')::uuid IS NULL OR g.storage_id = sqlc.narg('storage_id')::uuid)
+  AND (sqlc.narg('app_id')::uuid IS NULL OR g.app_id = sqlc.narg('app_id')::uuid)
 ORDER BY g.created_at, g.id;
 
 -- name: GetGrant :one
@@ -244,12 +263,13 @@ WHERE user_id IS NOT DISTINCT FROM sqlc.narg('user_id')::uuid
   AND group_id IS NOT DISTINCT FROM sqlc.narg('group_id')::uuid
   AND workspace_id IS NOT DISTINCT FROM sqlc.narg('workspace_id')::uuid
   AND server_id IS NOT DISTINCT FROM sqlc.narg('server_id')::uuid
-  AND storage_id IS NOT DISTINCT FROM sqlc.narg('storage_id')::uuid;
+  AND storage_id IS NOT DISTINCT FROM sqlc.narg('storage_id')::uuid
+  AND app_id IS NOT DISTINCT FROM sqlc.narg('app_id')::uuid;
 
 -- name: UpsertGrant :one
-INSERT INTO access_grants (user_id, group_id, workspace_id, server_id, storage_id, level, can_create)
-VALUES (sqlc.narg('user_id'), sqlc.narg('group_id'), sqlc.narg('workspace_id'), sqlc.narg('server_id'), sqlc.narg('storage_id'), @level, @can_create)
-ON CONFLICT (user_id, group_id, workspace_id, server_id, storage_id)
+INSERT INTO access_grants (user_id, group_id, workspace_id, server_id, storage_id, app_id, level, can_create)
+VALUES (sqlc.narg('user_id'), sqlc.narg('group_id'), sqlc.narg('workspace_id'), sqlc.narg('server_id'), sqlc.narg('storage_id'), sqlc.narg('app_id'), @level, @can_create)
+ON CONFLICT (user_id, group_id, workspace_id, server_id, storage_id, app_id)
 DO UPDATE SET level = EXCLUDED.level, can_create = EXCLUDED.can_create, updated_at = now()
 RETURNING *;
 

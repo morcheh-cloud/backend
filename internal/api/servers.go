@@ -761,7 +761,7 @@ func (h *serverHandler) insert(ctx context.Context, p *principal, params sqlc.Cr
 	if err != nil {
 		return s, err
 	}
-	if err := grantCreator(ctx, q, p, s.WorkspaceID, &s.ID, nil); err != nil {
+	if err := grantCreator(ctx, q, p, s.WorkspaceID, &s.ID, nil, nil); err != nil {
 		return s, err
 	}
 	return s, tx.Commit(ctx)

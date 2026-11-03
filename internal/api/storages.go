@@ -628,7 +628,7 @@ func (h *storageHandler) create(ctx context.Context, in *struct{ Body StorageBod
 	if err != nil {
 		return nil, internalError(err)
 	}
-	if err := grantCreator(ctx, q, p, ws, nil, &s.ID); err != nil {
+	if err := grantCreator(ctx, q, p, ws, nil, &s.ID, nil); err != nil {
 		return nil, internalError(err)
 	}
 	if err := tx.Commit(ctx); err != nil {

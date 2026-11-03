@@ -13,11 +13,13 @@ const (
 	kindActive
 	// A system admin.
 	kindAdmin
-	// A level on the server, storage, workspace or database in the path's {id}.
+	// A level on the server, storage, workspace, database or app (web service)
+	// in the path's {id}.
 	kindServer
 	kindStorage
 	kindWorkspace
 	kindDatabase
+	kindApp
 )
 
 type policy struct {
@@ -29,6 +31,7 @@ func onServer(l auth.Level) policy    { return policy{kindServer, l} }
 func onStorage(l auth.Level) policy   { return policy{kindStorage, l} }
 func onWorkspace(l auth.Level) policy { return policy{kindWorkspace, l} }
 func onDatabase(l auth.Level) policy  { return policy{kindDatabase, l} }
+func onApp(l auth.Level) policy       { return policy{kindApp, l} }
 
 var (
 	public  = policy{kind: kindPublic}

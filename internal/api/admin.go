@@ -41,6 +41,7 @@ type GrantSpec struct {
 	WorkspaceID *string `json:"workspace_id,omitempty" format:"uuid"`
 	ServerID    *string `json:"server_id,omitempty" format:"uuid"`
 	StorageID   *string `json:"storage_id,omitempty" format:"uuid"`
+	AppID       *string `json:"app_id,omitempty" format:"uuid" doc:"A service on the Services page."`
 	Level       string  `json:"level" enum:"viewer,operator,engineer,owner"`
 	CanCreate   *bool   `json:"can_create,omitempty" doc:"Add servers and storages to the workspace. Defaults to on for Owner."`
 }
@@ -207,16 +208,17 @@ func (s GrantSpec) params(location string) (sqlc.UpsertGrantParams, error) {
 		WorkspaceID: parseOptionalID(s.WorkspaceID),
 		ServerID:    parseOptionalID(s.ServerID),
 		StorageID:   parseOptionalID(s.StorageID),
+		AppID:       parseOptionalID(s.AppID),
 		Level:       s.Level,
 	}
 	n := 0
-	for _, id := range []*uuid.UUID{g.WorkspaceID, g.ServerID, g.StorageID} {
+	for _, id := range []*uuid.UUID{g.WorkspaceID, g.ServerID, g.StorageID, g.AppID} {
 		if id != nil {
 			n++
 		}
 	}
 	if n != 1 {
-		return g, fieldError(location, "Choose one workspace, server or storage.", nil)
+		return g, fieldError(location, "Choose one workspace, server, storage or service.", nil)
 	}
 	if g.WorkspaceID != nil {
 		g.CanCreate = s.Level == auth.Owner.String()

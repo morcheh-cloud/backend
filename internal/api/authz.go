@@ -203,7 +203,7 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 		return auth.Owner, nil
 	}
 
-	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database"}[pol.kind]
+	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindApp: "service"}[pol.kind]
 	missing := &denied{http.StatusNotFound, noun + " not found"}
 	id, err := uuid.Parse(rawID)
 	if err != nil {
@@ -245,6 +245,15 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 			return auth.None, err
 		}
 		level = databaseLevel(acc, d.WorkspaceID, d.ServerID)
+	case kindApp:
+		ws, err := a.q.GetAppWorkspace(ctx, id)
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		level = acc.AppLevel(ws, id)
 	default:
 		return auth.None, &denied{http.StatusForbidden, "This action isn't available."}
 	}
@@ -309,6 +318,7 @@ type scope struct {
 	workspaces []uuid.UUID
 	servers    []uuid.UUID
 	storages   []uuid.UUID
+	apps       []uuid.UUID
 	current    *uuid.UUID
 }
 
@@ -318,6 +328,7 @@ func (p *principal) scope() scope {
 		workspaces: []uuid.UUID{},
 		servers:    []uuid.UUID{},
 		storages:   []uuid.UUID{},
+		apps:       []uuid.UUID{},
 		current:    p.Workspace,
 	}
 	for id := range p.Access.Workspaces {
@@ -328,6 +339,9 @@ func (p *principal) scope() scope {
 	}
 	for id := range p.Access.Storages {
 		s.storages = append(s.storages, id)
+	}
+	for id := range p.Access.Apps {
+		s.apps = append(s.apps, id)
 	}
 	return s
 }
@@ -342,7 +356,7 @@ func (a *authz) createTarget(ctx context.Context, p *principal) (uuid.UUID, erro
 			return uuid.Nil, internalError(err)
 		}
 		if !p.Access.CanCreateIn(*p.Workspace) {
-			return uuid.Nil, huma.Error403Forbidden("You can't add servers or storages to this workspace.")
+			return uuid.Nil, huma.Error403Forbidden("You can't add servers, storage or services to this workspace.")
 		}
 		return *p.Workspace, nil
 	}
@@ -364,7 +378,7 @@ func (a *authz) createTarget(ctx context.Context, p *principal) (uuid.UUID, erro
 	}
 	switch len(can) {
 	case 0:
-		return uuid.Nil, huma.Error403Forbidden("You can't add servers or storages.")
+		return uuid.Nil, huma.Error403Forbidden("You can't add servers, storage or services.")
 	case 1:
 		return can[0], nil
 	}
@@ -402,14 +416,14 @@ func (a *authz) requireServers(ctx context.Context, ids []uuid.UUID, need auth.L
 	return where, nil
 }
 
-// grantCreator keeps whoever adds a server or storage able to manage it, when
-// their workspace level alone wouldn't let them.
-func grantCreator(ctx context.Context, q *sqlc.Queries, p *principal, ws uuid.UUID, server, storage *uuid.UUID) error {
+// grantCreator keeps whoever adds a server, storage or app able to manage it,
+// when their workspace level alone wouldn't let them.
+func grantCreator(ctx context.Context, q *sqlc.Queries, p *principal, ws uuid.UUID, server, storage, app *uuid.UUID) error {
 	if p.Access.Admin || p.Access.WorkspaceLevel(ws) >= auth.Owner {
 		return nil
 	}
 	_, err := q.UpsertGrant(ctx, sqlc.UpsertGrantParams{
-		UserID: p.ID(), ServerID: server, StorageID: storage, Level: auth.Owner.String(),
+		UserID: p.ID(), ServerID: server, StorageID: storage, AppID: app, Level: auth.Owner.String(),
 	})
 	return err
 }

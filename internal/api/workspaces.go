@@ -18,11 +18,12 @@ type PanelWorkspace struct {
 	ID           string `json:"id" format:"uuid"`
 	Name         string `json:"name"`
 	Description  string `json:"description"`
-	Level        string `json:"level" doc:"Your level on the whole workspace; none if you only reach some servers or storages in it."`
-	CanCreate    bool   `json:"can_create" doc:"You can add servers and storages here."`
-	Partial      bool   `json:"partial" doc:"You only reach some servers or storages in it."`
+	Level        string `json:"level" doc:"Your level on the whole workspace; none if you only reach some servers, storages or services in it."`
+	CanCreate    bool   `json:"can_create" doc:"You can add servers, storages and services here."`
+	Partial      bool   `json:"partial" doc:"You only reach some servers, storages or services in it."`
 	ServerCount  int32  `json:"server_count" doc:"Servers you can reach here."`
 	StorageCount int32  `json:"storage_count" doc:"Storages you can reach here."`
+	AppCount     int32  `json:"app_count" doc:"Services you can reach here."`
 }
 
 type WorkspacePath struct {
@@ -61,10 +62,18 @@ type WorkspaceStorage struct {
 	Protocol string `json:"protocol"`
 }
 
+// WorkspaceApp is a service on the Services page.
+type WorkspaceApp struct {
+	ID      string `json:"id" format:"uuid"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+}
+
 type WorkspaceDetail struct {
 	PanelWorkspace
 	Servers  []WorkspaceServer  `json:"servers"`
 	Storages []WorkspaceStorage `json:"storages"`
+	Apps     []WorkspaceApp     `json:"apps"`
 }
 
 type WorkspaceDetailOutput struct{ Body WorkspaceDetail }
@@ -72,6 +81,7 @@ type WorkspaceDetailOutput struct{ Body WorkspaceDetail }
 type WorkspaceAssignBody struct {
 	ServerIDs  []string `json:"server_ids,omitempty" format:"uuid"`
 	StorageIDs []string `json:"storage_ids,omitempty" format:"uuid"`
+	AppIDs     []string `json:"app_ids,omitempty" format:"uuid" doc:"Services; they leave their category, which belongs to the old workspace."`
 }
 
 type WorkspaceAssignInput struct {
@@ -87,6 +97,7 @@ type PanelGrant struct {
 	WorkspaceID   *string   `json:"workspace_id,omitempty" format:"uuid"`
 	ServerID      *string   `json:"server_id,omitempty" format:"uuid"`
 	StorageID     *string   `json:"storage_id,omitempty" format:"uuid"`
+	AppID         *string   `json:"app_id,omitempty" format:"uuid"`
 	Level         string    `json:"level" enum:"viewer,operator,engineer,owner"`
 	CanCreate     bool      `json:"can_create"`
 	Username      *string   `json:"username,omitempty"`
@@ -96,6 +107,7 @@ type PanelGrant struct {
 	WorkspaceName *string   `json:"workspace_name,omitempty"`
 	ServerName    *string   `json:"server_name,omitempty"`
 	StorageName   *string   `json:"storage_name,omitempty"`
+	AppName       *string   `json:"app_name,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
@@ -105,6 +117,7 @@ type GrantListInput struct {
 	WorkspaceID string `query:"workspace_id" format:"uuid"`
 	ServerID    string `query:"server_id" format:"uuid"`
 	StorageID   string `query:"storage_id" format:"uuid"`
+	AppID       string `query:"app_id" format:"uuid"`
 }
 
 type GrantListOutput struct {
@@ -150,7 +163,8 @@ type PrincipalsOutput struct {
 }
 
 // visibleWorkspaces lists what someone can open: every workspace they have a
-// grant on, and those where they only reach single servers or storages. The
+// grant on, and those where they only reach single servers, storages or
+// services. The
 // counts never reveal what's in a workspace beyond what they can reach.
 func (a *authz) visibleWorkspaces(ctx context.Context, p *principal) ([]PanelWorkspace, error) {
 	list, err := a.q.ListWorkspaces(ctx)
@@ -167,12 +181,19 @@ func (a *authz) visibleWorkspaces(ctx context.Context, p *principal) ([]PanelWor
 	if err != nil {
 		return nil, err
 	}
-	serverCount, storageCount := map[uuid.UUID]int32{}, map[uuid.UUID]int32{}
+	apps, err := a.q.ListAppWorkspaces(ctx, s.apps)
+	if err != nil {
+		return nil, err
+	}
+	serverCount, storageCount, appCount := map[uuid.UUID]int32{}, map[uuid.UUID]int32{}, map[uuid.UUID]int32{}
 	for _, r := range servers {
 		serverCount[r.WorkspaceID]++
 	}
 	for _, r := range storages {
 		storageCount[r.WorkspaceID]++
+	}
+	for _, r := range apps {
+		appCount[r.WorkspaceID]++
 	}
 	out := make([]PanelWorkspace, 0, len(list))
 	for _, w := range list {
@@ -183,10 +204,10 @@ func (a *authz) visibleWorkspaces(ctx context.Context, p *principal) ([]PanelWor
 		}
 		switch {
 		case level > auth.None:
-			v.ServerCount, v.StorageCount = w.ServerCount, w.StorageCount
-		case serverCount[w.ID] > 0 || storageCount[w.ID] > 0:
+			v.ServerCount, v.StorageCount, v.AppCount = w.ServerCount, w.StorageCount, w.AppCount
+		case serverCount[w.ID] > 0 || storageCount[w.ID] > 0 || appCount[w.ID] > 0:
 			v.Partial = true
-			v.ServerCount, v.StorageCount = serverCount[w.ID], storageCount[w.ID]
+			v.ServerCount, v.StorageCount, v.AppCount = serverCount[w.ID], storageCount[w.ID], appCount[w.ID]
 		case v.CanCreate:
 		default:
 			continue
@@ -206,7 +227,7 @@ func workspaceConflict(err error) error {
 // ownsTarget checks the caller is an Owner of a grant's target: only they may
 // see or change who has access, and admins are Owner everywhere. It answers the
 // workspace the target lives in.
-func (a *authz) ownsTarget(ctx context.Context, acc *auth.Access, ws, srv, st *uuid.UUID) (workspace *uuid.UUID, err error) {
+func (a *authz) ownsTarget(ctx context.Context, acc *auth.Access, ws, srv, st, app *uuid.UUID) (workspace *uuid.UUID, err error) {
 	missing := huma.Error404NotFound("not found")
 	var level auth.Level
 	switch {
@@ -235,8 +256,17 @@ func (a *authz) ownsTarget(ctx context.Context, acc *auth.Access, ws, srv, st *u
 			return nil, internalError(err)
 		}
 		workspace, level = &id, acc.StorageLevel(id, *st)
+	case app != nil:
+		id, err := a.q.GetAppWorkspace(ctx, *app)
+		if isNotFound(err) {
+			return nil, missing
+		}
+		if err != nil {
+			return nil, internalError(err)
+		}
+		workspace, level = &id, acc.AppLevel(id, *app)
 	default:
-		return nil, huma.Error403Forbidden("Choose a workspace, server or storage.")
+		return nil, huma.Error403Forbidden("Choose a workspace, server, storage or service.")
 	}
 	if level == auth.None {
 		return nil, missing
@@ -285,11 +315,15 @@ func registerWorkspaces(api huma.API, a *authz) {
 		if err != nil {
 			return nil, internalError(err)
 		}
+		apps, err := a.q.ListWorkspaceApps(ctx, id)
+		if err != nil {
+			return nil, internalError(err)
+		}
 		out := &WorkspaceDetailOutput{}
 		out.Body.PanelWorkspace = PanelWorkspace{
 			ID: w.ID.String(), Name: w.Name, Description: w.Description,
 			Level: p.Level.String(), CanCreate: p.Access.CanCreateIn(id),
-			ServerCount: counts.Servers, StorageCount: counts.Storages,
+			ServerCount: counts.Servers, StorageCount: counts.Storages, AppCount: counts.Apps,
 		}
 		out.Body.Servers = make([]WorkspaceServer, 0, len(servers))
 		for _, s := range servers {
@@ -298,6 +332,10 @@ func registerWorkspaces(api huma.API, a *authz) {
 		out.Body.Storages = make([]WorkspaceStorage, 0, len(storages))
 		for _, s := range storages {
 			out.Body.Storages = append(out.Body.Storages, WorkspaceStorage{ID: s.ID.String(), Name: s.Name, Protocol: s.Protocol})
+		}
+		out.Body.Apps = make([]WorkspaceApp, 0, len(apps))
+		for _, s := range apps {
+			out.Body.Apps = append(out.Body.Apps, WorkspaceApp{ID: s.ID.String(), Name: s.Name, Address: s.Address})
 		}
 		return out, nil
 	})
@@ -339,7 +377,7 @@ func registerWorkspaces(api huma.API, a *authz) {
 		return &WorkspaceOutput{Body: PanelWorkspace{
 			ID: w.ID.String(), Name: w.Name, Description: w.Description,
 			Level: auth.Owner.String(), CanCreate: true,
-			ServerCount: counts.Servers, StorageCount: counts.Storages,
+			ServerCount: counts.Servers, StorageCount: counts.Storages, AppCount: counts.Apps,
 		}}, nil
 	})
 
@@ -357,8 +395,8 @@ func registerWorkspaces(api huma.API, a *authz) {
 			if err != nil {
 				return internalError(err)
 			}
-			if counts.Servers > 0 || counts.Storages > 0 || counts.Databases > 0 {
-				return huma.Error409Conflict("Move or remove its servers, storages and databases first.")
+			if counts.Servers > 0 || counts.Storages > 0 || counts.Databases > 0 || counts.Apps > 0 {
+				return huma.Error409Conflict("Move or remove its servers, storages, databases and services first.")
 			}
 			total, err := q.CountWorkspaces(ctx)
 			if err != nil {
@@ -385,8 +423,8 @@ func registerWorkspaces(api huma.API, a *authz) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "assign-workspace", Method: http.MethodPost, Path: "/workspaces/{id}/assign",
-		Summary: "Move servers and storages into a workspace", Tags: tags,
-		Description:   "Moved servers leave their folder, which belongs to the old workspace.",
+		Summary: "Move servers, storages and services into a workspace", Tags: tags,
+		Description:   "Moved servers leave their folder and moved services their category; both belong to the old workspace.",
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *WorkspaceAssignInput) (*struct{}, error) {
 		id, _ := uuid.Parse(in.ID)
@@ -408,6 +446,9 @@ func registerWorkspaces(api huma.API, a *authz) {
 				}
 				return internalError(err)
 			}
+			if _, err := q.MoveAppsToWorkspace(ctx, sqlc.MoveAppsToWorkspaceParams{WorkspaceID: id, Ids: parseIDs(in.Body.AppIDs)}); err != nil {
+				return internalError(err)
+			}
 			return nil
 		})
 		if err != nil {
@@ -422,19 +463,19 @@ func registerWorkspaces(api huma.API, a *authz) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-grants", Method: http.MethodGet, Path: "/grants",
 		Summary: "List who has access", Tags: tags,
-		Description: "Admins can filter by anything. Others must name a workspace, server or storage they own.",
+		Description: "Admins can filter by anything. Others must name a workspace, server, storage or service they own.",
 	}, func(ctx context.Context, in *GrantListInput) (*GrantListOutput, error) {
 		p := principalOf(ctx)
 		params := sqlc.ListGrantsParams{
 			UserID: parseOptionalID(&in.UserID), GroupID: parseOptionalID(&in.GroupID),
 			WorkspaceID: parseOptionalID(&in.WorkspaceID), ServerID: parseOptionalID(&in.ServerID),
-			StorageID: parseOptionalID(&in.StorageID),
+			StorageID: parseOptionalID(&in.StorageID), AppID: parseOptionalID(&in.AppID),
 		}
 		if !p.Access.Admin {
 			if params.UserID != nil || params.GroupID != nil {
 				return nil, huma.Error403Forbidden("Only a system admin can do this.")
 			}
-			if _, err := a.ownsTarget(ctx, p.Access, params.WorkspaceID, params.ServerID, params.StorageID); err != nil {
+			if _, err := a.ownsTarget(ctx, p.Access, params.WorkspaceID, params.ServerID, params.StorageID, params.AppID); err != nil {
 				return nil, err
 			}
 		}
@@ -448,9 +489,9 @@ func registerWorkspaces(api huma.API, a *authz) {
 			out.Body.Items = append(out.Body.Items, PanelGrant{
 				ID: g.ID.String(), UserID: optionalIDString(g.UserID), GroupID: optionalIDString(g.GroupID),
 				WorkspaceID: optionalIDString(g.WorkspaceID), ServerID: optionalIDString(g.ServerID),
-				StorageID: optionalIDString(g.StorageID), Level: g.Level, CanCreate: g.CanCreate,
+				StorageID: optionalIDString(g.StorageID), AppID: optionalIDString(g.AppID), Level: g.Level, CanCreate: g.CanCreate,
 				Username: g.Username, FullName: g.FullName, UserStatus: g.UserStatus, GroupName: g.GroupName,
-				WorkspaceName: g.WorkspaceName, ServerName: g.ServerName, StorageName: g.StorageName,
+				WorkspaceName: g.WorkspaceName, ServerName: g.ServerName, StorageName: g.StorageName, AppName: g.AppName,
 				CreatedAt: g.CreatedAt,
 			})
 		}
@@ -460,7 +501,7 @@ func registerWorkspaces(api huma.API, a *authz) {
 	huma.Register(api, huma.Operation{
 		OperationID: "set-grant", Method: http.MethodPut, Path: "/grants",
 		Summary: "Give or change access", Tags: tags,
-		Description: "One person or group, one workspace, server or storage. Admins and the target's Owners can. Only admins decide who may add servers: an Owner passes on at most what they have themselves.",
+		Description: "One person or group, one workspace, server, storage or service. Admins and the target's Owners can. Only admins decide who may add servers: an Owner passes on at most what they have themselves.",
 	}, func(ctx context.Context, in *GrantInput) (*GrantOutput, error) {
 		p := principalOf(ctx)
 		user, group := parseOptionalID(in.Body.UserID), parseOptionalID(in.Body.GroupID)
@@ -473,13 +514,13 @@ func registerWorkspaces(api huma.API, a *authz) {
 		}
 		params.UserID, params.GroupID = user, group
 
-		ws, err := a.ownsTarget(ctx, p.Access, params.WorkspaceID, params.ServerID, params.StorageID)
+		ws, err := a.ownsTarget(ctx, p.Access, params.WorkspaceID, params.ServerID, params.StorageID, params.AppID)
 		if err != nil {
 			return nil, err
 		}
 		existing, err := a.q.FindGrant(ctx, sqlc.FindGrantParams{
 			UserID: user, GroupID: group, WorkspaceID: params.WorkspaceID,
-			ServerID: params.ServerID, StorageID: params.StorageID,
+			ServerID: params.ServerID, StorageID: params.StorageID, AppID: params.AppID,
 		})
 		found := err == nil
 		if err != nil && !isNotFound(err) {
@@ -535,7 +576,7 @@ func registerWorkspaces(api huma.API, a *authz) {
 		if err != nil {
 			return nil, internalError(err)
 		}
-		if _, err := a.ownsTarget(ctx, p.Access, g.WorkspaceID, g.ServerID, g.StorageID); err != nil {
+		if _, err := a.ownsTarget(ctx, p.Access, g.WorkspaceID, g.ServerID, g.StorageID, g.AppID); err != nil {
 			return nil, err
 		}
 		if !p.Access.Admin && g.UserID != nil && *g.UserID == p.User.ID {

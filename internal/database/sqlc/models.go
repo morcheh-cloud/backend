@@ -21,6 +21,7 @@ type AccessGrant struct {
 	CanCreate   bool       `json:"can_create"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+	AppID       *uuid.UUID `json:"app_id"`
 }
 
 type AlertChannel struct {
@@ -36,6 +37,60 @@ type AlertChannel struct {
 	LastError   string     `json:"last_error"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type App struct {
+	ID          uuid.UUID  `json:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	CategoryID  *uuid.UUID `json:"category_id"`
+	Name        string     `json:"name"`
+	Address     string     `json:"address"`
+	Note        string     `json:"note"`
+	Color       string     `json:"color"`
+	Critical    bool       `json:"critical"`
+	Position    int32      `json:"position"`
+	LogoKind    string     `json:"logo_kind"`
+	LogoIcon    string     `json:"logo_icon"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type AppAccount struct {
+	ID          uuid.UUID `json:"id"`
+	AppID       uuid.UUID `json:"app_id"`
+	Label       string    `json:"label"`
+	Username    string    `json:"username"`
+	PasswordEnc []byte    `json:"password_enc"`
+	Position    int32     `json:"position"`
+}
+
+type AppCategory struct {
+	ID          uuid.UUID `json:"id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	Name        string    `json:"name"`
+	Color       string    `json:"color"`
+	Position    int32     `json:"position"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type AppLogo struct {
+	AppID       uuid.UUID `json:"app_id"`
+	Source      string    `json:"source"`
+	ContentType string    `json:"content_type"`
+	Data        []byte    `json:"data"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type AppSecretView struct {
+	ID           uuid.UUID  `json:"id"`
+	AppID        uuid.UUID  `json:"app_id"`
+	AccountID    *uuid.UUID `json:"account_id"`
+	AccountLabel string     `json:"account_label"`
+	UserID       *uuid.UUID `json:"user_id"`
+	UserName     string     `json:"user_name"`
+	Ip           string     `json:"ip"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 type AppSetting struct {
