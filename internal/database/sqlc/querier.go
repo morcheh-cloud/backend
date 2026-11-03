@@ -23,6 +23,8 @@ type Querier interface {
 	CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error)
 	CountWorkspaces(ctx context.Context) (int32, error)
 	CreateAlertChannel(ctx context.Context, arg CreateAlertChannelParams) (AlertChannel, error)
+	CreateApp(ctx context.Context, arg CreateAppParams) (App, error)
+	CreateAppAccount(ctx context.Context, arg CreateAppAccountParams) (AppAccount, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
 	CreateDatabaseBackup(ctx context.Context, arg CreateDatabaseBackupParams) (DatabaseBackup, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
@@ -42,6 +44,9 @@ type Querier interface {
 	// Oldest first: what the "fills up in N days" estimates fit a line through.
 	DatabaseSizeTrend(ctx context.Context, arg DatabaseSizeTrendParams) ([]DatabaseSizeTrendRow, error)
 	DeleteAlertChannel(ctx context.Context, arg DeleteAlertChannelParams) (int64, error)
+	DeleteApp(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteAppAccountsExcept(ctx context.Context, arg DeleteAppAccountsExceptParams) error
+	DeleteAppLogo(ctx context.Context, arg DeleteAppLogoParams) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDatabaseBackup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (int64, error)
@@ -67,6 +72,8 @@ type Querier interface {
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
 	GetAlertChannel(ctx context.Context, id uuid.UUID) (AlertChannel, error)
+	GetApp(ctx context.Context, id uuid.UUID) (App, error)
+	GetAppCategory(ctx context.Context, id uuid.UUID) (AppCategory, error)
 	GetAppWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
 	GetDatabaseBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error)
@@ -99,7 +106,13 @@ type Querier interface {
 	ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error)
 	ListAlertChannels(ctx context.Context, workspaceID uuid.UUID) ([]AlertChannel, error)
 	ListAllGroupMembers(ctx context.Context) ([]GroupMember, error)
+	ListAppAccounts(ctx context.Context, appIds []uuid.UUID) ([]AppAccount, error)
+	ListAppCategories(ctx context.Context, workspaceIds []uuid.UUID) ([]AppCategory, error)
+	ListAppLogoStamps(ctx context.Context, appIds []uuid.UUID) ([]ListAppLogoStampsRow, error)
 	ListAppWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListAppWorkspacesRow, error)
+	// Category order first (uncategorized last), then the order inside it.
+	// pattern is an ILIKE pattern over name, address and note; '' = everything.
+	ListApps(ctx context.Context, arg ListAppsParams) ([]App, error)
 	ListDatabaseBackups(ctx context.Context, arg ListDatabaseBackupsParams) ([]DatabaseBackup, error)
 	ListDatabaseEvents(ctx context.Context, arg ListDatabaseEventsParams) ([]DatabaseEvent, error)
 	ListDatabases(ctx context.Context, arg ListDatabasesParams) ([]Database, error)
@@ -148,6 +161,8 @@ type Querier interface {
 	// Folders belong to one workspace, so moved servers leave theirs.
 	MoveServersToWorkspace(ctx context.Context, arg MoveServersToWorkspaceParams) (int64, error)
 	MoveStoragesToWorkspace(ctx context.Context, arg MoveStoragesToWorkspaceParams) (int64, error)
+	// Where a service lands at the end of its category (or of the uncategorized).
+	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
 	RecordAlertDelivery(ctx context.Context, arg RecordAlertDeliveryParams) error
@@ -182,6 +197,8 @@ type Querier interface {
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	TouchUserLogin(ctx context.Context, id uuid.UUID) error
 	UpdateAlertChannel(ctx context.Context, arg UpdateAlertChannelParams) (AlertChannel, error)
+	UpdateApp(ctx context.Context, arg UpdateAppParams) (App, error)
+	UpdateAppAccount(ctx context.Context, arg UpdateAppAccountParams) (AppAccount, error)
 	// Full replace of the editable fields; the handler resolves the password first.
 	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)

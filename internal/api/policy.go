@@ -203,6 +203,11 @@ var policies = map[string]policy{
 	"cancel-power": onServer(auth.Operator),
 
 	// Storages.
+	"list-apps":                  active,
+	"create-app":                 active,
+	"get-app":                    onApp(auth.Viewer),
+	"update-app":                 onApp(auth.Engineer),
+	"delete-app":                 onApp(auth.Owner),
 	"list-storages":              active,
 	"create-storage":             active,
 	"test-storage-connection":    active,

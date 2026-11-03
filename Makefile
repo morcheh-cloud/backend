@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: run stop build reset-admin tidy up down db-up db-down psql redis-cli migrate-up migrate-down migrate-new sqlc
+.PHONY: run stop build reset-admin tidy up down db-up db-down psql redis-cli migrate-up migrate-down migrate-new sqlc test-integration
 
 # Port from HTTP_ADDR (":8080", "127.0.0.1:8080"…), 8080 when unset.
 PORT := $(or $(lastword $(subst :, ,$(HTTP_ADDR))),8080)
@@ -56,6 +56,14 @@ migrate-up:
 
 migrate-down:
 	go tool goose -dir migrations postgres "$(DATABASE_URL)" down
+
+# Handler tests against a real database: a fresh morcheh_test in the compose
+# Postgres (make up first). Plain `go test ./...` skips them.
+TEST_DATABASE_URL ?= postgres://morcheh:morcheh@localhost:5433/morcheh_test?sslmode=disable
+test-integration:
+	docker compose exec -T postgres psql -U morcheh -d morcheh -c 'DROP DATABASE IF EXISTS morcheh_test' -c 'CREATE DATABASE morcheh_test'
+	go tool goose -dir migrations postgres "$(TEST_DATABASE_URL)" up
+	MORCHEH_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test ./internal/api -run Integration -count=1
 
 # usage: make migrate-new name=create_servers
 migrate-new:
