@@ -103,6 +103,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	apps := newAppHandler(sqlc.New(db), db, box, a)
 	registerApps(api, apps)
 	registerAppCategories(api, apps)
+	registerAppSecrets(api, apps)
 	registerJobs(api, a)
 
 	return r, api

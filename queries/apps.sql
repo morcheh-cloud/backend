@@ -102,3 +102,13 @@ WHERE id = @id AND workspace_id = @workspace_id;
 -- A service of another workspace (or one already removed) is left alone.
 UPDATE apps SET category_id = sqlc.narg('category_id'), position = @position
 WHERE id = @id AND workspace_id = @workspace_id;
+
+-- name: GetAppAccount :one
+SELECT * FROM app_accounts WHERE id = $1 AND app_id = $2;
+
+-- name: CreateAppSecretView :exec
+INSERT INTO app_secret_views (app_id, account_id, account_label, user_id, user_name, ip)
+VALUES ($1, $2, $3, $4, $5, $6);
+
+-- name: ListAppSecretViews :many
+SELECT * FROM app_secret_views WHERE app_id = $1 ORDER BY created_at DESC LIMIT 200;

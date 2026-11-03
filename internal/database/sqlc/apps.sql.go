@@ -131,6 +131,32 @@ func (q *Queries) CreateAppCategory(ctx context.Context, arg CreateAppCategoryPa
 	return i, err
 }
 
+const createAppSecretView = `-- name: CreateAppSecretView :exec
+INSERT INTO app_secret_views (app_id, account_id, account_label, user_id, user_name, ip)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreateAppSecretViewParams struct {
+	AppID        uuid.UUID  `json:"app_id"`
+	AccountID    *uuid.UUID `json:"account_id"`
+	AccountLabel string     `json:"account_label"`
+	UserID       *uuid.UUID `json:"user_id"`
+	UserName     string     `json:"user_name"`
+	Ip           string     `json:"ip"`
+}
+
+func (q *Queries) CreateAppSecretView(ctx context.Context, arg CreateAppSecretViewParams) error {
+	_, err := q.db.Exec(ctx, createAppSecretView,
+		arg.AppID,
+		arg.AccountID,
+		arg.AccountLabel,
+		arg.UserID,
+		arg.UserName,
+		arg.Ip,
+	)
+	return err
+}
+
 const deleteApp = `-- name: DeleteApp :execrows
 DELETE FROM apps WHERE id = $1
 `
@@ -209,6 +235,29 @@ func (q *Queries) GetApp(ctx context.Context, id uuid.UUID) (App, error) {
 		&i.LogoIcon,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getAppAccount = `-- name: GetAppAccount :one
+SELECT id, app_id, label, username, password_enc, position FROM app_accounts WHERE id = $1 AND app_id = $2
+`
+
+type GetAppAccountParams struct {
+	ID    uuid.UUID `json:"id"`
+	AppID uuid.UUID `json:"app_id"`
+}
+
+func (q *Queries) GetAppAccount(ctx context.Context, arg GetAppAccountParams) (AppAccount, error) {
+	row := q.db.QueryRow(ctx, getAppAccount, arg.ID, arg.AppID)
+	var i AppAccount
+	err := row.Scan(
+		&i.ID,
+		&i.AppID,
+		&i.Label,
+		&i.Username,
+		&i.PasswordEnc,
+		&i.Position,
 	)
 	return i, err
 }
@@ -317,6 +366,39 @@ func (q *Queries) ListAppLogoStamps(ctx context.Context, appIds []uuid.UUID) ([]
 	for rows.Next() {
 		var i ListAppLogoStampsRow
 		if err := rows.Scan(&i.AppID, &i.Source, &i.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAppSecretViews = `-- name: ListAppSecretViews :many
+SELECT id, app_id, account_id, account_label, user_id, user_name, ip, created_at FROM app_secret_views WHERE app_id = $1 ORDER BY created_at DESC LIMIT 200
+`
+
+func (q *Queries) ListAppSecretViews(ctx context.Context, appID uuid.UUID) ([]AppSecretView, error) {
+	rows, err := q.db.Query(ctx, listAppSecretViews, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AppSecretView{}
+	for rows.Next() {
+		var i AppSecretView
+		if err := rows.Scan(
+			&i.ID,
+			&i.AppID,
+			&i.AccountID,
+			&i.AccountLabel,
+			&i.UserID,
+			&i.UserName,
+			&i.Ip,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

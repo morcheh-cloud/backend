@@ -208,6 +208,8 @@ var policies = map[string]policy{
 	"get-app":                    onApp(auth.Viewer),
 	"update-app":                 onApp(auth.Engineer),
 	"delete-app":                 onApp(auth.Owner),
+	"reveal-app-account":         onApp(auth.Operator),
+	"list-app-activity":          onApp(auth.Owner),
 	"create-app-category":        onWorkspace(auth.Engineer),
 	"update-app-category":        onWorkspace(auth.Engineer),
 	"delete-app-category":        onWorkspace(auth.Engineer),

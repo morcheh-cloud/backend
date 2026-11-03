@@ -27,6 +27,7 @@ type Querier interface {
 	CreateAppAccount(ctx context.Context, arg CreateAppAccountParams) (AppAccount, error)
 	// New categories go last.
 	CreateAppCategory(ctx context.Context, arg CreateAppCategoryParams) (AppCategory, error)
+	CreateAppSecretView(ctx context.Context, arg CreateAppSecretViewParams) error
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
 	CreateDatabaseBackup(ctx context.Context, arg CreateDatabaseBackupParams) (DatabaseBackup, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
@@ -76,6 +77,7 @@ type Querier interface {
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
 	GetAlertChannel(ctx context.Context, id uuid.UUID) (AlertChannel, error)
 	GetApp(ctx context.Context, id uuid.UUID) (App, error)
+	GetAppAccount(ctx context.Context, arg GetAppAccountParams) (AppAccount, error)
 	GetAppCategory(ctx context.Context, id uuid.UUID) (AppCategory, error)
 	GetAppWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
@@ -112,6 +114,7 @@ type Querier interface {
 	ListAppAccounts(ctx context.Context, appIds []uuid.UUID) ([]AppAccount, error)
 	ListAppCategories(ctx context.Context, workspaceIds []uuid.UUID) ([]AppCategory, error)
 	ListAppLogoStamps(ctx context.Context, appIds []uuid.UUID) ([]ListAppLogoStampsRow, error)
+	ListAppSecretViews(ctx context.Context, appID uuid.UUID) ([]AppSecretView, error)
 	ListAppWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListAppWorkspacesRow, error)
 	// Category order first (uncategorized last), then the order inside it.
 	// pattern is an ILIKE pattern over name, address and note; '' = everything.
