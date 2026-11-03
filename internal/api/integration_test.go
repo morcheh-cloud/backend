@@ -128,6 +128,19 @@ func (c *tclient) do(t *testing.T, method, path string, body any, workspace *uui
 	} else {
 		r = httptest.NewRequest(method, path, nil)
 	}
+	return c.send(t, r, workspace)
+}
+
+// raw sends bytes as they are, with the given Content-Type.
+func (c *tclient) raw(t *testing.T, method, path, contentType string, data []byte, workspace *uuid.UUID) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(method, path, bytes.NewReader(data))
+	r.Header.Set("Content-Type", contentType)
+	return c.send(t, r, workspace)
+}
+
+func (c *tclient) send(t *testing.T, r *http.Request, workspace *uuid.UUID) *httptest.ResponseRecorder {
+	t.Helper()
 	r.AddCookie(&http.Cookie{Name: sessionCookie, Value: c.token})
 	if workspace != nil {
 		r.Header.Set(workspaceHeader, workspace.String())

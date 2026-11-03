@@ -43,6 +43,13 @@ LIMIT @lim OFFSET @off;
 -- name: GetServer :one
 SELECT * FROM servers WHERE id = $1;
 
+-- name: ListServersDueForCheck :many
+-- Servers whose last check is older than @before (or that were never checked),
+-- the longest waiting first.
+SELECT * FROM servers
+WHERE last_checked_at IS NULL OR last_checked_at < @before::timestamptz
+ORDER BY last_checked_at NULLS FIRST;
+
 -- name: GetServers :many
 SELECT * FROM servers WHERE id = ANY (@ids::uuid[]) ORDER BY lower(name);
 

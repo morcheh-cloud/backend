@@ -83,6 +83,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 		authz: a,
 	}
 	servers.stats = newStatsHub(servers)
+	startServerMonitor(servers, cfg.ServerCheckInterval)
 	registerServers(api, servers)
 	registerTerminals(api, r, servers, cfg.CORSOrigins)
 	registerFiles(api, servers)
@@ -104,6 +105,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerApps(api, apps)
 	registerAppCategories(api, apps)
 	registerAppSecrets(api, apps)
+	registerAppLogos(api, apps)
 	registerJobs(api, a)
 
 	return r, api

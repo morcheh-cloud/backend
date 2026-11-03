@@ -112,3 +112,24 @@ VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: ListAppSecretViews :many
 SELECT * FROM app_secret_views WHERE app_id = $1 ORDER BY created_at DESC LIMIT 200;
+
+-- name: GetAppLogo :one
+SELECT * FROM app_logos WHERE app_id = @app_id AND source = @source;
+
+-- name: PutAppLogo :exec
+INSERT INTO app_logos (app_id, source, content_type, data)
+VALUES (@app_id, @source, @content_type, @data)
+ON CONFLICT (app_id, source) DO UPDATE
+SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = clock_timestamp();
+
+-- PutAppFavicon stores a fetched favicon only while the service still exists
+-- at the address it was fetched from, so a slow fetch can't overwrite a
+-- newer one.
+-- name: PutAppFavicon :execrows
+INSERT INTO app_logos (app_id, source, content_type, data)
+SELECT id, 'favicon', @content_type, @data FROM apps WHERE id = @app_id AND address = @address
+ON CONFLICT (app_id, source) DO UPDATE
+SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = clock_timestamp();
+
+-- name: SetAppLogoKind :one
+UPDATE apps SET logo_kind = @logo_kind, updated_at = now() WHERE id = @id RETURNING *;

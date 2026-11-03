@@ -422,6 +422,7 @@ func (h *appHandler) create(ctx context.Context, in *struct{ Body AppCreateBody 
 		return nil, err
 	}
 	h.a.invalidate()
+	go h.refreshIcon(row.ID, row.Address)
 	return h.one(ctx, row, auth.Owner)
 }
 
@@ -516,6 +517,9 @@ func (h *appHandler) update(ctx context.Context, in *struct {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if row.Address != prev.Address {
+		go h.refreshIcon(row.ID, row.Address)
 	}
 	return h.one(ctx, row, principalOf(ctx).Level)
 }

@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -375,6 +376,64 @@ func (q *Queries) ListServers(ctx context.Context, arg ListServersParams) ([]Lis
 			&i.Server.UpdatedAt,
 			&i.Server.WorkspaceID,
 			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServersDueForCheck = `-- name: ListServersDueForCheck :many
+SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id FROM servers
+WHERE last_checked_at IS NULL OR last_checked_at < $1::timestamptz
+ORDER BY last_checked_at NULLS FIRST
+`
+
+// Servers whose last check is older than @before (or that were never checked),
+// the longest waiting first.
+func (q *Queries) ListServersDueForCheck(ctx context.Context, before time.Time) ([]Server, error) {
+	rows, err := q.db.Query(ctx, listServersDueForCheck, before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Server{}
+	for rows.Next() {
+		var i Server
+		if err := rows.Scan(
+			&i.ID,
+			&i.FolderID,
+			&i.Name,
+			&i.Host,
+			&i.Port,
+			&i.Username,
+			&i.AuthMethod,
+			&i.PasswordEnc,
+			&i.PrivateKeyEnc,
+			&i.PassphraseEnc,
+			&i.HostKey,
+			&i.Description,
+			&i.Tags,
+			&i.Favorite,
+			&i.Status,
+			&i.StatusMessage,
+			&i.LatencyMs,
+			&i.OsFamily,
+			&i.OsID,
+			&i.OsName,
+			&i.OsVersion,
+			&i.Kernel,
+			&i.Arch,
+			&i.Hostname,
+			&i.LastCheckedAt,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}

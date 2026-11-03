@@ -281,6 +281,28 @@ func (q *Queries) GetAppCategory(ctx context.Context, id uuid.UUID) (AppCategory
 	return i, err
 }
 
+const getAppLogo = `-- name: GetAppLogo :one
+SELECT app_id, source, content_type, data, updated_at FROM app_logos WHERE app_id = $1 AND source = $2
+`
+
+type GetAppLogoParams struct {
+	AppID  uuid.UUID `json:"app_id"`
+	Source string    `json:"source"`
+}
+
+func (q *Queries) GetAppLogo(ctx context.Context, arg GetAppLogoParams) (AppLogo, error) {
+	row := q.db.QueryRow(ctx, getAppLogo, arg.AppID, arg.Source)
+	var i AppLogo
+	err := row.Scan(
+		&i.AppID,
+		&i.Source,
+		&i.ContentType,
+		&i.Data,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listAppAccounts = `-- name: ListAppAccounts :many
 SELECT id, app_id, label, username, password_enc, position FROM app_accounts WHERE app_id = ANY ($1::uuid[])
 ORDER BY app_id, position
@@ -487,6 +509,60 @@ func (q *Queries) NextAppPosition(ctx context.Context, arg NextAppPositionParams
 	return column_1, err
 }
 
+const putAppFavicon = `-- name: PutAppFavicon :execrows
+INSERT INTO app_logos (app_id, source, content_type, data)
+SELECT id, 'favicon', $1, $2 FROM apps WHERE id = $3 AND address = $4
+ON CONFLICT (app_id, source) DO UPDATE
+SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = clock_timestamp()
+`
+
+type PutAppFaviconParams struct {
+	ContentType string    `json:"content_type"`
+	Data        []byte    `json:"data"`
+	AppID       uuid.UUID `json:"app_id"`
+	Address     string    `json:"address"`
+}
+
+// PutAppFavicon stores a fetched favicon only while the service still exists
+// at the address it was fetched from, so a slow fetch can't overwrite a
+// newer one.
+func (q *Queries) PutAppFavicon(ctx context.Context, arg PutAppFaviconParams) (int64, error) {
+	result, err := q.db.Exec(ctx, putAppFavicon,
+		arg.ContentType,
+		arg.Data,
+		arg.AppID,
+		arg.Address,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const putAppLogo = `-- name: PutAppLogo :exec
+INSERT INTO app_logos (app_id, source, content_type, data)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (app_id, source) DO UPDATE
+SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = clock_timestamp()
+`
+
+type PutAppLogoParams struct {
+	AppID       uuid.UUID `json:"app_id"`
+	Source      string    `json:"source"`
+	ContentType string    `json:"content_type"`
+	Data        []byte    `json:"data"`
+}
+
+func (q *Queries) PutAppLogo(ctx context.Context, arg PutAppLogoParams) error {
+	_, err := q.db.Exec(ctx, putAppLogo,
+		arg.AppID,
+		arg.Source,
+		arg.ContentType,
+		arg.Data,
+	)
+	return err
+}
+
 const setAppCategoryPosition = `-- name: SetAppCategoryPosition :exec
 UPDATE app_categories SET position = $1
 WHERE id = $2 AND workspace_id = $3
@@ -501,6 +577,36 @@ type SetAppCategoryPositionParams struct {
 func (q *Queries) SetAppCategoryPosition(ctx context.Context, arg SetAppCategoryPositionParams) error {
 	_, err := q.db.Exec(ctx, setAppCategoryPosition, arg.Position, arg.ID, arg.WorkspaceID)
 	return err
+}
+
+const setAppLogoKind = `-- name: SetAppLogoKind :one
+UPDATE apps SET logo_kind = $1, updated_at = now() WHERE id = $2 RETURNING id, workspace_id, category_id, name, address, note, color, critical, position, logo_kind, logo_icon, created_at, updated_at
+`
+
+type SetAppLogoKindParams struct {
+	LogoKind string    `json:"logo_kind"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) SetAppLogoKind(ctx context.Context, arg SetAppLogoKindParams) (App, error) {
+	row := q.db.QueryRow(ctx, setAppLogoKind, arg.LogoKind, arg.ID)
+	var i App
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.CategoryID,
+		&i.Name,
+		&i.Address,
+		&i.Note,
+		&i.Color,
+		&i.Critical,
+		&i.Position,
+		&i.LogoKind,
+		&i.LogoIcon,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const setAppPlace = `-- name: SetAppPlace :exec

@@ -88,7 +88,7 @@ func TestToAppLogoURL(t *testing.T) {
 	fav := time.Unix(1_600_000_000, 0)
 	upload := logoStamp{Source: "upload", UpdatedAt: up}
 	favicon := logoStamp{Source: "favicon", UpdatedAt: fav}
-	url := func(at time.Time) string { return fmt.Sprintf("/apps/%s/logo?v=%d", id, at.Unix()) }
+	url := func(at time.Time) string { return fmt.Sprintf("/apps/%s/logo?v=%d", id, at.UnixMicro()) }
 
 	cases := []struct {
 		name  string

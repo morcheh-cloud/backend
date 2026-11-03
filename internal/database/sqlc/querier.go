@@ -79,6 +79,7 @@ type Querier interface {
 	GetApp(ctx context.Context, id uuid.UUID) (App, error)
 	GetAppAccount(ctx context.Context, arg GetAppAccountParams) (AppAccount, error)
 	GetAppCategory(ctx context.Context, id uuid.UUID) (AppCategory, error)
+	GetAppLogo(ctx context.Context, arg GetAppLogoParams) (AppLogo, error)
 	GetAppWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
 	GetDatabaseBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error)
@@ -146,6 +147,9 @@ type Querier interface {
 	// combine with OR. A folder filter includes its subfolders. total is the
 	// match count before LIMIT/OFFSET.
 	ListServers(ctx context.Context, arg ListServersParams) ([]ListServersRow, error)
+	// Servers whose last check is older than @before (or that were never checked),
+	// the longest waiting first.
+	ListServersDueForCheck(ctx context.Context, before time.Time) ([]Server, error)
 	ListStorageWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListStorageWorkspacesRow, error)
 	ListStorages(ctx context.Context, arg ListStoragesParams) ([]Storage, error)
 	// ---- Grants ----
@@ -171,6 +175,11 @@ type Querier interface {
 	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
+	// PutAppFavicon stores a fetched favicon only while the service still exists
+	// at the address it was fetched from, so a slow fetch can't overwrite a
+	// newer one.
+	PutAppFavicon(ctx context.Context, arg PutAppFaviconParams) (int64, error)
+	PutAppLogo(ctx context.Context, arg PutAppLogoParams) error
 	RecordAlertDelivery(ctx context.Context, arg RecordAlertDeliveryParams) error
 	RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseCheckParams) (Database, error)
 	// Stores a connection check. OS fields are only overwritten when the check
@@ -187,6 +196,7 @@ type Querier interface {
 	ServerStatusFacets(ctx context.Context, arg ServerStatusFacetsParams) ([]ServerStatusFacetsRow, error)
 	ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams) ([]ServerTagFacetsRow, error)
 	SetAppCategoryPosition(ctx context.Context, arg SetAppCategoryPositionParams) error
+	SetAppLogoKind(ctx context.Context, arg SetAppLogoKindParams) (App, error)
 	// A service of another workspace (or one already removed) is left alone.
 	SetAppPlace(ctx context.Context, arg SetAppPlaceParams) error
 	SetBackupPlanNextRun(ctx context.Context, arg SetBackupPlanNextRunParams) error

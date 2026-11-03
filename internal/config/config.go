@@ -21,6 +21,9 @@ type Config struct {
 	SecretsKey string `env:"SECRETS_KEY,required,notEmpty"`
 	// A web terminal nobody is attached to is closed after this long.
 	TerminalDetachedTimeout time.Duration `env:"TERMINAL_DETACHED_TIMEOUT" envDefault:"15m"`
+	// Every server's connection is re-checked this often in the background,
+	// so a status doesn't stay "online" after the server went away. 0 = off.
+	ServerCheckInterval time.Duration `env:"SERVER_CHECK_INTERVAL" envDefault:"5m"`
 	// If set, the first-run form asks for it, so a stranger who reaches a fresh
 	// install can't become its admin.
 	SetupToken string `env:"SETUP_TOKEN"`

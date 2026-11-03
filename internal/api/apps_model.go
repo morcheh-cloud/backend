@@ -104,7 +104,7 @@ func toApp(row sqlc.App, accounts []sqlc.AppAccount, logos []logoStamp, level au
 	want := map[string]string{"upload": "upload", "auto": "favicon"}[row.LogoKind]
 	for _, l := range logos {
 		if want != "" && l.Source == want {
-			u := fmt.Sprintf("/apps/%s/logo?v=%d", row.ID, l.UpdatedAt.Unix())
+			u := fmt.Sprintf("/apps/%s/logo?v=%d", row.ID, l.UpdatedAt.UnixMicro())
 			a.LogoURL = &u
 		}
 	}
