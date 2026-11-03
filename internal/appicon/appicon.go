@@ -10,9 +10,11 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	xhtml "golang.org/x/net/html"
@@ -36,6 +38,7 @@ var client = &http.Client{
 	// an icon is public decoration, so an unverified one is acceptable.
 	Transport: &http.Transport{
 		Proxy:           http.ProxyFromEnvironment,
+		DialContext:     (&net.Dialer{Timeout: 5 * time.Second, Control: refuseDial}).DialContext,
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // see above
 	},
 	Jar: nil, // never carry a cookie from the page to the icon
@@ -48,6 +51,23 @@ var client = &http.Client{
 		}
 		return nil
 	},
+}
+
+// refuseDial runs on the resolved address of every connection, redirects and
+// DNS rebinding included. Private and loopback addresses stay reachable (a
+// service is usually an internal panel); link-local (cloud metadata),
+// unspecified and multicast ones never hold a service.
+func refuseDial(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return ErrNoIcon
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast() {
+		return ErrNoIcon
+	}
+	return nil
 }
 
 // Fetch loads the page at address and returns the best icon it points to.

@@ -251,6 +251,20 @@ func TestFetchErrorsCarryNoAddress(t *testing.T) {
 	}
 }
 
+func TestRefuseDial(t *testing.T) {
+	for _, addr := range []string{"169.254.169.254:80", "[fe80::1]:443", "0.0.0.0:80", "[::]:80", "224.0.0.1:80"} {
+		if err := refuseDial("tcp", addr, nil); err == nil {
+			t.Errorf("dialed %s", addr)
+		}
+	}
+	// Services are mostly internal panels: private and loopback stay allowed.
+	for _, addr := range []string{"127.0.0.1:9000", "10.0.0.5:9000", "192.168.1.2:443", "[::1]:80", "93.184.216.34:443"} {
+		if err := refuseDial("tcp", addr, nil); err != nil {
+			t.Errorf("refused %s: %v", addr, err)
+		}
+	}
+}
+
 func TestSniff(t *testing.T) {
 	ok := map[string][]byte{
 		"image/png":     pngBytes,
