@@ -252,7 +252,11 @@ func TestFetchErrorsCarryNoAddress(t *testing.T) {
 }
 
 func TestRefuseDial(t *testing.T) {
-	for _, addr := range []string{"169.254.169.254:80", "[fe80::1]:443", "0.0.0.0:80", "[::]:80", "224.0.0.1:80"} {
+	for _, addr := range []string{
+		"169.254.169.254:80", "[fe80::1]:443", "0.0.0.0:80", "[::]:80", "224.0.0.1:80",
+		// Cloud metadata outside link-local, and link-local behind NAT64.
+		"[fd00:ec2::254]:80", "100.100.100.200:80", "[64:ff9b::a9fe:a9fe]:80", "[::ffff:169.254.169.254]:80",
+	} {
 		if err := refuseDial("tcp", addr, nil); err == nil {
 			t.Errorf("dialed %s", addr)
 		}
@@ -262,6 +266,13 @@ func TestRefuseDial(t *testing.T) {
 		if err := refuseDial("tcp", addr, nil); err != nil {
 			t.Errorf("refused %s: %v", addr, err)
 		}
+	}
+}
+
+func TestNoEnvironmentProxy(t *testing.T) {
+	// A proxy would dial for us, past refuseDial.
+	if client.Transport.(*http.Transport).Proxy != nil {
+		t.Fatal("the icon client uses a proxy")
 	}
 }
 

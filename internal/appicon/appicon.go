@@ -36,8 +36,8 @@ var client = &http.Client{
 	Timeout: 5 * time.Second,
 	// Services are mostly internal panels behind self-signed certificates;
 	// an icon is public decoration, so an unverified one is acceptable.
+	// No proxy: it would dial for us, past refuseDial.
 	Transport: &http.Transport{
-		Proxy:           http.ProxyFromEnvironment,
 		DialContext:     (&net.Dialer{Timeout: 5 * time.Second, Control: refuseDial}).DialContext,
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // see above
 	},
@@ -63,12 +63,30 @@ func refuseDial(_, address string, _ syscall.RawConn) error {
 		return ErrNoIcon
 	}
 	ip := net.ParseIP(host)
-	if ip == nil || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+	if ip == nil {
+		return ErrNoIcon
+	}
+	// An IPv4 address behind NAT64 is judged as itself.
+	if len(ip) == net.IPv6len && nat64.Contains(ip) {
+		ip = net.IP(ip[12:])
+	}
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 		ip.IsUnspecified() || ip.IsMulticast() {
 		return ErrNoIcon
 	}
+	for _, m := range metadata {
+		if ip.Equal(m) {
+			return ErrNoIcon
+		}
+	}
 	return nil
 }
+
+var (
+	nat64 = &net.IPNet{IP: net.ParseIP("64:ff9b::"), Mask: net.CIDRMask(96, 128)}
+	// Cloud metadata services outside link-local (AWS IPv6, Alibaba).
+	metadata = []net.IP{net.ParseIP("fd00:ec2::254"), net.ParseIP("100.100.100.200")}
+)
 
 // Fetch loads the page at address and returns the best icon it points to.
 func Fetch(ctx context.Context, address string) (*Icon, error) {
