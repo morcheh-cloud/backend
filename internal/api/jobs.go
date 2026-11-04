@@ -27,7 +27,7 @@ import (
 // reports progress and can be canceled.
 type Job struct {
 	ID         string         `json:"id" format:"uuid"`
-	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install or fail2ban-uninstall" example:"transfer"`
+	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install, fail2ban-uninstall, ansible-run or schedule-sync" example:"transfer"`
 	Title      string         `json:"title" example:"Copy backup.tar.gz from MinIO to web-01"`
 	State      string         `json:"state" enum:"queued,running,succeeded,failed,canceled,interrupted"`
 	Refs       []string       `json:"refs" doc:"Servers and storages it touches"`
@@ -44,10 +44,12 @@ type Job struct {
 
 // JobPlace is a folder on a server or storage.
 type JobPlace struct {
-	ServerID  string `json:"server_id,omitempty" format:"uuid"`
-	StorageID string `json:"storage_id,omitempty" format:"uuid"`
-	Path      string `json:"path"`
-	Name      string `json:"name,omitempty" doc:"The server's or storage's name when the job started"`
+	ServerID   string `json:"server_id,omitempty" format:"uuid"`
+	StorageID  string `json:"storage_id,omitempty" format:"uuid"`
+	Path       string `json:"path"`
+	Name       string `json:"name,omitempty" doc:"The server's or storage's name when the job started"`
+	RunID      string `json:"run_id,omitempty" format:"uuid" doc:"The Ansible or cron job run it belongs to"`
+	ScheduleID string `json:"schedule_id,omitempty" format:"uuid" doc:"The cron job it is a run of"`
 }
 
 // JobRemoved is sent on the stream when a job is deleted; an empty id means
@@ -254,6 +256,10 @@ func registerJobs(api huma.API, a *authz) {
 		old, err := ownJob(ctx, r, in.ID)
 		if err != nil {
 			return nil, err
+		}
+		// A run's record says what it ran; starting another goes through its checks.
+		if old.Kind == ansibleRunKind || old.Kind == scheduleSyncKind {
+			return nil, huma.Error409Conflict("Run it again from its page.")
 		}
 		p := principalOf(ctx)
 		if err := a.mayRetry(ctx, p, old); err != nil {

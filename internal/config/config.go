@@ -27,9 +27,20 @@ type Config struct {
 	// Same for storages. Slower than servers: each check signs in to the
 	// remote service (an S3 request, an FTP/SFTP login). 0 = off.
 	StorageCheckInterval time.Duration `env:"STORAGE_CHECK_INTERVAL" envDefault:"30s"`
+	// How often Morcheh looks for cron jobs that are due. 0 = they never run
+	// on time (Run now still works).
+	ScheduleTick time.Duration `env:"SCHEDULE_TICK" envDefault:"15s"`
 	// If set, the first-run form asks for it, so a stranger who reaches a fresh
 	// install can't become its admin.
 	SetupToken string `env:"SETUP_TOKEN"`
+	// ansible-playbook to run playbooks with: a name on PATH or a path.
+	AnsiblePlaybook string `env:"ANSIBLE_PLAYBOOK" envDefault:"ansible-playbook"`
+	// auto: run playbooks in a bubblewrap sandbox when it works; without one
+	// only system admins can run them. bwrap: refuse to run without it. off:
+	// never use it.
+	AnsibleSandbox string `env:"ANSIBLE_SANDBOX" envDefault:"auto"`
+	// A playbook still running after this long is stopped.
+	AnsibleRunTimeout time.Duration `env:"ANSIBLE_RUN_TIMEOUT" envDefault:"2h"`
 	// Believe X-Forwarded-For / X-Real-IP. Only behind a proxy that sets them:
 	// otherwise anyone can fake their address and dodge the login limits.
 	TrustProxy bool `env:"TRUST_PROXY"`
@@ -51,6 +62,9 @@ func Load() (*Config, error) {
 	// With credentials, a wildcard origin would let any site act as the user.
 	if !cfg.Development() && slices.Contains(cfg.CORSOrigins, "*") {
 		return nil, errors.New("CORS_ALLOWED_ORIGINS can't be * outside development")
+	}
+	if !slices.Contains([]string{"auto", "bwrap", "off"}, cfg.AnsibleSandbox) {
+		return nil, errors.New("ANSIBLE_SANDBOX must be auto, bwrap or off")
 	}
 	return &cfg, nil
 }

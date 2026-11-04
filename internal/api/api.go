@@ -107,6 +107,10 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerAppCategories(api, apps)
 	registerAppSecrets(api, apps)
 	registerAppLogos(api, apps)
+	registerAnsible(api, newAnsibleHandler(servers, a))
+	schedules := newScheduleHandler(st, a)
+	registerSchedules(api, schedules)
+	startScheduler(schedules, cfg.ScheduleTick)
 	registerJobs(api, a)
 
 	return r, api

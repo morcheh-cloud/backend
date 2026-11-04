@@ -39,6 +39,44 @@ type AlertChannel struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+type AnsiblePlaybook struct {
+	ID          uuid.UUID  `json:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Content     string     `json:"content"`
+	Variables   string     `json:"variables"`
+	CreatedBy   *uuid.UUID `json:"created_by"`
+	UpdatedBy   *uuid.UUID `json:"updated_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type AnsibleRun struct {
+	ID              uuid.UUID   `json:"id"`
+	WorkspaceID     uuid.UUID   `json:"workspace_id"`
+	PlaybookID      *uuid.UUID  `json:"playbook_id"`
+	PlaybookName    string      `json:"playbook_name"`
+	Content         string      `json:"content"`
+	Selection       []byte      `json:"selection"`
+	Hosts           []byte      `json:"hosts"`
+	ServerIds       []uuid.UUID `json:"server_ids"`
+	Options         []byte      `json:"options"`
+	State           string      `json:"state"`
+	Error           string      `json:"error"`
+	ExitCode        *int32      `json:"exit_code"`
+	Output          string      `json:"output"`
+	OutputTruncated bool        `json:"output_truncated"`
+	Plays           []byte      `json:"plays"`
+	Recap           []byte      `json:"recap"`
+	JobID           *uuid.UUID  `json:"job_id"`
+	CreatedBy       *uuid.UUID  `json:"created_by"`
+	CreatedByName   string      `json:"created_by_name"`
+	CreatedAt       time.Time   `json:"created_at"`
+	StartedAt       *time.Time  `json:"started_at"`
+	FinishedAt      *time.Time  `json:"finished_at"`
+}
+
 type App struct {
 	ID          uuid.UUID  `json:"id"`
 	WorkspaceID uuid.UUID  `json:"workspace_id"`
@@ -236,6 +274,96 @@ type Job struct {
 	StartedAt  *time.Time  `json:"started_at"`
 	FinishedAt *time.Time  `json:"finished_at"`
 	CreatedBy  *uuid.UUID  `json:"created_by"`
+}
+
+type Schedule struct {
+	ID           uuid.UUID   `json:"id"`
+	WorkspaceID  uuid.UUID   `json:"workspace_id"`
+	Name         string      `json:"name"`
+	Description  string      `json:"description"`
+	Action       string      `json:"action"`
+	Cron         string      `json:"cron"`
+	Timezone     string      `json:"timezone"`
+	Enabled      bool        `json:"enabled"`
+	Source       []byte      `json:"source"`
+	Destinations []byte      `json:"destinations"`
+	Options      []byte      `json:"options"`
+	ServerIds    []uuid.UUID `json:"server_ids"`
+	StorageIds   []uuid.UUID `json:"storage_ids"`
+	NextRunAt    *time.Time  `json:"next_run_at"`
+	CreatedBy    *uuid.UUID  `json:"created_by"`
+	UpdatedBy    *uuid.UUID  `json:"updated_by"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
+}
+
+type ScheduleRun struct {
+	ID            uuid.UUID  `json:"id"`
+	ScheduleID    uuid.UUID  `json:"schedule_id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	Trigger       string     `json:"trigger"`
+	DryRun        bool       `json:"dry_run"`
+	Plan          []byte     `json:"plan"`
+	State         string     `json:"state"`
+	Error         string     `json:"error"`
+	Results       []byte     `json:"results"`
+	Files         int32      `json:"files"`
+	Bytes         int64      `json:"bytes"`
+	JobID         *uuid.UUID `json:"job_id"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+}
+
+type Script struct {
+	ID             uuid.UUID  `json:"id"`
+	WorkspaceID    uuid.UUID  `json:"workspace_id"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	Interpreter    string     `json:"interpreter"`
+	Content        string     `json:"content"`
+	RunAs          string     `json:"run_as"`
+	TimeoutSeconds int32      `json:"timeout_seconds"`
+	Params         []byte     `json:"params"`
+	CreatedBy      *uuid.UUID `json:"created_by"`
+	UpdatedBy      *uuid.UUID `json:"updated_by"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+type ScriptRun struct {
+	ID             uuid.UUID  `json:"id"`
+	ScriptID       *uuid.UUID `json:"script_id"`
+	Name           string     `json:"name"`
+	Interpreter    string     `json:"interpreter"`
+	Content        string     `json:"content"`
+	RunAs          string     `json:"run_as"`
+	TimeoutSeconds int32      `json:"timeout_seconds"`
+	Env            []byte     `json:"env"`
+	State          string     `json:"state"`
+	JobID          *uuid.UUID `json:"job_id"`
+	CreatedBy      *uuid.UUID `json:"created_by"`
+	CreatedByName  string     `json:"created_by_name"`
+	CreatedAt      time.Time  `json:"created_at"`
+	StartedAt      *time.Time `json:"started_at"`
+	FinishedAt     *time.Time `json:"finished_at"`
+}
+
+type ScriptRunTarget struct {
+	RunID      uuid.UUID  `json:"run_id"`
+	ServerID   *uuid.UUID `json:"server_id"`
+	ServerName string     `json:"server_name"`
+	Position   int32      `json:"position"`
+	State      string     `json:"state"`
+	ExitCode   *int32     `json:"exit_code"`
+	TimedOut   bool       `json:"timed_out"`
+	Error      string     `json:"error"`
+	Output     string     `json:"output"`
+	Truncated  bool       `json:"truncated"`
+	StartedAt  *time.Time `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
 }
 
 type Server struct {

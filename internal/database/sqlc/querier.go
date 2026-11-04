@@ -15,14 +15,19 @@ type Querier interface {
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
 	CancelQueuedJob(ctx context.Context, id uuid.UUID) (int64, error)
+	// Moves next_run_at on, only if nobody else did first.
+	ClaimSchedule(ctx context.Context, arg ClaimScheduleParams) (int64, error)
 	ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error
 	CountActiveAdmins(ctx context.Context) (int32, error)
+	CountAnsibleRuns(ctx context.Context, arg CountAnsibleRunsParams) (int64, error)
+	CountScheduleRuns(ctx context.Context, arg CountScheduleRunsParams) (int64, error)
 	CountServers(ctx context.Context, arg CountServersParams) (CountServersRow, error)
 	CountUserSessions(ctx context.Context, userID uuid.UUID) (int32, error)
 	CountUsers(ctx context.Context) (int32, error)
 	CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error)
 	CountWorkspaces(ctx context.Context) (int32, error)
 	CreateAlertChannel(ctx context.Context, arg CreateAlertChannelParams) (AlertChannel, error)
+	CreateAnsibleRun(ctx context.Context, arg CreateAnsibleRunParams) (AnsibleRun, error)
 	CreateApp(ctx context.Context, arg CreateAppParams) (App, error)
 	CreateAppAccount(ctx context.Context, arg CreateAppAccountParams) (AppAccount, error)
 	// New categories go last.
@@ -33,6 +38,12 @@ type Querier interface {
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (UserGroup, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
+	CreatePlaybook(ctx context.Context, arg CreatePlaybookParams) (AnsiblePlaybook, error)
+	CreateSchedule(ctx context.Context, arg CreateScheduleParams) (Schedule, error)
+	CreateScheduleRun(ctx context.Context, arg CreateScheduleRunParams) (ScheduleRun, error)
+	CreateScript(ctx context.Context, arg CreateScriptParams) (Script, error)
+	CreateScriptRun(ctx context.Context, arg CreateScriptRunParams) (ScriptRun, error)
+	CreateScriptRunTarget(ctx context.Context, arg CreateScriptRunTargetParams) error
 	CreateServer(ctx context.Context, arg CreateServerParams) (Server, error)
 	// ---- Sessions ----
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
@@ -47,6 +58,7 @@ type Querier interface {
 	// Oldest first: what the "fills up in N days" estimates fit a line through.
 	DatabaseSizeTrend(ctx context.Context, arg DatabaseSizeTrendParams) ([]DatabaseSizeTrendRow, error)
 	DeleteAlertChannel(ctx context.Context, arg DeleteAlertChannelParams) (int64, error)
+	DeleteAnsibleRun(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteApp(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteAppAccountsExcept(ctx context.Context, arg DeleteAppAccountsExceptParams) error
 	DeleteAppCategory(ctx context.Context, arg DeleteAppCategoryParams) (int64, error)
@@ -60,22 +72,37 @@ type Querier interface {
 	DeleteGrant(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteGroup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteJob(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteOldScriptRuns(ctx context.Context) error
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
+	DeletePlaybook(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteSchedule(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteScheduleRun(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteScript(ctx context.Context, id uuid.UUID) error
 	DeleteServers(ctx context.Context, ids []uuid.UUID) (int64, error)
 	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteStorage(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUser(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
 	DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, error)
+	// A run whose job ended without it (canceled while queued, Morcheh restarted).
+	EndAnsibleRun(ctx context.Context, arg EndAnsibleRunParams) error
+	// Ends a run that's still queued or running, keeping what it recorded.
+	EndScheduleRun(ctx context.Context, arg EndScheduleRunParams) error
 	// Whatever a restart cut off never ends by itself.
 	FailStaleDatabaseBackups(ctx context.Context) error
 	FindGrant(ctx context.Context, arg FindGrantParams) (AccessGrant, error)
+	FinishAnsibleRun(ctx context.Context, arg FinishAnsibleRunParams) error
 	FinishDatabaseBackup(ctx context.Context, arg FinishDatabaseBackupParams) (DatabaseBackup, error)
 	FinishJob(ctx context.Context, arg FinishJobParams) error
+	FinishScheduleRun(ctx context.Context, arg FinishScheduleRunParams) error
+	FinishScriptRun(ctx context.Context, arg FinishScriptRunParams) error
+	FinishScriptTarget(ctx context.Context, arg FinishScriptTargetParams) error
 	// Whether candidate is folder_id itself or one of its descendants; moving a
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
 	GetAlertChannel(ctx context.Context, id uuid.UUID) (AlertChannel, error)
+	GetAnsibleRun(ctx context.Context, id uuid.UUID) (AnsibleRun, error)
+	GetAnsibleRunWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetApp(ctx context.Context, id uuid.UUID) (App, error)
 	GetAppAccount(ctx context.Context, arg GetAppAccountParams) (AppAccount, error)
 	GetAppCategory(ctx context.Context, id uuid.UUID) (AppCategory, error)
@@ -91,6 +118,14 @@ type Querier interface {
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
 	GetGroup(ctx context.Context, id uuid.UUID) (UserGroup, error)
 	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
+	GetPlaybook(ctx context.Context, id uuid.UUID) (AnsiblePlaybook, error)
+	GetPlaybookWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetSchedule(ctx context.Context, id uuid.UUID) (Schedule, error)
+	GetScheduleRun(ctx context.Context, id uuid.UUID) (ScheduleRun, error)
+	GetScheduleRunWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetScheduleWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetScript(ctx context.Context, id uuid.UUID) (Script, error)
+	GetScriptRun(ctx context.Context, id uuid.UUID) (ScriptRun, error)
 	GetServer(ctx context.Context, id uuid.UUID) (Server, error)
 	GetServerWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetServers(ctx context.Context, ids []uuid.UUID) ([]Server, error)
@@ -108,10 +143,20 @@ type Querier interface {
 	InsertDatabaseSample(ctx context.Context, arg InsertDatabaseSampleParams) error
 	// At startup: whatever was running died with the last process.
 	InterruptRunningJobs(ctx context.Context) (int64, error)
+	// What the last process left running can't go on after a restart.
+	InterruptScriptRuns(ctx context.Context) error
 	LastGoodDatabaseBackup(ctx context.Context, databaseID uuid.UUID) (DatabaseBackup, error)
+	// Each script's latest run on one server.
+	LastScriptRuns(ctx context.Context, serverID *uuid.UUID) ([]LastScriptRunsRow, error)
 	ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error)
+	ListActiveScheduleRuns(ctx context.Context, scheduleID *uuid.UUID) ([]ScheduleRun, error)
 	ListAlertChannels(ctx context.Context, workspaceID uuid.UUID) ([]AlertChannel, error)
 	ListAllGroupMembers(ctx context.Context) ([]GroupMember, error)
+	ListAnsibleFolders(ctx context.Context, workspaceID uuid.UUID) ([]ListAnsibleFoldersRow, error)
+	// Newest first, without the heavy columns.
+	ListAnsibleRuns(ctx context.Context, arg ListAnsibleRunsParams) ([]ListAnsibleRunsRow, error)
+	// With the sealed credentials: only for building a run's inventory.
+	ListAnsibleServers(ctx context.Context, workspaceID uuid.UUID) ([]Server, error)
 	ListAppAccounts(ctx context.Context, appIds []uuid.UUID) ([]AppAccount, error)
 	ListAppCategories(ctx context.Context, workspaceIds []uuid.UUID) ([]AppCategory, error)
 	ListAppLogoStamps(ctx context.Context, appIds []uuid.UUID) ([]ListAppLogoStampsRow, error)
@@ -126,6 +171,8 @@ type Querier interface {
 	// What the monitor should look at now.
 	ListDatabasesDue(ctx context.Context) ([]Database, error)
 	ListDueBackupPlans(ctx context.Context) ([]DatabaseBackupPlan, error)
+	ListDueSchedules(ctx context.Context, now *time.Time) ([]Schedule, error)
+	ListEnabledSchedulesWithoutNext(ctx context.Context) ([]Schedule, error)
 	// server_count counts only the folder's own servers the caller can see; the
 	// client sums subtrees. folder_workspace_ids also lists workspaces the caller
 	// only reaches through single servers: the handler prunes those to the folders
@@ -139,9 +186,21 @@ type Querier interface {
 	// Newest first. ref narrows to one server or storage; active to queued and
 	// running jobs, finished to the rest; created_by to one person's.
 	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
+	// With each playbook's newest run, for the list.
+	ListPlaybooks(ctx context.Context, workspaceID uuid.UUID) ([]ListPlaybooksRow, error)
 	// People an owner can give access to.
 	ListPrincipalUsers(ctx context.Context) ([]ListPrincipalUsersRow, error)
 	ListQueuedJobs(ctx context.Context) ([]Job, error)
+	// Names of the servers and storages schedules point at.
+	ListScheduleEndNames(ctx context.Context, ids []uuid.UUID) ([]ListScheduleEndNamesRow, error)
+	ListScheduleRuns(ctx context.Context, arg ListScheduleRunsParams) ([]ScheduleRun, error)
+	// With each schedule's newest run (skipped ones aside), for the list.
+	ListSchedules(ctx context.Context, arg ListSchedulesParams) ([]ListSchedulesRow, error)
+	ListScriptRunTargets(ctx context.Context, runID uuid.UUID) ([]ScriptRunTarget, error)
+	ListScripts(ctx context.Context, workspaceID uuid.UUID) ([]Script, error)
+	// Runs that touched one server, newest first, with what they did there.
+	// script_id narrows to one script; pattern (ILIKE) matches the run's name.
+	ListServerScriptRuns(ctx context.Context, arg ListServerScriptRunsParams) ([]ListServerScriptRunsRow, error)
 	ListServerWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListServerWorkspacesRow, error)
 	// Filters combine with AND; values inside one filter (os, status, tags)
 	// combine with OR. A folder filter includes its subfolders. total is the
@@ -158,6 +217,7 @@ type Querier interface {
 	// ---- Grants ----
 	// Every grant that applies to a user, directly or through a group.
 	ListUserGrants(ctx context.Context, userID *uuid.UUID) ([]AccessGrant, error)
+	ListUserNames(ctx context.Context, ids []uuid.UUID) ([]ListUserNamesRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	ListWorkspaceApps(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceAppsRow, error)
 	// The light list for an access page: never the sealed credentials.
@@ -178,6 +238,8 @@ type Querier interface {
 	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
+	// Keeps a schedule's newest runs, and every one still going.
+	PruneScheduleRuns(ctx context.Context, arg PruneScheduleRunsParams) error
 	// PutAppFavicon stores a fetched favicon only while the service still exists
 	// at the address it was fetched from, so a slow fetch can't overwrite a
 	// newer one.
@@ -194,10 +256,15 @@ type Querier interface {
 	ReparentFolderChildren(ctx context.Context, arg ReparentFolderChildrenParams) error
 	ResetServerHostKey(ctx context.Context, id uuid.UUID) error
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
+	SaveAnsibleRunProgress(ctx context.Context, arg SaveAnsibleRunProgressParams) error
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
+	// While it runs, so the page shows each finished destination.
+	SaveScheduleRunResults(ctx context.Context, arg SaveScheduleRunResultsParams) error
+	SaveScriptTargetOutput(ctx context.Context, arg SaveScriptTargetOutputParams) error
 	ServerOSFacets(ctx context.Context, arg ServerOSFacetsParams) ([]ServerOSFacetsRow, error)
 	ServerStatusFacets(ctx context.Context, arg ServerStatusFacetsParams) ([]ServerStatusFacetsRow, error)
 	ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams) ([]ServerTagFacetsRow, error)
+	SetAnsibleRunJob(ctx context.Context, arg SetAnsibleRunJobParams) error
 	SetAppCategoryPosition(ctx context.Context, arg SetAppCategoryPositionParams) error
 	SetAppLogoKind(ctx context.Context, arg SetAppLogoKindParams) (App, error)
 	// A service of another workspace (or one already removed) is left alone.
@@ -207,6 +274,11 @@ type Querier interface {
 	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)
 	SetDatabasePaused(ctx context.Context, arg SetDatabasePausedParams) (Database, error)
 	SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error)
+	// Pausing and resuming don't change whose access it runs with.
+	SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) (Schedule, error)
+	SetScheduleNext(ctx context.Context, arg SetScheduleNextParams) error
+	SetScheduleRunJob(ctx context.Context, arg SetScheduleRunJobParams) error
+	SetScriptRunJob(ctx context.Context, arg SetScriptRunJobParams) error
 	SetServerFavorite(ctx context.Context, arg SetServerFavoriteParams) (Server, error)
 	SetStorageFavorite(ctx context.Context, arg SetStorageFavoriteParams) (Storage, error)
 	// Replaces the groups of one user (approving someone, editing them).
@@ -215,7 +287,11 @@ type Querier interface {
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
 	SetUsername(ctx context.Context, arg SetUsernameParams) (User, error)
+	StartAnsibleRun(ctx context.Context, id uuid.UUID) error
 	StartJob(ctx context.Context, id uuid.UUID) error
+	StartScheduleRun(ctx context.Context, id uuid.UUID) error
+	StartScriptRun(ctx context.Context, id uuid.UUID) error
+	StartScriptTarget(ctx context.Context, arg StartScriptTargetParams) error
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	TouchUserLogin(ctx context.Context, id uuid.UUID) error
 	UpdateAlertChannel(ctx context.Context, arg UpdateAlertChannelParams) (AlertChannel, error)
@@ -226,6 +302,9 @@ type Querier interface {
 	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)
 	UpdateGroup(ctx context.Context, arg UpdateGroupParams) (UserGroup, error)
+	UpdatePlaybook(ctx context.Context, arg UpdatePlaybookParams) (AnsiblePlaybook, error)
+	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (Schedule, error)
+	UpdateScript(ctx context.Context, arg UpdateScriptParams) (Script, error)
 	// Full replace of the editable fields. The handler resolves secrets first:
 	// it passes the stored ones back unchanged when the request leaves them out.
 	UpdateServer(ctx context.Context, arg UpdateServerParams) (Server, error)

@@ -36,7 +36,9 @@ services:
     build:
       dockerfile_inline: |
         FROM lscr.io/linuxserver/openssh-server
-        RUN echo "ant ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ant \
+        # python3: Ansible runs its modules with it.
+        RUN apk add --no-cache python3 \
+          && echo "ant ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ant \
           && chmod 440 /etc/sudoers.d/ant
     environment:
       USER_NAME: ant

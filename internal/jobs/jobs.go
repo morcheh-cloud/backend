@@ -532,6 +532,13 @@ type Task struct {
 // Decode reads the job's params.
 func (t *Task) Decode(v any) error { return json.Unmarshal(t.Params, v) }
 
+// Canceled says the user asked it to stop, as opposed to Morcheh shutting down.
+func (t *Task) Canceled() bool {
+	t.r.mu.Lock()
+	defer t.r.mu.Unlock()
+	return t.e.canceled
+}
+
 // Update changes the progress.
 func (t *Task) Update(fn func(p *Progress)) {
 	t.r.mu.Lock()

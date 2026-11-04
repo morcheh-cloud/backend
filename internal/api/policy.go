@@ -20,6 +20,12 @@ const (
 	kindWorkspace
 	kindDatabase
 	kindApp
+	// A workspace level, on the workspace of the playbook or run in {id}.
+	kindPlaybook
+	kindAnsibleRun
+	// A workspace level, on the workspace of the cron job or run in {id}.
+	kindSchedule
+	kindScheduleRun
 )
 
 type policy struct {
@@ -27,11 +33,15 @@ type policy struct {
 	level auth.Level
 }
 
-func onServer(l auth.Level) policy    { return policy{kindServer, l} }
-func onStorage(l auth.Level) policy   { return policy{kindStorage, l} }
-func onWorkspace(l auth.Level) policy { return policy{kindWorkspace, l} }
-func onDatabase(l auth.Level) policy  { return policy{kindDatabase, l} }
-func onApp(l auth.Level) policy       { return policy{kindApp, l} }
+func onServer(l auth.Level) policy      { return policy{kindServer, l} }
+func onStorage(l auth.Level) policy     { return policy{kindStorage, l} }
+func onWorkspace(l auth.Level) policy   { return policy{kindWorkspace, l} }
+func onDatabase(l auth.Level) policy    { return policy{kindDatabase, l} }
+func onApp(l auth.Level) policy         { return policy{kindApp, l} }
+func onPlaybook(l auth.Level) policy    { return policy{kindPlaybook, l} }
+func onAnsibleRun(l auth.Level) policy  { return policy{kindAnsibleRun, l} }
+func onSchedule(l auth.Level) policy    { return policy{kindSchedule, l} }
+func onScheduleRun(l auth.Level) policy { return policy{kindScheduleRun, l} }
 
 var (
 	public  = policy{kind: kindPublic}
@@ -266,7 +276,37 @@ var policies = map[string]policy{
 	"reveal-database-credentials": onDatabase(auth.Owner),
 
 	// Jobs: everyone sees their own, admins all.
-	"list-jobs":   active,
+	"list-jobs": active,
+	// Ansible. Starting a run also needs Owner on every chosen server, checked
+	// in the handler: a playbook can do anything on them.
+	"get-ansible-status":      active,
+	"list-playbooks":          onWorkspace(auth.Viewer),
+	"create-playbook":         onWorkspace(auth.Engineer),
+	"get-playbook":            onPlaybook(auth.Viewer),
+	"update-playbook":         onPlaybook(auth.Engineer),
+	"delete-playbook":         onPlaybook(auth.Engineer),
+	"preview-ansible-targets": onWorkspace(auth.Viewer),
+	"start-ansible-run":       onWorkspace(auth.Viewer),
+	"list-ansible-runs":       onWorkspace(auth.Operator),
+	"get-ansible-run":         onAnsibleRun(auth.Operator),
+	"stream-ansible-run":      onAnsibleRun(auth.Operator),
+	"cancel-ansible-run":      onAnsibleRun(auth.Engineer),
+	"delete-ansible-run":      onAnsibleRun(auth.Engineer),
+	// Cron jobs (Morcheh's own schedules). Saving one also needs Operator on
+	// the source and Engineer on every destination, checked in the handler.
+	"list-schedules":       onWorkspace(auth.Viewer),
+	"preview-schedule":     active,
+	"create-schedule":      onWorkspace(auth.Engineer),
+	"get-schedule":         onSchedule(auth.Viewer),
+	"update-schedule":      onSchedule(auth.Engineer),
+	"set-schedule-enabled": onSchedule(auth.Engineer),
+	"delete-schedule":      onSchedule(auth.Engineer),
+	"run-schedule":         onSchedule(auth.Operator),
+	"list-schedule-runs":   onSchedule(auth.Viewer),
+	"get-schedule-run":     onScheduleRun(auth.Viewer),
+	"cancel-schedule-run":  onScheduleRun(auth.Operator),
+	"delete-schedule-run":  onScheduleRun(auth.Engineer),
+
 	"get-job":     active,
 	"cancel-job":  active,
 	"retry-job":   active,
