@@ -263,33 +263,34 @@ FROM servers s
 WHERE ($1::bool OR s.workspace_id = ANY ($2::uuid[]) OR s.id = ANY ($3::uuid[]))
   AND ($4::uuid IS NULL OR s.workspace_id = $4::uuid)
   AND ($5::uuid IS NULL OR s.folder_id IN (SELECT id FROM subtree))
-  AND (NOT $6::bool OR s.folder_id IS NULL)
-  AND (NOT $7::bool OR s.favorite)
-  AND ($8::text IS NULL
-       OR s.name ILIKE '%' || $8::text || '%'
-       OR s.host ILIKE '%' || $8::text || '%'
-       OR s.hostname ILIKE '%' || $8::text || '%'
-       OR s.description ILIKE '%' || $8::text || '%'
-       OR $8::text = ANY (s.tags))
-  AND (cardinality($9::text[]) = 0 OR coalesce(nullif(s.os_id, ''), 'unknown') = ANY ($9::text[]))
-  AND (cardinality($10::text[]) = 0 OR s.status = ANY ($10::text[]))
-  AND (cardinality($11::text[]) = 0 OR s.tags && $11::text[])
-  AND (cardinality($12::text[]) = 0 OR s.auth_method = ANY ($12::text[]))
+  AND (NOT $6::bool OR s.folder_id = $5::uuid)
+  AND (NOT $7::bool OR s.folder_id IS NULL)
+  AND (NOT $8::bool OR s.favorite)
+  AND ($9::text IS NULL
+       OR s.name ILIKE '%' || $9::text || '%'
+       OR s.host ILIKE '%' || $9::text || '%'
+       OR s.hostname ILIKE '%' || $9::text || '%'
+       OR s.description ILIKE '%' || $9::text || '%'
+       OR $9::text = ANY (s.tags))
+  AND (cardinality($10::text[]) = 0 OR coalesce(nullif(s.os_id, ''), 'unknown') = ANY ($10::text[]))
+  AND (cardinality($11::text[]) = 0 OR s.status = ANY ($11::text[]))
+  AND (cardinality($12::text[]) = 0 OR s.tags && $12::text[])
+  AND (cardinality($13::text[]) = 0 OR s.auth_method = ANY ($13::text[]))
 ORDER BY
-    CASE WHEN $13::text = 'name' AND NOT $14::bool THEN lower(s.name) END,
-    CASE WHEN $13::text = 'name' AND $14::bool THEN lower(s.name) END DESC,
-    CASE WHEN $13::text = 'host' AND NOT $14::bool THEN s.host END,
-    CASE WHEN $13::text = 'host' AND $14::bool THEN s.host END DESC,
-    CASE WHEN $13::text = 'os' AND NOT $14::bool THEN nullif(s.os_name || ' ' || s.os_version, ' ') END NULLS LAST,
-    CASE WHEN $13::text = 'os' AND $14::bool THEN nullif(s.os_name || ' ' || s.os_version, ' ') END DESC NULLS LAST,
-    CASE WHEN $13::text = 'status' AND NOT $14::bool THEN s.status END,
-    CASE WHEN $13::text = 'status' AND $14::bool THEN s.status END DESC,
-    CASE WHEN $13::text = 'last_checked' AND NOT $14::bool THEN s.last_checked_at END NULLS LAST,
-    CASE WHEN $13::text = 'last_checked' AND $14::bool THEN s.last_checked_at END DESC NULLS LAST,
-    CASE WHEN $13::text = 'created' AND NOT $14::bool THEN s.created_at END,
-    CASE WHEN $13::text = 'created' AND $14::bool THEN s.created_at END DESC,
+    CASE WHEN $14::text = 'name' AND NOT $15::bool THEN lower(s.name) END,
+    CASE WHEN $14::text = 'name' AND $15::bool THEN lower(s.name) END DESC,
+    CASE WHEN $14::text = 'host' AND NOT $15::bool THEN s.host END,
+    CASE WHEN $14::text = 'host' AND $15::bool THEN s.host END DESC,
+    CASE WHEN $14::text = 'os' AND NOT $15::bool THEN nullif(s.os_name || ' ' || s.os_version, ' ') END NULLS LAST,
+    CASE WHEN $14::text = 'os' AND $15::bool THEN nullif(s.os_name || ' ' || s.os_version, ' ') END DESC NULLS LAST,
+    CASE WHEN $14::text = 'status' AND NOT $15::bool THEN s.status END,
+    CASE WHEN $14::text = 'status' AND $15::bool THEN s.status END DESC,
+    CASE WHEN $14::text = 'last_checked' AND NOT $15::bool THEN s.last_checked_at END NULLS LAST,
+    CASE WHEN $14::text = 'last_checked' AND $15::bool THEN s.last_checked_at END DESC NULLS LAST,
+    CASE WHEN $14::text = 'created' AND NOT $15::bool THEN s.created_at END,
+    CASE WHEN $14::text = 'created' AND $15::bool THEN s.created_at END DESC,
     lower(s.name), s.id
-LIMIT $16 OFFSET $15
+LIMIT $17 OFFSET $16
 `
 
 type ListServersParams struct {
@@ -298,6 +299,7 @@ type ListServersParams struct {
 	ServerIds     []uuid.UUID `json:"server_ids"`
 	WorkspaceID   *uuid.UUID  `json:"workspace_id"`
 	FolderID      *uuid.UUID  `json:"folder_id"`
+	DirectOnly    bool        `json:"direct_only"`
 	Unfiled       bool        `json:"unfiled"`
 	FavoritesOnly bool        `json:"favorites_only"`
 	Q             *string     `json:"q"`
@@ -317,8 +319,8 @@ type ListServersRow struct {
 }
 
 // Filters combine with AND; values inside one filter (os, status, tags)
-// combine with OR. A folder filter includes its subfolders. total is the
-// match count before LIMIT/OFFSET.
+// combine with OR. A folder filter includes its subfolders unless direct_only
+// is set. total is the match count before LIMIT/OFFSET.
 func (q *Queries) ListServers(ctx context.Context, arg ListServersParams) ([]ListServersRow, error) {
 	rows, err := q.db.Query(ctx, listServers,
 		arg.SeeAll,
@@ -326,6 +328,7 @@ func (q *Queries) ListServers(ctx context.Context, arg ListServersParams) ([]Lis
 		arg.ServerIds,
 		arg.WorkspaceID,
 		arg.FolderID,
+		arg.DirectOnly,
 		arg.Unfiled,
 		arg.FavoritesOnly,
 		arg.Q,

@@ -252,6 +252,7 @@ type ansibleHandler struct {
 	authz   *authz
 	runner  *jobs.Runner
 	cfg     ansible.Config
+	catalog ansible.Catalog
 
 	mu       sync.Mutex
 	live     map[uuid.UUID]*ansibleLive
@@ -816,6 +817,62 @@ func registerAnsible(api huma.API, h *ansibleHandler) {
 			Installed: st.Installed, Version: st.Version, Sandbox: st.Sandbox != "",
 			CanRun: problem == "", Problem: problem,
 		}}, nil
+	})
+
+	// ---- Modules (what a task can use) ----
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-ansible-modules",
+		Method:      http.MethodGet,
+		Path:        "/ansible/modules",
+		Summary:     "List the modules installed with Ansible",
+		Description: "Read from ansible-doc and kept until Ansible is upgraded.",
+		Tags:        tags,
+	}, func(ctx context.Context, _ *struct{}) (*struct {
+		Body struct {
+			Version string           `json:"version" doc:"ansible-core version"`
+			Items   []ansible.Module `json:"items"`
+		}
+	}, error) {
+		st := h.hostStatus()
+		if !st.Installed {
+			return nil, huma.Error503ServiceUnavailable(st.Problem)
+		}
+		list, err := h.catalog.Modules(ctx, st)
+		if err != nil {
+			return nil, huma.Error503ServiceUnavailable(err.Error())
+		}
+		out := &struct {
+			Body struct {
+				Version string           `json:"version" doc:"ansible-core version"`
+				Items   []ansible.Module `json:"items"`
+			}
+		}{}
+		out.Body.Version, out.Body.Items = st.Version, list
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-ansible-module",
+		Method:      http.MethodGet,
+		Path:        "/ansible/modules/{name}",
+		Summary:     "Describe a module: its options and examples",
+		Tags:        tags,
+	}, func(ctx context.Context, in *struct {
+		Name string `path:"name" maxLength:"200" doc:"Fully qualified (ansible.builtin.apt) or short (apt)"`
+	}) (*struct{ Body ansible.ModuleDoc }, error) {
+		st := h.hostStatus()
+		if !st.Installed {
+			return nil, huma.Error503ServiceUnavailable(st.Problem)
+		}
+		d, err := h.catalog.Doc(ctx, st, in.Name)
+		if errors.Is(err, ansible.ErrNoModule) {
+			return nil, huma.Error404NotFound("There's no module called " + in.Name + " on this Morcheh.")
+		}
+		if err != nil {
+			return nil, huma.Error503ServiceUnavailable(err.Error())
+		}
+		return &struct{ Body ansible.ModuleDoc }{*d}, nil
 	})
 
 	// ---- Playbooks ----

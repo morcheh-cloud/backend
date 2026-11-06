@@ -1,7 +1,7 @@
 -- name: ListServers :many
 -- Filters combine with AND; values inside one filter (os, status, tags)
--- combine with OR. A folder filter includes its subfolders. total is the
--- match count before LIMIT/OFFSET.
+-- combine with OR. A folder filter includes its subfolders unless direct_only
+-- is set. total is the match count before LIMIT/OFFSET.
 WITH RECURSIVE subtree AS (
     SELECT id FROM folders WHERE folders.id = sqlc.narg('folder_id')::uuid
     UNION ALL
@@ -12,6 +12,7 @@ FROM servers s
 WHERE (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id = ANY (@server_ids::uuid[]))
   AND (sqlc.narg('workspace_id')::uuid IS NULL OR s.workspace_id = sqlc.narg('workspace_id')::uuid)
   AND (sqlc.narg('folder_id')::uuid IS NULL OR s.folder_id IN (SELECT id FROM subtree))
+  AND (NOT @direct_only::bool OR s.folder_id = sqlc.narg('folder_id')::uuid)
   AND (NOT @unfiled::bool OR s.folder_id IS NULL)
   AND (NOT @favorites_only::bool OR s.favorite)
   AND (sqlc.narg('q')::text IS NULL

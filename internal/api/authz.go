@@ -203,7 +203,7 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 		return auth.Owner, nil
 	}
 
-	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run"}[pol.kind]
+	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run", kindDNSServer: "DNS server"}[pol.kind]
 	missing := &denied{http.StatusNotFound, noun + " not found"}
 	id, err := uuid.Parse(rawID)
 	if err != nil {
@@ -254,6 +254,15 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 			return auth.None, err
 		}
 		level = acc.AppLevel(ws, id)
+	case kindDNSServer:
+		ws, err := a.q.GetDNSServerWorkspace(ctx, id)
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		level = acc.WorkspaceLevel(ws)
 	case kindPlaybook:
 		ws, err := a.q.GetPlaybookWorkspace(ctx, id)
 		if isNotFound(err) {

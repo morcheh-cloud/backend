@@ -30,25 +30,6 @@ services:
       timeout: 3s
       retries: 10
 
-  # Local SSH target for testing (user ant / colony, passwordless sudo).
-  # /config keeps the host keys and home across recreates.
-  test-ssh:
-    build:
-      dockerfile_inline: |
-        FROM lscr.io/linuxserver/openssh-server
-        # python3: Ansible runs its modules with it.
-        RUN apk add --no-cache python3 \
-          && echo "ant ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ant \
-          && chmod 440 /etc/sudoers.d/ant
-    environment:
-      USER_NAME: ant
-      USER_PASSWORD: colony
-      PASSWORD_ACCESS: "true"
-    ports:
-      - "127.0.0.1:2222:2222"
-    volumes:
-      - sshconfig:/config
-
   # Local S3 target for testing (morcheh / morcheh-secret).
   # API on :9100 (what a storage connects to), web console on :9101.
   minio:
@@ -106,8 +87,7 @@ services:
       retries: 10
 
   # Local targets for the Database section (monitored databases, not the app's
-  # own Postgres and Redis). Reachable directly on localhost, or as
-  # test-postgres:5432 and so on through test-ssh.
+  # own Postgres and Redis). Reachable directly on localhost.
   test-postgres:
     image: postgres:18-alpine
     command:
@@ -205,10 +185,35 @@ services:
       timeout: 3s
       retries: 10
 
+  # Two authoritative DNS servers for the /dns section. Web UI and API on 5381
+  # and 5382, DNS on 5354 and 5355 (TCP and UDP). admin / colony.
+  test-dns-1:
+    image: technitium/dns-server:15.6.2
+    environment:
+      DNS_SERVER_DOMAIN: ns1.morcheh.test
+      DNS_SERVER_ADMIN_PASSWORD: colony
+    ports:
+      - "127.0.0.1:5381:5380/tcp"
+      - "127.0.0.1:5354:53/tcp"
+      - "127.0.0.1:5354:53/udp"
+    volumes:
+      - testdns1data:/etc/dns
+
+  test-dns-2:
+    image: technitium/dns-server:15.6.2
+    environment:
+      DNS_SERVER_DOMAIN: ns2.morcheh.test
+      DNS_SERVER_ADMIN_PASSWORD: colony
+    ports:
+      - "127.0.0.1:5382:5380/tcp"
+      - "127.0.0.1:5355:53/tcp"
+      - "127.0.0.1:5355:53/udp"
+    volumes:
+      - testdns2data:/etc/dns
+
 volumes:
   pgdata:
   redisdata:
-  sshconfig:
   miniodata:
   ftpdata:
   webdavdata:
@@ -218,3 +223,5 @@ volumes:
   testmssqldata:
   testmongodata:
   testredisdata:
+  testdns1data:
+  testdns2data:

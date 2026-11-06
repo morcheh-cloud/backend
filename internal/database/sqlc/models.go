@@ -243,6 +243,43 @@ type DatabaseSample struct {
 	MemoryBytes    *int64    `json:"memory_bytes"`
 }
 
+type DnsServer struct {
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	Name          string     `json:"name"`
+	Url           string     `json:"url"`
+	TokenEnc      []byte     `json:"token_enc"`
+	TlsSkipVerify bool       `json:"tls_skip_verify"`
+	AllowInternal bool       `json:"allow_internal"`
+	Description   string     `json:"description"`
+	Favorite      bool       `json:"favorite"`
+	Status        string     `json:"status"`
+	StatusMessage string     `json:"status_message"`
+	Version       string     `json:"version"`
+	ServerDomain  string     `json:"server_domain"`
+	ZoneCount     int32      `json:"zone_count"`
+	LatencyMs     *int32     `json:"latency_ms"`
+	LastCheckedAt *time.Time `json:"last_checked_at"`
+	LastOnlineAt  *time.Time `json:"last_online_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type FirewallChange struct {
+	ID          uuid.UUID  `json:"id"`
+	ServerID    uuid.UUID  `json:"server_id"`
+	UserID      *uuid.UUID `json:"user_id"`
+	UserName    string     `json:"user_name"`
+	Summary     string     `json:"summary"`
+	Backend     string     `json:"backend"`
+	Status      string     `json:"status"`
+	StateBefore []byte     `json:"state_before"`
+	Added       []string   `json:"added"`
+	Removed     []string   `json:"removed"`
+	Snapshot    []byte     `json:"snapshot"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
 type Folder struct {
 	ID          uuid.UUID  `json:"id"`
 	ParentID    *uuid.UUID `json:"parent_id"`

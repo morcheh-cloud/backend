@@ -148,6 +148,7 @@ type IDsBody struct {
 type ListServersInput struct {
 	Q          string   `query:"q" maxLength:"200" doc:"Case-insensitive match on name, host, hostname or description, or an exact tag"`
 	FolderID   string   `query:"folder" doc:"A folder id (subfolders included), or 'none' for servers outside every folder"`
+	Direct     bool     `query:"direct" doc:"With a folder id: only the folder's own servers, not its subfolders'"`
 	Favorites  bool     `query:"favorites" doc:"Only favourites"`
 	OS         []string `query:"os,explode" doc:"OS ids from the facets (ubuntu, debian…, 'unknown' for undetected)"`
 	Status     []string `query:"status,explode" enum:"unknown,online,unreachable,auth_failed,host_key_mismatch,error"`
@@ -587,6 +588,7 @@ func (h *serverHandler) list(ctx context.Context, in *ListServersInput) (*Server
 			return nil, fieldError("query.folder", "Expected a folder id or 'none'", in.FolderID)
 		}
 		params.FolderID = &id
+		params.DirectOnly = in.Direct
 	}
 
 	rows, err := h.q.ListServers(ctx, params)

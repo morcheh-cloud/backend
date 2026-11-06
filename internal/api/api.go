@@ -93,6 +93,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerNetwork(api, servers)
 	registerStats(api, servers)
 	registerFail2ban(api, servers)
+	registerFirewall(api, servers)
 	registerUsers(api, servers)
 	registerServices(api, servers)
 	registerPower(api, servers)
@@ -102,6 +103,9 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerStorageCredentials(api, st)
 	registerStorageFiles(api, st)
 	registerDatabases(api, newDatabaseHandler(sqlc.New(db), box, servers))
+	dns := &dnsHandler{q: sqlc.New(db), box: box, authz: a}
+	startDNSMonitor(dns, cfg.DNSCheckInterval)
+	registerDNS(api, dns)
 	apps := newAppHandler(sqlc.New(db), db, box, a)
 	registerApps(api, apps)
 	registerAppCategories(api, apps)

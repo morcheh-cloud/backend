@@ -12,6 +12,7 @@ import (
 )
 
 type Querier interface {
+	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
 	CancelQueuedJob(ctx context.Context, id uuid.UUID) (int64, error)
@@ -33,6 +34,7 @@ type Querier interface {
 	// New categories go last.
 	CreateAppCategory(ctx context.Context, arg CreateAppCategoryParams) (AppCategory, error)
 	CreateAppSecretView(ctx context.Context, arg CreateAppSecretViewParams) error
+	CreateDNSServer(ctx context.Context, arg CreateDNSServerParams) (DnsServer, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
 	CreateDatabaseBackup(ctx context.Context, arg CreateDatabaseBackupParams) (DatabaseBackup, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
@@ -63,6 +65,7 @@ type Querier interface {
 	DeleteAppAccountsExcept(ctx context.Context, arg DeleteAppAccountsExceptParams) error
 	DeleteAppCategory(ctx context.Context, arg DeleteAppCategoryParams) (int64, error)
 	DeleteAppLogo(ctx context.Context, arg DeleteAppLogoParams) error
+	DeleteDNSServer(ctx context.Context, id uuid.UUID) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDatabaseBackup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (int64, error)
@@ -108,12 +111,15 @@ type Querier interface {
 	GetAppCategory(ctx context.Context, id uuid.UUID) (AppCategory, error)
 	GetAppLogo(ctx context.Context, arg GetAppLogoParams) (AppLogo, error)
 	GetAppWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetDNSServer(ctx context.Context, id uuid.UUID) (DnsServer, error)
+	GetDNSServerWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
 	GetDatabaseBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error)
 	GetDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (DatabaseBackupPlan, error)
 	// What access to a database follows: its workspace, and the server it goes
 	// through.
 	GetDatabaseWorkspace(ctx context.Context, id uuid.UUID) (GetDatabaseWorkspaceRow, error)
+	GetFirewallChange(ctx context.Context, arg GetFirewallChangeParams) (FirewallChange, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
 	GetGroup(ctx context.Context, id uuid.UUID) (UserGroup, error)
@@ -165,6 +171,10 @@ type Querier interface {
 	// Category order first (uncategorized last), then the order inside it.
 	// pattern is an ILIKE pattern over name, address and note; '' = everything.
 	ListApps(ctx context.Context, arg ListAppsParams) ([]App, error)
+	ListDNSServers(ctx context.Context, arg ListDNSServersParams) ([]DnsServer, error)
+	// Servers whose last check is older than @before (or that were never
+	// checked), the longest waiting first.
+	ListDNSServersDueForCheck(ctx context.Context, before time.Time) ([]DnsServer, error)
 	ListDatabaseBackups(ctx context.Context, arg ListDatabaseBackupsParams) ([]DatabaseBackup, error)
 	ListDatabaseEvents(ctx context.Context, arg ListDatabaseEventsParams) ([]DatabaseEvent, error)
 	ListDatabases(ctx context.Context, arg ListDatabasesParams) ([]Database, error)
@@ -173,6 +183,7 @@ type Querier interface {
 	ListDueBackupPlans(ctx context.Context) ([]DatabaseBackupPlan, error)
 	ListDueSchedules(ctx context.Context, now *time.Time) ([]Schedule, error)
 	ListEnabledSchedulesWithoutNext(ctx context.Context) ([]Schedule, error)
+	ListFirewallChanges(ctx context.Context, serverID uuid.UUID) ([]ListFirewallChangesRow, error)
 	// server_count counts only the folder's own servers the caller can see; the
 	// client sums subtrees. folder_workspace_ids also lists workspaces the caller
 	// only reaches through single servers: the handler prunes those to the folders
@@ -203,8 +214,8 @@ type Querier interface {
 	ListServerScriptRuns(ctx context.Context, arg ListServerScriptRunsParams) ([]ListServerScriptRunsRow, error)
 	ListServerWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListServerWorkspacesRow, error)
 	// Filters combine with AND; values inside one filter (os, status, tags)
-	// combine with OR. A folder filter includes its subfolders. total is the
-	// match count before LIMIT/OFFSET.
+	// combine with OR. A folder filter includes its subfolders unless direct_only
+	// is set. total is the match count before LIMIT/OFFSET.
 	ListServers(ctx context.Context, arg ListServersParams) ([]ListServersRow, error)
 	// Servers whose last check is older than @before (or that were never checked),
 	// the longest waiting first.
@@ -238,6 +249,7 @@ type Querier interface {
 	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
+	PruneFirewallChanges(ctx context.Context, arg PruneFirewallChangesParams) error
 	// Keeps a schedule's newest runs, and every one still going.
 	PruneScheduleRuns(ctx context.Context, arg PruneScheduleRunsParams) error
 	// PutAppFavicon stores a fetched favicon only while the service still exists
@@ -246,6 +258,8 @@ type Querier interface {
 	PutAppFavicon(ctx context.Context, arg PutAppFaviconParams) (int64, error)
 	PutAppLogo(ctx context.Context, arg PutAppLogoParams) error
 	RecordAlertDelivery(ctx context.Context, arg RecordAlertDeliveryParams) error
+	// Version and domain keep their last known value while a server is away.
+	RecordDNSServerCheck(ctx context.Context, arg RecordDNSServerCheckParams) (DnsServer, error)
 	RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseCheckParams) (Database, error)
 	// Stores a connection check. OS fields are only overwritten when the check
 	// got far enough to read them (detected = true).
@@ -270,6 +284,7 @@ type Querier interface {
 	// A service of another workspace (or one already removed) is left alone.
 	SetAppPlace(ctx context.Context, arg SetAppPlaceParams) error
 	SetBackupPlanNextRun(ctx context.Context, arg SetBackupPlanNextRunParams) error
+	SetDNSServerFavorite(ctx context.Context, arg SetDNSServerFavoriteParams) (DnsServer, error)
 	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
 	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)
 	SetDatabasePaused(ctx context.Context, arg SetDatabasePausedParams) (Database, error)
@@ -287,6 +302,7 @@ type Querier interface {
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
 	SetUsername(ctx context.Context, arg SetUsernameParams) (User, error)
+	SettleFirewallChanges(ctx context.Context, arg SettleFirewallChangesParams) error
 	StartAnsibleRun(ctx context.Context, id uuid.UUID) error
 	StartJob(ctx context.Context, id uuid.UUID) error
 	StartScheduleRun(ctx context.Context, id uuid.UUID) error
@@ -298,6 +314,8 @@ type Querier interface {
 	UpdateApp(ctx context.Context, arg UpdateAppParams) (App, error)
 	UpdateAppAccount(ctx context.Context, arg UpdateAppAccountParams) (AppAccount, error)
 	UpdateAppCategory(ctx context.Context, arg UpdateAppCategoryParams) (AppCategory, error)
+	// Full replace of the editable fields; the handler resolves the token first.
+	UpdateDNSServer(ctx context.Context, arg UpdateDNSServerParams) (DnsServer, error)
 	// Full replace of the editable fields; the handler resolves the password first.
 	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)

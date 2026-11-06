@@ -26,6 +26,8 @@ const (
 	// A workspace level, on the workspace of the cron job or run in {id}.
 	kindSchedule
 	kindScheduleRun
+	// A workspace level, on the workspace of the DNS server in {id}.
+	kindDNSServer
 )
 
 type policy struct {
@@ -42,6 +44,7 @@ func onPlaybook(l auth.Level) policy    { return policy{kindPlaybook, l} }
 func onAnsibleRun(l auth.Level) policy  { return policy{kindAnsibleRun, l} }
 func onSchedule(l auth.Level) policy    { return policy{kindSchedule, l} }
 func onScheduleRun(l auth.Level) policy { return policy{kindScheduleRun, l} }
+func onDNSServer(l auth.Level) policy   { return policy{kindDNSServer, l} }
 
 var (
 	public  = policy{kind: kindPublic}
@@ -182,6 +185,29 @@ var policies = map[string]policy{
 	"save-fail2ban-filter":     onServer(auth.Engineer),
 	"test-fail2ban-filter":     onServer(auth.Engineer),
 
+	// The firewall on a server.
+	"get-firewall":             onServer(auth.Viewer),
+	"firewall-raw":             onServer(auth.Operator),
+	"firewall-log":             onServer(auth.Operator),
+	"install-firewall":         onServer(auth.Engineer),
+	"enable-firewall":          onServer(auth.Engineer),
+	"disable-firewall":         onServer(auth.Engineer),
+	"add-firewall-rule":        onServer(auth.Engineer),
+	"update-firewall-rule":     onServer(auth.Engineer),
+	"delete-firewall-rules":    onServer(auth.Engineer),
+	"update-firewall-settings": onServer(auth.Engineer),
+	"reset-firewall":           onServer(auth.Engineer),
+	"keep-firewall-change":     onServer(auth.Engineer),
+	"undo-firewall-change":     onServer(auth.Engineer),
+	"move-firewall-rule":       onServer(auth.Engineer),
+	"add-firewall-forward":     onServer(auth.Engineer),
+	"update-firewall-forward":  onServer(auth.Engineer),
+	"delete-firewall-forwards": onServer(auth.Engineer),
+	"firewall-history":         onServer(auth.Operator),
+	"firewall-change":          onServer(auth.Operator),
+	"restore-firewall-change":  onServer(auth.Engineer),
+	"apply-firewall-rules":     active, // Engineer on every server: checked in the handler
+
 	// Linux users on a server.
 	"get-users":         onServer(auth.Viewer),
 	"create-user":       onServer(auth.Engineer),
@@ -254,6 +280,25 @@ var policies = map[string]policy{
 	"share-storage-file":     onStorage(auth.Engineer),
 	"transfer-files":         active,
 
+	// DNS: a DNS server's level is its workspace's.
+	"list-dns-servers":          active,
+	"create-dns-server":         active,
+	"test-dns-connection":       active,
+	"list-dns-zones-everywhere": active,
+	"get-dns-server":            onDNSServer(auth.Viewer),
+	"list-dns-zones":            onDNSServer(auth.Viewer),
+	"list-dns-records":          onDNSServer(auth.Viewer),
+	"set-dns-server-favorite":   onDNSServer(auth.Operator),
+	"check-dns-server":          onDNSServer(auth.Operator),
+	"create-dns-zone":           onDNSServer(auth.Engineer),
+	"delete-dns-zone":           onDNSServer(auth.Engineer),
+	"set-dns-zone-enabled":      onDNSServer(auth.Engineer),
+	"add-dns-record":            onDNSServer(auth.Engineer),
+	"update-dns-record":         onDNSServer(auth.Engineer),
+	"delete-dns-record":         onDNSServer(auth.Engineer),
+	"update-dns-server":         onDNSServer(auth.Owner),
+	"delete-dns-server":         onDNSServer(auth.Owner),
+
 	// Databases: a database's level is its workspace's, or that of the
 	// server it's reached through when higher.
 	"list-databases":              active,
@@ -280,6 +325,8 @@ var policies = map[string]policy{
 	// Ansible. Starting a run also needs Owner on every chosen server, checked
 	// in the handler: a playbook can do anything on them.
 	"get-ansible-status":      active,
+	"list-ansible-modules":    active,
+	"get-ansible-module":      active,
 	"list-playbooks":          onWorkspace(auth.Viewer),
 	"create-playbook":         onWorkspace(auth.Engineer),
 	"get-playbook":            onPlaybook(auth.Viewer),

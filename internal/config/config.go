@@ -27,6 +27,8 @@ type Config struct {
 	// Same for storages. Slower than servers: each check signs in to the
 	// remote service (an S3 request, an FTP/SFTP login). 0 = off.
 	StorageCheckInterval time.Duration `env:"STORAGE_CHECK_INTERVAL" envDefault:"30s"`
+	// Same for DNS servers. 0 = off.
+	DNSCheckInterval time.Duration `env:"DNS_CHECK_INTERVAL" envDefault:"30s"`
 	// How often Morcheh looks for cron jobs that are due. 0 = they never run
 	// on time (Run now still works).
 	ScheduleTick time.Duration `env:"SCHEDULE_TICK" envDefault:"15s"`

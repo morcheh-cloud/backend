@@ -532,6 +532,9 @@ type Task struct {
 // Decode reads the job's params.
 func (t *Task) Decode(v any) error { return json.Unmarshal(t.Params, v) }
 
+// CreatedBy is who started it; nil when nobody did.
+func (t *Task) CreatedBy() *uuid.UUID { return t.e.job.CreatedBy }
+
 // Canceled says the user asked it to stop, as opposed to Morcheh shutting down.
 func (t *Task) Canceled() bool {
 	t.r.mu.Lock()
