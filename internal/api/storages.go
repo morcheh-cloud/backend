@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -352,9 +353,16 @@ func (h *storageHandler) record(ctx context.Context, row sqlc.Storage, info stor
 			params.HostKey = info.HostKey // trust on first use
 		}
 	}
-	checked, rerr := h.q.RecordStorageCheck(context.WithoutCancel(ctx), params)
+	ctx = context.WithoutCancel(ctx)
+	checked, rerr := h.q.RecordStorageCheck(ctx, params)
 	if rerr != nil {
 		return row
+	}
+	// History for the Insights charts; losing a point isn't worth failing.
+	if err := h.q.InsertStorageCheck(ctx, sqlc.InsertStorageCheckParams{
+		StorageID: row.ID, Status: params.Status, LatencyMs: params.LatencyMs, Message: params.StatusMessage,
+	}); err != nil {
+		slog.Warn("store storage check", "storage", row.ID, "error", err)
 	}
 	return checked
 }

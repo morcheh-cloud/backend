@@ -202,80 +202,48 @@ UPDATE alert_channels SET
     last_error = @error::text
 WHERE id = @id;
 
--- name: GetDatabaseBackupPlan :one
-SELECT * FROM database_backup_plans WHERE database_id = $1;
+-- name: DatabaseInsightSummary :many
+-- Over the range, per database. NaN = nothing measured.
+SELECT database_id,
+       count(*)::bigint AS samples,
+       count(*) FILTER (WHERE NOT online)::bigint AS failures,
+       coalesce(avg(latency_ms) FILTER (WHERE online), 'NaN')::float8 AS latency_avg,
+       coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE online), 'NaN')::float8 AS latency_p95,
+       coalesce(avg(qps), 'NaN')::float8 AS qps_avg,
+       coalesce(max(qps), 'NaN')::float8 AS qps_max,
+       coalesce(max(connections)::float8, 'NaN')::float8 AS connections_max,
+       coalesce(avg(cache_hit), 'NaN')::float8 AS cache_hit,
+       coalesce(sum(deadlocks)::float8, 'NaN')::float8 AS deadlocks,
+       coalesce(max(blocked)::float8, 'NaN')::float8 AS blocked_max,
+       coalesce(((array_agg(size_bytes ORDER BY at) FILTER (WHERE size_bytes IS NOT NULL))[1])::float8, 'NaN')::float8 AS size_first,
+       coalesce(((array_agg(size_bytes ORDER BY at DESC) FILTER (WHERE size_bytes IS NOT NULL))[1])::float8, 'NaN')::float8 AS size_last,
+       min(at)::timestamptz AS first_at,
+       max(at)::timestamptz AS last_at
+FROM database_samples
+WHERE database_id = ANY (@ids::uuid[]) AND at >= @since::timestamptz
+GROUP BY database_id;
 
--- name: UpsertDatabaseBackupPlan :one
-INSERT INTO database_backup_plans (
-    database_id, enabled, storage_id, folder, runner_server_id, dbnames, frequency,
-    hour, weekday, keep, next_run_at, created_by
-) VALUES (
-    @database_id, @enabled, @storage_id, @folder, sqlc.narg('runner_server_id'), @dbnames,
-    @frequency, @hour, @weekday, @keep, @next_run_at, sqlc.narg('created_by')
-)
-ON CONFLICT (database_id) DO UPDATE SET
-    enabled = EXCLUDED.enabled,
-    storage_id = EXCLUDED.storage_id,
-    folder = EXCLUDED.folder,
-    runner_server_id = EXCLUDED.runner_server_id,
-    dbnames = EXCLUDED.dbnames,
-    frequency = EXCLUDED.frequency,
-    hour = EXCLUDED.hour,
-    weekday = EXCLUDED.weekday,
-    keep = EXCLUDED.keep,
-    next_run_at = EXCLUDED.next_run_at,
-    created_by = EXCLUDED.created_by,
-    updated_at = now()
-RETURNING *;
+-- name: DatabaseInsightSeries :many
+SELECT date_bin(make_interval(secs => @bucket_secs::float8), at, @origin::timestamptz)::timestamptz AS t,
+       database_id,
+       count(*)::bigint AS samples,
+       count(*) FILTER (WHERE NOT online)::bigint AS failures,
+       coalesce(avg(latency_ms) FILTER (WHERE online), 'NaN')::float8 AS latency_avg,
+       coalesce(max(latency_ms) FILTER (WHERE online), 0)::int AS latency_max,
+       coalesce(avg(qps), 'NaN')::float8 AS qps,
+       coalesce(avg(tps), 'NaN')::float8 AS tps,
+       coalesce(max(connections)::float8, 'NaN')::float8 AS connections,
+       coalesce(max(max_connections)::float8, 'NaN')::float8 AS max_connections,
+       coalesce(max(size_bytes)::float8, 'NaN')::float8 AS size_bytes
+FROM database_samples
+WHERE database_id = ANY (@ids::uuid[]) AND at >= @since::timestamptz
+GROUP BY 1, 2
+ORDER BY 1;
 
--- name: DeleteDatabaseBackupPlan :execrows
-DELETE FROM database_backup_plans WHERE database_id = $1;
-
--- name: ListDueBackupPlans :many
-SELECT * FROM database_backup_plans WHERE enabled AND next_run_at <= now();
-
--- name: SetBackupPlanNextRun :exec
-UPDATE database_backup_plans SET next_run_at = @next_run_at WHERE database_id = @database_id;
-
--- name: CreateDatabaseBackup :one
-INSERT INTO database_backups (database_id, job_id, trigger, storage_id, path, dbname)
-VALUES (@database_id, sqlc.narg('job_id'), @trigger, sqlc.narg('storage_id'), @path, @dbname)
-RETURNING *;
-
--- name: FinishDatabaseBackup :one
-UPDATE database_backups SET
-    status = @status,
-    path = @path,
-    size_bytes = @size_bytes,
-    error = @error,
-    finished_at = now()
-WHERE id = @id
-RETURNING *;
-
--- name: VerifyDatabaseBackup :one
-UPDATE database_backups SET
-    verify_status = @verify_status,
-    verify_detail = @verify_detail,
-    verified_at = now()
-WHERE id = @id
-RETURNING *;
-
--- name: GetDatabaseBackup :one
-SELECT * FROM database_backups WHERE id = $1;
-
--- name: ListDatabaseBackups :many
-SELECT * FROM database_backups WHERE database_id = $1 ORDER BY started_at DESC LIMIT $2;
-
--- name: DeleteDatabaseBackup :execrows
-DELETE FROM database_backups WHERE id = $1;
-
--- name: LastGoodDatabaseBackup :one
-SELECT * FROM database_backups
-WHERE database_id = $1 AND status = 'ok'
-ORDER BY started_at DESC
-LIMIT 1;
-
--- name: FailStaleDatabaseBackups :exec
--- Whatever a restart cut off never ends by itself.
-UPDATE database_backups SET status = 'failed', error = 'Interrupted by a restart', finished_at = now()
-WHERE status = 'running' AND started_at < now() - interval '12 hours';
+-- name: DatabaseInsightEvents :many
+-- Problems and recoveries, newest first.
+SELECT * FROM database_events
+WHERE database_id = ANY (@ids::uuid[]) AND at >= @since::timestamptz
+  AND severity IN ('warning', 'critical', 'ok')
+ORDER BY at DESC
+LIMIT 200;

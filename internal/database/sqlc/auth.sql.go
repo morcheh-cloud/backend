@@ -217,16 +217,27 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const createWorkspace = `-- name: CreateWorkspace :one
-INSERT INTO workspaces (name, description) VALUES ($1, $2) RETURNING id, name, description, created_at, updated_at
+INSERT INTO workspaces (name, description, color, logo_kind, logo_icon)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, description, created_at, updated_at, color, logo_kind, logo_icon
 `
 
 type CreateWorkspaceParams struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	Color       string `json:"color"`
+	LogoKind    string `json:"logo_kind"`
+	LogoIcon    string `json:"logo_icon"`
 }
 
 func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error) {
-	row := q.db.QueryRow(ctx, createWorkspace, arg.Name, arg.Description)
+	row := q.db.QueryRow(ctx, createWorkspace,
+		arg.Name,
+		arg.Description,
+		arg.Color,
+		arg.LogoKind,
+		arg.LogoIcon,
+	)
 	var i Workspace
 	err := row.Scan(
 		&i.ID,
@@ -234,6 +245,9 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Color,
+		&i.LogoKind,
+		&i.LogoIcon,
 	)
 	return i, err
 }
@@ -325,6 +339,15 @@ func (q *Queries) DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, err
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteWorkspaceLogo = `-- name: DeleteWorkspaceLogo :exec
+DELETE FROM workspace_logos WHERE workspace_id = $1
+`
+
+func (q *Queries) DeleteWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceLogo, workspaceID)
+	return err
 }
 
 const findGrant = `-- name: FindGrant :one
@@ -580,7 +603,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id, name, description, created_at, updated_at FROM workspaces WHERE id = $1
+SELECT id, name, description, created_at, updated_at, color, logo_kind, logo_icon FROM workspaces WHERE id = $1
 `
 
 func (q *Queries) GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error) {
@@ -592,8 +615,38 @@ func (q *Queries) GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, er
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Color,
+		&i.LogoKind,
+		&i.LogoIcon,
 	)
 	return i, err
+}
+
+const getWorkspaceLogo = `-- name: GetWorkspaceLogo :one
+SELECT workspace_id, content_type, data, updated_at FROM workspace_logos WHERE workspace_id = $1
+`
+
+func (q *Queries) GetWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) (WorkspaceLogo, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceLogo, workspaceID)
+	var i WorkspaceLogo
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.ContentType,
+		&i.Data,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getWorkspaceLogoStamp = `-- name: GetWorkspaceLogoStamp :one
+SELECT updated_at FROM workspace_logos WHERE workspace_id = $1
+`
+
+func (q *Queries) GetWorkspaceLogoStamp(ctx context.Context, workspaceID uuid.UUID) (time.Time, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceLogoStamp, workspaceID)
+	var updated_at time.Time
+	err := row.Scan(&updated_at)
+	return updated_at, err
 }
 
 const listAllGroupMembers = `-- name: ListAllGroupMembers :many
@@ -1092,23 +1145,29 @@ func (q *Queries) ListWorkspaceStorages(ctx context.Context, workspaceID uuid.UU
 
 const listWorkspaces = `-- name: ListWorkspaces :many
 
-SELECT w.id, w.name, w.description, w.created_at, w.updated_at,
+SELECT w.id, w.name, w.description, w.created_at, w.updated_at, w.color, w.logo_kind, w.logo_icon,
        (SELECT count(*) FROM servers s WHERE s.workspace_id = w.id)::int AS server_count,
        (SELECT count(*) FROM storages t WHERE t.workspace_id = w.id)::int AS storage_count,
-       (SELECT count(*) FROM apps a WHERE a.workspace_id = w.id)::int AS app_count
+       (SELECT count(*) FROM apps a WHERE a.workspace_id = w.id)::int AS app_count,
+       l.updated_at AS logo_updated_at
 FROM workspaces w
+LEFT JOIN workspace_logos l ON l.workspace_id = w.id
 ORDER BY lower(w.name)
 `
 
 type ListWorkspacesRow struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	Description  string    `json:"description"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	ServerCount  int32     `json:"server_count"`
-	StorageCount int32     `json:"storage_count"`
-	AppCount     int32     `json:"app_count"`
+	ID            uuid.UUID  `json:"id"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	Color         string     `json:"color"`
+	LogoKind      string     `json:"logo_kind"`
+	LogoIcon      string     `json:"logo_icon"`
+	ServerCount   int32      `json:"server_count"`
+	StorageCount  int32      `json:"storage_count"`
+	AppCount      int32      `json:"app_count"`
+	LogoUpdatedAt *time.Time `json:"logo_updated_at"`
 }
 
 // ---- Workspaces ----
@@ -1127,9 +1186,13 @@ func (q *Queries) ListWorkspaces(ctx context.Context) ([]ListWorkspacesRow, erro
 			&i.Description,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Color,
+			&i.LogoKind,
+			&i.LogoIcon,
 			&i.ServerCount,
 			&i.StorageCount,
 			&i.AppCount,
+			&i.LogoUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1205,6 +1268,24 @@ func (q *Queries) MoveStoragesToWorkspace(ctx context.Context, arg MoveStoragesT
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const putWorkspaceLogo = `-- name: PutWorkspaceLogo :exec
+INSERT INTO workspace_logos (workspace_id, content_type, data)
+VALUES ($1, $2, $3)
+ON CONFLICT (workspace_id) DO UPDATE
+SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = now()
+`
+
+type PutWorkspaceLogoParams struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	ContentType string    `json:"content_type"`
+	Data        []byte    `json:"data"`
+}
+
+func (q *Queries) PutWorkspaceLogo(ctx context.Context, arg PutWorkspaceLogoParams) error {
+	_, err := q.db.Exec(ctx, putWorkspaceLogo, arg.WorkspaceID, arg.ContentType, arg.Data)
+	return err
 }
 
 const setRegistrationOpen = `-- name: SetRegistrationOpen :one
@@ -1357,6 +1438,31 @@ func (q *Queries) SetUsername(ctx context.Context, arg SetUsernameParams) (User,
 	return i, err
 }
 
+const setWorkspaceLogoKind = `-- name: SetWorkspaceLogoKind :one
+UPDATE workspaces SET logo_kind = $1, updated_at = now() WHERE id = $2 RETURNING id, name, description, created_at, updated_at, color, logo_kind, logo_icon
+`
+
+type SetWorkspaceLogoKindParams struct {
+	LogoKind string    `json:"logo_kind"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) SetWorkspaceLogoKind(ctx context.Context, arg SetWorkspaceLogoKindParams) (Workspace, error) {
+	row := q.db.QueryRow(ctx, setWorkspaceLogoKind, arg.LogoKind, arg.ID)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Color,
+		&i.LogoKind,
+		&i.LogoIcon,
+	)
+	return i, err
+}
+
 const touchSession = `-- name: TouchSession :exec
 UPDATE sessions SET last_seen_at = now() WHERE id = $1
 `
@@ -1439,19 +1545,30 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 }
 
 const updateWorkspace = `-- name: UpdateWorkspace :one
-UPDATE workspaces SET name = $1, description = $2, updated_at = now()
-WHERE id = $3
-RETURNING id, name, description, created_at, updated_at
+UPDATE workspaces SET name = $1, description = $2, color = $3,
+    logo_kind = $4, logo_icon = $5, updated_at = now()
+WHERE id = $6
+RETURNING id, name, description, created_at, updated_at, color, logo_kind, logo_icon
 `
 
 type UpdateWorkspaceParams struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
+	Color       string    `json:"color"`
+	LogoKind    string    `json:"logo_kind"`
+	LogoIcon    string    `json:"logo_icon"`
 	ID          uuid.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error) {
-	row := q.db.QueryRow(ctx, updateWorkspace, arg.Name, arg.Description, arg.ID)
+	row := q.db.QueryRow(ctx, updateWorkspace,
+		arg.Name,
+		arg.Description,
+		arg.Color,
+		arg.LogoKind,
+		arg.LogoIcon,
+		arg.ID,
+	)
 	var i Workspace
 	err := row.Scan(
 		&i.ID,
@@ -1459,6 +1576,9 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Color,
+		&i.LogoKind,
+		&i.LogoIcon,
 	)
 	return i, err
 }

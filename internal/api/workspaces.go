@@ -24,6 +24,7 @@ type PanelWorkspace struct {
 	ServerCount  int32  `json:"server_count" doc:"Servers you can reach here."`
 	StorageCount int32  `json:"storage_count" doc:"Storages you can reach here."`
 	AppCount     int32  `json:"app_count" doc:"Services you can reach here."`
+	WorkspaceLook
 }
 
 type WorkspacePath struct {
@@ -33,6 +34,9 @@ type WorkspacePath struct {
 type WorkspaceBody struct {
 	Name        string `json:"name" minLength:"1" maxLength:"64"`
 	Description string `json:"description,omitempty" maxLength:"500"`
+	Color       string `json:"color,omitempty" enum:"slate,red,orange,amber,green,teal,blue,indigo,violet,pink" doc:"Empty keeps the current one (indigo for a new workspace)."`
+	LogoKind    string `json:"logo_kind,omitempty" enum:"letter,icon,upload" doc:"Empty keeps the current one. Leaving upload drops the picture; upload needs one (PUT /workspaces/{id}/logo)."`
+	LogoIcon    string `json:"logo_icon,omitempty" pattern:"^[a-z0-9-]*$" maxLength:"40" doc:"The Lucide icon for logo_kind icon."`
 }
 
 type WorkspaceInput struct{ Body WorkspaceBody }
@@ -201,6 +205,7 @@ func (a *authz) visibleWorkspaces(ctx context.Context, p *principal) ([]PanelWor
 		v := PanelWorkspace{
 			ID: w.ID.String(), Name: w.Name, Description: w.Description,
 			Level: level.String(), CanCreate: acc.CanCreateIn(w.ID),
+			WorkspaceLook: workspaceLook(w.ID, w.Color, w.LogoKind, w.LogoIcon, w.LogoUpdatedAt),
 		}
 		switch {
 		case level > auth.None:
@@ -319,11 +324,16 @@ func registerWorkspaces(api huma.API, a *authz) {
 		if err != nil {
 			return nil, internalError(err)
 		}
+		look, err := a.lookOf(ctx, w)
+		if err != nil {
+			return nil, err
+		}
 		out := &WorkspaceDetailOutput{}
 		out.Body.PanelWorkspace = PanelWorkspace{
 			ID: w.ID.String(), Name: w.Name, Description: w.Description,
 			Level: p.Level.String(), CanCreate: p.Access.CanCreateIn(id),
 			ServerCount: counts.Servers, StorageCount: counts.Storages, AppCount: counts.Apps,
+			WorkspaceLook: look,
 		}
 		out.Body.Servers = make([]WorkspaceServer, 0, len(servers))
 		for _, s := range servers {
@@ -344,8 +354,17 @@ func registerWorkspaces(api huma.API, a *authz) {
 		OperationID: "create-workspace", Method: http.MethodPost, Path: "/workspaces",
 		Summary: "Create a workspace", Tags: tags, DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, in *WorkspaceInput) (*WorkspaceOutput, error) {
+		b := in.Body
+		look := sqlc.Workspace{Color: "indigo", LogoKind: "letter"}
+		if err := b.mergeLook(&look); err != nil {
+			return nil, err
+		}
+		if look.LogoKind == "upload" {
+			return nil, fieldError("body.logo_kind", "Save the workspace first, then upload its logo.", b.LogoKind)
+		}
 		w, err := a.q.CreateWorkspace(ctx, sqlc.CreateWorkspaceParams{
-			Name: strings.TrimSpace(in.Body.Name), Description: strings.TrimSpace(in.Body.Description),
+			Name: strings.TrimSpace(b.Name), Description: strings.TrimSpace(b.Description),
+			Color: look.Color, LogoKind: look.LogoKind, LogoIcon: look.LogoIcon,
 		})
 		if err != nil {
 			return nil, workspaceConflict(err)
@@ -353,32 +372,55 @@ func registerWorkspaces(api huma.API, a *authz) {
 		return &WorkspaceOutput{Body: PanelWorkspace{
 			ID: w.ID.String(), Name: w.Name, Description: w.Description,
 			Level: auth.Owner.String(), CanCreate: true,
+			WorkspaceLook: workspaceLook(w.ID, w.Color, w.LogoKind, w.LogoIcon, nil),
 		}}, nil
 	})
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-workspace", Method: http.MethodPatch, Path: "/workspaces/{id}",
-		Summary: "Rename a workspace", Tags: tags,
+		Summary: "Edit a workspace", Tags: tags,
+		Description: "Its name, description and how it shows in the panel (color and logo). An uploaded logo goes up with PUT /workspaces/{id}/logo.",
 	}, func(ctx context.Context, in *WorkspaceUpdateInput) (*WorkspaceOutput, error) {
 		id, _ := uuid.Parse(in.ID)
-		w, err := a.q.UpdateWorkspace(ctx, sqlc.UpdateWorkspaceParams{
-			ID: id, Name: strings.TrimSpace(in.Body.Name), Description: strings.TrimSpace(in.Body.Description),
+		b := in.Body
+		var w sqlc.Workspace
+		err := a.inTx(ctx, func(q *sqlc.Queries) error {
+			prev, err := q.GetWorkspace(ctx, id)
+			if isNotFound(err) {
+				return huma.Error404NotFound("workspace not found")
+			}
+			if err != nil {
+				return internalError(err)
+			}
+			look := prev
+			if err := b.mergeLook(&look); err != nil {
+				return err
+			}
+			if look.LogoKind == "upload" && prev.LogoKind != "upload" {
+				if _, err := q.GetWorkspaceLogoStamp(ctx, id); isNotFound(err) {
+					return fieldError("body.logo_kind", "Upload a logo first.", b.LogoKind)
+				} else if err != nil {
+					return internalError(err)
+				}
+			}
+			if look.LogoKind != "upload" {
+				if err := q.DeleteWorkspaceLogo(ctx, id); err != nil {
+					return internalError(err)
+				}
+			}
+			w, err = q.UpdateWorkspace(ctx, sqlc.UpdateWorkspaceParams{
+				ID: id, Name: strings.TrimSpace(b.Name), Description: strings.TrimSpace(b.Description),
+				Color: look.Color, LogoKind: look.LogoKind, LogoIcon: look.LogoIcon,
+			})
+			if err != nil {
+				return workspaceConflict(err)
+			}
+			return nil
 		})
-		if isNotFound(err) {
-			return nil, huma.Error404NotFound("workspace not found")
-		}
 		if err != nil {
-			return nil, workspaceConflict(err)
+			return nil, err
 		}
-		counts, err := a.q.CountWorkspaceResources(ctx, id)
-		if err != nil {
-			return nil, internalError(err)
-		}
-		return &WorkspaceOutput{Body: PanelWorkspace{
-			ID: w.ID.String(), Name: w.Name, Description: w.Description,
-			Level: auth.Owner.String(), CanCreate: true,
-			ServerCount: counts.Servers, StorageCount: counts.Storages, AppCount: counts.Apps,
-		}}, nil
+		return a.workspaceOut(ctx, w)
 	})
 
 	huma.Register(api, huma.Operation{

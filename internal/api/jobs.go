@@ -27,7 +27,7 @@ import (
 // reports progress and can be canceled.
 type Job struct {
 	ID         string         `json:"id" format:"uuid"`
-	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install, fail2ban-uninstall, firewall-install, firewall-apply, ansible-run or schedule-sync" example:"transfer"`
+	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install, fail2ban-uninstall, firewall-install, firewall-apply, ansible-run, schedule-sync, script-run, database-backup, database-backup-verify or database-backup-restore" example:"transfer"`
 	Title      string         `json:"title" example:"Copy backup.tar.gz from MinIO to web-01"`
 	State      string         `json:"state" enum:"queued,running,succeeded,failed,canceled,interrupted"`
 	Refs       []string       `json:"refs" doc:"Servers and storages it touches"`
@@ -50,6 +50,7 @@ type JobPlace struct {
 	Name       string `json:"name,omitempty" doc:"The server's or storage's name when the job started"`
 	RunID      string `json:"run_id,omitempty" format:"uuid" doc:"The Ansible or cron job run it belongs to"`
 	ScheduleID string `json:"schedule_id,omitempty" format:"uuid" doc:"The cron job it is a run of"`
+	DatabaseID string `json:"database_id,omitempty" format:"uuid" doc:"The database it backs up"`
 }
 
 // JobRemoved is sent on the stream when a job is deleted; an empty id means
@@ -258,7 +259,8 @@ func registerJobs(api huma.API, a *authz) {
 			return nil, err
 		}
 		// A run's record says what it ran; starting another goes through its checks.
-		if old.Kind == ansibleRunKind || old.Kind == scheduleSyncKind {
+		switch old.Kind {
+		case ansibleRunKind, scheduleSyncKind, scriptRunKind, backupKind, restoreKind:
 			return nil, huma.Error409Conflict("Run it again from its page.")
 		}
 		p := principalOf(ctx)

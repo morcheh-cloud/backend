@@ -20,6 +20,9 @@ const (
 	kindWorkspace
 	kindDatabase
 	kindApp
+	// A level on the database of the backup plan or backup in {id}.
+	kindBackupPlan
+	kindBackup
 	// A workspace level, on the workspace of the playbook or run in {id}.
 	kindPlaybook
 	kindAnsibleRun
@@ -28,6 +31,8 @@ const (
 	kindScheduleRun
 	// A workspace level, on the workspace of the DNS server in {id}.
 	kindDNSServer
+	// A workspace level, on the workspace of the saved script in {id}.
+	kindScript
 )
 
 type policy struct {
@@ -40,11 +45,14 @@ func onStorage(l auth.Level) policy     { return policy{kindStorage, l} }
 func onWorkspace(l auth.Level) policy   { return policy{kindWorkspace, l} }
 func onDatabase(l auth.Level) policy    { return policy{kindDatabase, l} }
 func onApp(l auth.Level) policy         { return policy{kindApp, l} }
+func onBackupPlan(l auth.Level) policy  { return policy{kindBackupPlan, l} }
+func onBackup(l auth.Level) policy      { return policy{kindBackup, l} }
 func onPlaybook(l auth.Level) policy    { return policy{kindPlaybook, l} }
 func onAnsibleRun(l auth.Level) policy  { return policy{kindAnsibleRun, l} }
 func onSchedule(l auth.Level) policy    { return policy{kindSchedule, l} }
 func onScheduleRun(l auth.Level) policy { return policy{kindScheduleRun, l} }
 func onDNSServer(l auth.Level) policy   { return policy{kindDNSServer, l} }
+func onScript(l auth.Level) policy      { return policy{kindScript, l} }
 
 var (
 	public  = policy{kind: kindPublic}
@@ -97,13 +105,17 @@ var policies = map[string]policy{
 	"update-workspace": admin,
 	"delete-workspace": admin,
 	"assign-workspace": admin,
-	"list-grants":      active,
-	"set-grant":        active,
-	"delete-grant":     active,
-	"list-principals":  active,
+	// The logo shows to anyone who sees the workspace; checked inside.
+	"get-workspace-logo": active,
+	"put-workspace-logo": admin,
+	"list-grants":        active,
+	"set-grant":          active,
+	"delete-grant":       active,
+	"list-principals":    active,
 
 	// Servers. Lists filter themselves, bulk actions check every id.
 	"list-servers":              active,
+	"server-insights":           active,
 	"get-server-facets":         active,
 	"create-server":             active,
 	"test-server-connection":    active,
@@ -234,6 +246,39 @@ var policies = map[string]policy{
 	"delete-service":        onServer(auth.Engineer),
 	"reload-services":       onServer(auth.Engineer),
 
+	// Notes on a server: anyone who sees it reads them, Operators write.
+	"list-server-notes":  onServer(auth.Viewer),
+	"create-server-note": onServer(auth.Operator),
+	"update-server-note": onServer(auth.Operator),
+	"pin-server-note":    onServer(auth.Operator),
+	"delete-server-note": onServer(auth.Operator),
+
+	// Saved scripts. Running one needs Engineer on every server (checked
+	// inside, like the terminal); a run is read with Operator and stopped or
+	// deleted with Engineer on every server it touched.
+	"list-scripts":            onWorkspace(auth.Viewer),
+	"create-script":           onWorkspace(auth.Engineer),
+	"get-script":              onScript(auth.Viewer),
+	"update-script":           onScript(auth.Engineer),
+	"delete-script":           onScript(auth.Engineer),
+	"list-server-scripts":     onServer(auth.Viewer),
+	"start-script-run":        active,
+	"list-script-runs":        onWorkspace(auth.Operator),
+	"list-server-script-runs": onServer(auth.Operator),
+	"get-script-run":          active,
+	"cancel-script-run":       active,
+	"delete-script-run":       active,
+
+	// Terminal recordings. Lists filter to the caller's own below Owner; one
+	// recording is the caller's own or an Owner's (checked inside).
+	"get-recording-settings":    onWorkspace(auth.Viewer),
+	"set-recording-settings":    onWorkspace(auth.Owner),
+	"list-workspace-recordings": active,
+	"list-server-recordings":    onServer(auth.Viewer),
+	"get-recording":             active,
+	"get-recording-cast":        active,
+	"delete-recording":          active,
+
 	"get-power":    onServer(auth.Viewer),
 	"power-action": onServer(auth.Operator),
 	"cancel-power": onServer(auth.Operator),
@@ -262,6 +307,8 @@ var policies = map[string]policy{
 	"reveal-storage-credentials": onStorage(auth.Owner),
 	"set-storage-favorite":       onStorage(auth.Operator),
 	"check-storage":              onStorage(auth.Operator),
+	"storage-insights":           active,
+	"measure-storage-usage":      onStorage(auth.Operator),
 
 	// Files on a storage.
 	"list-storage-files":     onStorage(auth.Viewer),
@@ -292,6 +339,9 @@ var policies = map[string]policy{
 	"check-dns-server":          onDNSServer(auth.Operator),
 	"create-dns-zone":           onDNSServer(auth.Engineer),
 	"delete-dns-zone":           onDNSServer(auth.Engineer),
+	"get-dns-zone-options":      onDNSServer(auth.Viewer),
+	"set-dns-zone-options":      onDNSServer(auth.Engineer),
+	"resync-dns-zone":           onDNSServer(auth.Operator),
 	"set-dns-zone-enabled":      onDNSServer(auth.Engineer),
 	"add-dns-record":            onDNSServer(auth.Engineer),
 	"update-dns-record":         onDNSServer(auth.Engineer),
@@ -302,6 +352,7 @@ var policies = map[string]policy{
 	// Databases: a database's level is its workspace's, or that of the
 	// server it's reached through when higher.
 	"list-databases":              active,
+	"database-insights":           active,
 	"create-database":             active,
 	"test-database-connection":    active,
 	"get-database-outbound-ip":    active,
@@ -319,6 +370,28 @@ var policies = map[string]policy{
 	"update-database":             onDatabase(auth.Owner),
 	"delete-database":             onDatabase(auth.Owner),
 	"reveal-database-credentials": onDatabase(auth.Owner),
+
+	// Backups: a plan and its login are an Owner's; starting and checking one
+	// an Operator's. A backup is the whole database, so downloading or
+	// deleting one is an Owner's too (and the storage is checked inside).
+	// Restoring writes over a database, so it's an Owner's, with Engineer on
+	// the server it runs on and Operator on the storage it reads (checked inside).
+	"list-database-backup-problems": active,
+	"get-database-backup-options":   onDatabase(auth.Owner),
+	"list-database-backup-plans":    onDatabase(auth.Viewer),
+	"get-database-backup-plan":      onBackupPlan(auth.Viewer),
+	"list-database-backups":         onDatabase(auth.Viewer),
+	"list-database-restores":        onDatabase(auth.Viewer),
+	"create-database-backup-plan":   onDatabase(auth.Owner),
+	"update-database-backup-plan":   onBackupPlan(auth.Owner),
+	"delete-database-backup-plan":   onBackupPlan(auth.Owner),
+	"run-database-backup-plan":      onBackupPlan(auth.Operator),
+	"get-database-backup":           onBackup(auth.Viewer),
+	"cancel-database-backup":        onBackup(auth.Operator),
+	"verify-database-backup":        onBackup(auth.Operator),
+	"download-database-backup":      onBackup(auth.Owner),
+	"delete-database-backup":        onBackup(auth.Owner),
+	"restore-database-backup":       onBackup(auth.Owner),
 
 	// Jobs: everyone sees their own, admins all.
 	"list-jobs": active,

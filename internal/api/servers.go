@@ -270,6 +270,7 @@ type serverHandler struct {
 	box   *secrets.Box
 	pool  *sshpool.Pool
 	terms *terminal.Manager
+	recs  *recordings
 	stats *statsHub
 	privs privileges
 	jobs  *jobs.Runner
@@ -940,6 +941,7 @@ func (h *serverHandler) check(ctx context.Context, s sqlc.Server) (sqlc.Server, 
 	if err != nil {
 		return s, internalError(err)
 	}
+	h.recordCheckHistory(context.WithoutCancel(ctx), s, res)
 	return checked, nil
 }
 

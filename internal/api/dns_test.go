@@ -108,3 +108,36 @@ func TestGroupZones(t *testing.T) {
 		t.Error("matching serials flagged out of sync")
 	}
 }
+
+func TestZoneOptionsForm(t *testing.T) {
+	b := DNSZoneOptionsBody{
+		ZoneTransfer:        "UseSpecifiedNetworkACL",
+		ZoneTransferAllowed: []string{" 10.0.0.0/24 ", "!10.0.0.5", ""},
+		Notify:              "None",
+	}
+	form, err := b.form()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := form.Get("zoneTransferNetworkACL"); got != "10.0.0.0/24,!10.0.0.5" {
+		t.Errorf("acl = %q", got)
+	}
+	if got := form.Get("notifyNameServers"); got != "false" {
+		t.Errorf("an empty list must clear it, got %q", got)
+	}
+	if form.Has("primaryNameServerAddresses") {
+		t.Error("primaries sent for a Primary zone")
+	}
+
+	for _, bad := range []DNSZoneOptionsBody{
+		{ZoneTransfer: "Allow", Notify: "None", ZoneTransferAllowed: []string{"not-an-ip"}},
+		{ZoneTransfer: "UseSpecifiedNetworkACL", Notify: "None"},
+		{ZoneTransfer: "Allow", Notify: "SpecifiedNameServers"},
+		{ZoneTransfer: "Allow", Notify: "SpecifiedNameServers", NotifyServers: []string{"10.0.0.0/8"}},
+		{ZoneTransfer: "Allow", Notify: "None", PrimaryAddresses: []string{"a b"}},
+	} {
+		if _, err := bad.form(); err == nil {
+			t.Errorf("%+v: want an error", bad)
+		}
+	}
+}

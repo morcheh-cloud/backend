@@ -188,8 +188,12 @@ func (h *dnsHandler) withDNS(ctx context.Context, rawID string) (sqlc.DnsServer,
 // an IP address or a network for a reverse zone.
 var dnsZoneName = regexp.MustCompile(`^[\p{L}\p{N}_*.:/-]+$`)
 
+// In a URL path the root zone is "@", since a browser drops a "/." segment.
 func cleanZone(raw string) (string, error) {
 	z := strings.TrimSpace(raw)
+	if z == "@" {
+		z = "."
+	}
 	if z != "." {
 		z = strings.TrimSuffix(z, ".")
 	}
@@ -365,7 +369,25 @@ func (h *dnsHandler) create(ctx context.Context, in *struct{ Body DNSServerBody 
 	if err != nil {
 		return nil, internalError(err)
 	}
-	return &DNSServerOutput{Body: toDNSServer(s)}, nil
+	return &DNSServerOutput{Body: toDNSServer(h.checkNow(ctx, s))}, nil
+}
+
+// checkNow checks a server just saved, so it doesn't show "unknown" until
+// the monitor comes round. A failure to check is the server's status, not an
+// error of the save.
+func (h *dnsHandler) checkNow(ctx context.Context, s sqlc.DnsServer) sqlc.DnsServer {
+	c, err := h.savedClient(s)
+	if err != nil {
+		return s
+	}
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	info, checkErr := c.Check(cctx)
+	saved, err := h.record(ctx, s.ID, info, checkErr)
+	if err != nil {
+		return s
+	}
+	return saved
 }
 
 func (h *dnsHandler) update(ctx context.Context, in *struct {
@@ -400,7 +422,7 @@ func (h *dnsHandler) update(ctx context.Context, in *struct {
 	if err != nil {
 		return nil, internalError(err)
 	}
-	return &DNSServerOutput{Body: toDNSServer(s)}, nil
+	return &DNSServerOutput{Body: toDNSServer(h.checkNow(ctx, s))}, nil
 }
 
 type DNSTestBody struct {
@@ -727,6 +749,53 @@ func registerDNS(api huma.API, h *dnsHandler) {
 			return nil, err
 		}
 		if err := c.SetZoneEnabled(ctx, zone, in.Body.Enabled); err != nil {
+			return nil, dnsError(err)
+		}
+		return nil, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-dns-zone-options", Method: http.MethodGet, Path: "/dns-servers/{id}/zones/{zone}/options",
+		Summary: "A zone's transfer and notify settings", Tags: tags,
+	}, func(ctx context.Context, in *struct{ DNSZonePath }) (*DNSZoneOptionsOutput, error) {
+		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		if err != nil {
+			return nil, err
+		}
+		return zoneOptionsOf(ctx, c, zone)
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-dns-zone-options", Method: http.MethodPut, Path: "/dns-servers/{id}/zones/{zone}/options",
+		Summary: "Change a zone's transfer and notify settings", Description: "Answers with the settings, fresh.", Tags: tags,
+	}, func(ctx context.Context, in *struct {
+		DNSZonePath
+		Body DNSZoneOptionsBody
+	}) (*DNSZoneOptionsOutput, error) {
+		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		if err != nil {
+			return nil, err
+		}
+		form, err := in.Body.form()
+		if err != nil {
+			return nil, err
+		}
+		if err := c.SetZoneOptions(ctx, zone, form); err != nil {
+			return nil, dnsError(err)
+		}
+		return zoneOptionsOf(ctx, c, zone)
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "resync-dns-zone", Method: http.MethodPost, Path: "/dns-servers/{id}/zones/{zone}/resync",
+		Summary: "Copy a Secondary zone again", Description: "The server fetches the zone from its primary now instead of waiting.",
+		Tags: tags, DefaultStatus: http.StatusNoContent,
+	}, func(ctx context.Context, in *struct{ DNSZonePath }) (*struct{}, error) {
+		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		if err != nil {
+			return nil, err
+		}
+		if err := c.Resync(ctx, zone); err != nil {
 			return nil, dnsError(err)
 		}
 		return nil, nil

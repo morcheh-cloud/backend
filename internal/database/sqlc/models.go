@@ -179,37 +179,75 @@ type Database struct {
 }
 
 type DatabaseBackup struct {
-	ID           uuid.UUID  `json:"id"`
-	DatabaseID   uuid.UUID  `json:"database_id"`
-	JobID        *uuid.UUID `json:"job_id"`
-	Trigger      string     `json:"trigger"`
-	StorageID    *uuid.UUID `json:"storage_id"`
-	Path         string     `json:"path"`
-	Dbname       string     `json:"dbname"`
-	Status       string     `json:"status"`
-	SizeBytes    int64      `json:"size_bytes"`
-	Error        string     `json:"error"`
-	StartedAt    time.Time  `json:"started_at"`
-	FinishedAt   *time.Time `json:"finished_at"`
-	VerifyStatus string     `json:"verify_status"`
-	VerifyDetail string     `json:"verify_detail"`
-	VerifiedAt   *time.Time `json:"verified_at"`
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	DatabaseID    uuid.UUID  `json:"database_id"`
+	PlanID        *uuid.UUID `json:"plan_id"`
+	PlanName      string     `json:"plan_name"`
+	Path          string     `json:"path"`
+	Engine        string     `json:"engine"`
+	Target        string     `json:"target"`
+	Format        string     `json:"format"`
+	Trigger       string     `json:"trigger"`
+	State         string     `json:"state"`
+	Error         string     `json:"error"`
+	Bytes         int64      `json:"bytes"`
+	Sha256        string     `json:"sha256"`
+	VerifiedAt    *time.Time `json:"verified_at"`
+	VerifyError   string     `json:"verify_error"`
+	JobID         *uuid.UUID `json:"job_id"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+	Kind          string     `json:"kind"`
+	ParentID      *uuid.UUID `json:"parent_id"`
+	Position      string     `json:"position"`
+}
+
+type DatabaseBackupCopy struct {
+	ID          uuid.UUID  `json:"id"`
+	BackupID    uuid.UUID  `json:"backup_id"`
+	StorageID   *uuid.UUID `json:"storage_id"`
+	StorageName string     `json:"storage_name"`
+	State       string     `json:"state"`
+	Error       string     `json:"error"`
 }
 
 type DatabaseBackupPlan struct {
+	ID             uuid.UUID  `json:"id"`
+	WorkspaceID    uuid.UUID  `json:"workspace_id"`
 	DatabaseID     uuid.UUID  `json:"database_id"`
-	Enabled        bool       `json:"enabled"`
-	StorageID      uuid.UUID  `json:"storage_id"`
+	Name           string     `json:"name"`
 	Folder         string     `json:"folder"`
 	RunnerServerID *uuid.UUID `json:"runner_server_id"`
-	Dbnames        []string   `json:"dbnames"`
-	Frequency      string     `json:"frequency"`
-	Hour           int32      `json:"hour"`
-	Weekday        int32      `json:"weekday"`
-	Keep           int32      `json:"keep"`
-	NextRunAt      time.Time  `json:"next_run_at"`
+	Username       string     `json:"username"`
+	PasswordEnc    []byte     `json:"password_enc"`
+	Cron           string     `json:"cron"`
+	Timezone       string     `json:"timezone"`
+	Enabled        bool       `json:"enabled"`
+	NextRunAt      *time.Time `json:"next_run_at"`
 	CreatedBy      *uuid.UUID `json:"created_by"`
+	UpdatedBy      *uuid.UUID `json:"updated_by"`
+	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
+	Selection      string     `json:"selection"`
+	Targets        []string   `json:"targets"`
+	Pattern        string     `json:"pattern"`
+	Method         string     `json:"method"`
+	FullEveryDays  int32      `json:"full_every_days"`
+	Retention      string     `json:"retention"`
+	KeepDays       int32      `json:"keep_days"`
+	GfsDaily       int32      `json:"gfs_daily"`
+	GfsWeekly      int32      `json:"gfs_weekly"`
+	GfsMonthly     int32      `json:"gfs_monthly"`
+}
+
+type DatabaseBackupPlanStorage struct {
+	PlanID    uuid.UUID `json:"plan_id"`
+	StorageID uuid.UUID `json:"storage_id"`
+	Position  int32     `json:"position"`
 }
 
 type DatabaseEvent struct {
@@ -221,6 +259,30 @@ type DatabaseEvent struct {
 	CheckID    string    `json:"check_id"`
 	Title      string    `json:"title"`
 	Detail     string    `json:"detail"`
+}
+
+type DatabaseRestore struct {
+	ID             uuid.UUID  `json:"id"`
+	WorkspaceID    uuid.UUID  `json:"workspace_id"`
+	DatabaseID     uuid.UUID  `json:"database_id"`
+	BackupID       *uuid.UUID `json:"backup_id"`
+	Source         string     `json:"source"`
+	TargetName     string     `json:"target_name"`
+	Mode           string     `json:"mode"`
+	RunnerServerID *uuid.UUID `json:"runner_server_id"`
+	StorageID      *uuid.UUID `json:"storage_id"`
+	WantSafety     bool       `json:"want_safety"`
+	SafetyBackupID *uuid.UUID `json:"safety_backup_id"`
+	Username       string     `json:"username"`
+	PasswordEnc    []byte     `json:"password_enc"`
+	State          string     `json:"state"`
+	Error          string     `json:"error"`
+	JobID          *uuid.UUID `json:"job_id"`
+	CreatedBy      *uuid.UUID `json:"created_by"`
+	CreatedByName  string     `json:"created_by_name"`
+	CreatedAt      time.Time  `json:"created_at"`
+	StartedAt      *time.Time `json:"started_at"`
+	FinishedAt     *time.Time `json:"finished_at"`
 }
 
 type DatabaseSample struct {
@@ -386,6 +448,8 @@ type ScriptRun struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	StartedAt      *time.Time `json:"started_at"`
 	FinishedAt     *time.Time `json:"finished_at"`
+	WorkspaceID    uuid.UUID  `json:"workspace_id"`
+	Error          string     `json:"error"`
 }
 
 type ScriptRunTarget struct {
@@ -435,6 +499,56 @@ type Server struct {
 	WorkspaceID   uuid.UUID  `json:"workspace_id"`
 }
 
+type ServerCheckBucket struct {
+	ServerID   uuid.UUID `json:"server_id"`
+	Bucket     time.Time `json:"bucket"`
+	Checks     int32     `json:"checks"`
+	Failures   int32     `json:"failures"`
+	LatencySum int64     `json:"latency_sum"`
+	LatencyMax int32     `json:"latency_max"`
+}
+
+type ServerNote struct {
+	ID            uuid.UUID  `json:"id"`
+	ServerID      uuid.UUID  `json:"server_id"`
+	Title         string     `json:"title"`
+	Body          string     `json:"body"`
+	Pinned        bool       `json:"pinned"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	UpdatedByName string     `json:"updated_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type ServerSample struct {
+	ServerID       uuid.UUID `json:"server_id"`
+	At             time.Time `json:"at"`
+	CpuPercent     float64   `json:"cpu_percent"`
+	IowaitPercent  float64   `json:"iowait_percent"`
+	Cores          int32     `json:"cores"`
+	Load1          float64   `json:"load1"`
+	MemUsedBytes   int64     `json:"mem_used_bytes"`
+	MemTotalBytes  int64     `json:"mem_total_bytes"`
+	SwapUsedBytes  int64     `json:"swap_used_bytes"`
+	SwapTotalBytes int64     `json:"swap_total_bytes"`
+	DiskUsedBytes  int64     `json:"disk_used_bytes"`
+	DiskTotalBytes int64     `json:"disk_total_bytes"`
+	DiskMaxPercent float64   `json:"disk_max_percent"`
+	DiskMaxMount   string    `json:"disk_max_mount"`
+	RxBytesPerSec  float64   `json:"rx_bytes_per_sec"`
+	TxBytesPerSec  float64   `json:"tx_bytes_per_sec"`
+}
+
+type ServerStatusChange struct {
+	ID         int64     `json:"id"`
+	ServerID   uuid.UUID `json:"server_id"`
+	At         time.Time `json:"at"`
+	Status     string    `json:"status"`
+	PrevStatus string    `json:"prev_status"`
+	Message    string    `json:"message"`
+}
+
 type Session struct {
 	ID         uuid.UUID `json:"id"`
 	UserID     uuid.UUID `json:"user_id"`
@@ -479,6 +593,57 @@ type Storage struct {
 	WorkspaceID   uuid.UUID  `json:"workspace_id"`
 }
 
+type StorageCheck struct {
+	ID        int64     `json:"id"`
+	StorageID uuid.UUID `json:"storage_id"`
+	CheckedAt time.Time `json:"checked_at"`
+	Status    string    `json:"status"`
+	LatencyMs *int32    `json:"latency_ms"`
+	Message   string    `json:"message"`
+}
+
+type StorageUsage struct {
+	ID         uuid.UUID `json:"id"`
+	StorageID  uuid.UUID `json:"storage_id"`
+	MeasuredAt time.Time `json:"measured_at"`
+	UsedBytes  int64     `json:"used_bytes"`
+	Files      int64     `json:"files"`
+	Folders    int64     `json:"folders"`
+	TotalBytes *int64    `json:"total_bytes"`
+	FreeBytes  *int64    `json:"free_bytes"`
+	Partial    bool      `json:"partial"`
+	Top        []byte    `json:"top"`
+	DurationMs int32     `json:"duration_ms"`
+}
+
+type TerminalRecording struct {
+	ID          uuid.UUID  `json:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	ServerID    *uuid.UUID `json:"server_id"`
+	ServerName  string     `json:"server_name"`
+	UserID      *uuid.UUID `json:"user_id"`
+	UserName    string     `json:"user_name"`
+	Title       string     `json:"title"`
+	Cols        int32      `json:"cols"`
+	Rows        int32      `json:"rows"`
+	StartedAt   time.Time  `json:"started_at"`
+	EndedAt     *time.Time `json:"ended_at"`
+	ExitCode    *int32     `json:"exit_code"`
+	Interrupted bool       `json:"interrupted"`
+	DurationMs  int64      `json:"duration_ms"`
+	Size        int64      `json:"size"`
+	Truncated   bool       `json:"truncated"`
+	Data        []byte     `json:"data"`
+}
+
+type TerminalRecordingSetting struct {
+	WorkspaceID   uuid.UUID `json:"workspace_id"`
+	Enabled       bool      `json:"enabled"`
+	KeepDays      int32     `json:"keep_days"`
+	UpdatedByName string    `json:"updated_by_name"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 type User struct {
 	ID                 uuid.UUID  `json:"id"`
 	Username           string     `json:"username"`
@@ -507,5 +672,15 @@ type Workspace struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Color       string    `json:"color"`
+	LogoKind    string    `json:"logo_kind"`
+	LogoIcon    string    `json:"logo_icon"`
+}
+
+type WorkspaceLogo struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	ContentType string    `json:"content_type"`
+	Data        []byte    `json:"data"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

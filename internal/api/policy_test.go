@@ -56,6 +56,10 @@ var checkedInside = []string{
 	"get-job", "cancel-job", "retry-job", "delete-job",
 	"update-folder", "delete-folder",
 	"delete-grant",
+	"get-workspace-logo",
+	"get-script-run", "cancel-script-run", "delete-script-run",
+	// Only the caller's own, unless they are an Owner.
+	"list-workspace-recordings", "get-recording", "get-recording-cast", "delete-recording",
 }
 
 func TestEveryOperationHasAPolicy(t *testing.T) {
@@ -70,7 +74,7 @@ func TestEveryOperationHasAPolicy(t *testing.T) {
 		}
 		hasID := strings.Contains(op.path, "{id}")
 		switch pol.kind {
-		case kindServer, kindStorage, kindWorkspace, kindDatabase, kindApp, kindPlaybook, kindAnsibleRun, kindSchedule, kindScheduleRun, kindDNSServer:
+		case kindServer, kindStorage, kindWorkspace, kindDatabase, kindBackupPlan, kindBackup, kindApp, kindPlaybook, kindAnsibleRun, kindSchedule, kindScheduleRun, kindDNSServer, kindScript:
 			if !hasID {
 				t.Errorf("%s checks the path's {id}, but %s has none", op.id, op.path)
 			}

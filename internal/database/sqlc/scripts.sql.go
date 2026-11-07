@@ -12,6 +12,53 @@ import (
 	"github.com/google/uuid"
 )
 
+const countScriptRuns = `-- name: CountScriptRuns :one
+SELECT count(*) FROM script_runs r
+WHERE r.workspace_id = $1
+  AND ($2::uuid IS NULL OR r.script_id = $2::uuid)
+  AND ($3::text IS NULL OR r.state = $3::text)
+  AND ($4::text IS NULL OR r.name ILIKE '%' || $4::text || '%'
+       OR r.created_by_name ILIKE '%' || $4::text || '%')
+`
+
+type CountScriptRunsParams struct {
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	ScriptID    *uuid.UUID `json:"script_id"`
+	State       *string    `json:"state"`
+	Q           *string    `json:"q"`
+}
+
+func (q *Queries) CountScriptRuns(ctx context.Context, arg CountScriptRunsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countScriptRuns,
+		arg.WorkspaceID,
+		arg.ScriptID,
+		arg.State,
+		arg.Q,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countServerScriptRuns = `-- name: CountServerScriptRuns :one
+SELECT count(*) FROM script_run_targets t
+JOIN script_runs r ON r.id = t.run_id
+WHERE t.server_id = $1
+  AND ($2::uuid IS NULL OR r.script_id = $2::uuid)
+`
+
+type CountServerScriptRunsParams struct {
+	ServerID *uuid.UUID `json:"server_id"`
+	ScriptID *uuid.UUID `json:"script_id"`
+}
+
+func (q *Queries) CountServerScriptRuns(ctx context.Context, arg CountServerScriptRunsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countServerScriptRuns, arg.ServerID, arg.ScriptID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createScript = `-- name: CreateScript :one
 INSERT INTO scripts (
     workspace_id, name, description, interpreter, content, run_as,
@@ -68,16 +115,17 @@ func (q *Queries) CreateScript(ctx context.Context, arg CreateScriptParams) (Scr
 
 const createScriptRun = `-- name: CreateScriptRun :one
 INSERT INTO script_runs (
-    script_id, name, interpreter, content, run_as, timeout_seconds, env,
+    workspace_id, script_id, name, interpreter, content, run_as, timeout_seconds, env,
     created_by, created_by_name
 ) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10
 )
-RETURNING id, script_id, name, interpreter, content, run_as, timeout_seconds, env, state, job_id, created_by, created_by_name, created_at, started_at, finished_at
+RETURNING id, script_id, name, interpreter, content, run_as, timeout_seconds, env, state, job_id, created_by, created_by_name, created_at, started_at, finished_at, workspace_id, error
 `
 
 type CreateScriptRunParams struct {
+	WorkspaceID    uuid.UUID  `json:"workspace_id"`
 	ScriptID       *uuid.UUID `json:"script_id"`
 	Name           string     `json:"name"`
 	Interpreter    string     `json:"interpreter"`
@@ -91,6 +139,7 @@ type CreateScriptRunParams struct {
 
 func (q *Queries) CreateScriptRun(ctx context.Context, arg CreateScriptRunParams) (ScriptRun, error) {
 	row := q.db.QueryRow(ctx, createScriptRun,
+		arg.WorkspaceID,
 		arg.ScriptID,
 		arg.Name,
 		arg.Interpreter,
@@ -118,6 +167,8 @@ func (q *Queries) CreateScriptRun(ctx context.Context, arg CreateScriptRunParams
 		&i.CreatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.WorkspaceID,
+		&i.Error,
 	)
 	return i, err
 }
@@ -163,17 +214,53 @@ func (q *Queries) DeleteScript(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const deleteScriptRun = `-- name: DeleteScriptRun :execrows
+DELETE FROM script_runs WHERE id = $1 AND state NOT IN ('queued', 'running')
+`
+
+func (q *Queries) DeleteScriptRun(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteScriptRun, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const endScriptRun = `-- name: EndScriptRun :exec
+WITH run AS (
+    UPDATE script_runs SET state = $1, error = $2, finished_at = coalesce(finished_at, now())
+    WHERE id = $3 AND state IN ('queued', 'running')
+    RETURNING id
+)
+UPDATE script_run_targets SET state = $1, finished_at = coalesce(finished_at, now())
+WHERE run_id IN (SELECT id FROM run) AND state IN ('queued', 'running')
+`
+
+type EndScriptRunParams struct {
+	State string    `json:"state"`
+	Error string    `json:"error"`
+	ID    uuid.UUID `json:"id"`
+}
+
+// A run whose job ended without it (canceled while queued, Morcheh restarted):
+// the run and whatever on it hadn't finished.
+func (q *Queries) EndScriptRun(ctx context.Context, arg EndScriptRunParams) error {
+	_, err := q.db.Exec(ctx, endScriptRun, arg.State, arg.Error, arg.ID)
+	return err
+}
+
 const finishScriptRun = `-- name: FinishScriptRun :exec
-UPDATE script_runs SET state = $1, finished_at = now() WHERE id = $2
+UPDATE script_runs SET state = $1, error = $2, finished_at = now() WHERE id = $3
 `
 
 type FinishScriptRunParams struct {
 	State string    `json:"state"`
+	Error string    `json:"error"`
 	ID    uuid.UUID `json:"id"`
 }
 
 func (q *Queries) FinishScriptRun(ctx context.Context, arg FinishScriptRunParams) error {
-	_, err := q.db.Exec(ctx, finishScriptRun, arg.State, arg.ID)
+	_, err := q.db.Exec(ctx, finishScriptRun, arg.State, arg.Error, arg.ID)
 	return err
 }
 
@@ -185,6 +272,7 @@ UPDATE script_run_targets SET
     error = $4,
     output = $5,
     truncated = $6,
+    started_at = coalesce(started_at, now()),
     finished_at = now()
 WHERE run_id = $7 AND position = $8
 `
@@ -240,7 +328,7 @@ func (q *Queries) GetScript(ctx context.Context, id uuid.UUID) (Script, error) {
 }
 
 const getScriptRun = `-- name: GetScriptRun :one
-SELECT id, script_id, name, interpreter, content, run_as, timeout_seconds, env, state, job_id, created_by, created_by_name, created_at, started_at, finished_at FROM script_runs WHERE id = $1
+SELECT id, script_id, name, interpreter, content, run_as, timeout_seconds, env, state, job_id, created_by, created_by_name, created_at, started_at, finished_at, workspace_id, error FROM script_runs WHERE id = $1
 `
 
 func (q *Queries) GetScriptRun(ctx context.Context, id uuid.UUID) (ScriptRun, error) {
@@ -262,13 +350,26 @@ func (q *Queries) GetScriptRun(ctx context.Context, id uuid.UUID) (ScriptRun, er
 		&i.CreatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.WorkspaceID,
+		&i.Error,
 	)
 	return i, err
 }
 
+const getScriptWorkspace = `-- name: GetScriptWorkspace :one
+SELECT workspace_id FROM scripts WHERE id = $1
+`
+
+func (q *Queries) GetScriptWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getScriptWorkspace, id)
+	var workspace_id uuid.UUID
+	err := row.Scan(&workspace_id)
+	return workspace_id, err
+}
+
 const interruptScriptRuns = `-- name: InterruptScriptRuns :exec
 WITH runs AS (
-    UPDATE script_runs SET state = 'interrupted', finished_at = now()
+    UPDATE script_runs SET state = 'interrupted', error = 'Morcheh restarted before it finished.', finished_at = now()
     WHERE state = 'running'
     RETURNING id
 )
@@ -363,19 +464,148 @@ func (q *Queries) ListScriptRunTargets(ctx context.Context, runID uuid.UUID) ([]
 	return items, nil
 }
 
-const listScripts = `-- name: ListScripts :many
-SELECT id, workspace_id, name, description, interpreter, content, run_as, timeout_seconds, params, created_by, updated_by, created_at, updated_at FROM scripts WHERE workspace_id = $1 ORDER BY lower(name)
+const listScriptRuns = `-- name: ListScriptRuns :many
+SELECT r.id, r.workspace_id, r.script_id, r.name, r.interpreter, r.run_as, r.state,
+    r.error, r.job_id, r.created_by, r.created_by_name, r.created_at, r.started_at,
+    r.finished_at,
+    (SELECT count(*) FROM script_run_targets t WHERE t.run_id = r.id)::int AS servers,
+    (SELECT count(*) FROM script_run_targets t WHERE t.run_id = r.id AND t.state = 'succeeded')::int AS succeeded,
+    (SELECT count(*) FROM script_run_targets t WHERE t.run_id = r.id AND t.state IN ('failed', 'interrupted'))::int AS failed,
+    (SELECT coalesce(array_agg(t.server_name ORDER BY t.position), '{}')
+     FROM script_run_targets t WHERE t.run_id = r.id)::text[] AS server_names
+FROM script_runs r
+WHERE r.workspace_id = $1
+  AND ($2::uuid IS NULL OR r.script_id = $2::uuid)
+  AND ($3::text IS NULL OR r.state = $3::text)
+  AND ($4::text IS NULL OR r.name ILIKE '%' || $4::text || '%'
+       OR r.created_by_name ILIKE '%' || $4::text || '%')
+ORDER BY r.id DESC
+LIMIT $6 OFFSET $5
 `
 
-func (q *Queries) ListScripts(ctx context.Context, workspaceID uuid.UUID) ([]Script, error) {
+type ListScriptRunsParams struct {
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	ScriptID    *uuid.UUID `json:"script_id"`
+	State       *string    `json:"state"`
+	Q           *string    `json:"q"`
+	Off         int32      `json:"off"`
+	Lim         int32      `json:"lim"`
+}
+
+type ListScriptRunsRow struct {
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	ScriptID      *uuid.UUID `json:"script_id"`
+	Name          string     `json:"name"`
+	Interpreter   string     `json:"interpreter"`
+	RunAs         string     `json:"run_as"`
+	State         string     `json:"state"`
+	Error         string     `json:"error"`
+	JobID         *uuid.UUID `json:"job_id"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+	Servers       int32      `json:"servers"`
+	Succeeded     int32      `json:"succeeded"`
+	Failed        int32      `json:"failed"`
+	ServerNames   []string   `json:"server_names"`
+}
+
+// A workspace's runs, newest first, with how each went on its servers.
+func (q *Queries) ListScriptRuns(ctx context.Context, arg ListScriptRunsParams) ([]ListScriptRunsRow, error) {
+	rows, err := q.db.Query(ctx, listScriptRuns,
+		arg.WorkspaceID,
+		arg.ScriptID,
+		arg.State,
+		arg.Q,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListScriptRunsRow{}
+	for rows.Next() {
+		var i ListScriptRunsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ScriptID,
+			&i.Name,
+			&i.Interpreter,
+			&i.RunAs,
+			&i.State,
+			&i.Error,
+			&i.JobID,
+			&i.CreatedBy,
+			&i.CreatedByName,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.Servers,
+			&i.Succeeded,
+			&i.Failed,
+			&i.ServerNames,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScripts = `-- name: ListScripts :many
+SELECT s.id, s.workspace_id, s.name, s.description, s.interpreter, s.content, s.run_as, s.timeout_seconds, s.params, s.created_by, s.updated_by, s.created_at, s.updated_at,
+    coalesce(nullif(cu.full_name, ''), cu.username, '')::text AS created_by_name,
+    coalesce(nullif(uu.full_name, ''), uu.username, '')::text AS updated_by_name,
+    r.id AS last_run_id, r.state AS last_run_state, r.created_at AS last_run_at
+FROM scripts s
+LEFT JOIN users cu ON cu.id = s.created_by
+LEFT JOIN users uu ON uu.id = s.updated_by
+LEFT JOIN script_runs r ON r.id = (
+    SELECT x.id FROM script_runs x WHERE x.script_id = s.id ORDER BY x.id DESC LIMIT 1
+)
+WHERE s.workspace_id = $1
+ORDER BY lower(s.name)
+`
+
+type ListScriptsRow struct {
+	ID             uuid.UUID  `json:"id"`
+	WorkspaceID    uuid.UUID  `json:"workspace_id"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	Interpreter    string     `json:"interpreter"`
+	Content        string     `json:"content"`
+	RunAs          string     `json:"run_as"`
+	TimeoutSeconds int32      `json:"timeout_seconds"`
+	Params         []byte     `json:"params"`
+	CreatedBy      *uuid.UUID `json:"created_by"`
+	UpdatedBy      *uuid.UUID `json:"updated_by"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	CreatedByName  string     `json:"created_by_name"`
+	UpdatedByName  string     `json:"updated_by_name"`
+	LastRunID      *uuid.UUID `json:"last_run_id"`
+	LastRunState   *string    `json:"last_run_state"`
+	LastRunAt      *time.Time `json:"last_run_at"`
+}
+
+// With who wrote them and each one's newest run, for the library.
+func (q *Queries) ListScripts(ctx context.Context, workspaceID uuid.UUID) ([]ListScriptsRow, error) {
 	rows, err := q.db.Query(ctx, listScripts, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Script{}
+	items := []ListScriptsRow{}
 	for rows.Next() {
-		var i Script
+		var i ListScriptsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.WorkspaceID,
@@ -390,6 +620,11 @@ func (q *Queries) ListScripts(ctx context.Context, workspaceID uuid.UUID) ([]Scr
 			&i.UpdatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CreatedByName,
+			&i.UpdatedByName,
+			&i.LastRunID,
+			&i.LastRunState,
+			&i.LastRunAt,
 		); err != nil {
 			return nil, err
 		}
@@ -403,7 +638,7 @@ func (q *Queries) ListScripts(ctx context.Context, workspaceID uuid.UUID) ([]Scr
 
 const listServerScriptRuns = `-- name: ListServerScriptRuns :many
 SELECT
-    r.id, r.script_id, r.name, r.interpreter, r.run_as, r.state AS run_state,
+    r.id, r.workspace_id, r.script_id, r.name, r.interpreter, r.run_as, r.state AS run_state,
     r.job_id, r.created_by, r.created_by_name, r.created_at,
     t.position, t.state, t.exit_code, t.timed_out, t.error,
     t.started_at, t.finished_at,
@@ -412,21 +647,20 @@ FROM script_run_targets t
 JOIN script_runs r ON r.id = t.run_id
 WHERE t.server_id = $1
   AND ($2::uuid IS NULL OR r.script_id = $2::uuid)
-  AND ($3::text = '' OR r.name ILIKE $3)
 ORDER BY r.id DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListServerScriptRunsParams struct {
 	ServerID *uuid.UUID `json:"server_id"`
 	ScriptID *uuid.UUID `json:"script_id"`
-	Pattern  string     `json:"pattern"`
 	Off      int32      `json:"off"`
 	Lim      int32      `json:"lim"`
 }
 
 type ListServerScriptRunsRow struct {
 	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
 	ScriptID      *uuid.UUID `json:"script_id"`
 	Name          string     `json:"name"`
 	Interpreter   string     `json:"interpreter"`
@@ -447,12 +681,10 @@ type ListServerScriptRunsRow struct {
 }
 
 // Runs that touched one server, newest first, with what they did there.
-// script_id narrows to one script; pattern (ILIKE) matches the run's name.
 func (q *Queries) ListServerScriptRuns(ctx context.Context, arg ListServerScriptRunsParams) ([]ListServerScriptRunsRow, error) {
 	rows, err := q.db.Query(ctx, listServerScriptRuns,
 		arg.ServerID,
 		arg.ScriptID,
-		arg.Pattern,
 		arg.Off,
 		arg.Lim,
 	)
@@ -465,6 +697,7 @@ func (q *Queries) ListServerScriptRuns(ctx context.Context, arg ListServerScript
 		var i ListServerScriptRunsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.WorkspaceID,
 			&i.ScriptID,
 			&i.Name,
 			&i.Interpreter,

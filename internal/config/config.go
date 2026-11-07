@@ -27,6 +27,18 @@ type Config struct {
 	// Same for storages. Slower than servers: each check signs in to the
 	// remote service (an S3 request, an FTP/SFTP login). 0 = off.
 	StorageCheckInterval time.Duration `env:"STORAGE_CHECK_INTERVAL" envDefault:"30s"`
+	// Each online storage is walked this often to measure how much it holds
+	// (Storage › Insights). Big buckets take a while and cost list requests
+	// on paid S3. 0 = only when someone presses Measure.
+	StorageScanInterval time.Duration `env:"STORAGE_SCAN_INTERVAL" envDefault:"24h"`
+	// Storage check history (uptime and latency charts) is kept this long.
+	StorageHistory time.Duration `env:"STORAGE_HISTORY" envDefault:"744h"`
+	// Each online Linux server's CPU, memory, disk and network are read this
+	// often for Servers › Insights (about a second of work on the server).
+	// 0 = off.
+	ServerSampleInterval time.Duration `env:"SERVER_SAMPLE_INTERVAL" envDefault:"5m"`
+	// Server check history and resource samples are kept this long.
+	ServerHistory time.Duration `env:"SERVER_HISTORY" envDefault:"744h"`
 	// Same for DNS servers. 0 = off.
 	DNSCheckInterval time.Duration `env:"DNS_CHECK_INTERVAL" envDefault:"30s"`
 	// How often Morcheh looks for cron jobs that are due. 0 = they never run

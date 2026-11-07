@@ -69,7 +69,7 @@ var Checks = []DatabaseCheckInfo{
 	{ID: "cache_hit", Area: "performance", Title: "Cache hit", About: "Share of reads served from memory.", Unit: "ratio", Lower: true, Limit: lim(0.9, 0.8)},
 	{ID: "replication", Area: "replication", Title: "Replication", About: "Replicas are connected and how far behind they are.", Unit: "seconds", Limit: lim(30, 300)},
 	{ID: "backup_age", Area: "backup", Title: "Last backup", About: "Hours since the last good backup.", Unit: "hours", Limit: lim(26, 72)},
-	{ID: "restore_test", Area: "backup", Title: "Restore test", About: "The last backup was restored somewhere and checked."},
+	{ID: "restore_test", Area: "backup", Title: "Backup check", About: "The newest backup was read back from its Storage and its checksum and format compared."},
 	{ID: "persistence", Area: "backup", Title: "Persistence", About: "Redis: snapshots and the append-only file are written without errors."},
 	{ID: "tls", Area: "security", Title: "Encryption", About: "Connections are encrypted with TLS."},
 	{ID: "authentication", Area: "security", Title: "Authentication", About: "Every login needs a password; access control is on."},
@@ -444,11 +444,11 @@ func (e *evaluator) backup(s *DatabaseSnapshot) {
 rest:
 	switch {
 	case e.in.LastRestoreTest == nil:
-		e.add("restore_test", LevelUnknown, "No backup has been restore-tested.", "Run a restore test from the backups tab.", nil)
+		e.add("restore_test", LevelUnknown, "The newest backup hasn't been checked.", "Press Check on it in the Backups tab.", nil)
 	case !e.in.RestoreTestOK:
-		e.add("restore_test", LevelCritical, "The last restore test failed.", "Open the test's details to see what failed.", nil)
+		e.add("restore_test", LevelCritical, "The last backup check failed.", "Open the backup to see what failed, and take a new one.", nil)
 	default:
-		e.add("restore_test", LevelOK, "Last tested "+e.in.LastRestoreTest.Format(time.DateOnly), "", nil)
+		e.add("restore_test", LevelOK, "Last checked "+e.in.LastRestoreTest.Format(time.DateOnly), "", nil)
 	}
 
 	if p := s.Persistence; p != nil {

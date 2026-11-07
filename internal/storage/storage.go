@@ -459,3 +459,26 @@ func (r *rooted) Capabilities() Capabilities {
 	c.Buckets = false
 	return c
 }
+
+// Space is the size of the disk behind a storage, when the protocol tells.
+type Space struct {
+	Total int64
+	Free  int64
+}
+
+type spacer interface {
+	space(ctx context.Context, p string) (Space, error)
+}
+
+// SpaceOf reports the disk's size and free space at the storage's root, or
+// ErrUnsupported (only SFTP servers with the statvfs extension answer).
+func SpaceOf(ctx context.Context, f FS) (Space, error) {
+	p := "/"
+	if r, ok := f.(*rooted); ok {
+		f, p = r.FS, r.root
+	}
+	if s, ok := f.(spacer); ok {
+		return s.space(ctx, p)
+	}
+	return Space{}, ErrUnsupported
+}

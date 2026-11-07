@@ -372,18 +372,18 @@ func (h *databaseHandler) look(ctx context.Context, d sqlc.Database) sqlc.Databa
 	if d.Mode == "direct" {
 		in.Public = h.isPublic(ctx, d.Host)
 	}
-	if b, err := h.q.LastGoodDatabaseBackup(ctx, d.ID); err == nil {
-		at := b.StartedAt
+	if b, err := h.q.LastGoodBackup(ctx, d.ID); err == nil {
+		at := b.CreatedAt
 		if b.FinishedAt != nil {
 			at = *b.FinishedAt
 		}
 		in.LastBackup = &at
 		if b.VerifiedAt != nil {
-			in.LastRestoreTest, in.RestoreTestOK = b.VerifiedAt, b.VerifyStatus == "ok"
+			in.LastRestoreTest, in.RestoreTestOK = b.VerifiedAt, b.VerifyError == ""
 		}
 	}
-	if p, err := h.q.GetDatabaseBackupPlan(ctx, d.ID); err == nil {
-		in.BackupPlanned = p.Enabled
+	if planned, err := h.q.AnyBackupPlanEnabled(ctx, d.ID); err == nil {
+		in.BackupPlanned = planned
 	}
 
 	checks, changes := dbmon.Settle(checksOf(d), dbmon.Evaluate(in), now)

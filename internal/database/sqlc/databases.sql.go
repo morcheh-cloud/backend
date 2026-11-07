@@ -152,51 +152,6 @@ func (q *Queries) CreateDatabase(ctx context.Context, arg CreateDatabaseParams) 
 	return i, err
 }
 
-const createDatabaseBackup = `-- name: CreateDatabaseBackup :one
-INSERT INTO database_backups (database_id, job_id, trigger, storage_id, path, dbname)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, database_id, job_id, trigger, storage_id, path, dbname, status, size_bytes, error, started_at, finished_at, verify_status, verify_detail, verified_at
-`
-
-type CreateDatabaseBackupParams struct {
-	DatabaseID uuid.UUID  `json:"database_id"`
-	JobID      *uuid.UUID `json:"job_id"`
-	Trigger    string     `json:"trigger"`
-	StorageID  *uuid.UUID `json:"storage_id"`
-	Path       string     `json:"path"`
-	Dbname     string     `json:"dbname"`
-}
-
-func (q *Queries) CreateDatabaseBackup(ctx context.Context, arg CreateDatabaseBackupParams) (DatabaseBackup, error) {
-	row := q.db.QueryRow(ctx, createDatabaseBackup,
-		arg.DatabaseID,
-		arg.JobID,
-		arg.Trigger,
-		arg.StorageID,
-		arg.Path,
-		arg.Dbname,
-	)
-	var i DatabaseBackup
-	err := row.Scan(
-		&i.ID,
-		&i.DatabaseID,
-		&i.JobID,
-		&i.Trigger,
-		&i.StorageID,
-		&i.Path,
-		&i.Dbname,
-		&i.Status,
-		&i.SizeBytes,
-		&i.Error,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.VerifyStatus,
-		&i.VerifyDetail,
-		&i.VerifiedAt,
-	)
-	return i, err
-}
-
 const databaseAverages = `-- name: DatabaseAverages :one
 SELECT
     count(*)::int AS samples,
@@ -340,6 +295,206 @@ func (q *Queries) DatabaseHistory(ctx context.Context, arg DatabaseHistoryParams
 	return items, nil
 }
 
+const databaseInsightEvents = `-- name: DatabaseInsightEvents :many
+SELECT id, database_id, at, kind, severity, check_id, title, detail FROM database_events
+WHERE database_id = ANY ($1::uuid[]) AND at >= $2::timestamptz
+  AND severity IN ('warning', 'critical', 'ok')
+ORDER BY at DESC
+LIMIT 200
+`
+
+type DatabaseInsightEventsParams struct {
+	Ids   []uuid.UUID `json:"ids"`
+	Since time.Time   `json:"since"`
+}
+
+// Problems and recoveries, newest first.
+func (q *Queries) DatabaseInsightEvents(ctx context.Context, arg DatabaseInsightEventsParams) ([]DatabaseEvent, error) {
+	rows, err := q.db.Query(ctx, databaseInsightEvents, arg.Ids, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DatabaseEvent{}
+	for rows.Next() {
+		var i DatabaseEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.DatabaseID,
+			&i.At,
+			&i.Kind,
+			&i.Severity,
+			&i.CheckID,
+			&i.Title,
+			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const databaseInsightSeries = `-- name: DatabaseInsightSeries :many
+SELECT date_bin(make_interval(secs => $1::float8), at, $2::timestamptz)::timestamptz AS t,
+       database_id,
+       count(*)::bigint AS samples,
+       count(*) FILTER (WHERE NOT online)::bigint AS failures,
+       coalesce(avg(latency_ms) FILTER (WHERE online), 'NaN')::float8 AS latency_avg,
+       coalesce(max(latency_ms) FILTER (WHERE online), 0)::int AS latency_max,
+       coalesce(avg(qps), 'NaN')::float8 AS qps,
+       coalesce(avg(tps), 'NaN')::float8 AS tps,
+       coalesce(max(connections)::float8, 'NaN')::float8 AS connections,
+       coalesce(max(max_connections)::float8, 'NaN')::float8 AS max_connections,
+       coalesce(max(size_bytes)::float8, 'NaN')::float8 AS size_bytes
+FROM database_samples
+WHERE database_id = ANY ($3::uuid[]) AND at >= $4::timestamptz
+GROUP BY 1, 2
+ORDER BY 1
+`
+
+type DatabaseInsightSeriesParams struct {
+	BucketSecs float64     `json:"bucket_secs"`
+	Origin     time.Time   `json:"origin"`
+	Ids        []uuid.UUID `json:"ids"`
+	Since      time.Time   `json:"since"`
+}
+
+type DatabaseInsightSeriesRow struct {
+	T              time.Time `json:"t"`
+	DatabaseID     uuid.UUID `json:"database_id"`
+	Samples        int64     `json:"samples"`
+	Failures       int64     `json:"failures"`
+	LatencyAvg     float64   `json:"latency_avg"`
+	LatencyMax     int32     `json:"latency_max"`
+	Qps            float64   `json:"qps"`
+	Tps            float64   `json:"tps"`
+	Connections    float64   `json:"connections"`
+	MaxConnections float64   `json:"max_connections"`
+	SizeBytes      float64   `json:"size_bytes"`
+}
+
+func (q *Queries) DatabaseInsightSeries(ctx context.Context, arg DatabaseInsightSeriesParams) ([]DatabaseInsightSeriesRow, error) {
+	rows, err := q.db.Query(ctx, databaseInsightSeries,
+		arg.BucketSecs,
+		arg.Origin,
+		arg.Ids,
+		arg.Since,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DatabaseInsightSeriesRow{}
+	for rows.Next() {
+		var i DatabaseInsightSeriesRow
+		if err := rows.Scan(
+			&i.T,
+			&i.DatabaseID,
+			&i.Samples,
+			&i.Failures,
+			&i.LatencyAvg,
+			&i.LatencyMax,
+			&i.Qps,
+			&i.Tps,
+			&i.Connections,
+			&i.MaxConnections,
+			&i.SizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const databaseInsightSummary = `-- name: DatabaseInsightSummary :many
+SELECT database_id,
+       count(*)::bigint AS samples,
+       count(*) FILTER (WHERE NOT online)::bigint AS failures,
+       coalesce(avg(latency_ms) FILTER (WHERE online), 'NaN')::float8 AS latency_avg,
+       coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE online), 'NaN')::float8 AS latency_p95,
+       coalesce(avg(qps), 'NaN')::float8 AS qps_avg,
+       coalesce(max(qps), 'NaN')::float8 AS qps_max,
+       coalesce(max(connections)::float8, 'NaN')::float8 AS connections_max,
+       coalesce(avg(cache_hit), 'NaN')::float8 AS cache_hit,
+       coalesce(sum(deadlocks)::float8, 'NaN')::float8 AS deadlocks,
+       coalesce(max(blocked)::float8, 'NaN')::float8 AS blocked_max,
+       coalesce(((array_agg(size_bytes ORDER BY at) FILTER (WHERE size_bytes IS NOT NULL))[1])::float8, 'NaN')::float8 AS size_first,
+       coalesce(((array_agg(size_bytes ORDER BY at DESC) FILTER (WHERE size_bytes IS NOT NULL))[1])::float8, 'NaN')::float8 AS size_last,
+       min(at)::timestamptz AS first_at,
+       max(at)::timestamptz AS last_at
+FROM database_samples
+WHERE database_id = ANY ($1::uuid[]) AND at >= $2::timestamptz
+GROUP BY database_id
+`
+
+type DatabaseInsightSummaryParams struct {
+	Ids   []uuid.UUID `json:"ids"`
+	Since time.Time   `json:"since"`
+}
+
+type DatabaseInsightSummaryRow struct {
+	DatabaseID     uuid.UUID `json:"database_id"`
+	Samples        int64     `json:"samples"`
+	Failures       int64     `json:"failures"`
+	LatencyAvg     float64   `json:"latency_avg"`
+	LatencyP95     float64   `json:"latency_p95"`
+	QpsAvg         float64   `json:"qps_avg"`
+	QpsMax         float64   `json:"qps_max"`
+	ConnectionsMax float64   `json:"connections_max"`
+	CacheHit       float64   `json:"cache_hit"`
+	Deadlocks      float64   `json:"deadlocks"`
+	BlockedMax     float64   `json:"blocked_max"`
+	SizeFirst      float64   `json:"size_first"`
+	SizeLast       float64   `json:"size_last"`
+	FirstAt        time.Time `json:"first_at"`
+	LastAt         time.Time `json:"last_at"`
+}
+
+// Over the range, per database. NaN = nothing measured.
+func (q *Queries) DatabaseInsightSummary(ctx context.Context, arg DatabaseInsightSummaryParams) ([]DatabaseInsightSummaryRow, error) {
+	rows, err := q.db.Query(ctx, databaseInsightSummary, arg.Ids, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DatabaseInsightSummaryRow{}
+	for rows.Next() {
+		var i DatabaseInsightSummaryRow
+		if err := rows.Scan(
+			&i.DatabaseID,
+			&i.Samples,
+			&i.Failures,
+			&i.LatencyAvg,
+			&i.LatencyP95,
+			&i.QpsAvg,
+			&i.QpsMax,
+			&i.ConnectionsMax,
+			&i.CacheHit,
+			&i.Deadlocks,
+			&i.BlockedMax,
+			&i.SizeFirst,
+			&i.SizeLast,
+			&i.FirstAt,
+			&i.LastAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const databaseSizeTrend = `-- name: DatabaseSizeTrend :many
 SELECT at, size_bytes, disk_free_bytes FROM database_samples
 WHERE database_id = $1 AND at >= $2 AND online
@@ -406,89 +561,6 @@ func (q *Queries) DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, erro
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const deleteDatabaseBackup = `-- name: DeleteDatabaseBackup :execrows
-DELETE FROM database_backups WHERE id = $1
-`
-
-func (q *Queries) DeleteDatabaseBackup(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteDatabaseBackup, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const deleteDatabaseBackupPlan = `-- name: DeleteDatabaseBackupPlan :execrows
-DELETE FROM database_backup_plans WHERE database_id = $1
-`
-
-func (q *Queries) DeleteDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteDatabaseBackupPlan, databaseID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const failStaleDatabaseBackups = `-- name: FailStaleDatabaseBackups :exec
-UPDATE database_backups SET status = 'failed', error = 'Interrupted by a restart', finished_at = now()
-WHERE status = 'running' AND started_at < now() - interval '12 hours'
-`
-
-// Whatever a restart cut off never ends by itself.
-func (q *Queries) FailStaleDatabaseBackups(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, failStaleDatabaseBackups)
-	return err
-}
-
-const finishDatabaseBackup = `-- name: FinishDatabaseBackup :one
-UPDATE database_backups SET
-    status = $1,
-    path = $2,
-    size_bytes = $3,
-    error = $4,
-    finished_at = now()
-WHERE id = $5
-RETURNING id, database_id, job_id, trigger, storage_id, path, dbname, status, size_bytes, error, started_at, finished_at, verify_status, verify_detail, verified_at
-`
-
-type FinishDatabaseBackupParams struct {
-	Status    string    `json:"status"`
-	Path      string    `json:"path"`
-	SizeBytes int64     `json:"size_bytes"`
-	Error     string    `json:"error"`
-	ID        uuid.UUID `json:"id"`
-}
-
-func (q *Queries) FinishDatabaseBackup(ctx context.Context, arg FinishDatabaseBackupParams) (DatabaseBackup, error) {
-	row := q.db.QueryRow(ctx, finishDatabaseBackup,
-		arg.Status,
-		arg.Path,
-		arg.SizeBytes,
-		arg.Error,
-		arg.ID,
-	)
-	var i DatabaseBackup
-	err := row.Scan(
-		&i.ID,
-		&i.DatabaseID,
-		&i.JobID,
-		&i.Trigger,
-		&i.StorageID,
-		&i.Path,
-		&i.Dbname,
-		&i.Status,
-		&i.SizeBytes,
-		&i.Error,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.VerifyStatus,
-		&i.VerifyDetail,
-		&i.VerifiedAt,
-	)
-	return i, err
 }
 
 const getAlertChannel = `-- name: GetAlertChannel :one
@@ -560,58 +632,6 @@ func (q *Queries) GetDatabase(ctx context.Context, id uuid.UUID) (Database, erro
 		&i.Checks,
 		&i.Baseline,
 		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getDatabaseBackup = `-- name: GetDatabaseBackup :one
-SELECT id, database_id, job_id, trigger, storage_id, path, dbname, status, size_bytes, error, started_at, finished_at, verify_status, verify_detail, verified_at FROM database_backups WHERE id = $1
-`
-
-func (q *Queries) GetDatabaseBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error) {
-	row := q.db.QueryRow(ctx, getDatabaseBackup, id)
-	var i DatabaseBackup
-	err := row.Scan(
-		&i.ID,
-		&i.DatabaseID,
-		&i.JobID,
-		&i.Trigger,
-		&i.StorageID,
-		&i.Path,
-		&i.Dbname,
-		&i.Status,
-		&i.SizeBytes,
-		&i.Error,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.VerifyStatus,
-		&i.VerifyDetail,
-		&i.VerifiedAt,
-	)
-	return i, err
-}
-
-const getDatabaseBackupPlan = `-- name: GetDatabaseBackupPlan :one
-SELECT database_id, enabled, storage_id, folder, runner_server_id, dbnames, frequency, hour, weekday, keep, next_run_at, created_by, updated_at FROM database_backup_plans WHERE database_id = $1
-`
-
-func (q *Queries) GetDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (DatabaseBackupPlan, error) {
-	row := q.db.QueryRow(ctx, getDatabaseBackupPlan, databaseID)
-	var i DatabaseBackupPlan
-	err := row.Scan(
-		&i.DatabaseID,
-		&i.Enabled,
-		&i.StorageID,
-		&i.Folder,
-		&i.RunnerServerID,
-		&i.Dbnames,
-		&i.Frequency,
-		&i.Hour,
-		&i.Weekday,
-		&i.Keep,
-		&i.NextRunAt,
-		&i.CreatedBy,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -730,36 +750,6 @@ func (q *Queries) InsertDatabaseSample(ctx context.Context, arg InsertDatabaseSa
 	return err
 }
 
-const lastGoodDatabaseBackup = `-- name: LastGoodDatabaseBackup :one
-SELECT id, database_id, job_id, trigger, storage_id, path, dbname, status, size_bytes, error, started_at, finished_at, verify_status, verify_detail, verified_at FROM database_backups
-WHERE database_id = $1 AND status = 'ok'
-ORDER BY started_at DESC
-LIMIT 1
-`
-
-func (q *Queries) LastGoodDatabaseBackup(ctx context.Context, databaseID uuid.UUID) (DatabaseBackup, error) {
-	row := q.db.QueryRow(ctx, lastGoodDatabaseBackup, databaseID)
-	var i DatabaseBackup
-	err := row.Scan(
-		&i.ID,
-		&i.DatabaseID,
-		&i.JobID,
-		&i.Trigger,
-		&i.StorageID,
-		&i.Path,
-		&i.Dbname,
-		&i.Status,
-		&i.SizeBytes,
-		&i.Error,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.VerifyStatus,
-		&i.VerifyDetail,
-		&i.VerifiedAt,
-	)
-	return i, err
-}
-
 const listAlertChannels = `-- name: ListAlertChannels :many
 SELECT id, workspace_id, name, kind, config_enc, target, min_severity, enabled, last_sent_at, last_error, created_at, updated_at FROM alert_channels WHERE workspace_id = $1 ORDER BY lower(name)
 `
@@ -786,51 +776,6 @@ func (q *Queries) ListAlertChannels(ctx context.Context, workspaceID uuid.UUID) 
 			&i.LastError,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listDatabaseBackups = `-- name: ListDatabaseBackups :many
-SELECT id, database_id, job_id, trigger, storage_id, path, dbname, status, size_bytes, error, started_at, finished_at, verify_status, verify_detail, verified_at FROM database_backups WHERE database_id = $1 ORDER BY started_at DESC LIMIT $2
-`
-
-type ListDatabaseBackupsParams struct {
-	DatabaseID uuid.UUID `json:"database_id"`
-	Limit      int32     `json:"limit"`
-}
-
-func (q *Queries) ListDatabaseBackups(ctx context.Context, arg ListDatabaseBackupsParams) ([]DatabaseBackup, error) {
-	rows, err := q.db.Query(ctx, listDatabaseBackups, arg.DatabaseID, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []DatabaseBackup{}
-	for rows.Next() {
-		var i DatabaseBackup
-		if err := rows.Scan(
-			&i.ID,
-			&i.DatabaseID,
-			&i.JobID,
-			&i.Trigger,
-			&i.StorageID,
-			&i.Path,
-			&i.Dbname,
-			&i.Status,
-			&i.SizeBytes,
-			&i.Error,
-			&i.StartedAt,
-			&i.FinishedAt,
-			&i.VerifyStatus,
-			&i.VerifyDetail,
-			&i.VerifiedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1035,44 +980,6 @@ func (q *Queries) ListDatabasesDue(ctx context.Context) ([]Database, error) {
 	return items, nil
 }
 
-const listDueBackupPlans = `-- name: ListDueBackupPlans :many
-SELECT database_id, enabled, storage_id, folder, runner_server_id, dbnames, frequency, hour, weekday, keep, next_run_at, created_by, updated_at FROM database_backup_plans WHERE enabled AND next_run_at <= now()
-`
-
-func (q *Queries) ListDueBackupPlans(ctx context.Context) ([]DatabaseBackupPlan, error) {
-	rows, err := q.db.Query(ctx, listDueBackupPlans)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []DatabaseBackupPlan{}
-	for rows.Next() {
-		var i DatabaseBackupPlan
-		if err := rows.Scan(
-			&i.DatabaseID,
-			&i.Enabled,
-			&i.StorageID,
-			&i.Folder,
-			&i.RunnerServerID,
-			&i.Dbnames,
-			&i.Frequency,
-			&i.Hour,
-			&i.Weekday,
-			&i.Keep,
-			&i.NextRunAt,
-			&i.CreatedBy,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const pruneDatabaseEvents = `-- name: PruneDatabaseEvents :exec
 DELETE FROM database_events WHERE at < $1
 `
@@ -1202,20 +1109,6 @@ func (q *Queries) RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseChe
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const setBackupPlanNextRun = `-- name: SetBackupPlanNextRun :exec
-UPDATE database_backup_plans SET next_run_at = $1 WHERE database_id = $2
-`
-
-type SetBackupPlanNextRunParams struct {
-	NextRunAt  time.Time `json:"next_run_at"`
-	DatabaseID uuid.UUID `json:"database_id"`
-}
-
-func (q *Queries) SetBackupPlanNextRun(ctx context.Context, arg SetBackupPlanNextRunParams) error {
-	_, err := q.db.Exec(ctx, setBackupPlanNextRun, arg.NextRunAt, arg.DatabaseID)
-	return err
 }
 
 const setDatabaseFavorite = `-- name: SetDatabaseFavorite :one
@@ -1556,117 +1449,6 @@ func (q *Queries) UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) 
 		&i.Baseline,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const upsertDatabaseBackupPlan = `-- name: UpsertDatabaseBackupPlan :one
-INSERT INTO database_backup_plans (
-    database_id, enabled, storage_id, folder, runner_server_id, dbnames, frequency,
-    hour, weekday, keep, next_run_at, created_by
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11, $12
-)
-ON CONFLICT (database_id) DO UPDATE SET
-    enabled = EXCLUDED.enabled,
-    storage_id = EXCLUDED.storage_id,
-    folder = EXCLUDED.folder,
-    runner_server_id = EXCLUDED.runner_server_id,
-    dbnames = EXCLUDED.dbnames,
-    frequency = EXCLUDED.frequency,
-    hour = EXCLUDED.hour,
-    weekday = EXCLUDED.weekday,
-    keep = EXCLUDED.keep,
-    next_run_at = EXCLUDED.next_run_at,
-    created_by = EXCLUDED.created_by,
-    updated_at = now()
-RETURNING database_id, enabled, storage_id, folder, runner_server_id, dbnames, frequency, hour, weekday, keep, next_run_at, created_by, updated_at
-`
-
-type UpsertDatabaseBackupPlanParams struct {
-	DatabaseID     uuid.UUID  `json:"database_id"`
-	Enabled        bool       `json:"enabled"`
-	StorageID      uuid.UUID  `json:"storage_id"`
-	Folder         string     `json:"folder"`
-	RunnerServerID *uuid.UUID `json:"runner_server_id"`
-	Dbnames        []string   `json:"dbnames"`
-	Frequency      string     `json:"frequency"`
-	Hour           int32      `json:"hour"`
-	Weekday        int32      `json:"weekday"`
-	Keep           int32      `json:"keep"`
-	NextRunAt      time.Time  `json:"next_run_at"`
-	CreatedBy      *uuid.UUID `json:"created_by"`
-}
-
-func (q *Queries) UpsertDatabaseBackupPlan(ctx context.Context, arg UpsertDatabaseBackupPlanParams) (DatabaseBackupPlan, error) {
-	row := q.db.QueryRow(ctx, upsertDatabaseBackupPlan,
-		arg.DatabaseID,
-		arg.Enabled,
-		arg.StorageID,
-		arg.Folder,
-		arg.RunnerServerID,
-		arg.Dbnames,
-		arg.Frequency,
-		arg.Hour,
-		arg.Weekday,
-		arg.Keep,
-		arg.NextRunAt,
-		arg.CreatedBy,
-	)
-	var i DatabaseBackupPlan
-	err := row.Scan(
-		&i.DatabaseID,
-		&i.Enabled,
-		&i.StorageID,
-		&i.Folder,
-		&i.RunnerServerID,
-		&i.Dbnames,
-		&i.Frequency,
-		&i.Hour,
-		&i.Weekday,
-		&i.Keep,
-		&i.NextRunAt,
-		&i.CreatedBy,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const verifyDatabaseBackup = `-- name: VerifyDatabaseBackup :one
-UPDATE database_backups SET
-    verify_status = $1,
-    verify_detail = $2,
-    verified_at = now()
-WHERE id = $3
-RETURNING id, database_id, job_id, trigger, storage_id, path, dbname, status, size_bytes, error, started_at, finished_at, verify_status, verify_detail, verified_at
-`
-
-type VerifyDatabaseBackupParams struct {
-	VerifyStatus string    `json:"verify_status"`
-	VerifyDetail string    `json:"verify_detail"`
-	ID           uuid.UUID `json:"id"`
-}
-
-func (q *Queries) VerifyDatabaseBackup(ctx context.Context, arg VerifyDatabaseBackupParams) (DatabaseBackup, error) {
-	row := q.db.QueryRow(ctx, verifyDatabaseBackup, arg.VerifyStatus, arg.VerifyDetail, arg.ID)
-	var i DatabaseBackup
-	err := row.Scan(
-		&i.ID,
-		&i.DatabaseID,
-		&i.JobID,
-		&i.Trigger,
-		&i.StorageID,
-		&i.Path,
-		&i.Dbname,
-		&i.Status,
-		&i.SizeBytes,
-		&i.Error,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.VerifyStatus,
-		&i.VerifyDetail,
-		&i.VerifiedAt,
 	)
 	return i, err
 }

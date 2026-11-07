@@ -1,0 +1,82 @@
+# Morcheh in production: Postgres, Redis, the backend (with every tool it
+# drives) and the panel. Needs the frontend repository next to this one
+# (../../frontend). Settings come from .env here (copy .env.example).
+#
+#   cd deploy && cp .env.example .env   # fill it in
+#   docker compose up -d --build
+#   docker compose exec backend server reset-admin   # locked out
+name: morcheh-prod
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: morcheh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: morcheh
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U morcheh -d morcheh"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["sh", "-c", 'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ..
+    image: morcheh-backend
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://morcheh:${POSTGRES_PASSWORD}@postgres:5432/morcheh?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env (openssl rand -base64 32)}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      CORS_ALLOWED_ORIGINS: ${PANEL_URL:?set PANEL_URL in .env}
+      COOKIE_INSECURE: ${COOKIE_INSECURE:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      ANSIBLE_SANDBOX: ${ANSIBLE_SANDBOX:-auto}
+      TZ: ${TZ:-UTC}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    # Playbook runs go in a bubblewrap sandbox, which needs user namespaces
+    # and its own /proc. Docker's default profiles refuse both, so without the
+    # lines below the sandbox is off and only system admins can run playbooks
+    # (Ansible's page says so). They loosen this container's own confinement;
+    # leave them out if only admins run playbooks.
+    # security_opt:
+    #   - seccomp=unconfined
+    #   - apparmor=unconfined
+    #   - systempaths=unconfined
+
+  frontend:
+    build:
+      context: ../../frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${API_URL:?set API_URL in .env}
+    image: morcheh-frontend
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "${PANEL_PORT:-3200}:3200"
+
+volumes:
+  pgdata:
+  redisdata:

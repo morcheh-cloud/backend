@@ -226,3 +226,11 @@ func (s *sftpfs) Close() error {
 	s.c.Close()
 	return s.ssh.Close()
 }
+
+func (s *sftpfs) space(_ context.Context, p string) (Space, error) {
+	v, err := s.c.StatVFS(p)
+	if err != nil {
+		return Space{}, sftpErr(err)
+	}
+	return Space{Total: int64(v.TotalSpace()), Free: int64(v.Frsize * v.Bavail)}, nil
+}

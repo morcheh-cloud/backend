@@ -28,6 +28,7 @@ type TerminalSession struct {
 	Cols      int       `json:"cols" example:"120"`
 	Rows      int       `json:"rows" example:"32"`
 	Clients   int       `json:"clients" doc:"Browser tabs attached right now; 0 means it runs detached"`
+	Recorded  bool      `json:"recorded" doc:"Its output is being recorded (the workspace records terminals)"`
 }
 
 type TerminalPath struct {
@@ -36,7 +37,7 @@ type TerminalPath struct {
 }
 
 func toTerminal(i terminal.Info) TerminalSession {
-	return TerminalSession{ID: i.ID, Title: i.Title, CreatedAt: i.Created, Cols: i.Cols, Rows: i.Rows, Clients: i.Clients}
+	return TerminalSession{ID: i.ID, Title: i.Title, CreatedAt: i.Created, Cols: i.Cols, Rows: i.Rows, Clients: i.Clients, Recorded: i.Recorded}
 }
 
 // Control messages are JSON text frames; terminal bytes are binary frames.
@@ -49,6 +50,8 @@ type controlMessage struct {
 	Status  int    `json:"status,omitempty"`
 	Cols    int    `json:"cols,omitempty"`
 	Rows    int    `json:"rows,omitempty"`
+	// On "session": the shell's output is being recorded.
+	Recorded bool `json:"recorded,omitempty"`
 }
 
 // ---- Handlers ----
@@ -211,7 +214,21 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 			}
 			cols, _ := strconv.Atoi(q.Get("cols"))
 			rows, _ := strconv.Atoi(q.Get("rows"))
-			sess, err = h.terms.Start(serverID, conn, terminal.Options{Owner: owner, Cols: cols, Rows: rows, Cwd: q.Get("cwd")})
+			// A workspace that records gets no unrecorded shells.
+			rec, err := h.recs.begin(ctx, serverID, p, cols, rows)
+			if err != nil {
+				slog.Error("start terminal recording", "error", err)
+				fail(http.StatusServiceUnavailable, "This workspace records terminals, and the recording couldn't start. Try again.")
+				return
+			}
+			opts := terminal.Options{Owner: owner, Cols: cols, Rows: rows, Cwd: q.Get("cwd")}
+			if rec != nil {
+				opts.Recorder = rec
+			}
+			sess, err = h.terms.Start(serverID, conn, opts)
+			if err != nil && rec != nil {
+				rec.abandon()
+			}
 			if errors.Is(err, terminal.ErrTooMany) {
 				fail(http.StatusTooManyRequests, err.Error())
 				return
@@ -219,6 +236,9 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 			if err != nil {
 				fail(http.StatusBadGateway, "Couldn't start a shell: "+err.Error())
 				return
+			}
+			if rec != nil {
+				rec.attach(sess)
 			}
 		}
 
@@ -229,7 +249,7 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 		}
 		defer sess.Detach(sub)
 
-		if err := writeJSON(ctx, ws, controlMessage{Type: "session", ID: sess.ID, Title: sess.Title()}); err != nil {
+		if err := writeJSON(ctx, ws, controlMessage{Type: "session", ID: sess.ID, Title: sess.Title(), Recorded: sess.Recorded()}); err != nil {
 			return
 		}
 		if len(replay) > 0 {

@@ -125,6 +125,8 @@ services:
 
   test-mariadb:
     image: mariadb:11.8
+    # Binary log on, so incremental backups can be tried.
+    command: ["--log-bin=mysql-bin", "--binlog-format=ROW", "--server-id=1"]
     environment:
       MARIADB_ROOT_PASSWORD: colony
       MARIADB_DATABASE: shop

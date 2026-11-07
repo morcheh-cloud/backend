@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+!.env.example
+bin/
+*.log
+docker-compose*.yml
+Dockerfile
+deploy/
+**/.env

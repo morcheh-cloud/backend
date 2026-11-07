@@ -203,7 +203,7 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 		return auth.Owner, nil
 	}
 
-	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run", kindDNSServer: "DNS server"}[pol.kind]
+	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindBackupPlan: "backup plan", kindBackup: "backup", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run", kindDNSServer: "DNS server", kindScript: "script"}[pol.kind]
 	missing := &denied{http.StatusNotFound, noun + " not found"}
 	id, err := uuid.Parse(rawID)
 	if err != nil {
@@ -245,6 +245,24 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 			return auth.None, err
 		}
 		level = databaseLevel(acc, d.WorkspaceID, d.ServerID)
+	case kindBackupPlan, kindBackup:
+		var dbID uuid.UUID
+		if pol.kind == kindBackupPlan {
+			dbID, err = a.q.GetBackupPlanDatabase(ctx, id)
+		} else {
+			dbID, err = a.q.GetBackupDatabase(ctx, id)
+		}
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		d, err := a.q.GetDatabaseWorkspace(ctx, dbID)
+		if err != nil {
+			return auth.None, err
+		}
+		level = databaseLevel(acc, d.WorkspaceID, d.ServerID)
 	case kindApp:
 		ws, err := a.q.GetAppWorkspace(ctx, id)
 		if isNotFound(err) {
@@ -256,6 +274,15 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 		level = acc.AppLevel(ws, id)
 	case kindDNSServer:
 		ws, err := a.q.GetDNSServerWorkspace(ctx, id)
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		level = acc.WorkspaceLevel(ws)
+	case kindScript:
+		ws, err := a.q.GetScriptWorkspace(ctx, id)
 		if isNotFound(err) {
 			return auth.None, missing
 		}

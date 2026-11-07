@@ -74,6 +74,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerAuth(api, a)
 	registerAdmin(api, a)
 	registerWorkspaces(api, a)
+	registerWorkspaceLogos(api, a)
 	registerFolders(api, a)
 	servers := &serverHandler{
 		db: db, q: sqlc.New(db), box: box,
@@ -83,9 +84,14 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 		authz: a,
 	}
 	servers.stats = newStatsHub(servers)
+	servers.recs = newRecordings(sqlc.New(db), servers)
+	startRecordingJanitor(servers.recs)
 	startServerMonitor(servers, cfg.ServerCheckInterval)
+	startServerSampler(servers, cfg.ServerSampleInterval, cfg.ServerHistory)
 	registerServers(api, servers)
+	registerServerInsights(api, servers, cfg.ServerSampleInterval)
 	registerTerminals(api, r, servers, cfg.CORSOrigins)
+	registerRecordings(api, servers.recs)
 	registerFiles(api, servers)
 	registerDiskUsage(api, servers)
 	registerCron(api, servers)
@@ -97,12 +103,18 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerUsers(api, servers)
 	registerServices(api, servers)
 	registerPower(api, servers)
+	registerServerNotes(api, servers)
+	registerScripts(api, newScriptHandler(servers, a))
 	st := newStorageHandler(sqlc.New(db), box, servers)
 	startStorageMonitor(st, cfg.StorageCheckInterval)
+	startStorageScanner(st, cfg.StorageScanInterval, cfg.StorageHistory)
 	registerStorages(api, st)
 	registerStorageCredentials(api, st)
 	registerStorageFiles(api, st)
-	registerDatabases(api, newDatabaseHandler(sqlc.New(db), box, servers))
+	registerStorageInsights(api, st)
+	databases := newDatabaseHandler(sqlc.New(db), box, servers)
+	registerDatabases(api, databases)
+	registerDatabaseInsights(api, databases)
 	dns := &dnsHandler{q: sqlc.New(db), box: box, authz: a}
 	startDNSMonitor(dns, cfg.DNSCheckInterval)
 	registerDNS(api, dns)
@@ -114,6 +126,9 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerAnsible(api, newAnsibleHandler(servers, a))
 	schedules := newScheduleHandler(st, a)
 	registerSchedules(api, schedules)
+	backups := newBackupHandler(databases, st, a)
+	registerDatabaseBackups(api, backups)
+	startBackupScheduler(backups, cfg.ScheduleTick)
 	startScheduler(schedules, cfg.ScheduleTick)
 	registerJobs(api, a)
 

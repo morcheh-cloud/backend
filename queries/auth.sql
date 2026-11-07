@@ -155,20 +155,43 @@ ON CONFLICT DO NOTHING;
 SELECT w.*,
        (SELECT count(*) FROM servers s WHERE s.workspace_id = w.id)::int AS server_count,
        (SELECT count(*) FROM storages t WHERE t.workspace_id = w.id)::int AS storage_count,
-       (SELECT count(*) FROM apps a WHERE a.workspace_id = w.id)::int AS app_count
+       (SELECT count(*) FROM apps a WHERE a.workspace_id = w.id)::int AS app_count,
+       l.updated_at AS logo_updated_at
 FROM workspaces w
+LEFT JOIN workspace_logos l ON l.workspace_id = w.id
 ORDER BY lower(w.name);
 
 -- name: GetWorkspace :one
 SELECT * FROM workspaces WHERE id = $1;
 
 -- name: CreateWorkspace :one
-INSERT INTO workspaces (name, description) VALUES (@name, @description) RETURNING *;
+INSERT INTO workspaces (name, description, color, logo_kind, logo_icon)
+VALUES (@name, @description, @color, @logo_kind, @logo_icon)
+RETURNING *;
 
 -- name: UpdateWorkspace :one
-UPDATE workspaces SET name = @name, description = @description, updated_at = now()
+UPDATE workspaces SET name = @name, description = @description, color = @color,
+    logo_kind = @logo_kind, logo_icon = @logo_icon, updated_at = now()
 WHERE id = @id
 RETURNING *;
+
+-- name: GetWorkspaceLogo :one
+SELECT * FROM workspace_logos WHERE workspace_id = $1;
+
+-- name: GetWorkspaceLogoStamp :one
+SELECT updated_at FROM workspace_logos WHERE workspace_id = $1;
+
+-- name: PutWorkspaceLogo :exec
+INSERT INTO workspace_logos (workspace_id, content_type, data)
+VALUES (@workspace_id, @content_type, @data)
+ON CONFLICT (workspace_id) DO UPDATE
+SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = now();
+
+-- name: DeleteWorkspaceLogo :exec
+DELETE FROM workspace_logos WHERE workspace_id = $1;
+
+-- name: SetWorkspaceLogoKind :one
+UPDATE workspaces SET logo_kind = @logo_kind, updated_at = now() WHERE id = @id RETURNING *;
 
 -- name: DeleteWorkspace :execrows
 DELETE FROM workspaces WHERE id = $1;

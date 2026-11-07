@@ -15,14 +15,29 @@ type Querier interface {
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
+	AnyBackupPlanEnabled(ctx context.Context, databaseID uuid.UUID) (bool, error)
+	// A backup and all it builds on, oldest first.
+	BackupChain(ctx context.Context, id uuid.UUID) ([]DatabaseBackup, error)
+	// What builds on a backup, directly or not, newest first.
+	BackupDependents(ctx context.Context, parentID *uuid.UUID) ([]uuid.UUID, error)
 	CancelQueuedJob(ctx context.Context, id uuid.UUID) (int64, error)
+	// Moves a due plan on; 0 rows means something else already did.
+	ClaimBackupPlan(ctx context.Context, arg ClaimBackupPlanParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
 	ClaimSchedule(ctx context.Context, arg ClaimScheduleParams) (int64, error)
 	ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error
 	CountActiveAdmins(ctx context.Context) (int32, error)
+	CountActiveRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountAnsibleRuns(ctx context.Context, arg CountAnsibleRunsParams) (int64, error)
+	CountBackupChildren(ctx context.Context, ids []uuid.UUID) ([]CountBackupChildrenRow, error)
+	CountBackups(ctx context.Context, databaseID uuid.UUID) (int64, error)
+	CountRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountScheduleRuns(ctx context.Context, arg CountScheduleRunsParams) (int64, error)
+	CountScriptRuns(ctx context.Context, arg CountScriptRunsParams) (int64, error)
+	CountServerNotes(ctx context.Context, serverID uuid.UUID) (int32, error)
+	CountServerScriptRuns(ctx context.Context, arg CountServerScriptRunsParams) (int64, error)
 	CountServers(ctx context.Context, arg CountServersParams) (CountServersRow, error)
+	CountTerminalRecordings(ctx context.Context, arg CountTerminalRecordingsParams) (int32, error)
 	CountUserSessions(ctx context.Context, userID uuid.UUID) (int32, error)
 	CountUsers(ctx context.Context) (int32, error)
 	CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error)
@@ -34,22 +49,27 @@ type Querier interface {
 	// New categories go last.
 	CreateAppCategory(ctx context.Context, arg CreateAppCategoryParams) (AppCategory, error)
 	CreateAppSecretView(ctx context.Context, arg CreateAppSecretViewParams) error
+	CreateBackup(ctx context.Context, arg CreateBackupParams) (DatabaseBackup, error)
+	CreateBackupCopy(ctx context.Context, arg CreateBackupCopyParams) error
+	CreateBackupPlan(ctx context.Context, arg CreateBackupPlanParams) (DatabaseBackupPlan, error)
 	CreateDNSServer(ctx context.Context, arg CreateDNSServerParams) (DnsServer, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
-	CreateDatabaseBackup(ctx context.Context, arg CreateDatabaseBackupParams) (DatabaseBackup, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (UserGroup, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
 	CreatePlaybook(ctx context.Context, arg CreatePlaybookParams) (AnsiblePlaybook, error)
+	CreateRestore(ctx context.Context, arg CreateRestoreParams) (DatabaseRestore, error)
 	CreateSchedule(ctx context.Context, arg CreateScheduleParams) (Schedule, error)
 	CreateScheduleRun(ctx context.Context, arg CreateScheduleRunParams) (ScheduleRun, error)
 	CreateScript(ctx context.Context, arg CreateScriptParams) (Script, error)
 	CreateScriptRun(ctx context.Context, arg CreateScriptRunParams) (ScriptRun, error)
 	CreateScriptRunTarget(ctx context.Context, arg CreateScriptRunTargetParams) error
 	CreateServer(ctx context.Context, arg CreateServerParams) (Server, error)
+	CreateServerNote(ctx context.Context, arg CreateServerNoteParams) (ServerNote, error)
 	// ---- Sessions ----
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateStorage(ctx context.Context, arg CreateStorageParams) (Storage, error)
+	CreateTerminalRecording(ctx context.Context, arg CreateTerminalRecordingParams) (uuid.UUID, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error)
 	// What this hour normally looks like: the same hour on earlier days.
@@ -57,6 +77,11 @@ type Querier interface {
 	// Averages per bucket; peaks where an average would hide the problem. NaN =
 	// nothing measured in the bucket (sqlc can't type a nullable aggregate).
 	DatabaseHistory(ctx context.Context, arg DatabaseHistoryParams) ([]DatabaseHistoryRow, error)
+	// Problems and recoveries, newest first.
+	DatabaseInsightEvents(ctx context.Context, arg DatabaseInsightEventsParams) ([]DatabaseEvent, error)
+	DatabaseInsightSeries(ctx context.Context, arg DatabaseInsightSeriesParams) ([]DatabaseInsightSeriesRow, error)
+	// Over the range, per database. NaN = nothing measured.
+	DatabaseInsightSummary(ctx context.Context, arg DatabaseInsightSummaryParams) ([]DatabaseInsightSummaryRow, error)
 	// Oldest first: what the "fills up in N days" estimates fit a line through.
 	DatabaseSizeTrend(ctx context.Context, arg DatabaseSizeTrendParams) ([]DatabaseSizeTrendRow, error)
 	DeleteAlertChannel(ctx context.Context, arg DeleteAlertChannelParams) (int64, error)
@@ -65,10 +90,10 @@ type Querier interface {
 	DeleteAppAccountsExcept(ctx context.Context, arg DeleteAppAccountsExceptParams) error
 	DeleteAppCategory(ctx context.Context, arg DeleteAppCategoryParams) (int64, error)
 	DeleteAppLogo(ctx context.Context, arg DeleteAppLogoParams) error
+	DeleteBackup(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteBackupPlan(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDNSServer(ctx context.Context, id uuid.UUID) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
-	DeleteDatabaseBackup(ctx context.Context, id uuid.UUID) (int64, error)
-	DeleteDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteFinishedJobs(ctx context.Context, arg DeleteFinishedJobsParams) (int64, error)
 	DeleteFolder(ctx context.Context, id uuid.UUID) (int64, error)
@@ -81,21 +106,34 @@ type Querier interface {
 	DeleteSchedule(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteScheduleRun(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteScript(ctx context.Context, id uuid.UUID) error
+	DeleteScriptRun(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteServerNote(ctx context.Context, arg DeleteServerNoteParams) (int64, error)
 	DeleteServers(ctx context.Context, ids []uuid.UUID) (int64, error)
 	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteStorage(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteTerminalRecording(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUser(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
 	DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) error
 	// A run whose job ended without it (canceled while queued, Morcheh restarted).
 	EndAnsibleRun(ctx context.Context, arg EndAnsibleRunParams) error
+	// Only a run still going: a run that finished keeps its outcome.
+	EndBackup(ctx context.Context, arg EndBackupParams) error
+	// Only a restore still going. The login it was given goes with it.
+	EndRestore(ctx context.Context, arg EndRestoreParams) error
 	// Ends a run that's still queued or running, keeping what it recorded.
 	EndScheduleRun(ctx context.Context, arg EndScheduleRunParams) error
-	// Whatever a restart cut off never ends by itself.
-	FailStaleDatabaseBackups(ctx context.Context) error
+	// A run whose job ended without it (canceled while queued, Morcheh restarted):
+	// the run and whatever on it hadn't finished.
+	EndScriptRun(ctx context.Context, arg EndScriptRunParams) error
+	EndTerminalRecording(ctx context.Context, arg EndTerminalRecordingParams) error
+	// Copies of a run that ended without storing them.
+	FailBackupCopies(ctx context.Context, backupID uuid.UUID) error
 	FindGrant(ctx context.Context, arg FindGrantParams) (AccessGrant, error)
 	FinishAnsibleRun(ctx context.Context, arg FinishAnsibleRunParams) error
-	FinishDatabaseBackup(ctx context.Context, arg FinishDatabaseBackupParams) (DatabaseBackup, error)
+	// error is a warning here: a copy that failed while another worked.
+	FinishBackup(ctx context.Context, arg FinishBackupParams) error
 	FinishJob(ctx context.Context, arg FinishJobParams) error
 	FinishScheduleRun(ctx context.Context, arg FinishScheduleRunParams) error
 	FinishScriptRun(ctx context.Context, arg FinishScriptRunParams) error
@@ -111,11 +149,13 @@ type Querier interface {
 	GetAppCategory(ctx context.Context, id uuid.UUID) (AppCategory, error)
 	GetAppLogo(ctx context.Context, arg GetAppLogoParams) (AppLogo, error)
 	GetAppWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error)
+	GetBackupDatabase(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetBackupPlan(ctx context.Context, id uuid.UUID) (DatabaseBackupPlan, error)
+	GetBackupPlanDatabase(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDNSServer(ctx context.Context, id uuid.UUID) (DnsServer, error)
 	GetDNSServerWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
-	GetDatabaseBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error)
-	GetDatabaseBackupPlan(ctx context.Context, databaseID uuid.UUID) (DatabaseBackupPlan, error)
 	// What access to a database follows: its workspace, and the server it goes
 	// through.
 	GetDatabaseWorkspace(ctx context.Context, id uuid.UUID) (GetDatabaseWorkspaceRow, error)
@@ -126,13 +166,16 @@ type Querier interface {
 	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
 	GetPlaybook(ctx context.Context, id uuid.UUID) (AnsiblePlaybook, error)
 	GetPlaybookWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetRestore(ctx context.Context, id uuid.UUID) (DatabaseRestore, error)
 	GetSchedule(ctx context.Context, id uuid.UUID) (Schedule, error)
 	GetScheduleRun(ctx context.Context, id uuid.UUID) (ScheduleRun, error)
 	GetScheduleRunWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetScheduleWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetScript(ctx context.Context, id uuid.UUID) (Script, error)
 	GetScriptRun(ctx context.Context, id uuid.UUID) (ScriptRun, error)
+	GetScriptWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetServer(ctx context.Context, id uuid.UUID) (Server, error)
+	GetServerNote(ctx context.Context, arg GetServerNoteParams) (ServerNote, error)
 	GetServerWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetServers(ctx context.Context, ids []uuid.UUID) ([]Server, error)
 	GetSessionByHash(ctx context.Context, tokenHash []byte) (GetSessionByHashRow, error)
@@ -142,18 +185,40 @@ type Querier interface {
 	GetSettings(ctx context.Context) (AppSetting, error)
 	GetStorage(ctx context.Context, id uuid.UUID) (Storage, error)
 	GetStorageWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetTerminalRecordingData(ctx context.Context, id uuid.UUID) (GetTerminalRecordingDataRow, error)
+	GetTerminalRecordingInfo(ctx context.Context, id uuid.UUID) (GetTerminalRecordingInfoRow, error)
+	GetTerminalRecordingSettings(ctx context.Context, workspaceID uuid.UUID) (TerminalRecordingSetting, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
 	GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error)
+	GetWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) (WorkspaceLogo, error)
+	GetWorkspaceLogoStamp(ctx context.Context, workspaceID uuid.UUID) (time.Time, error)
 	InsertDatabaseEvent(ctx context.Context, arg InsertDatabaseEventParams) (DatabaseEvent, error)
 	InsertDatabaseSample(ctx context.Context, arg InsertDatabaseSampleParams) error
+	InsertServerSample(ctx context.Context, arg InsertServerSampleParams) error
+	InsertServerStatusChange(ctx context.Context, arg InsertServerStatusChangeParams) error
+	InsertStorageCheck(ctx context.Context, arg InsertStorageCheckParams) error
+	InsertStorageUsage(ctx context.Context, arg InsertStorageUsageParams) (StorageUsage, error)
 	// At startup: whatever was running died with the last process.
 	InterruptRunningJobs(ctx context.Context) (int64, error)
 	// What the last process left running can't go on after a restart.
 	InterruptScriptRuns(ctx context.Context) error
-	LastGoodDatabaseBackup(ctx context.Context, databaseID uuid.UUID) (DatabaseBackup, error)
+	// At start-up: shells recorded by a previous run of Morcheh are gone.
+	InterruptTerminalRecordings(ctx context.Context) (int64, error)
+	// Each plan's newest finished run; of a run over several databases, the one
+	// that failed if any did.
+	LastBackups(ctx context.Context, planIds []uuid.UUID) ([]LastBackupsRow, error)
+	LastGoodBackup(ctx context.Context, databaseID uuid.UUID) (DatabaseBackup, error)
+	LastGoodBackupTimes(ctx context.Context, planIds []uuid.UUID) ([]LastGoodBackupTimesRow, error)
+	// The newest good backup of one database in a plan: an incremental builds on it.
+	LastPlanBackup(ctx context.Context, arg LastPlanBackupParams) (DatabaseBackup, error)
+	// When a restore last rewrote a database: the chain up to then no longer fits.
+	LastRestoreAt(ctx context.Context, arg LastRestoreAtParams) (time.Time, error)
 	// Each script's latest run on one server.
 	LastScriptRuns(ctx context.Context, serverID *uuid.UUID) ([]LastScriptRunsRow, error)
+	LatestServerSamples(ctx context.Context, ids []uuid.UUID) ([]ServerSample, error)
+	LatestStorageUsage(ctx context.Context, ids []uuid.UUID) ([]StorageUsage, error)
+	ListActiveBackups(ctx context.Context, planID *uuid.UUID) ([]DatabaseBackup, error)
 	ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error)
 	ListActiveScheduleRuns(ctx context.Context, scheduleID *uuid.UUID) ([]ScheduleRun, error)
 	ListAlertChannels(ctx context.Context, workspaceID uuid.UUID) ([]AlertChannel, error)
@@ -171,16 +236,23 @@ type Querier interface {
 	// Category order first (uncategorized last), then the order inside it.
 	// pattern is an ILIKE pattern over name, address and note; '' = everything.
 	ListApps(ctx context.Context, arg ListAppsParams) ([]App, error)
+	ListBackupCopies(ctx context.Context, backupIds []uuid.UUID) ([]DatabaseBackupCopy, error)
+	ListBackupPlanStorages(ctx context.Context, planID uuid.UUID) ([]uuid.UUID, error)
+	ListBackupPlans(ctx context.Context, databaseID uuid.UUID) ([]DatabaseBackupPlan, error)
+	ListBackupPlansWithoutNext(ctx context.Context) ([]DatabaseBackupPlan, error)
+	// Enabled plans whose newest run failed for at least one of its databases, in
+	// what the caller reaches.
+	ListBackupProblems(ctx context.Context, arg ListBackupProblemsParams) ([]ListBackupProblemsRow, error)
+	ListBackups(ctx context.Context, arg ListBackupsParams) ([]DatabaseBackup, error)
 	ListDNSServers(ctx context.Context, arg ListDNSServersParams) ([]DnsServer, error)
 	// Servers whose last check is older than @before (or that were never
 	// checked), the longest waiting first.
 	ListDNSServersDueForCheck(ctx context.Context, before time.Time) ([]DnsServer, error)
-	ListDatabaseBackups(ctx context.Context, arg ListDatabaseBackupsParams) ([]DatabaseBackup, error)
 	ListDatabaseEvents(ctx context.Context, arg ListDatabaseEventsParams) ([]DatabaseEvent, error)
 	ListDatabases(ctx context.Context, arg ListDatabasesParams) ([]Database, error)
 	// What the monitor should look at now.
 	ListDatabasesDue(ctx context.Context) ([]Database, error)
-	ListDueBackupPlans(ctx context.Context) ([]DatabaseBackupPlan, error)
+	ListDueBackupPlans(ctx context.Context, now *time.Time) ([]DatabaseBackupPlan, error)
 	ListDueSchedules(ctx context.Context, now *time.Time) ([]Schedule, error)
 	ListEnabledSchedulesWithoutNext(ctx context.Context) ([]Schedule, error)
 	ListFirewallChanges(ctx context.Context, serverID uuid.UUID) ([]ListFirewallChangesRow, error)
@@ -197,20 +269,27 @@ type Querier interface {
 	// Newest first. ref narrows to one server or storage; active to queued and
 	// running jobs, finished to the rest; created_by to one person's.
 	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
+	// Every good backup of a plan, newest first: what retention looks at.
+	ListPlanBackups(ctx context.Context, planID *uuid.UUID) ([]DatabaseBackup, error)
 	// With each playbook's newest run, for the list.
 	ListPlaybooks(ctx context.Context, workspaceID uuid.UUID) ([]ListPlaybooksRow, error)
 	// People an owner can give access to.
 	ListPrincipalUsers(ctx context.Context) ([]ListPrincipalUsersRow, error)
 	ListQueuedJobs(ctx context.Context) ([]Job, error)
+	ListRestores(ctx context.Context, arg ListRestoresParams) ([]DatabaseRestore, error)
 	// Names of the servers and storages schedules point at.
 	ListScheduleEndNames(ctx context.Context, ids []uuid.UUID) ([]ListScheduleEndNamesRow, error)
 	ListScheduleRuns(ctx context.Context, arg ListScheduleRunsParams) ([]ScheduleRun, error)
 	// With each schedule's newest run (skipped ones aside), for the list.
 	ListSchedules(ctx context.Context, arg ListSchedulesParams) ([]ListSchedulesRow, error)
 	ListScriptRunTargets(ctx context.Context, runID uuid.UUID) ([]ScriptRunTarget, error)
-	ListScripts(ctx context.Context, workspaceID uuid.UUID) ([]Script, error)
+	// A workspace's runs, newest first, with how each went on its servers.
+	ListScriptRuns(ctx context.Context, arg ListScriptRunsParams) ([]ListScriptRunsRow, error)
+	// With who wrote them and each one's newest run, for the library.
+	ListScripts(ctx context.Context, workspaceID uuid.UUID) ([]ListScriptsRow, error)
+	// Pinned first, then the most recently changed.
+	ListServerNotes(ctx context.Context, serverID uuid.UUID) ([]ServerNote, error)
 	// Runs that touched one server, newest first, with what they did there.
-	// script_id narrows to one script; pattern (ILIKE) matches the run's name.
 	ListServerScriptRuns(ctx context.Context, arg ListServerScriptRunsParams) ([]ListServerScriptRunsRow, error)
 	ListServerWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListServerWorkspacesRow, error)
 	// Filters combine with AND; values inside one filter (os, status, tags)
@@ -220,11 +299,17 @@ type Querier interface {
 	// Servers whose last check is older than @before (or that were never checked),
 	// the longest waiting first.
 	ListServersDueForCheck(ctx context.Context, before time.Time) ([]Server, error)
+	// Online servers that aren't known to be something other than Linux.
+	ListServersToSample(ctx context.Context) ([]Server, error)
 	ListStorageWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListStorageWorkspacesRow, error)
 	ListStorages(ctx context.Context, arg ListStoragesParams) ([]Storage, error)
 	// Storages whose last check is older than @before (or that were never
 	// checked), the longest waiting first.
 	ListStoragesDueForCheck(ctx context.Context, before time.Time) ([]Storage, error)
+	// Online storages not measured since @before, the longest waiting first.
+	ListStoragesDueForScan(ctx context.Context, before time.Time) ([]Storage, error)
+	// Without the data. user_id narrows to one person's sessions.
+	ListTerminalRecordings(ctx context.Context, arg ListTerminalRecordingsParams) ([]ListTerminalRecordingsRow, error)
 	// ---- Grants ----
 	// Every grant that applies to a user, directly or through a group.
 	ListUserGrants(ctx context.Context, userID *uuid.UUID) ([]AccessGrant, error)
@@ -247,16 +332,26 @@ type Querier interface {
 	MoveStoragesToWorkspace(ctx context.Context, arg MoveStoragesToWorkspaceParams) (int64, error)
 	// Where a service lands at the end of its category (or of the uncategorized).
 	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
+	// Rows of runs that left no backup, past the newest @keep of a plan.
+	PruneBackupRecords(ctx context.Context, arg PruneBackupRecordsParams) error
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
 	PruneFirewallChanges(ctx context.Context, arg PruneFirewallChangesParams) error
 	// Keeps a schedule's newest runs, and every one still going.
 	PruneScheduleRuns(ctx context.Context, arg PruneScheduleRunsParams) error
+	PruneServerCheckBuckets(ctx context.Context, before time.Time) (int64, error)
+	PruneServerSamples(ctx context.Context, before time.Time) (int64, error)
+	PruneServerStatusChanges(ctx context.Context, before time.Time) (int64, error)
+	PruneStorageChecks(ctx context.Context, before time.Time) (int64, error)
+	PruneStorageUsage(ctx context.Context, before time.Time) (int64, error)
+	// Past each workspace's keep_days (90 without settings). Live ones stay.
+	PruneTerminalRecordings(ctx context.Context) (int64, error)
 	// PutAppFavicon stores a fetched favicon only while the service still exists
 	// at the address it was fetched from, so a slow fetch can't overwrite a
 	// newer one.
 	PutAppFavicon(ctx context.Context, arg PutAppFaviconParams) (int64, error)
 	PutAppLogo(ctx context.Context, arg PutAppLogoParams) error
+	PutWorkspaceLogo(ctx context.Context, arg PutWorkspaceLogoParams) error
 	RecordAlertDelivery(ctx context.Context, arg RecordAlertDeliveryParams) error
 	// Version and domain keep their last known value while a server is away.
 	RecordDNSServerCheck(ctx context.Context, arg RecordDNSServerCheckParams) (DnsServer, error)
@@ -264,6 +359,7 @@ type Querier interface {
 	// Stores a connection check. OS fields are only overwritten when the check
 	// got far enough to read them (detected = true).
 	RecordServerCheck(ctx context.Context, arg RecordServerCheckParams) (Server, error)
+	RecordServerCheckBucket(ctx context.Context, arg RecordServerCheckBucketParams) error
 	// host_key is only stored when the check saw one (SFTP).
 	RecordStorageCheck(ctx context.Context, arg RecordStorageCheckParams) (Storage, error)
 	RemoveServerTags(ctx context.Context, arg RemoveServerTagsParams) (int64, error)
@@ -275,7 +371,15 @@ type Querier interface {
 	// While it runs, so the page shows each finished destination.
 	SaveScheduleRunResults(ctx context.Context, arg SaveScheduleRunResultsParams) error
 	SaveScriptTargetOutput(ctx context.Context, arg SaveScriptTargetOutputParams) error
+	SaveTerminalRecording(ctx context.Context, arg SaveTerminalRecordingParams) error
+	ServerCheckSeries(ctx context.Context, arg ServerCheckSeriesParams) ([]ServerCheckSeriesRow, error)
+	ServerCheckSummary(ctx context.Context, arg ServerCheckSummaryParams) ([]ServerCheckSummaryRow, error)
 	ServerOSFacets(ctx context.Context, arg ServerOSFacetsParams) ([]ServerOSFacetsRow, error)
+	ServerSampleSeries(ctx context.Context, arg ServerSampleSeriesParams) ([]ServerSampleSeriesRow, error)
+	// Averages and peaks over the range, and the root disk at its start and end
+	// (for growth and "full in N days").
+	ServerSampleSummary(ctx context.Context, arg ServerSampleSummaryParams) ([]ServerSampleSummaryRow, error)
+	ServerStatusChanges(ctx context.Context, arg ServerStatusChangesParams) ([]ServerStatusChange, error)
 	ServerStatusFacets(ctx context.Context, arg ServerStatusFacetsParams) ([]ServerStatusFacetsRow, error)
 	ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams) ([]ServerTagFacetsRow, error)
 	SetAnsibleRunJob(ctx context.Context, arg SetAnsibleRunJobParams) error
@@ -283,37 +387,64 @@ type Querier interface {
 	SetAppLogoKind(ctx context.Context, arg SetAppLogoKindParams) (App, error)
 	// A service of another workspace (or one already removed) is left alone.
 	SetAppPlace(ctx context.Context, arg SetAppPlaceParams) error
-	SetBackupPlanNextRun(ctx context.Context, arg SetBackupPlanNextRunParams) error
+	SetBackupCopy(ctx context.Context, arg SetBackupCopyParams) error
+	SetBackupJob(ctx context.Context, arg SetBackupJobParams) error
+	SetBackupPlanNext(ctx context.Context, arg SetBackupPlanNextParams) error
+	SetBackupPlanStorages(ctx context.Context, arg SetBackupPlanStoragesParams) error
+	SetBackupVerified(ctx context.Context, arg SetBackupVerifiedParams) error
 	SetDNSServerFavorite(ctx context.Context, arg SetDNSServerFavoriteParams) (DnsServer, error)
 	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
 	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)
 	SetDatabasePaused(ctx context.Context, arg SetDatabasePausedParams) (Database, error)
 	SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error)
+	SetRestoreJob(ctx context.Context, arg SetRestoreJobParams) error
+	SetRestoreSafety(ctx context.Context, arg SetRestoreSafetyParams) error
 	// Pausing and resuming don't change whose access it runs with.
 	SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) (Schedule, error)
 	SetScheduleNext(ctx context.Context, arg SetScheduleNextParams) error
 	SetScheduleRunJob(ctx context.Context, arg SetScheduleRunJobParams) error
 	SetScriptRunJob(ctx context.Context, arg SetScriptRunJobParams) error
 	SetServerFavorite(ctx context.Context, arg SetServerFavoriteParams) (Server, error)
+	// Pinning isn't an edit: it keeps who changed it last and when.
+	SetServerNotePinned(ctx context.Context, arg SetServerNotePinnedParams) (ServerNote, error)
 	SetStorageFavorite(ctx context.Context, arg SetStorageFavoriteParams) (Storage, error)
+	SetTerminalRecordingSettings(ctx context.Context, arg SetTerminalRecordingSettingsParams) (TerminalRecordingSetting, error)
 	// Replaces the groups of one user (approving someone, editing them).
 	SetUserGroups(ctx context.Context, arg SetUserGroupsParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (User, error)
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
 	SetUsername(ctx context.Context, arg SetUsernameParams) (User, error)
+	SetWorkspaceLogoKind(ctx context.Context, arg SetWorkspaceLogoKindParams) (Workspace, error)
 	SettleFirewallChanges(ctx context.Context, arg SettleFirewallChangesParams) error
 	StartAnsibleRun(ctx context.Context, id uuid.UUID) error
+	StartBackup(ctx context.Context, arg StartBackupParams) error
 	StartJob(ctx context.Context, id uuid.UUID) error
+	StartRestore(ctx context.Context, id uuid.UUID) error
 	StartScheduleRun(ctx context.Context, id uuid.UUID) error
 	StartScriptRun(ctx context.Context, id uuid.UUID) error
 	StartScriptTarget(ctx context.Context, arg StartScriptTargetParams) error
+	// The same activity, totalled per storage (a transfer between two storages
+	// counts for both).
+	StorageActivityByStorage(ctx context.Context, arg StorageActivityByStorageParams) ([]StorageActivityByStorageRow, error)
+	// Finished file transfers, cron job syncs and database backups touching
+	// these storages, per time bucket and kind.
+	StorageActivitySeries(ctx context.Context, arg StorageActivitySeriesParams) ([]StorageActivitySeriesRow, error)
+	StorageCheckSeries(ctx context.Context, arg StorageCheckSeriesParams) ([]StorageCheckSeriesRow, error)
+	StorageCheckSummary(ctx context.Context, arg StorageCheckSummaryParams) ([]StorageCheckSummaryRow, error)
+	// Each time a storage's status changed since @since, newest first. Looks a
+	// day further back (lookback) so the first change has its previous status.
+	StorageStatusChanges(ctx context.Context, arg StorageStatusChangesParams) ([]StorageStatusChangesRow, error)
+	// Measurements since @since, plus the last one before it (the baseline for
+	// growth), oldest first.
+	StorageUsageHistory(ctx context.Context, arg StorageUsageHistoryParams) ([]StorageUsageHistoryRow, error)
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	TouchUserLogin(ctx context.Context, id uuid.UUID) error
 	UpdateAlertChannel(ctx context.Context, arg UpdateAlertChannelParams) (AlertChannel, error)
 	UpdateApp(ctx context.Context, arg UpdateAppParams) (App, error)
 	UpdateAppAccount(ctx context.Context, arg UpdateAppAccountParams) (AppAccount, error)
 	UpdateAppCategory(ctx context.Context, arg UpdateAppCategoryParams) (AppCategory, error)
+	UpdateBackupPlan(ctx context.Context, arg UpdateBackupPlanParams) (DatabaseBackupPlan, error)
 	// Full replace of the editable fields; the handler resolves the token first.
 	UpdateDNSServer(ctx context.Context, arg UpdateDNSServerParams) (DnsServer, error)
 	// Full replace of the editable fields; the handler resolves the password first.
@@ -326,14 +457,13 @@ type Querier interface {
 	// Full replace of the editable fields. The handler resolves secrets first:
 	// it passes the stored ones back unchanged when the request leaves them out.
 	UpdateServer(ctx context.Context, arg UpdateServerParams) (Server, error)
+	UpdateServerNote(ctx context.Context, arg UpdateServerNoteParams) (ServerNote, error)
 	// Full replace of the editable fields; the handler resolves secrets first.
 	UpdateStorage(ctx context.Context, arg UpdateStorageParams) (Storage, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
-	UpsertDatabaseBackupPlan(ctx context.Context, arg UpsertDatabaseBackupPlanParams) (DatabaseBackupPlan, error)
 	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)
 	UserStatusCounts(ctx context.Context) ([]UserStatusCountsRow, error)
-	VerifyDatabaseBackup(ctx context.Context, arg VerifyDatabaseBackupParams) (DatabaseBackup, error)
 }
 
 var _ Querier = (*Queries)(nil)

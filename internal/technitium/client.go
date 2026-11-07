@@ -251,6 +251,37 @@ type RawRecord struct {
 }
 
 // ListRecords returns the zone and every record in it.
+// ZoneOptions is who may copy a zone and who hears about its changes, plus a
+// Secondary's primaries.
+type ZoneOptions struct {
+	Type              string   `json:"type"`
+	ZoneTransfer      string   `json:"zoneTransfer"`
+	ZoneTransferACL   []string `json:"zoneTransferNetworkACL"`
+	Notify            string   `json:"notify"`
+	NotifyNameServers []string `json:"notifyNameServers"`
+	PrimaryAddresses  []string `json:"primaryNameServerAddresses"`
+	NotifyFailed      bool     `json:"notifyFailed"`
+	NotifyFailedFor   []string `json:"notifyFailedFor"`
+}
+
+func (c *Client) ZoneOptions(ctx context.Context, zone string) (ZoneOptions, error) {
+	var out ZoneOptions
+	err := c.call(ctx, "/api/zones/options/get", url.Values{"zone": {apiZone(zone)}}, &out)
+	return out, err
+}
+
+// SetZoneOptions sends the form as is, with the zone added. An empty list
+// is sent as "false", which is how the API clears one.
+func (c *Client) SetZoneOptions(ctx context.Context, zone string, form url.Values) error {
+	form.Set("zone", apiZone(zone))
+	return c.call(ctx, "/api/zones/options/set", form, nil)
+}
+
+// Resync makes a Secondary copy the zone again from its primary.
+func (c *Client) Resync(ctx context.Context, zone string) error {
+	return c.call(ctx, "/api/zones/resync", url.Values{"zone": {apiZone(zone)}}, nil)
+}
+
 func (c *Client) ListRecords(ctx context.Context, zone string) (Zone, []RawRecord, error) {
 	name := apiZone(zone)
 	var out struct {

@@ -105,15 +105,27 @@ func rdataInt(d map[string]any, key string) *int {
 
 // rdataText shows a type Morcheh has no form for: "key: value" pairs in a
 // stable order.
+// A field the server also sends readable ("refresh" next to "refreshString":
+// "15m") shows the readable one, once; base64 copies are left out.
 func rdataText(d map[string]any) string {
 	keys := make([]string, 0, len(d))
 	for k := range d {
+		if base, ok := strings.CutSuffix(k, "String"); ok && d[base] != nil {
+			continue
+		}
+		if base, ok := strings.CutSuffix(k, "Base64"); ok && d[base] != nil {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
 		var v string
+		if readable, ok := d[k+"String"].(string); ok {
+			parts = append(parts, k+": "+readable)
+			continue
+		}
 		switch t := d[k].(type) {
 		case string:
 			v = t

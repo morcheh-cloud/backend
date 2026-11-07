@@ -62,6 +62,7 @@ type Session struct {
 	conn  *sshpool.Conn
 	ssh   *ssh.Session
 	stdin io.WriteCloser
+	rec   Recorder
 
 	mu       sync.Mutex
 	number   int
@@ -76,12 +77,13 @@ type Session struct {
 
 // Info is a session as the API lists it.
 type Info struct {
-	ID      string
-	Title   string
-	Created time.Time
-	Cols    int
-	Rows    int
-	Clients int
+	ID       string
+	Title    string
+	Created  time.Time
+	Cols     int
+	Rows     int
+	Clients  int
+	Recorded bool
 }
 
 type Manager struct {
@@ -103,6 +105,16 @@ type Options struct {
 	Cwd string
 	// Owner is the user opening it.
 	Owner string
+	// Recorder, if set, gets every byte of output and each resize.
+	Recorder Recorder
+}
+
+// Recorder keeps a copy of a session: its output (never its input), its
+// size changes, and the end with the shell's exit code (-1 when unknown).
+type Recorder interface {
+	Output(data []byte)
+	Resize(cols, rows int)
+	Ended(code int)
 }
 
 // Start opens a shell over conn. The session holds the connection (Acquire)
@@ -155,7 +167,7 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 
 	s := &Session{
 		ID: uuid.NewString(), ServerID: serverID, Owner: o.Owner, Created: time.Now(),
-		m: m, conn: conn, ssh: sess, stdin: stdin,
+		m: m, conn: conn, ssh: sess, stdin: stdin, rec: o.Recorder,
 		cols: o.Cols, rows: o.Rows, subs: map[*Sub]struct{}{}, detached: time.Now(),
 	}
 	m.mu.Lock()
@@ -185,6 +197,9 @@ func (s *Session) run(stdout io.Reader) {
 			data := bytes.Clone(chunk[:n])
 			s.mu.Lock()
 			s.buf = trim(append(s.buf, data...))
+			if s.rec != nil {
+				s.rec.Output(data)
+			}
 			s.broadcastLocked(Event{Data: data})
 			s.mu.Unlock()
 		}
@@ -204,6 +219,9 @@ func (s *Session) run(stdout io.Reader) {
 	}
 	s.ssh.Close()
 	s.conn.Release()
+	if s.rec != nil {
+		s.rec.Ended(code)
+	}
 
 	s.m.mu.Lock()
 	delete(s.m.sessions, s.ID)
@@ -291,11 +309,24 @@ func (s *Session) Resize(cols, rows int) error {
 	s.mu.Lock()
 	same := cols == s.cols && rows == s.rows
 	s.cols, s.rows = cols, rows
+	if !same && s.rec != nil {
+		s.rec.Resize(cols, rows)
+	}
 	s.mu.Unlock()
 	if same {
 		return nil
 	}
 	return s.ssh.WindowChange(rows, cols)
+}
+
+// Recorded: the session's output is being kept.
+func (s *Session) Recorded() bool { return s.rec != nil }
+
+// Size is the terminal's current size.
+func (s *Session) Size() (cols, rows int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cols, s.rows
 }
 
 func (s *Session) Title() string {
@@ -319,7 +350,7 @@ func (s *Session) Kill() {
 func (s *Session) info() Info {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return Info{ID: s.ID, Title: s.title, Created: s.Created, Cols: s.cols, Rows: s.rows, Clients: len(s.subs)}
+	return Info{ID: s.ID, Title: s.title, Created: s.Created, Cols: s.cols, Rows: s.rows, Clients: len(s.subs), Recorded: s.rec != nil}
 }
 
 // Get finds a running session of the server opened by owner.
