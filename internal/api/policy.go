@@ -325,7 +325,19 @@ var policies = map[string]policy{
 	"storage-copy":           onStorage(auth.Engineer),
 	"storage-delete":         onStorage(auth.Engineer),
 	"share-storage-file":     onStorage(auth.Engineer),
-	"transfer-files":         active,
+	// Bucket settings (S3): who can read it, encryption and retention are
+	// Owner's; the rest Engineer's.
+	"get-storage-bucket":            onStorage(auth.Viewer),
+	"create-storage-bucket":         onStorage(auth.Engineer),
+	"empty-storage-bucket":          onStorage(auth.Engineer),
+	"set-storage-bucket-versioning": onStorage(auth.Engineer),
+	"set-storage-bucket-lifecycle":  onStorage(auth.Engineer),
+	"set-storage-bucket-tags":       onStorage(auth.Engineer),
+	"set-storage-bucket-cors":       onStorage(auth.Engineer),
+	"set-storage-bucket-access":     onStorage(auth.Owner),
+	"set-storage-bucket-encryption": onStorage(auth.Owner),
+	"set-storage-bucket-retention":  onStorage(auth.Owner),
+	"transfer-files":                active,
 
 	// DNS: a DNS server's level is its workspace's.
 	"list-dns-servers":          active,

@@ -23,10 +23,10 @@ SELECT workspace_id FROM schedules WHERE id = $1;
 -- name: CreateSchedule :one
 INSERT INTO schedules (
     workspace_id, name, description, action, cron, timezone, enabled, source,
-    destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by
+    destinations, options, task, server_ids, storage_ids, next_run_at, created_by, updated_by
 ) VALUES (
     @workspace_id, @name, @description, @action, @cron, @timezone, @enabled, @source,
-    @destinations, @options, @server_ids, @storage_ids, sqlc.narg('next_run_at'),
+    @destinations, @options, @task, @server_ids, @storage_ids, sqlc.narg('next_run_at'),
     sqlc.narg('created_by'), sqlc.narg('created_by')
 )
 RETURNING *;
@@ -35,6 +35,8 @@ RETURNING *;
 UPDATE schedules SET
     name = @name,
     description = @description,
+    action = @action,
+    task = @task,
     cron = @cron,
     timezone = @timezone,
     enabled = @enabled,
@@ -94,6 +96,9 @@ UPDATE schedule_runs SET state = 'running', started_at = now() WHERE id = $1 AND
 -- While it runs, so the page shows each finished destination.
 UPDATE schedule_runs SET results = @results, files = @files, bytes = @bytes WHERE id = @id;
 
+-- name: SetScheduleRunLink :exec
+UPDATE schedule_runs SET link = @link WHERE id = @id;
+
 -- name: FinishScheduleRun :exec
 UPDATE schedule_runs SET
     state = @state, error = @error, results = @results, files = @files, bytes = @bytes,
@@ -142,10 +147,17 @@ WHERE d.schedule_id = @schedule_id
   );
 
 -- name: ListScheduleEndNames :many
--- Names of the servers and storages schedules point at.
+-- Names of the servers, storages, scripts, playbooks and databases schedules
+-- point at.
 SELECT id, name, workspace_id, 'server'::text AS kind FROM servers WHERE id = ANY (@ids::uuid[])
 UNION ALL
-SELECT id, name, workspace_id, 'storage'::text AS kind FROM storages WHERE id = ANY (@ids::uuid[]);
+SELECT id, name, workspace_id, 'storage'::text AS kind FROM storages WHERE id = ANY (@ids::uuid[])
+UNION ALL
+SELECT id, name, workspace_id, 'script'::text AS kind FROM scripts WHERE id = ANY (@ids::uuid[])
+UNION ALL
+SELECT id, name, workspace_id, 'playbook'::text AS kind FROM ansible_playbooks WHERE id = ANY (@ids::uuid[])
+UNION ALL
+SELECT id, name, workspace_id, 'database'::text AS kind FROM databases WHERE id = ANY (@ids::uuid[]);
 
 -- name: ListUserNames :many
 SELECT id, username, full_name, status FROM users WHERE id = ANY (@ids::uuid[]);

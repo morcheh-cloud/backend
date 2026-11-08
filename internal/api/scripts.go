@@ -651,88 +651,16 @@ func registerScripts(api huma.API, h *scriptHandler) {
 			Job Job             `json:"job"`
 		}
 	}, error) {
-		b := in.Body
-		p := principalOf(ctx)
-		ids := make([]uuid.UUID, 0, len(b.ServerIDs))
-		for _, raw := range b.ServerIDs {
-			id := uuid.MustParse(raw)
-			if !slices.Contains(ids, id) {
-				ids = append(ids, id)
-			}
-		}
-		where, err := h.authz.requireServers(ctx, ids, auth.Engineer)
+		plan, err := h.plan(ctx, in.Body, uuid.Nil)
 		if err != nil {
 			return nil, err
 		}
-		var ws uuid.UUID
-		servers := make([]sqlc.Server, 0, len(ids))
-		for _, id := range ids {
-			w, ok := where[id]
-			if !ok {
-				return nil, fieldError("body.server_ids", "A chosen server doesn't exist.", id.String())
-			}
-			if ws == uuid.Nil {
-				ws = w
-			} else if w != ws {
-				return nil, fieldError("body.server_ids", "The servers must all be in one workspace.", id.String())
-			}
-			s, err := h.servers.get(ctx, id.String())
-			if err != nil {
-				return nil, err
-			}
-			servers = append(servers, s)
-		}
-		sort.SliceStable(servers, func(i, j int) bool { return strings.ToLower(servers[i].Name) < strings.ToLower(servers[j].Name) })
-
-		var scriptID *uuid.UUID
-		var src ScriptInput
-		if b.ScriptID != nil && *b.ScriptID != "" {
-			s, err := h.q.GetScript(ctx, uuid.MustParse(*b.ScriptID))
-			if isNotFound(err) || (err == nil && s.WorkspaceID != ws) {
-				return nil, fieldError("body.script_id", "This script isn't in the servers' workspace.", *b.ScriptID)
-			}
-			if err != nil {
-				return nil, internalError(err)
-			}
-			scriptID = &s.ID
-			src = ScriptInput{Name: s.Name, Interpreter: s.Interpreter, Content: s.Content, RunAs: s.RunAs, TimeoutSeconds: s.TimeoutSeconds, Params: scriptParams(s.Params)}
-		} else {
-			src = ScriptInput{
-				Name: cmpOr(strings.TrimSpace(b.Name), "Command"), Interpreter: cmpOr(b.Interpreter, "bash"),
-				Content: b.Content, RunAs: cmpOr(b.RunAs, "user"), TimeoutSeconds: b.TimeoutSeconds,
-			}
-			if src.TimeoutSeconds == 0 {
-				src.TimeoutSeconds = 600
-			}
-			if strings.TrimSpace(src.Content) == "" {
-				return nil, fieldError("body.content", "Write something to run.", nil)
-			}
-			if strings.ContainsRune(src.Content, 0) {
-				return nil, fieldError("body.content", "The script contains a NUL byte.", nil)
-			}
-		}
-		env, err := runEnv(src.Params, scriptID != nil, b.Env)
+		run, err := h.create(ctx, plan)
 		if err != nil {
 			return nil, err
-		}
-		envJSON, _ := json.Marshal(env)
-		run, err := h.q.CreateScriptRun(ctx, sqlc.CreateScriptRunParams{
-			WorkspaceID: ws, ScriptID: scriptID, Name: src.Name, Interpreter: src.Interpreter, Content: src.Content,
-			RunAs: src.RunAs, TimeoutSeconds: src.TimeoutSeconds, Env: envJSON, CreatedBy: p.ID(),
-			CreatedByName: cmpOr(p.User.FullName, p.User.Username),
-		})
-		if err != nil {
-			return nil, internalError(err)
 		}
 		bg := context.WithoutCancel(ctx)
-		for i, s := range servers {
-			if err := h.q.CreateScriptRunTarget(ctx, sqlc.CreateScriptRunTargetParams{
-				RunID: run.ID, ServerID: &s.ID, ServerName: s.Name, Position: int32(i),
-			}); err != nil {
-				_ = h.q.EndScriptRun(bg, sqlc.EndScriptRunParams{ID: run.ID, State: jobs.Failed, Error: "It couldn't be saved."})
-				return nil, internalError(err)
-			}
-		}
+		src, servers, ids := plan.src, plan.servers, plan.ids
 		title := fmt.Sprintf("Run %s on %s", src.Name, countServers(len(servers)))
 		if len(servers) == 1 {
 			title = fmt.Sprintf("Run %s on %s", src.Name, servers[0].Name)
@@ -956,6 +884,119 @@ func registerScripts(api huma.API, h *scriptHandler) {
 	})
 }
 
+// scriptRunPlan is a checked request to run a script.
+type scriptRunPlan struct {
+	ws       uuid.UUID
+	ids      []uuid.UUID
+	servers  []sqlc.Server
+	scriptID *uuid.UUID
+	src      ScriptInput
+	env      map[string]string
+}
+
+// plan checks a run request as the person in ctx: Engineer on every server,
+// all in one workspace (ws, when not Nil). Cron jobs check theirs with it too.
+func (h *scriptHandler) plan(ctx context.Context, b startScriptRunBody, ws uuid.UUID) (scriptRunPlan, error) {
+	var plan scriptRunPlan
+	ids := make([]uuid.UUID, 0, len(b.ServerIDs))
+	for _, raw := range b.ServerIDs {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return plan, fieldError("body.server_ids", "Not a server id.", raw)
+		}
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return plan, fieldError("body.server_ids", "Choose at least one server.", nil)
+	}
+	where, err := h.authz.requireServers(ctx, ids, auth.Engineer)
+	if err != nil {
+		return plan, err
+	}
+	servers := make([]sqlc.Server, 0, len(ids))
+	for _, id := range ids {
+		w, ok := where[id]
+		if !ok {
+			return plan, fieldError("body.server_ids", "A chosen server doesn't exist.", id.String())
+		}
+		if ws == uuid.Nil {
+			ws = w
+		} else if w != ws {
+			return plan, fieldError("body.server_ids", "The servers must all be in one workspace.", id.String())
+		}
+		s, err := h.servers.get(ctx, id.String())
+		if err != nil {
+			return plan, err
+		}
+		servers = append(servers, s)
+	}
+	sort.SliceStable(servers, func(i, j int) bool { return strings.ToLower(servers[i].Name) < strings.ToLower(servers[j].Name) })
+
+	var scriptID *uuid.UUID
+	var src ScriptInput
+	if b.ScriptID != nil && *b.ScriptID != "" {
+		id, err := uuid.Parse(*b.ScriptID)
+		if err != nil {
+			return plan, fieldError("body.script_id", "Not a script id.", *b.ScriptID)
+		}
+		s, err := h.q.GetScript(ctx, id)
+		if isNotFound(err) || (err == nil && s.WorkspaceID != ws) {
+			return plan, fieldError("body.script_id", "This script isn't in the servers' workspace.", *b.ScriptID)
+		}
+		if err != nil {
+			return plan, internalError(err)
+		}
+		scriptID = &s.ID
+		src = ScriptInput{Name: s.Name, Interpreter: s.Interpreter, Content: s.Content, RunAs: s.RunAs, TimeoutSeconds: s.TimeoutSeconds, Params: scriptParams(s.Params)}
+	} else {
+		src = ScriptInput{
+			Name: cmpOr(strings.TrimSpace(b.Name), "Command"), Interpreter: cmpOr(b.Interpreter, "bash"),
+			Content: b.Content, RunAs: cmpOr(b.RunAs, "user"), TimeoutSeconds: b.TimeoutSeconds,
+		}
+		if src.TimeoutSeconds == 0 {
+			src.TimeoutSeconds = 600
+		}
+		if strings.TrimSpace(src.Content) == "" {
+			return plan, fieldError("body.content", "Write something to run.", nil)
+		}
+		if strings.ContainsRune(src.Content, 0) {
+			return plan, fieldError("body.content", "The script contains a NUL byte.", nil)
+		}
+	}
+	env, err := runEnv(src.Params, scriptID != nil, b.Env)
+	if err != nil {
+		return plan, err
+	}
+	return scriptRunPlan{ws: ws, ids: ids, servers: servers, scriptID: scriptID, src: src, env: env}, nil
+}
+
+// create stores a planned run with its servers, not yet started.
+func (h *scriptHandler) create(ctx context.Context, plan scriptRunPlan) (sqlc.ScriptRun, error) {
+	p := principalOf(ctx)
+	src := plan.src
+	envJSON, _ := json.Marshal(plan.env)
+	run, err := h.q.CreateScriptRun(ctx, sqlc.CreateScriptRunParams{
+		WorkspaceID: plan.ws, ScriptID: plan.scriptID, Name: src.Name, Interpreter: src.Interpreter, Content: src.Content,
+		RunAs: src.RunAs, TimeoutSeconds: src.TimeoutSeconds, Env: envJSON, CreatedBy: p.ID(),
+		CreatedByName: cmpOr(p.User.FullName, p.User.Username),
+	})
+	if err != nil {
+		return run, internalError(err)
+	}
+	bg := context.WithoutCancel(ctx)
+	for i, s := range plan.servers {
+		if err := h.q.CreateScriptRunTarget(ctx, sqlc.CreateScriptRunTargetParams{
+			RunID: run.ID, ServerID: &s.ID, ServerName: s.Name, Position: int32(i),
+		}); err != nil {
+			_ = h.q.EndScriptRun(bg, sqlc.EndScriptRunParams{ID: run.ID, State: jobs.Failed, Error: "It couldn't be saved."})
+			return run, internalError(err)
+		}
+	}
+	return run, nil
+}
+
 // ---- Running ----
 
 type scriptRunParams struct {
@@ -967,8 +1008,13 @@ func (h *scriptHandler) runJob(ctx context.Context, t *jobs.Task) (any, error) {
 	if err := t.Decode(&params); err != nil {
 		return nil, err
 	}
+	return h.execute(ctx, t, params.RunID)
+}
+
+// execute runs a stored run in the job t (its own, or a cron job's).
+func (h *scriptHandler) execute(ctx context.Context, t *jobs.Task, runID uuid.UUID) (any, error) {
 	bg := context.WithoutCancel(ctx)
-	run, err := h.q.GetScriptRun(ctx, params.RunID)
+	run, err := h.q.GetScriptRun(ctx, runID)
 	if isNotFound(err) {
 		return nil, errors.New("The run was deleted before it started.")
 	}

@@ -53,13 +53,13 @@ func (q *Queries) CountScheduleRuns(ctx context.Context, arg CountScheduleRunsPa
 const createSchedule = `-- name: CreateSchedule :one
 INSERT INTO schedules (
     workspace_id, name, description, action, cron, timezone, enabled, source,
-    destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by
+    destinations, options, task, server_ids, storage_ids, next_run_at, created_by, updated_by
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13,
-    $14, $14
+    $9, $10, $11, $12, $13, $14,
+    $15, $15
 )
-RETURNING id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at
+RETURNING id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at, task
 `
 
 type CreateScheduleParams struct {
@@ -73,6 +73,7 @@ type CreateScheduleParams struct {
 	Source       []byte      `json:"source"`
 	Destinations []byte      `json:"destinations"`
 	Options      []byte      `json:"options"`
+	Task         []byte      `json:"task"`
 	ServerIds    []uuid.UUID `json:"server_ids"`
 	StorageIds   []uuid.UUID `json:"storage_ids"`
 	NextRunAt    *time.Time  `json:"next_run_at"`
@@ -91,6 +92,7 @@ func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) 
 		arg.Source,
 		arg.Destinations,
 		arg.Options,
+		arg.Task,
 		arg.ServerIds,
 		arg.StorageIds,
 		arg.NextRunAt,
@@ -116,6 +118,7 @@ func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) 
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Task,
 	)
 	return i, err
 }
@@ -127,7 +130,7 @@ INSERT INTO schedule_runs (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10
 )
-RETURNING id, schedule_id, workspace_id, trigger, dry_run, plan, state, error, results, files, bytes, job_id, created_by, created_by_name, created_at, started_at, finished_at
+RETURNING id, schedule_id, workspace_id, trigger, dry_run, plan, state, error, results, files, bytes, job_id, created_by, created_by_name, created_at, started_at, finished_at, link
 `
 
 type CreateScheduleRunParams struct {
@@ -175,6 +178,7 @@ func (q *Queries) CreateScheduleRun(ctx context.Context, arg CreateScheduleRunPa
 		&i.CreatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.Link,
 	)
 	return i, err
 }
@@ -249,7 +253,7 @@ func (q *Queries) FinishScheduleRun(ctx context.Context, arg FinishScheduleRunPa
 }
 
 const getSchedule = `-- name: GetSchedule :one
-SELECT id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at FROM schedules WHERE id = $1
+SELECT id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at, task FROM schedules WHERE id = $1
 `
 
 func (q *Queries) GetSchedule(ctx context.Context, id uuid.UUID) (Schedule, error) {
@@ -274,12 +278,13 @@ func (q *Queries) GetSchedule(ctx context.Context, id uuid.UUID) (Schedule, erro
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Task,
 	)
 	return i, err
 }
 
 const getScheduleRun = `-- name: GetScheduleRun :one
-SELECT id, schedule_id, workspace_id, trigger, dry_run, plan, state, error, results, files, bytes, job_id, created_by, created_by_name, created_at, started_at, finished_at FROM schedule_runs WHERE id = $1
+SELECT id, schedule_id, workspace_id, trigger, dry_run, plan, state, error, results, files, bytes, job_id, created_by, created_by_name, created_at, started_at, finished_at, link FROM schedule_runs WHERE id = $1
 `
 
 func (q *Queries) GetScheduleRun(ctx context.Context, id uuid.UUID) (ScheduleRun, error) {
@@ -303,6 +308,7 @@ func (q *Queries) GetScheduleRun(ctx context.Context, id uuid.UUID) (ScheduleRun
 		&i.CreatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.Link,
 	)
 	return i, err
 }
@@ -330,7 +336,7 @@ func (q *Queries) GetScheduleWorkspace(ctx context.Context, id uuid.UUID) (uuid.
 }
 
 const listActiveScheduleRuns = `-- name: ListActiveScheduleRuns :many
-SELECT id, schedule_id, workspace_id, trigger, dry_run, plan, state, error, results, files, bytes, job_id, created_by, created_by_name, created_at, started_at, finished_at FROM schedule_runs
+SELECT id, schedule_id, workspace_id, trigger, dry_run, plan, state, error, results, files, bytes, job_id, created_by, created_by_name, created_at, started_at, finished_at, link FROM schedule_runs
 WHERE state IN ('queued', 'running')
   AND ($1::uuid IS NULL OR schedule_id = $1::uuid)
 `
@@ -362,6 +368,7 @@ func (q *Queries) ListActiveScheduleRuns(ctx context.Context, scheduleID *uuid.U
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.Link,
 		); err != nil {
 			return nil, err
 		}
@@ -374,7 +381,7 @@ func (q *Queries) ListActiveScheduleRuns(ctx context.Context, scheduleID *uuid.U
 }
 
 const listDueSchedules = `-- name: ListDueSchedules :many
-SELECT id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at FROM schedules
+SELECT id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at, task FROM schedules
 WHERE enabled AND next_run_at IS NOT NULL AND next_run_at <= $1
 ORDER BY next_run_at
 LIMIT 100
@@ -408,6 +415,7 @@ func (q *Queries) ListDueSchedules(ctx context.Context, now *time.Time) ([]Sched
 			&i.UpdatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Task,
 		); err != nil {
 			return nil, err
 		}
@@ -420,7 +428,7 @@ func (q *Queries) ListDueSchedules(ctx context.Context, now *time.Time) ([]Sched
 }
 
 const listEnabledSchedulesWithoutNext = `-- name: ListEnabledSchedulesWithoutNext :many
-SELECT id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at FROM schedules WHERE enabled AND next_run_at IS NULL
+SELECT id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at, task FROM schedules WHERE enabled AND next_run_at IS NULL
 `
 
 func (q *Queries) ListEnabledSchedulesWithoutNext(ctx context.Context) ([]Schedule, error) {
@@ -451,6 +459,7 @@ func (q *Queries) ListEnabledSchedulesWithoutNext(ctx context.Context) ([]Schedu
 			&i.UpdatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Task,
 		); err != nil {
 			return nil, err
 		}
@@ -466,6 +475,12 @@ const listScheduleEndNames = `-- name: ListScheduleEndNames :many
 SELECT id, name, workspace_id, 'server'::text AS kind FROM servers WHERE id = ANY ($1::uuid[])
 UNION ALL
 SELECT id, name, workspace_id, 'storage'::text AS kind FROM storages WHERE id = ANY ($1::uuid[])
+UNION ALL
+SELECT id, name, workspace_id, 'script'::text AS kind FROM scripts WHERE id = ANY ($1::uuid[])
+UNION ALL
+SELECT id, name, workspace_id, 'playbook'::text AS kind FROM ansible_playbooks WHERE id = ANY ($1::uuid[])
+UNION ALL
+SELECT id, name, workspace_id, 'database'::text AS kind FROM databases WHERE id = ANY ($1::uuid[])
 `
 
 type ListScheduleEndNamesRow struct {
@@ -475,7 +490,8 @@ type ListScheduleEndNamesRow struct {
 	Kind        string    `json:"kind"`
 }
 
-// Names of the servers and storages schedules point at.
+// Names of the servers, storages, scripts, playbooks and databases schedules
+// point at.
 func (q *Queries) ListScheduleEndNames(ctx context.Context, ids []uuid.UUID) ([]ListScheduleEndNamesRow, error) {
 	rows, err := q.db.Query(ctx, listScheduleEndNames, ids)
 	if err != nil {
@@ -502,7 +518,7 @@ func (q *Queries) ListScheduleEndNames(ctx context.Context, ids []uuid.UUID) ([]
 }
 
 const listScheduleRuns = `-- name: ListScheduleRuns :many
-SELECT id, schedule_id, workspace_id, trigger, dry_run, plan, state, error, results, files, bytes, job_id, created_by, created_by_name, created_at, started_at, finished_at FROM schedule_runs
+SELECT id, schedule_id, workspace_id, trigger, dry_run, plan, state, error, results, files, bytes, job_id, created_by, created_by_name, created_at, started_at, finished_at, link FROM schedule_runs
 WHERE schedule_id = $1
   AND ($2::text IS NULL OR state = $2::text)
 ORDER BY created_at DESC, id DESC
@@ -548,6 +564,7 @@ func (q *Queries) ListScheduleRuns(ctx context.Context, arg ListScheduleRunsPara
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.Link,
 		); err != nil {
 			return nil, err
 		}
@@ -560,7 +577,7 @@ func (q *Queries) ListScheduleRuns(ctx context.Context, arg ListScheduleRunsPara
 }
 
 const listSchedules = `-- name: ListSchedules :many
-SELECT s.id, s.workspace_id, s.name, s.description, s.action, s.cron, s.timezone, s.enabled, s.source, s.destinations, s.options, s.server_ids, s.storage_ids, s.next_run_at, s.created_by, s.updated_by, s.created_at, s.updated_at,
+SELECT s.id, s.workspace_id, s.name, s.description, s.action, s.cron, s.timezone, s.enabled, s.source, s.destinations, s.options, s.server_ids, s.storage_ids, s.next_run_at, s.created_by, s.updated_by, s.created_at, s.updated_at, s.task,
     r.id AS last_run_id, r.state AS last_run_state, r.created_at AS last_run_at,
     r.finished_at AS last_run_finished_at, r.error AS last_run_error
 FROM schedules s
@@ -600,6 +617,7 @@ type ListSchedulesRow struct {
 	UpdatedBy         *uuid.UUID  `json:"updated_by"`
 	CreatedAt         time.Time   `json:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at"`
+	Task              []byte      `json:"task"`
 	LastRunID         *uuid.UUID  `json:"last_run_id"`
 	LastRunState      *string     `json:"last_run_state"`
 	LastRunAt         *time.Time  `json:"last_run_at"`
@@ -636,6 +654,7 @@ func (q *Queries) ListSchedules(ctx context.Context, arg ListSchedulesParams) ([
 			&i.UpdatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Task,
 			&i.LastRunID,
 			&i.LastRunState,
 			&i.LastRunAt,
@@ -734,7 +753,7 @@ func (q *Queries) SaveScheduleRunResults(ctx context.Context, arg SaveScheduleRu
 const setScheduleEnabled = `-- name: SetScheduleEnabled :one
 UPDATE schedules SET enabled = $1, next_run_at = $2, updated_at = now()
 WHERE id = $3
-RETURNING id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at
+RETURNING id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at, task
 `
 
 type SetScheduleEnabledParams struct {
@@ -766,6 +785,7 @@ func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabled
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Task,
 	)
 	return i, err
 }
@@ -798,6 +818,20 @@ func (q *Queries) SetScheduleRunJob(ctx context.Context, arg SetScheduleRunJobPa
 	return err
 }
 
+const setScheduleRunLink = `-- name: SetScheduleRunLink :exec
+UPDATE schedule_runs SET link = $1 WHERE id = $2
+`
+
+type SetScheduleRunLinkParams struct {
+	Link []byte    `json:"link"`
+	ID   uuid.UUID `json:"id"`
+}
+
+func (q *Queries) SetScheduleRunLink(ctx context.Context, arg SetScheduleRunLinkParams) error {
+	_, err := q.db.Exec(ctx, setScheduleRunLink, arg.Link, arg.ID)
+	return err
+}
+
 const startScheduleRun = `-- name: StartScheduleRun :exec
 UPDATE schedule_runs SET state = 'running', started_at = now() WHERE id = $1 AND state = 'queued'
 `
@@ -811,24 +845,28 @@ const updateSchedule = `-- name: UpdateSchedule :one
 UPDATE schedules SET
     name = $1,
     description = $2,
-    cron = $3,
-    timezone = $4,
-    enabled = $5,
-    source = $6,
-    destinations = $7,
-    options = $8,
-    server_ids = $9,
-    storage_ids = $10,
-    next_run_at = $11,
-    updated_by = $12,
+    action = $3,
+    task = $4,
+    cron = $5,
+    timezone = $6,
+    enabled = $7,
+    source = $8,
+    destinations = $9,
+    options = $10,
+    server_ids = $11,
+    storage_ids = $12,
+    next_run_at = $13,
+    updated_by = $14,
     updated_at = now()
-WHERE id = $13
-RETURNING id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at
+WHERE id = $15
+RETURNING id, workspace_id, name, description, action, cron, timezone, enabled, source, destinations, options, server_ids, storage_ids, next_run_at, created_by, updated_by, created_at, updated_at, task
 `
 
 type UpdateScheduleParams struct {
 	Name         string      `json:"name"`
 	Description  string      `json:"description"`
+	Action       string      `json:"action"`
+	Task         []byte      `json:"task"`
 	Cron         string      `json:"cron"`
 	Timezone     string      `json:"timezone"`
 	Enabled      bool        `json:"enabled"`
@@ -846,6 +884,8 @@ func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) 
 	row := q.db.QueryRow(ctx, updateSchedule,
 		arg.Name,
 		arg.Description,
+		arg.Action,
+		arg.Task,
 		arg.Cron,
 		arg.Timezone,
 		arg.Enabled,
@@ -878,6 +918,7 @@ func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) 
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Task,
 	)
 	return i, err
 }

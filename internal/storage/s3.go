@@ -347,6 +347,14 @@ func (s *s3fs) Remove(ctx context.Context, p string) error {
 	if bucket == "" || (key == "" && s.bucket != "") {
 		return fmt.Errorf("can't remove the root: %w", fs.ErrPermission)
 	}
+	if key == "" {
+		// A bucket: old versions and delete markers must go too, or a
+		// versioned bucket is never empty enough to delete.
+		if _, err := s.removeAll(ctx, bucket); err != nil {
+			return err
+		}
+		return s3Err(s.c.RemoveBucket(ctx, bucket))
+	}
 	ch := make(chan minio.ObjectInfo)
 	errs := s.c.RemoveObjects(ctx, bucket, ch, minio.RemoveObjectsOptions{})
 	listErr := make(chan error, 1)
@@ -370,13 +378,7 @@ func (s *s3fs) Remove(ctx context.Context, p string) error {
 	if err := <-listErr; err != nil {
 		return err
 	}
-	if first != nil {
-		return first
-	}
-	if key == "" {
-		return s3Err(s.c.RemoveBucket(ctx, bucket))
-	}
-	return nil
+	return first
 }
 
 // copyKeys copies every object under from to the same place under to.

@@ -216,6 +216,9 @@ type Querier interface {
 	LastRestoreAt(ctx context.Context, arg LastRestoreAtParams) (time.Time, error)
 	// Each script's latest run on one server.
 	LastScriptRuns(ctx context.Context, serverID *uuid.UUID) ([]LastScriptRunsRow, error)
+	// The newest good backup of each database a connection holds (optionally of
+	// one plan): what a cron job checks.
+	LatestGoodBackups(ctx context.Context, arg LatestGoodBackupsParams) ([]DatabaseBackup, error)
 	LatestServerSamples(ctx context.Context, ids []uuid.UUID) ([]ServerSample, error)
 	LatestStorageUsage(ctx context.Context, ids []uuid.UUID) ([]StorageUsage, error)
 	ListActiveBackups(ctx context.Context, planID *uuid.UUID) ([]DatabaseBackup, error)
@@ -277,7 +280,8 @@ type Querier interface {
 	ListPrincipalUsers(ctx context.Context) ([]ListPrincipalUsersRow, error)
 	ListQueuedJobs(ctx context.Context) ([]Job, error)
 	ListRestores(ctx context.Context, arg ListRestoresParams) ([]DatabaseRestore, error)
-	// Names of the servers and storages schedules point at.
+	// Names of the servers, storages, scripts, playbooks and databases schedules
+	// point at.
 	ListScheduleEndNames(ctx context.Context, ids []uuid.UUID) ([]ListScheduleEndNamesRow, error)
 	ListScheduleRuns(ctx context.Context, arg ListScheduleRunsParams) ([]ScheduleRun, error)
 	// With each schedule's newest run (skipped ones aside), for the list.
@@ -403,6 +407,7 @@ type Querier interface {
 	SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) (Schedule, error)
 	SetScheduleNext(ctx context.Context, arg SetScheduleNextParams) error
 	SetScheduleRunJob(ctx context.Context, arg SetScheduleRunJobParams) error
+	SetScheduleRunLink(ctx context.Context, arg SetScheduleRunLinkParams) error
 	SetScriptRunJob(ctx context.Context, arg SetScriptRunJobParams) error
 	SetServerFavorite(ctx context.Context, arg SetServerFavoriteParams) (Server, error)
 	// Pinning isn't an edit: it keeps who changed it last and when.

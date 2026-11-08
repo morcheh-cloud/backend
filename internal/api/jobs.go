@@ -27,7 +27,7 @@ import (
 // reports progress and can be canceled.
 type Job struct {
 	ID         string         `json:"id" format:"uuid"`
-	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install, fail2ban-uninstall, firewall-install, firewall-apply, ansible-run, schedule-sync, script-run, database-backup, database-backup-verify or database-backup-restore" example:"transfer"`
+	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install, fail2ban-uninstall, firewall-install, firewall-apply, ansible-run, schedule-sync, schedule-run, script-run, database-backup, database-backup-verify or database-backup-restore" example:"transfer"`
 	Title      string         `json:"title" example:"Copy backup.tar.gz from MinIO to web-01"`
 	State      string         `json:"state" enum:"queued,running,succeeded,failed,canceled,interrupted"`
 	Refs       []string       `json:"refs" doc:"Servers and storages it touches"`
@@ -260,7 +260,7 @@ func registerJobs(api huma.API, a *authz) {
 		}
 		// A run's record says what it ran; starting another goes through its checks.
 		switch old.Kind {
-		case ansibleRunKind, scheduleSyncKind, scriptRunKind, backupKind, restoreKind:
+		case ansibleRunKind, scheduleSyncKind, scheduleRunKind, scriptRunKind, backupKind, restoreKind:
 			return nil, huma.Error409Conflict("Run it again from its page.")
 		}
 		p := principalOf(ctx)

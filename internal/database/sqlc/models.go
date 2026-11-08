@@ -394,6 +394,7 @@ type Schedule struct {
 	UpdatedBy    *uuid.UUID  `json:"updated_by"`
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
+	Task         []byte      `json:"task"`
 }
 
 type ScheduleRun struct {
@@ -414,6 +415,7 @@ type ScheduleRun struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	StartedAt     *time.Time `json:"started_at"`
 	FinishedAt    *time.Time `json:"finished_at"`
+	Link          []byte     `json:"link"`
 }
 
 type Script struct {

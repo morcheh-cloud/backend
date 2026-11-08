@@ -22,11 +22,14 @@ import (
 )
 
 // Schedules are cron jobs Morcheh runs itself (the panel calls them "Cron
-// jobs"; "cron" in this package is a server's crontab). The one action so far
-// syncs files from a server or storage to one or more servers and storages.
+// jobs"; "cron" in this package is a server's crontab). An action says what
+// one does: sync copies files from a server or storage to servers and
+// storages (job kind schedule-sync); every other action runs as schedule-run
+// (schedule_actions.go).
 
 const (
 	scheduleSyncKind = "schedule-sync"
+	scheduleRunKind  = "schedule-run"
 	// Runs kept per schedule; older ones are deleted as new ones start.
 	scheduleRunsKept = 200
 	maxDestinations  = 20
@@ -64,7 +67,7 @@ type ScheduleEndView struct {
 type ScheduleOptions struct {
 	Mode     string   `json:"mode" enum:"update,mirror,snapshot" doc:"update: copy new and changed files. mirror: also delete what the source no longer has. snapshot: a full copy in a new dated folder each run" default:"update"`
 	Excludes []string `json:"excludes,omitempty" maxItems:"100" doc:"Glob patterns to leave out; without a slash they match a name at any depth" example:"[\"*.log\",\"node_modules\"]"`
-	Keep     int      `json:"keep,omitempty" minimum:"0" maximum:"1000" doc:"Snapshots to keep (snapshot mode), 0 = all"`
+	Keep     int      `json:"keep,omitempty" minimum:"0" maximum:"1000" doc:"Snapshots to keep (snapshot mode), or archives (archive action); 0 = all"`
 }
 
 type ScheduleRunBrief struct {
@@ -80,13 +83,15 @@ type Schedule struct {
 	WorkspaceID  string            `json:"workspace_id" format:"uuid"`
 	Name         string            `json:"name"`
 	Description  string            `json:"description"`
-	Action       string            `json:"action" enum:"sync"`
+	Action       string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup"`
 	Cron         string            `json:"cron" example:"0 3 * * *"`
 	Timezone     string            `json:"timezone" example:"Asia/Tehran"`
 	Enabled      bool              `json:"enabled"`
-	Source       ScheduleEndView   `json:"source"`
-	Destinations []ScheduleEndView `json:"destinations"`
+	Source       *ScheduleEndView  `json:"source,omitempty" doc:"sync and archive"`
+	Destinations []ScheduleEndView `json:"destinations" doc:"sync, archive and fetch"`
 	Options      ScheduleOptions   `json:"options"`
+	Task         ScheduleTask      `json:"task"`
+	Refs         []ScheduleRef     `json:"refs" doc:"What the task names (servers, script, playbook, database), with names"`
 	NextRunAt    *time.Time        `json:"next_run_at" doc:"null while paused"`
 	LastRun      *ScheduleRunBrief `json:"last_run"`
 	RunAsID      *string           `json:"run_as_id" format:"uuid" doc:"Runs use this person's access: whoever saved it last"`
@@ -104,9 +109,11 @@ type ScheduleBody struct {
 	Cron         string          `json:"cron" minLength:"1" maxLength:"200" doc:"Five fields (minute hour day month weekday), or @hourly, @daily, @weekly, @monthly, @every 2h" example:"0 3 * * *"`
 	Timezone     string          `json:"timezone,omitempty" maxLength:"64" doc:"IANA zone the times are read in; default UTC" example:"Asia/Tehran"`
 	Enabled      *bool           `json:"enabled,omitempty" doc:"Default true"`
-	Source       ScheduleEnd     `json:"source"`
-	Destinations []ScheduleEnd   `json:"destinations" minItems:"1" maxItems:"20"`
-	Options      ScheduleOptions `json:"options"`
+	Action       string          `json:"action,omitempty" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup" default:"sync" doc:"What it does. sync and archive use source and destinations, fetch only destinations (server folders); the rest use task"`
+	Source       *ScheduleEnd    `json:"source,omitempty"`
+	Destinations []ScheduleEnd   `json:"destinations,omitempty" maxItems:"20"`
+	Options      ScheduleOptions `json:"options,omitempty"`
+	Task         ScheduleTask    `json:"task,omitempty"`
 }
 
 type ScheduleUpdate struct {
@@ -119,18 +126,30 @@ type ScheduleOutput struct{ Body Schedule }
 // ScheduleRunDest is what a run did at one destination.
 type ScheduleRunDest struct {
 	ScheduleEndView
-	State string `json:"state" enum:"pending,running,succeeded,partial,failed,canceled" doc:"partial: some files couldn't be copied"`
+	State string `json:"state" enum:"pending,running,succeeded,partial,failed,canceled,skipped" doc:"partial: some files couldn't be copied. skipped: nothing to do there (a reboot that wasn't needed)"`
 	Error string `json:"error"`
+	Note  string `json:"note,omitempty" doc:"What happened, when it isn't an error"`
 	storage.SyncResult
 	StartedAt  *time.Time `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at"`
 }
 
+// schedulePlan is what a run was started with. Destinations are also the
+// servers a service action or reboot goes through.
 type schedulePlan struct {
-	Source       ScheduleEndView   `json:"source"`
+	Action       string            `json:"action"`
+	Source       *ScheduleEndView  `json:"source"`
 	Destinations []ScheduleEndView `json:"destinations"`
 	Options      ScheduleOptions   `json:"options"`
+	Task         ScheduleTask      `json:"task"`
 	Name         string            `json:"name"`
+}
+
+// ScheduleRunLink is the record a run made elsewhere: a script run, an
+// Ansible run, or the database whose backups it checked.
+type ScheduleRunLink struct {
+	Kind string `json:"kind" enum:"script-run,ansible-run,database"`
+	ID   string `json:"id" format:"uuid"`
 }
 
 type ScheduleRun struct {
@@ -140,9 +159,11 @@ type ScheduleRun struct {
 	DryRun        bool              `json:"dry_run" doc:"A test run: counted, nothing changed"`
 	State         string            `json:"state" enum:"queued,running,succeeded,partial,failed,canceled,interrupted,skipped"`
 	Error         string            `json:"error"`
-	Source        ScheduleEndView   `json:"source"`
+	Action        string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup"`
+	Source        *ScheduleEndView  `json:"source,omitempty"`
 	Options       ScheduleOptions   `json:"options"`
-	Results       []ScheduleRunDest `json:"results"`
+	Results       []ScheduleRunDest `json:"results" doc:"One row per destination, server or backup checked"`
+	Link          *ScheduleRunLink  `json:"link,omitempty"`
 	Files         int               `json:"files" doc:"Files copied in all"`
 	Bytes         int64             `json:"bytes"`
 	JobID         *string           `json:"job_id" format:"uuid"`
@@ -156,14 +177,20 @@ type ScheduleRun struct {
 // ---- Handler ----
 
 type scheduleHandler struct {
-	q      *sqlc.Queries
-	st     *storageHandler
-	authz  *authz
-	runner *jobs.Runner
+	q       *sqlc.Queries
+	st      *storageHandler
+	authz   *authz
+	runner  *jobs.Runner
+	scripts *scriptHandler
+	ansible *ansibleHandler
+	backups *backupHandler
 }
 
-func newScheduleHandler(st *storageHandler, a *authz) *scheduleHandler {
-	return &scheduleHandler{q: st.q, st: st, authz: a, runner: st.servers.jobs}
+func newScheduleHandler(st *storageHandler, a *authz, scripts *scriptHandler, playbooks *ansibleHandler, backups *backupHandler) *scheduleHandler {
+	return &scheduleHandler{
+		q: st.q, st: st, authz: a, runner: st.servers.jobs,
+		scripts: scripts, ansible: playbooks, backups: backups,
+	}
 }
 
 var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
@@ -246,25 +273,40 @@ func decodeEnds(raw []byte) []ScheduleEnd {
 	return out
 }
 
+// scheduleEndIDs is everything a schedule points at, for the names lookup
+// and the job's refs.
 func scheduleEndIDs(s sqlc.Schedule) []uuid.UUID {
-	return append(append([]uuid.UUID{}, s.ServerIds...), s.StorageIds...)
+	var task ScheduleTask
+	decodeInto(s.Task, &task)
+	return append(append(append([]uuid.UUID{}, s.ServerIds...), s.StorageIds...), refIDs(taskRefs(s.Action, task))...)
 }
 
 func (h *scheduleHandler) toSchedule(s sqlc.Schedule, n scheduleNames, last *ScheduleRunBrief) Schedule {
-	var src ScheduleEnd
-	decodeInto(s.Source, &src)
 	var opts ScheduleOptions
 	decodeInto(s.Options, &opts)
 	out := Schedule{
 		ID: s.ID.String(), WorkspaceID: s.WorkspaceID.String(), Name: s.Name, Description: s.Description,
 		Action: s.Action, Cron: s.Cron, Timezone: s.Timezone, Enabled: s.Enabled,
-		Source: n.view(src), Options: opts, NextRunAt: s.NextRunAt, LastRun: last,
+		Options: opts, NextRunAt: s.NextRunAt, LastRun: last,
 		RunAsID: optionalIDString(s.UpdatedBy), CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}
-	if opts.Mode == "" {
+	decodeInto(s.Task, &out.Task)
+	if opts.Mode == "" && s.Action == "sync" {
 		out.Options.Mode = storage.SyncUpdate
 	}
-	missing := out.Source.Missing
+	missing := false
+	if usesSource(s.Action) {
+		var src ScheduleEnd
+		decodeInto(s.Source, &src)
+		v := n.view(src)
+		out.Source, missing = &v, v.Missing
+	}
+	out.Refs = taskRefs(s.Action, out.Task)
+	for i, r := range out.Refs {
+		row, ok := n.ends[parseID(r.ID)]
+		out.Refs[i].Name, out.Refs[i].Missing = row.Name, !ok
+		missing = missing || !ok
+	}
 	for _, d := range decodeEnds(s.Destinations) {
 		v := n.view(d)
 		missing = missing || v.Missing
@@ -285,7 +327,7 @@ func (h *scheduleHandler) toSchedule(s sqlc.Schedule, n scheduleNames, last *Sch
 	case s.UpdatedBy == nil || out.RunAsName == "":
 		out.Problem = "The person who saved it was removed, so this can't run. Someone with access should open it and save it."
 	case missing:
-		out.Problem = "A server or storage it uses was deleted. Edit it to choose another."
+		out.Problem = "Something it uses (a server, storage, script, playbook or database) was deleted. Edit it to choose another."
 	}
 	return out
 }
@@ -333,118 +375,50 @@ func (h *scheduleHandler) load(ctx context.Context, rawID string) (sqlc.Schedule
 // ---- Checking what's saved ----
 
 type checkedSchedule struct {
+	action                string
 	cron, tz              string
-	source                ScheduleEnd
+	source                *ScheduleEnd
 	dests                 []ScheduleEnd
 	options               ScheduleOptions
+	task                  ScheduleTask
 	serverIDs, storageIDs []uuid.UUID
 	sourceJSON, destsJSON []byte
-	optionsJSON           []byte
+	optionsJSON, taskJSON []byte
 }
 
-// check validates a body for workspace ws and the caller's access: they need
-// Operator on the source (reading it) and Engineer on every destination
-// (writing, and deleting in mirror mode).
+// check validates a body for workspace ws with the caller's access, the same
+// rules as doing it by hand: for a sync, Operator on the source (reading it)
+// and Engineer on every destination (writing, and deleting in mirror mode).
+// The other actions are checked in schedule_actions.go.
 func (h *scheduleHandler) check(ctx context.Context, ws uuid.UUID, b ScheduleBody) (checkedSchedule, error) {
-	c := checkedSchedule{cron: strings.TrimSpace(b.Cron), tz: cmpOr(strings.TrimSpace(b.Timezone), "UTC")}
+	c := checkedSchedule{cron: strings.TrimSpace(b.Cron), tz: cmpOr(strings.TrimSpace(b.Timezone), "UTC"), action: cmpOr(b.Action, "sync")}
 	if _, _, err := parseCron(c.cron, c.tz); err != nil {
 		return c, err
 	}
-	c.options = b.Options
-	if c.options.Mode == "" {
-		c.options.Mode = storage.SyncUpdate
-	}
-	var excludes []string
-	for _, p := range c.options.Excludes {
-		if p = strings.TrimSpace(p); p != "" {
-			excludes = append(excludes, p)
-		}
-	}
-	if _, err := storage.NewMatcher(excludes); err != nil {
-		return c, fieldError("body.options.excludes", "Not a valid pattern: "+err.Error(), excludes)
-	}
-	c.options.Excludes = excludes
-	if c.options.Mode != storage.SyncSnapshot {
-		c.options.Keep = 0
-	}
-
-	seenServer, seenStorage := map[uuid.UUID]bool{}, map[uuid.UUID]bool{}
-	end := func(loc string, e ScheduleEnd, need auth.Level, dest bool) (ScheduleEnd, error) {
-		server, store := parseOptionalID(e.ServerID), parseOptionalID(e.StorageID)
-		if (server == nil) == (store == nil) {
-			return e, fieldError(loc, "Choose a server or a storage.", nil)
-		}
-		p := strings.TrimSpace(e.Path)
-		if !strings.HasPrefix(p, "/") || strings.ContainsRune(p, 0) {
-			return e, fieldError(loc+".path", "Use a full path, starting with /.", e.Path)
-		}
-		out := ScheduleEnd{Path: storage.Clean(p)}
-		acc := principalOf(ctx).Access
-		var level auth.Level
-		if server != nil {
-			s, err := h.q.GetServer(ctx, *server)
-			if isNotFound(err) || (err == nil && s.WorkspaceID != ws) {
-				return e, fieldError(loc+".server_id", "This server isn't in this workspace.", *e.ServerID)
-			}
-			if err != nil {
-				return e, internalError(err)
-			}
-			level = acc.ServerLevel(ws, s.ID)
-			id := s.ID.String()
-			out.ServerID = &id
-			if !seenServer[s.ID] {
-				seenServer[s.ID] = true
-				c.serverIDs = append(c.serverIDs, s.ID)
-			}
-		} else {
-			s, err := h.q.GetStorage(ctx, *store)
-			if isNotFound(err) || (err == nil && s.WorkspaceID != ws) {
-				return e, fieldError(loc+".storage_id", "This storage isn't in this workspace.", *e.StorageID)
-			}
-			if err != nil {
-				return e, internalError(err)
-			}
-			if dest && s.ReadOnly {
-				return e, fieldError(loc+".storage_id", s.Name+" is read-only in Morcheh, so nothing can be written to it.", *e.StorageID)
-			}
-			level = acc.StorageLevel(ws, s.ID)
-			id := s.ID.String()
-			out.StorageID = &id
-			if !seenStorage[s.ID] {
-				seenStorage[s.ID] = true
-				c.storageIDs = append(c.storageIDs, s.ID)
-			}
-		}
-		if level == auth.None {
-			return e, fieldError(loc, "Not found.", nil)
-		}
-		if level < need {
-			return e, forbidden(need)
-		}
-		return out, nil
-	}
+	k := &scheduleChecker{h: h, ctx: ctx, ws: ws, c: &c, seenServer: map[uuid.UUID]bool{}, seenStorage: map[uuid.UUID]bool{}}
 	var err error
-	if c.source, err = end("body.source", b.Source, auth.Operator, false); err != nil {
-		return c, err
+	switch c.action {
+	case "sync":
+		err = k.sync(b)
+	case "archive":
+		err = k.archive(b)
+	case "fetch":
+		err = k.fetch(b)
+	case "script":
+		err = k.script(b)
+	case "ansible":
+		err = k.playbook(b)
+	case "service":
+		err = k.service(b)
+	case "reboot":
+		err = k.reboot(b)
+	case "verify-backup":
+		err = k.verify(b)
+	default:
+		err = fieldError("body.action", "Unknown action.", b.Action)
 	}
-	for i, d := range b.Destinations {
-		loc := fmt.Sprintf("body.destinations[%d]", i)
-		out, err := end(loc, d, auth.Engineer, true)
-		if err != nil {
-			return c, err
-		}
-		if out.id() == c.source.id() && (storage.Within(out.Path, c.source.Path) || storage.Within(c.source.Path, out.Path)) {
-			return c, fieldError(loc+".path", "A destination can't be the source folder, or inside it or around it.", d.Path)
-		}
-		if c.options.Mode == storage.SyncMirror && out.Path == "/" {
-			return c, fieldError(loc+".path", "A mirror deletes what the source doesn't have, so it can't go into the top folder. Choose a folder.", d.Path)
-		}
-		for j, other := range c.dests {
-			if other.id() == out.id() && (storage.Within(out.Path, other.Path) || storage.Within(other.Path, out.Path)) {
-				return c, fieldError(loc+".path", fmt.Sprintf("Overlaps destination %d.", j+1), d.Path)
-			}
-		}
-		c.dests = append(c.dests, out)
+	if err != nil {
+		return c, err
 	}
 	if c.serverIDs == nil {
 		c.serverIDs = []uuid.UUID{}
@@ -452,22 +426,32 @@ func (h *scheduleHandler) check(ctx context.Context, ws uuid.UUID, b ScheduleBod
 	if c.storageIDs == nil {
 		c.storageIDs = []uuid.UUID{}
 	}
-	c.sourceJSON, _ = json.Marshal(c.source)
+	if c.dests == nil {
+		c.dests = []ScheduleEnd{}
+	}
+	c.sourceJSON = []byte("{}")
+	if c.source != nil {
+		c.sourceJSON, _ = json.Marshal(c.source)
+	}
 	c.destsJSON, _ = json.Marshal(c.dests)
 	c.optionsJSON, _ = json.Marshal(c.options)
+	c.taskJSON, _ = json.Marshal(c.task)
 	return c, nil
 }
 
 // ---- Runs ----
 
 func (h *scheduleHandler) toRun(r sqlc.ScheduleRun) ScheduleRun {
-	var plan schedulePlan
-	decodeInto(r.Plan, &plan)
+	plan := decodePlan(r.Plan)
 	out := ScheduleRun{
 		ID: r.ID.String(), ScheduleID: r.ScheduleID.String(), Trigger: r.Trigger, DryRun: r.DryRun,
-		State: r.State, Error: r.Error, Source: plan.Source, Options: plan.Options,
+		State: r.State, Error: r.Error, Action: plan.Action, Source: plan.Source, Options: plan.Options,
 		Files: int(r.Files), Bytes: r.Bytes, JobID: optionalIDString(r.JobID),
 		CreatedByName: r.CreatedByName, CreatedAt: r.CreatedAt, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt,
+	}
+	var link ScheduleRunLink
+	if decodeInto(r.Link, &link); link.Kind != "" {
+		out.Link = &link
 	}
 	decodeInto(r.Results, &out.Results)
 	if out.Results == nil {
@@ -563,11 +547,20 @@ func (h *scheduleHandler) start(ctx context.Context, s sqlc.Schedule, by *princi
 	if busy && by != nil {
 		return sqlc.ScheduleRun{}, nil, huma.Error409Conflict("It's running now. Wait for it to finish, or stop it first.")
 	}
+	if dryRun && s.Action != "sync" {
+		return sqlc.ScheduleRun{}, nil, huma.Error422UnprocessableEntity("Only a file sync has a test run.")
+	}
 	sched, err := h.one(ctx, s)
 	if err != nil {
 		return sqlc.ScheduleRun{}, nil, err
 	}
-	plan, _ := json.Marshal(schedulePlan{Source: sched.Source, Destinations: sched.Destinations, Options: sched.Options, Name: s.Name})
+	dests := sched.Destinations
+	if s.Action == "service" || s.Action == "reboot" {
+		dests = refViews(sched.Refs, "server")
+	}
+	plan, _ := json.Marshal(schedulePlan{
+		Action: s.Action, Source: sched.Source, Destinations: dests, Options: sched.Options, Task: sched.Task, Name: s.Name,
+	})
 	params := sqlc.CreateScheduleRunParams{
 		ScheduleID: s.ID, WorkspaceID: s.WorkspaceID, Trigger: trigger, DryRun: dryRun, Plan: plan,
 		State: jobs.Queued, CreatedBy: byID, CreatedByName: byName,
@@ -586,13 +579,16 @@ func (h *scheduleHandler) start(ctx context.Context, s sqlc.Schedule, by *princi
 	if busy {
 		return run, nil, nil
 	}
-	title := "Sync " + s.Name
-	if dryRun {
-		title = "Test " + s.Name
+	kind, title := scheduleRunKind, "Run "+s.Name
+	switch {
+	case dryRun:
+		kind, title = scheduleSyncKind, "Test "+s.Name
+	case s.Action == "sync":
+		kind, title = scheduleSyncKind, "Sync "+s.Name
 	}
 	refs := scheduleEndIDs(s)
 	j, err := h.runner.Submit(ctx, jobs.Spec{
-		Kind: scheduleSyncKind, Title: title, Params: scheduleRunParams{RunID: run.ID}, Refs: refs,
+		Kind: kind, Title: title, Params: scheduleRunParams{RunID: run.ID}, Refs: refs,
 		Target:    JobPlace{ScheduleID: s.ID.String(), RunID: run.ID.String(), Name: s.Name},
 		CreatedBy: byID,
 	})
@@ -610,22 +606,29 @@ func (h *scheduleHandler) start(ctx context.Context, s sqlc.Schedule, by *princi
 
 // runner is the person a schedule acts as, with their access now.
 func (h *scheduleHandler) runAs(ctx context.Context, s sqlc.Schedule) (string, *auth.Access, error) {
+	_, name, acc, err := h.runUser(ctx, s)
+	return name, acc, err
+}
+
+// runUser is runAs with the person too, to act as them.
+func (h *scheduleHandler) runUser(ctx context.Context, s sqlc.Schedule) (sqlc.User, string, *auth.Access, error) {
+	gone := errors.New("The person who saved this cron job was removed. Someone with access should open it and save it again.")
 	if s.UpdatedBy == nil {
-		return "", nil, errors.New("The person who saved this cron job was removed. Someone with access should open it and save it again.")
+		return sqlc.User{}, "", nil, gone
 	}
 	u, err := h.q.GetUser(ctx, *s.UpdatedBy)
 	if isNotFound(err) {
-		return "", nil, errors.New("The person who saved this cron job was removed. Someone with access should open it and save it again.")
+		return u, "", nil, gone
 	}
 	if err != nil {
-		return "", nil, err
+		return u, "", nil, err
 	}
 	name := cmpOr(u.FullName, u.Username)
 	if u.Status != "active" {
-		return name, nil, fmt.Errorf("%s's account isn't active, so their cron jobs don't run. Someone with access should open it and save it again.", name)
+		return u, name, nil, fmt.Errorf("%s's account isn't active, so their cron jobs don't run. Someone with access should open it and save it again.", name)
 	}
 	acc, err := h.authz.accessOf(ctx, u)
-	return name, acc, err
+	return u, name, acc, err
 }
 
 // mayUse checks the schedule's person still has the level on an end.
@@ -695,13 +698,15 @@ func (h *scheduleHandler) runJob(ctx context.Context, t *jobs.Task) (any, error)
 	if err := h.q.StartScheduleRun(ctx, run.ID); err != nil {
 		return nil, err
 	}
-	var plan schedulePlan
-	decodeInto(run.Plan, &plan)
+	plan := decodePlan(run.Plan)
+	if plan.Source == nil {
+		return fail(errors.New("It has no source."))
+	}
 	who, acc, err := h.runAs(ctx, s)
 	if err != nil {
 		return fail(err)
 	}
-	if err := mayUse(acc, s.WorkspaceID, plan.Source, auth.Operator, who); err != nil {
+	if err := mayUse(acc, s.WorkspaceID, *plan.Source, auth.Operator, who); err != nil {
 		return fail(fmt.Errorf("Source: %w", err))
 	}
 
@@ -785,12 +790,21 @@ func (h *scheduleHandler) runJob(ctx context.Context, t *jobs.Task) (any, error)
 		return nil
 	})
 
-	// The ending.
+	failMsg := ""
+	if srcErr != nil {
+		failMsg = "Source " + plan.Source.Name + ": " + problemText(srcErr)
+	}
+	return h.endRun(ctx, t, run.ID, results, files, bytes, failMsg)
+}
+
+// endRun works out how a run with per-destination results ended and stores
+// it. failMsg fails it whatever the results say.
+func (h *scheduleHandler) endRun(ctx context.Context, t *jobs.Task, runID uuid.UUID, results []ScheduleRunDest, files int, bytes int64, failMsg string) (any, error) {
 	state, msg := jobs.Succeeded, ""
 	var ok, bad int
 	for i := range results {
 		switch results[i].State {
-		case "succeeded":
+		case "succeeded", "skipped":
 			ok++
 		case "pending", "running":
 			results[i].State = "canceled"
@@ -803,22 +817,33 @@ func (h *scheduleHandler) runJob(ctx context.Context, t *jobs.Task) (any, error)
 		state = jobs.Canceled
 	case ctx.Err() != nil:
 		state, msg = jobs.Interrupted, "Morcheh stopped before it finished."
-	case srcErr != nil:
-		state, msg = jobs.Failed, "Source "+plan.Source.Name+": "+problemText(srcErr)
+	case failMsg != "":
+		state, msg = jobs.Failed, failMsg
 	case bad > 0 && ok == 0 && !anyPartial(results):
 		state, msg = jobs.Failed, failedText(results)
 	case bad > 0:
 		state, msg = "partial", failedText(results)
 	}
+	return h.closeRun(ctx, runID, state, msg, results, files, bytes)
+}
+
+// closeRun stores how a run ended and answers its job the same way.
+func (h *scheduleHandler) closeRun(ctx context.Context, runID uuid.UUID, state, msg string, results []ScheduleRunDest, files int, bytes int64) (any, error) {
+	if results == nil {
+		results = []ScheduleRunDest{}
+	}
 	raw, _ := json.Marshal(results)
-	if err := h.q.FinishScheduleRun(bg, sqlc.FinishScheduleRunParams{
-		ID: run.ID, State: state, Error: msg, Results: raw, Files: int32(files), Bytes: bytes,
+	if err := h.q.FinishScheduleRun(context.WithoutCancel(ctx), sqlc.FinishScheduleRunParams{
+		ID: runID, State: state, Error: msg, Results: raw, Files: int32(files), Bytes: bytes,
 	}); err != nil {
-		slog.Warn("finish a cron job run", "run", run.ID, "error", err)
+		slog.Warn("finish a cron job run", "run", runID, "error", err)
 	}
 	switch state {
 	case jobs.Canceled, jobs.Interrupted:
-		return nil, ctx.Err()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, errors.New(cmpOr(msg, "It was stopped."))
 	case jobs.Failed, "partial":
 		return nil, errors.New(msg)
 	}
@@ -919,6 +944,7 @@ type SchedulePath struct {
 func registerSchedules(api huma.API, h *scheduleHandler) {
 	tags := []string{"Cron jobs"}
 	h.runner.Handle(scheduleSyncKind, h.runJob)
+	h.runner.Handle(scheduleRunKind, h.runTask)
 
 	type scheduleList struct {
 		Body struct {
@@ -951,8 +977,15 @@ func registerSchedules(api huma.API, h *scheduleHandler) {
 			return nil, internalError(err)
 		}
 		var ends, users []uuid.UUID
-		for _, r := range rows {
-			ends = append(append(ends, r.ServerIds...), r.StorageIds...)
+		scheds := make([]sqlc.Schedule, len(rows))
+		for i, r := range rows {
+			scheds[i] = sqlc.Schedule{
+				ID: r.ID, WorkspaceID: r.WorkspaceID, Name: r.Name, Description: r.Description, Action: r.Action,
+				Cron: r.Cron, Timezone: r.Timezone, Enabled: r.Enabled, Source: r.Source, Destinations: r.Destinations,
+				Options: r.Options, Task: r.Task, ServerIds: r.ServerIds, StorageIds: r.StorageIds, NextRunAt: r.NextRunAt,
+				CreatedBy: r.CreatedBy, UpdatedBy: r.UpdatedBy, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			}
+			ends = append(ends, scheduleEndIDs(scheds[i])...)
 			if r.UpdatedBy != nil {
 				users = append(users, *r.UpdatedBy)
 			}
@@ -964,12 +997,7 @@ func registerSchedules(api huma.API, h *scheduleHandler) {
 		out := &scheduleList{}
 		out.Body.Items = make([]Schedule, len(rows))
 		for i, r := range rows {
-			s := sqlc.Schedule{
-				ID: r.ID, WorkspaceID: r.WorkspaceID, Name: r.Name, Description: r.Description, Action: r.Action,
-				Cron: r.Cron, Timezone: r.Timezone, Enabled: r.Enabled, Source: r.Source, Destinations: r.Destinations,
-				Options: r.Options, ServerIds: r.ServerIds, StorageIds: r.StorageIds, NextRunAt: r.NextRunAt,
-				CreatedBy: r.CreatedBy, UpdatedBy: r.UpdatedBy, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-			}
+			s := scheds[i]
 			var last *ScheduleRunBrief
 			if r.LastRunID != nil {
 				last = &ScheduleRunBrief{
@@ -1032,7 +1060,7 @@ func registerSchedules(api huma.API, h *scheduleHandler) {
 		Method:        http.MethodPost,
 		Path:          "/workspaces/{id}/schedules",
 		Summary:       "Create a cron job",
-		Description:   "You need Engineer on the workspace, Operator on the source and Engineer on every destination. Runs act with your access, checked each time.",
+		Description:   "You need Engineer on the workspace, plus what the action needs done by hand: a sync needs Operator on the source and Engineer on every destination; a script Engineer on its servers; a playbook Owner on them; a service action or reboot Operator; fetch and archive Engineer; checking backups Operator on the database. Runs act with your access, checked each time.",
 		Tags:          tags,
 		DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, in *struct {
@@ -1051,8 +1079,8 @@ func registerSchedules(api huma.API, h *scheduleHandler) {
 		}
 		s, err := h.q.CreateSchedule(ctx, sqlc.CreateScheduleParams{
 			WorkspaceID: ws, Name: strings.TrimSpace(in.Body.Name), Description: strings.TrimSpace(in.Body.Description),
-			Action: "sync", Cron: c.cron, Timezone: c.tz, Enabled: enabled, Source: c.sourceJSON,
-			Destinations: c.destsJSON, Options: c.optionsJSON, ServerIds: c.serverIDs, StorageIds: c.storageIDs,
+			Action: c.action, Cron: c.cron, Timezone: c.tz, Enabled: enabled, Source: c.sourceJSON,
+			Destinations: c.destsJSON, Options: c.optionsJSON, Task: c.taskJSON, ServerIds: c.serverIDs, StorageIds: c.storageIDs,
 			NextRunAt: next, CreatedBy: principalOf(ctx).ID(),
 		})
 		if isUniqueViolation(err) {
@@ -1118,6 +1146,7 @@ func registerSchedules(api huma.API, h *scheduleHandler) {
 		}
 		s, err := h.q.UpdateSchedule(ctx, sqlc.UpdateScheduleParams{
 			ID: old.ID, Name: strings.TrimSpace(in.Body.Name), Description: strings.TrimSpace(in.Body.Description),
+			Action: c.action, Task: c.taskJSON,
 			Cron: c.cron, Timezone: c.tz, Enabled: enabled, Source: c.sourceJSON, Destinations: c.destsJSON,
 			Options: c.optionsJSON, ServerIds: c.serverIDs, StorageIds: c.storageIDs, NextRunAt: next,
 			UpdatedBy: principalOf(ctx).ID(),

@@ -888,11 +888,17 @@ func (h *backupHandler) runVerify(ctx context.Context, t *jobs.Task) (any, error
 	if err != nil {
 		return nil, err
 	}
-	bg := context.WithoutCancel(ctx)
-	b, err := h.q.GetBackup(bg, id)
+	b, err := h.q.GetBackup(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+	return h.verify(ctx, t, b)
+}
+
+// verify reads every stored copy of b back in the job t (its own, or a cron
+// job's) and records what it found.
+func (h *backupHandler) verify(ctx context.Context, t *jobs.Task, b sqlc.DatabaseBackup) (any, error) {
+	bg := context.WithoutCancel(ctx)
 	stored, err := h.storedCopies(bg, b.ID)
 	if err != nil {
 		return nil, err

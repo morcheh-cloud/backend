@@ -854,6 +854,66 @@ func (q *Queries) LastRestoreAt(ctx context.Context, arg LastRestoreAtParams) (t
 	return at, err
 }
 
+const latestGoodBackups = `-- name: LatestGoodBackups :many
+SELECT DISTINCT ON (target) id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position FROM database_backups
+WHERE database_id = $1 AND state = 'succeeded'
+  AND ($2::uuid IS NULL OR plan_id = $2)
+ORDER BY target, id DESC
+`
+
+type LatestGoodBackupsParams struct {
+	DatabaseID uuid.UUID  `json:"database_id"`
+	PlanID     *uuid.UUID `json:"plan_id"`
+}
+
+// The newest good backup of each database a connection holds (optionally of
+// one plan): what a cron job checks.
+func (q *Queries) LatestGoodBackups(ctx context.Context, arg LatestGoodBackupsParams) ([]DatabaseBackup, error) {
+	rows, err := q.db.Query(ctx, latestGoodBackups, arg.DatabaseID, arg.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DatabaseBackup{}
+	for rows.Next() {
+		var i DatabaseBackup
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.DatabaseID,
+			&i.PlanID,
+			&i.PlanName,
+			&i.Path,
+			&i.Engine,
+			&i.Target,
+			&i.Format,
+			&i.Trigger,
+			&i.State,
+			&i.Error,
+			&i.Bytes,
+			&i.Sha256,
+			&i.VerifiedAt,
+			&i.VerifyError,
+			&i.JobID,
+			&i.CreatedBy,
+			&i.CreatedByName,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.Kind,
+			&i.ParentID,
+			&i.Position,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveBackups = `-- name: ListActiveBackups :many
 SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position FROM database_backups WHERE plan_id = $1 AND state IN ('queued', 'running')
 `

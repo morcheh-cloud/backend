@@ -30,6 +30,7 @@ type compressParams struct {
 	Names    []string `json:"names"`
 	Dest     string   `json:"dest"`
 	Format   string   `json:"format"`
+	Excludes []string `json:"excludes,omitempty"` // tar only
 }
 
 type extractParams struct {
@@ -44,6 +45,9 @@ type fetchParams struct {
 	Dir       string `json:"dir"`
 	Name      string `json:"name"`
 	Overwrite bool   `json:"overwrite"`
+	// MakeDir creates a missing folder first (cron jobs; the file manager
+	// downloads into a folder that's open, so it exists).
+	MakeDir bool `json:"make_dir,omitempty"`
 }
 
 // transferParams is a copy or move inside one server. The names are planned
@@ -301,6 +305,12 @@ func (h *serverHandler) runCompress(ctx context.Context, t *jobs.Task) (any, err
 	if err := t.Decode(&p); err != nil {
 		return nil, err
 	}
+	out, err := h.compress(ctx, t, p)
+	return out, jobError(err)
+}
+
+// compress packs p.Names in p.Dir into p.Dest on the server, in the job t.
+func (h *serverHandler) compress(ctx context.Context, t *jobs.Task, p compressParams) (FileEntry, error) {
 	var out FileEntry
 	err := h.withSFTP(ctx, p.ServerID, func(c *sshpool.Conn, s *sftp.Client) error {
 		if _, err := s.Lstat(p.Dest); err == nil {
@@ -318,7 +328,11 @@ func (h *serverHandler) runCompress(ctx context.Context, t *jobs.Task) (any, err
 		}
 		t.Update(func(pr *jobs.Progress) { pr.Phase = "Packing" })
 		qd := terminal.ShellQuote(p.Dest)
-		cmd := "tar -czvf " + qd + " -- " + quoteAll(p.Names)
+		cmd := "tar -czvf " + qd
+		for _, x := range p.Excludes {
+			cmd += " --exclude=" + terminal.ShellQuote(x)
+		}
+		cmd += " -- " + quoteAll(p.Names)
 		if p.Format == "zip" {
 			cmd = "zip -ry -- " + qd + " " + quoteAll(p.Names)
 		}
@@ -345,7 +359,7 @@ func (h *serverHandler) runCompress(ctx context.Context, t *jobs.Task) (any, err
 		}
 		return err
 	})
-	return out, jobError(err)
+	return out, err
 }
 
 // ---- Extract ----
@@ -628,6 +642,15 @@ func (h *serverHandler) runFetch(ctx context.Context, t *jobs.Task) (any, error)
 	if err := t.Decode(&p); err != nil {
 		return nil, err
 	}
+	out, err := h.fetch(ctx, t, p)
+	if err != nil {
+		return nil, jobError(err)
+	}
+	return out, nil
+}
+
+// fetch has the server download p.URL into p.Dir/p.Name, in the job t.
+func (h *serverHandler) fetch(ctx context.Context, t *jobs.Task, p fetchParams) (FileEntry, error) {
 	part := "." + p.Name + ".part"
 	partPath := path.Join(p.Dir, part)
 	qu, qpart, qname := terminal.ShellQuote(p.URL), terminal.ShellQuote(part), terminal.ShellQuote(p.Name)
@@ -635,7 +658,11 @@ func (h *serverHandler) runFetch(ctx context.Context, t *jobs.Task) (any, error)
 	if p.Overwrite {
 		keep = ""
 	}
-	script := "cd -- " + terminal.ShellQuote(p.Dir) + " || exit 1; " +
+	cd := "cd -- " + terminal.ShellQuote(p.Dir) + " || exit 1; "
+	if p.MakeDir {
+		cd = "mkdir -p -- " + terminal.ShellQuote(p.Dir) + " && " + cd
+	}
+	script := cd +
 		"if command -v curl >/dev/null 2>&1; then " +
 		"curl -fL -sS --proto =http,https --proto-redir =http,https -D /dev/stderr -o " + qpart + " " + qu + "; " +
 		"elif command -v wget >/dev/null 2>&1; then wget -nv -S -O " + qpart + " " + qu + "; " +
@@ -692,8 +719,5 @@ func (h *serverHandler) runFetch(ctx context.Context, t *jobs.Task) (any, error)
 		}
 		return err
 	})
-	if err != nil {
-		return nil, jobError(err)
-	}
-	return out, nil
+	return out, err
 }

@@ -522,6 +522,95 @@ func (h *ansibleHandler) detail(ctx context.Context, id uuid.UUID) (AnsibleRunDe
 
 // ---- Running ----
 
+// ansibleRunPlan is a checked request to run a playbook.
+type ansibleRunPlan struct {
+	ws         uuid.UUID
+	playbookID *uuid.UUID
+	content    string
+	name       string
+	hosts      []AnsibleHost
+	ids        []uuid.UUID
+	body       startRunBody
+}
+
+// plan checks a run request as the person in ctx: a sandbox (or a system
+// admin), a valid playbook and Owner on every chosen server. Cron jobs check
+// theirs with it too.
+func (h *ansibleHandler) plan(ctx context.Context, ws uuid.UUID, body startRunBody) (ansibleRunPlan, error) {
+	p := principalOf(ctx)
+	if msg := noSandboxProblem(h.hostStatus(), p.Access.Admin); msg != "" {
+		return ansibleRunPlan{}, huma.Error409Conflict(msg)
+	}
+	var playbookID *uuid.UUID
+	content, name := "", strings.TrimSpace(body.Name)
+	if body.PlaybookID != nil && *body.PlaybookID != "" {
+		id, err := uuid.Parse(*body.PlaybookID)
+		if err != nil {
+			return ansibleRunPlan{}, fieldError("body.playbook_id", "Not a playbook id.", *body.PlaybookID)
+		}
+		saved, err := h.q.GetPlaybook(ctx, id)
+		if isNotFound(err) || (err == nil && saved.WorkspaceID != ws) {
+			return ansibleRunPlan{}, fieldError("body.playbook_id", "This playbook isn't in this workspace.", *body.PlaybookID)
+		}
+		if err != nil {
+			return ansibleRunPlan{}, internalError(err)
+		}
+		playbookID, content, name = &saved.ID, saved.Content, saved.Name
+	}
+	if body.Content != nil {
+		content = *body.Content
+	}
+	if name == "" {
+		name = "Untitled playbook"
+	}
+	if err := checkPlaybookYAML(content); err != nil {
+		return ansibleRunPlan{}, err
+	}
+	if err := checkAnsibleOptions(body.Options); err != nil {
+		return ansibleRunPlan{}, err
+	}
+	targets, err := h.resolveTargets(ctx, ws, body.Selection)
+	if err != nil {
+		return ansibleRunPlan{}, err
+	}
+	if len(targets) == 0 {
+		return ansibleRunPlan{}, fieldError("body.selection", "Choose at least one server.", nil)
+	}
+	ids := make([]uuid.UUID, len(targets))
+	hosts := make([]AnsibleHost, len(targets))
+	for i, t := range targets {
+		if msg := targetProblem(p.Access, t.server); msg != "" {
+			if p.Access.ServerLevel(ws, t.server.ID) < auth.Owner {
+				return ansibleRunPlan{}, forbidden(auth.Owner)
+			}
+			return ansibleRunPlan{}, fieldError("body.selection", t.server.Name+": "+msg, t.server.ID.String())
+		}
+		ids[i] = t.server.ID
+		hosts[i] = AnsibleHost{ServerID: t.server.ID.String(), Name: t.server.Name, Host: t.server.Host, InventoryName: t.name}
+	}
+	if _, err := h.authz.requireServers(ctx, ids, auth.Owner); err != nil {
+		return ansibleRunPlan{}, err
+	}
+	return ansibleRunPlan{ws: ws, playbookID: playbookID, content: content, name: name, hosts: hosts, ids: ids, body: body}, nil
+}
+
+// create stores a planned run, not yet started.
+func (h *ansibleHandler) create(ctx context.Context, plan ansibleRunPlan) (sqlc.AnsibleRun, error) {
+	p := principalOf(ctx)
+	selection, _ := json.Marshal(plan.body.Selection)
+	hostsJSON, _ := json.Marshal(plan.hosts)
+	options, _ := json.Marshal(plan.body.Options)
+	run, err := h.q.CreateAnsibleRun(ctx, sqlc.CreateAnsibleRunParams{
+		WorkspaceID: plan.ws, PlaybookID: plan.playbookID, PlaybookName: plan.name, Content: plan.content,
+		Selection: selection, Hosts: hostsJSON, ServerIds: plan.ids, Options: options,
+		CreatedBy: p.ID(), CreatedByName: cmpOr(p.User.FullName, p.User.Username),
+	})
+	if err != nil {
+		return run, internalError(err)
+	}
+	return run, nil
+}
+
 type ansibleRunParams struct {
 	RunID uuid.UUID `json:"run_id"`
 	// The person who started it is a system admin. Checked again when it runs:
@@ -534,6 +623,11 @@ func (h *ansibleHandler) runJob(ctx context.Context, t *jobs.Task) (any, error) 
 	if err := t.Decode(&params); err != nil {
 		return nil, err
 	}
+	return h.execute(ctx, t, params)
+}
+
+// execute runs a stored run in the job t (its own, or a cron job's).
+func (h *ansibleHandler) execute(ctx context.Context, t *jobs.Task, params ansibleRunParams) (any, error) {
 	bg := context.WithoutCancel(ctx)
 	run, err := h.q.GetAnsibleRun(ctx, params.RunID)
 	if isNotFound(err) {
@@ -1056,70 +1150,16 @@ func registerAnsible(api huma.API, h *ansibleHandler) {
 		WorkspacePath
 		Body startRunBody
 	}) (*startRunOutput, error) {
-		ws := uuid.MustParse(in.ID)
 		p := principalOf(ctx)
-		if msg := noSandboxProblem(h.hostStatus(), p.Access.Admin); msg != "" {
-			return nil, huma.Error409Conflict(msg)
-		}
-		body := in.Body
-		var playbookID *uuid.UUID
-		content, name := "", strings.TrimSpace(body.Name)
-		if body.PlaybookID != nil && *body.PlaybookID != "" {
-			saved, err := h.q.GetPlaybook(ctx, uuid.MustParse(*body.PlaybookID))
-			if isNotFound(err) || (err == nil && saved.WorkspaceID != ws) {
-				return nil, fieldError("body.playbook_id", "This playbook isn't in this workspace.", *body.PlaybookID)
-			}
-			if err != nil {
-				return nil, internalError(err)
-			}
-			playbookID, content, name = &saved.ID, saved.Content, saved.Name
-		}
-		if body.Content != nil {
-			content = *body.Content
-		}
-		if name == "" {
-			name = "Untitled playbook"
-		}
-		if err := checkPlaybookYAML(content); err != nil {
-			return nil, err
-		}
-		if err := checkAnsibleOptions(body.Options); err != nil {
-			return nil, err
-		}
-		targets, err := h.resolveTargets(ctx, ws, body.Selection)
+		plan, err := h.plan(ctx, uuid.MustParse(in.ID), in.Body)
 		if err != nil {
 			return nil, err
 		}
-		if len(targets) == 0 {
-			return nil, fieldError("body.selection", "Choose at least one server.", nil)
-		}
-		ids := make([]uuid.UUID, len(targets))
-		hosts := make([]AnsibleHost, len(targets))
-		for i, t := range targets {
-			if msg := targetProblem(p.Access, t.server); msg != "" {
-				if p.Access.ServerLevel(ws, t.server.ID) < auth.Owner {
-					return nil, forbidden(auth.Owner)
-				}
-				return nil, fieldError("body.selection", t.server.Name+": "+msg, t.server.ID.String())
-			}
-			ids[i] = t.server.ID
-			hosts[i] = AnsibleHost{ServerID: t.server.ID.String(), Name: t.server.Name, Host: t.server.Host, InventoryName: t.name}
-		}
-		if _, err := h.authz.requireServers(ctx, ids, auth.Owner); err != nil {
+		run, err := h.create(ctx, plan)
+		if err != nil {
 			return nil, err
 		}
-
-		selection, _ := json.Marshal(body.Selection)
-		hostsJSON, _ := json.Marshal(hosts)
-		options, _ := json.Marshal(body.Options)
-		run, err := h.q.CreateAnsibleRun(ctx, sqlc.CreateAnsibleRunParams{
-			WorkspaceID: ws, PlaybookID: playbookID, PlaybookName: name, Content: content,
-			Selection: selection, Hosts: hostsJSON, ServerIds: ids, Options: options,
-			CreatedBy: p.ID(), CreatedByName: cmpOr(p.User.FullName, p.User.Username),
-		})
-		if err != nil {
-			return nil, internalError(err)
-		}
+		name, targets, ids := plan.name, plan.hosts, plan.ids
 		runID := run.ID.String()
 		j, err := submit(ctx, h.runner, jobs.Spec{
 			Kind:   ansibleRunKind,

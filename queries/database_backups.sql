@@ -258,3 +258,11 @@ WHERE id = @id AND state IN ('queued', 'running');
 SELECT coalesce(max(finished_at), 'epoch'::timestamptz)::timestamptz AS at
 FROM database_restores
 WHERE database_id = @database_id AND target_name = @target_name AND state <> 'canceled';
+
+-- name: LatestGoodBackups :many
+-- The newest good backup of each database a connection holds (optionally of
+-- one plan): what a cron job checks.
+SELECT DISTINCT ON (target) * FROM database_backups
+WHERE database_id = @database_id AND state = 'succeeded'
+  AND (sqlc.narg('plan_id')::uuid IS NULL OR plan_id = sqlc.narg('plan_id'))
+ORDER BY target, id DESC;
