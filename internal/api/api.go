@@ -14,6 +14,7 @@ import (
 	"github.com/morcheh/backend/internal/config"
 	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/jobs"
+	_ "github.com/morcheh/backend/internal/proxy/nginx" // registers the nginx driver
 	"github.com/morcheh/backend/internal/secrets"
 	"github.com/morcheh/backend/internal/sshpool"
 	"github.com/morcheh/backend/internal/terminal"
@@ -104,6 +105,9 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerServices(api, servers)
 	registerPower(api, servers)
 	registerServerNotes(api, servers)
+	proxies := newProxyHandler(servers)
+	startProxyMonitor(proxies, cfg.ProxyCheckInterval)
+	registerProxies(api, proxies)
 	scripts := newScriptHandler(servers, a)
 	registerScripts(api, scripts)
 	st := newStorageHandler(sqlc.New(db), box, servers)

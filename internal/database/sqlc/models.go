@@ -375,6 +375,42 @@ type Job struct {
 	CreatedBy  *uuid.UUID  `json:"created_by"`
 }
 
+type Proxy struct {
+	ID            uuid.UUID  `json:"id"`
+	ServerID      uuid.UUID  `json:"server_id"`
+	Kind          string     `json:"kind"`
+	Status        string     `json:"status"`
+	StatusMessage string     `json:"status_message"`
+	Version       string     `json:"version"`
+	HostProblems  int32      `json:"host_problems"`
+	LastCheckedAt *time.Time `json:"last_checked_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type ProxyChange struct {
+	ID        uuid.UUID  `json:"id"`
+	ProxyID   uuid.UUID  `json:"proxy_id"`
+	UserID    *uuid.UUID `json:"user_id"`
+	UserName  string     `json:"user_name"`
+	Summary   string     `json:"summary"`
+	Hosts     []byte     `json:"hosts"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+type ProxyHost struct {
+	ID            uuid.UUID `json:"id"`
+	ProxyID       uuid.UUID `json:"proxy_id"`
+	Domains       []string  `json:"domains"`
+	Enabled       bool      `json:"enabled"`
+	Config        []byte    `json:"config"`
+	Note          string    `json:"note"`
+	CreatedByName string    `json:"created_by_name"`
+	UpdatedByName string    `json:"updated_by_name"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 type Schedule struct {
 	ID           uuid.UUID   `json:"id"`
 	WorkspaceID  uuid.UUID   `json:"workspace_id"`

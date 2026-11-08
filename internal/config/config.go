@@ -41,6 +41,8 @@ type Config struct {
 	ServerHistory time.Duration `env:"SERVER_HISTORY" envDefault:"744h"`
 	// Same for DNS servers. 0 = off.
 	DNSCheckInterval time.Duration `env:"DNS_CHECK_INTERVAL" envDefault:"30s"`
+	// How often each reverse proxy is re-checked over SSH; 0 turns it off.
+	ProxyCheckInterval time.Duration `env:"PROXY_CHECK_INTERVAL" envDefault:"60s"`
 	// How often Morcheh looks for cron jobs that are due. 0 = they never run
 	// on time (Run now still works).
 	ScheduleTick time.Duration `env:"SCHEDULE_TICK" envDefault:"15s"`

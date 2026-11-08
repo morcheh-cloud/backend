@@ -1,0 +1,145 @@
+package nginx
+
+import (
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/morcheh/backend/internal/proxy"
+)
+
+func TestParseSites(t *testing.T) {
+	dump, err := os.ReadFile("testdata/dump.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sites := ParseSites(string(dump))
+	if len(sites) != 3 {
+		t.Fatalf("got %d sites, want 3 (stream servers are skipped): %+v", len(sites), sites)
+	}
+	def := sites[0]
+	if def.File != "/etc/nginx/sites-enabled/default" || def.Line != 1 || len(def.Domains) != 0 || def.Root != "/var/www/html" || def.TLS {
+		t.Errorf("default site = %+v", def)
+	}
+	if len(def.Listen) != 2 || def.Listen[0] != "80 default_server" {
+		t.Errorf("listen = %q", def.Listen)
+	}
+	if !strings.HasPrefix(def.Text, "server {\n\tlisten 80") || !strings.HasSuffix(def.Text, "}") {
+		t.Errorf("text = %q", def.Text)
+	}
+	shop := sites[1]
+	if strings.Join(shop.Domains, ",") != "shop.example.com,www.shop.example.com" || !shop.TLS || shop.Upstream != "http://127.0.0.1:8080/" || shop.Redirect != "https://new.example.com/$1" {
+		t.Errorf("shop = %+v", shop)
+	}
+	if shop.Managed || !sites[2].Managed {
+		t.Errorf("managed flags = %v %v", shop.Managed, sites[2].Managed)
+	}
+}
+
+func TestParseInspect(t *testing.T) {
+	dump, _ := os.ReadFile("testdata/dump.txt")
+	out := "\n" + sectionMark + "facts@@\ninit systemd\nipv6\nversion 1.24.0\nrunning\nenabled\n" +
+		"\n" + sectionMark + "test@@\nnginx: [warn] conflicting server name\nnginx: configuration file /etc/nginx/nginx.conf test is successful\nexit 0\n" +
+		"\n" + sectionMark + "dump@@\n" + string(dump) +
+		"\n" + sectionMark + "files@@\n" +
+		"\n" + fileMark + "abc@@\nserver {\n}\n" +
+		"\n" + fileMark + "def@@\nx\n" +
+		"\n" + sectionMark + "certs@@\ncert shop.example.com\nnotAfter=Feb  3 10:00:00 2027 GMT\nX509v3 Subject Alternative Name: \n    DNS:shop.example.com, DNS:www.shop.example.com\n" +
+		"\n" + sectionMark + "end@@\n"
+	in := Driver{}.ParseInspect(out)
+	if !in.Installed || in.Version != "1.24.0" || !in.Running || !in.Enabled || !in.IPv6 || in.Init != "systemd" || !in.ConfigOK || !in.SetUp {
+		t.Errorf("status = %+v", in.Status)
+	}
+	if in.Files["abc"] != "server {\n}\n" || in.Files["def"] != "x\n" {
+		t.Errorf("files = %q", in.Files)
+	}
+	if len(in.Certificates) != 1 || len(in.Certificates[0].Domains) != 2 || in.Certificates[0].Expires == nil || in.Certificates[0].Expires.Year() != 2027 {
+		t.Errorf("certs = %+v", in.Certificates)
+	}
+
+	bad := Driver{}.ParseInspect("\n" + sectionMark + "facts@@\nversion 1.18.0\n\n" + sectionMark + "test@@\nnginx: [emerg] unknown directive \"foo\" in /etc/nginx/x:1\nnginx: configuration file test failed\nexit 1\n")
+	if bad.ConfigOK || bad.ConfigError != `nginx: [emerg] unknown directive "foo" in /etc/nginx/x:1` {
+		t.Errorf("bad = %+v", bad.Status)
+	}
+	if none := (Driver{}).ParseInspect("\n" + sectionMark + "facts@@\ninit none\nmissing\n"); none.Installed {
+		t.Error("missing nginx reads as installed")
+	}
+}
+
+func TestRender(t *testing.T) {
+	h := proxy.Normalize(proxy.HostConfig{
+		Domains: []string{"App.Example.com", "www.app.example.com"}, Type: "proxy",
+		Upstream: "http://127.0.0.1:3000", WebSockets: true, PreserveHost: true,
+		TLS:      proxy.HostTLS{Enabled: true, Certificate: "/etc/ssl/a.pem", Key: "/etc/ssl/a.key", ForceHTTPS: true, HTTP2: true, HSTS: true},
+		Allow:    []string{"10.0.0.0/8"}, MaxBodyMB: 50,
+		Headers:  []proxy.HeaderRule{{To: "response", Name: "X-Frame-Options", Value: "DENY"}, {To: "request", Name: "X-Env", Value: "prod"}},
+		Paths:    []proxy.PathRule{{Path: "/api/", Upstream: "https://10.0.0.2:8443/"}},
+		Advanced: "location /health {\n    return 200;\n}",
+	})
+	if p := proxy.Validate(h); len(p) > 0 {
+		t.Fatalf("problems: %v", p)
+	}
+	got := Driver{}.Render("h1", h, proxy.Env{Version: "1.24.0", IPv6: true})
+	for _, want := range []string{
+		"server_name app.example.com www.app.example.com;",
+		"return 301 https://$host$request_uri;",
+		"listen 443 ssl http2;",
+		"listen [::]:443 ssl http2;",
+		"ssl_certificate_key /etc/ssl/a.key;",
+		`add_header Strict-Transport-Security "max-age=31536000" always;`,
+		"allow 10.0.0.0/8;\n    deny all;",
+		"client_max_body_size 50m;",
+		`add_header X-Frame-Options "DENY" always;`,
+		"location /api/ {\n        proxy_pass https://10.0.0.2:8443/;",
+		"proxy_ssl_server_name on;",
+		"proxy_set_header Connection $morcheh_connection;",
+		`proxy_set_header X-Env "prod";`,
+		"proxy_set_header Host $host;",
+		"access_log /var/log/nginx/morcheh-h1.access.log;",
+		"    # Advanced\n    location /health {\n        return 200;\n    }\n}\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("render lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Count(got, "listen 80;") != 1 {
+		t.Errorf("plain http should only redirect:\n%s", got)
+	}
+	// Rendered text parses back to the same names.
+	sites := ParseSites("# configuration file " + HostsDir + "/h1.conf:\n" + got)
+	if len(sites) != 2 || !sites[1].TLS || sites[1].Upstream != "https://10.0.0.2:8443/" {
+		t.Errorf("round trip = %+v", sites)
+	}
+
+	newer := Driver{}.Render("h1", h, proxy.Env{Version: "1.25.3"})
+	if !strings.Contains(newer, "http2 on;") || strings.Contains(newer, "[::]") {
+		t.Errorf("1.25 render:\n%s", newer)
+	}
+
+	redirect := Driver{}.Render("r", proxy.Normalize(proxy.HostConfig{Domains: []string{"old.com"}, Type: "redirect", RedirectTo: "https://new.com/", KeepPath: true}), proxy.Env{})
+	if !strings.Contains(redirect, "return 301 https://new.com$request_uri;") {
+		t.Errorf("redirect:\n%s", redirect)
+	}
+	static := Driver{}.Render("s", proxy.Normalize(proxy.HostConfig{Domains: []string{"s.com"}, Type: "static", Root: "/var/www/s", SPA: true}), proxy.Env{})
+	if !strings.Contains(static, "root /var/www/s;") || !strings.Contains(static, "try_files $uri $uri/ /index.html;") {
+		t.Errorf("static:\n%s", static)
+	}
+}
+
+func TestApplyScript(t *testing.T) {
+	s := Driver{}.ApplyScript(map[string]string{"b-1": "B\n", "a-2": "A\n"})
+	if strings.Index(s, "a-2.conf") > strings.Index(s, "b-1.conf") {
+		t.Error("files should be written in a stable order")
+	}
+	if !strings.Contains(s, "<<'MORCHEH_HOST_a2'\nA\nMORCHEH_HOST_a2\n") {
+		t.Errorf("heredoc:\n%s", s)
+	}
+}
+
+func TestAtLeast(t *testing.T) {
+	for v, want := range map[string]bool{"1.25.1": true, "1.25.0": false, "1.26": true, "1.9.15": false, "2.0.0": true, "": false} {
+		if atLeast(v, 1, 25, 1) != want {
+			t.Errorf("atLeast(%q) != %v", v, want)
+		}
+	}
+}

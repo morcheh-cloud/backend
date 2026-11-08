@@ -14,6 +14,7 @@ import (
 type Querier interface {
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
+	AddProxyChange(ctx context.Context, arg AddProxyChangeParams) error
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
 	AnyBackupPlanEnabled(ctx context.Context, databaseID uuid.UUID) (bool, error)
 	// A backup and all it builds on, oldest first.
@@ -58,6 +59,8 @@ type Querier interface {
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (UserGroup, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
 	CreatePlaybook(ctx context.Context, arg CreatePlaybookParams) (AnsiblePlaybook, error)
+	CreateProxy(ctx context.Context, arg CreateProxyParams) (Proxy, error)
+	CreateProxyHost(ctx context.Context, arg CreateProxyHostParams) (ProxyHost, error)
 	CreateRestore(ctx context.Context, arg CreateRestoreParams) (DatabaseRestore, error)
 	CreateSchedule(ctx context.Context, arg CreateScheduleParams) (Schedule, error)
 	CreateScheduleRun(ctx context.Context, arg CreateScheduleRunParams) (ScheduleRun, error)
@@ -103,6 +106,9 @@ type Querier interface {
 	DeleteOldScriptRuns(ctx context.Context) error
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeletePlaybook(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteProxy(ctx context.Context, id uuid.UUID) error
+	DeleteProxyHost(ctx context.Context, arg DeleteProxyHostParams) error
+	DeleteProxyHosts(ctx context.Context, proxyID uuid.UUID) error
 	DeleteSchedule(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteScheduleRun(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteScript(ctx context.Context, id uuid.UUID) error
@@ -166,6 +172,10 @@ type Querier interface {
 	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
 	GetPlaybook(ctx context.Context, id uuid.UUID) (AnsiblePlaybook, error)
 	GetPlaybookWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetProxy(ctx context.Context, id uuid.UUID) (GetProxyRow, error)
+	GetProxyChange(ctx context.Context, arg GetProxyChangeParams) (ProxyChange, error)
+	GetProxyHost(ctx context.Context, arg GetProxyHostParams) (ProxyHost, error)
+	GetProxyServer(ctx context.Context, id uuid.UUID) (GetProxyServerRow, error)
 	GetRestore(ctx context.Context, id uuid.UUID) (DatabaseRestore, error)
 	GetSchedule(ctx context.Context, id uuid.UUID) (Schedule, error)
 	GetScheduleRun(ctx context.Context, id uuid.UUID) (ScheduleRun, error)
@@ -278,6 +288,12 @@ type Querier interface {
 	ListPlaybooks(ctx context.Context, workspaceID uuid.UUID) ([]ListPlaybooksRow, error)
 	// People an owner can give access to.
 	ListPrincipalUsers(ctx context.Context) ([]ListPrincipalUsersRow, error)
+	ListProxies(ctx context.Context, arg ListProxiesParams) ([]ListProxiesRow, error)
+	ListProxiesDueForCheck(ctx context.Context, before time.Time) ([]Proxy, error)
+	ListProxyChanges(ctx context.Context, proxyID uuid.UUID) ([]ListProxyChangesRow, error)
+	ListProxyHosts(ctx context.Context, proxyID uuid.UUID) ([]ProxyHost, error)
+	// Every host of every proxy the caller can see, for the fleet view.
+	ListProxyHostsEverywhere(ctx context.Context, arg ListProxyHostsEverywhereParams) ([]ListProxyHostsEverywhereRow, error)
 	ListQueuedJobs(ctx context.Context) ([]Job, error)
 	ListRestores(ctx context.Context, arg ListRestoresParams) ([]DatabaseRestore, error)
 	// Names of the servers, storages, scripts, playbooks and databases schedules
@@ -341,6 +357,7 @@ type Querier interface {
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
 	PruneFirewallChanges(ctx context.Context, arg PruneFirewallChangesParams) error
+	PruneProxyChanges(ctx context.Context, arg PruneProxyChangesParams) error
 	// Keeps a schedule's newest runs, and every one still going.
 	PruneScheduleRuns(ctx context.Context, arg PruneScheduleRunsParams) error
 	PruneServerCheckBuckets(ctx context.Context, before time.Time) (int64, error)
@@ -360,6 +377,8 @@ type Querier interface {
 	// Version and domain keep their last known value while a server is away.
 	RecordDNSServerCheck(ctx context.Context, arg RecordDNSServerCheckParams) (DnsServer, error)
 	RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseCheckParams) (Database, error)
+	// The version keeps its last known value while the server is away.
+	RecordProxyCheck(ctx context.Context, arg RecordProxyCheckParams) error
 	// Stores a connection check. OS fields are only overwritten when the check
 	// got far enough to read them (detected = true).
 	RecordServerCheck(ctx context.Context, arg RecordServerCheckParams) (Server, error)
@@ -370,6 +389,8 @@ type Querier interface {
 	ReparentFolderChildren(ctx context.Context, arg ReparentFolderChildrenParams) error
 	ResetServerHostKey(ctx context.Context, id uuid.UUID) error
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
+	// Puts back a host from a history snapshot, with its old id.
+	RestoreProxyHost(ctx context.Context, arg RestoreProxyHostParams) error
 	SaveAnsibleRunProgress(ctx context.Context, arg SaveAnsibleRunProgressParams) error
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
 	// While it runs, so the page shows each finished destination.
@@ -457,6 +478,7 @@ type Querier interface {
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)
 	UpdateGroup(ctx context.Context, arg UpdateGroupParams) (UserGroup, error)
 	UpdatePlaybook(ctx context.Context, arg UpdatePlaybookParams) (AnsiblePlaybook, error)
+	UpdateProxyHost(ctx context.Context, arg UpdateProxyHostParams) (ProxyHost, error)
 	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (Schedule, error)
 	UpdateScript(ctx context.Context, arg UpdateScriptParams) (Script, error)
 	// Full replace of the editable fields. The handler resolves secrets first:

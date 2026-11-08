@@ -1,0 +1,59 @@
+# configuration file /etc/nginx/nginx.conf:
+user www-data;
+worker_processes auto;
+events {
+	worker_connections 768;
+}
+http {
+	include /etc/nginx/mime.types;
+	include /etc/nginx/conf.d/*.conf;
+	include /etc/nginx/sites-enabled/*;
+}
+stream {
+	upstream db { server 10.0.0.5:5432; }
+	server {
+		listen 5432;
+		proxy_pass db;
+	}
+}
+
+# configuration file /etc/nginx/conf.d/morcheh.conf:
+# Managed by Morcheh: sites added in the panel live in /etc/nginx/morcheh/hosts.
+map $http_upgrade $morcheh_connection {
+    default upgrade;
+    ''      close;
+}
+include /etc/nginx/morcheh/hosts/*.conf;
+
+# configuration file /etc/nginx/sites-enabled/default:
+server {
+	listen 80 default_server;
+	listen [::]:80 default_server;
+	root /var/www/html;
+	server_name _;
+	location / {
+		try_files $uri $uri/ =404; # comment with { brace
+	}
+}
+
+server {
+	listen 443 ssl http2;
+	server_name shop.example.com "www.shop.example.com";
+	ssl_certificate /etc/letsencrypt/live/shop.example.com/fullchain.pem;
+	location /api/ {
+		proxy_pass http://127.0.0.1:8080/;
+		set $x "a;b}";
+	}
+	location ~ ^/old/(.*)$ {
+		return 301 https://new.example.com/$1;
+	}
+}
+
+# configuration file /etc/nginx/morcheh/hosts/0193.conf:
+server {
+    listen 80;
+    server_name app.example.com;
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+    }
+}
