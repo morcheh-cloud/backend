@@ -100,7 +100,7 @@ func (h *proxyHandler) submitCertificate(ctx context.Context, rawID string, req 
 	}
 	server := r.Proxy.ServerID.String()
 	err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-		_, err := h.root(ctx, server, c)
+		_, err := h.shell(ctx, r.Proxy, c)
 		return err
 	})
 	if err != nil {
@@ -141,11 +141,11 @@ func (h *proxyHandler) runCertificate(ctx context.Context, t *jobs.Task) (any, e
 	defer h.refresh(r.Proxy.ID)
 
 	err = h.s.withConn(ctx, p.ServerID, func(c *sshpool.Conn) error {
-		sh, err := h.root(ctx, p.ServerID, c)
+		sh, err := h.shell(ctx, r.Proxy, c)
 		if err != nil {
 			return err
 		}
-		facts, err := sh.run(ctx, hostScript)
+		facts, err := sh.hostRun(ctx, hostScript)
 		if err != nil {
 			return err
 		}
@@ -193,7 +193,12 @@ func (h *proxyHandler) runCertificate(ctx context.Context, t *jobs.Task) (any, e
 				}
 			})
 		}}
-		res, err := sh.execTo(ctx, d.CertificateScript(req, proxy.Setup{Init: f.init, PM: f.pm, Install: install}), packageTimeout, lines)
+		su := proxy.Setup{Init: f.init, PM: f.pm, Install: install, Container: sh.box}
+		run := sh.execTo
+		if sh.box != nil {
+			run = sh.hostExecTo // the script reaches into the container itself
+		}
+		res, err := run(ctx, d.CertificateScript(req, su), packageTimeout, lines)
 		lines.flush()
 		switch {
 		case err != nil:

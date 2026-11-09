@@ -9,8 +9,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/proxy"
 	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morcheh/backend/internal/proxy"
 	"github.com/morcheh/backend/internal/sshpool"
 )
 
@@ -53,7 +53,7 @@ func (h *proxyHandler) registerKeptPages(api huma.API, base string, tags []strin
 		out := &struct{ Body ProxyKeptPagesResult }{}
 		server := r.Proxy.ServerID.String()
 		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-			sh, err := h.root(ctx, server, c)
+			sh, err := h.shell(ctx, r.Proxy, c)
 			if err != nil {
 				return err
 			}

@@ -125,13 +125,22 @@ mv -f %[8]s.new %[8]s && mv -f %[7]s.new %[7]s && chmod 600 %[7]s || exit 1
 echo "Made a self-signed certificate for %[9]s, valid %[4]d days, in %[2]s."
 `, indent(s.Install("openssl"), "  "), dir, newKey, r.Days, cn, strings.Join(alt, ","), key, cert, strings.Join(r.Domains, ", "))
 	case proxy.CertACME:
-		b.WriteString(acmeScript(r, s))
+		if s.Container != nil {
+			b.WriteString(acmeContainerScript(r, s))
+		} else {
+			b.WriteString(acmeScript(r, s))
+		}
+	}
+	if s.Container != nil && r.Source != proxy.CertACME {
+		b.WriteString(pushCert(*s.Container, cert, key))
 	}
 	return b.String()
 }
 
-func acmeScript(r proxy.CertRequest, s proxy.Setup) string {
-	tmp := HostsDir + "/zz-acme-" + r.Name + ".conf"
+// acmeBlock is the temporary server block answering the CA's check for
+// names no site serves yet, cut where the IPv6 listen goes (when the server
+// has IPv6).
+func acmeBlock(r proxy.CertRequest) (first, rest string) {
 	w := &writer{}
 	w.line("%s: a temporary block for a certificate check; it's removed when done.", marker)
 	w.open("server")
@@ -143,15 +152,39 @@ func acmeScript(r proxy.CertRequest, s proxy.Setup) string {
 	w.line("return 404;")
 	w.close()
 	w.close()
-
-	// The IPv6 listen goes in between, when the server has IPv6.
 	text := w.b.String()
 	cut := strings.Index(text, "listen 80;\n") + len("listen 80;\n")
-	first, rest := text[:cut], text[cut:]
+	return text[:cut], text[cut:]
+}
 
+// acmeTmp is where the temporary block goes.
+func acmeTmp(r proxy.CertRequest) string { return HostsDir + "/zz-acme-" + r.Name + ".conf" }
+
+// acmeOpen writes the temporary block, tests and reloads (exit
+// ExitTestFailed, with nginx's words, when it's refused). It leaves
+// reload() and tmp defined.
+func acmeOpen(r proxy.CertRequest) string {
+	first, rest := acmeBlock(r)
+	return fmt.Sprintf(`mkdir -p %[1]s/.well-known/acme-challenge && chmod 755 %[1]s %[1]s/.well-known %[1]s/.well-known/acme-challenge || exit 1
+tmp=%[2]s
+cat > "$tmp" <<'MORCHEH_ACME'
+%[3]sMORCHEH_ACME
+[ -f /proc/net/if_inet6 ] && v6='    listen [::]:80;' || v6=''
+cat >> "$tmp" <<MORCHEH_ACME
+$v6
+MORCHEH_ACME
+cat >> "$tmp" <<'MORCHEH_ACME'
+%[4]sMORCHEH_ACME
+reload() { nginx -s reload >/dev/null 2>&1; sleep 1; }
+if ! out=$(nginx -t 2>&1); then rm -f "$tmp"; printf '%%s\n' "$out"; exit %[5]d; fi
+reload
+`, proxy.ACMEWebroot, acmeTmp(r), first, rest, proxy.ExitTestFailed)
+}
+
+// acmeArgs are certbot's arguments but how it answers the check.
+func acmeArgs(r proxy.CertRequest) []string {
 	args := []string{
 		"certonly", "--non-interactive", "--agree-tos",
-		"--webroot", "-w", proxy.ACMEWebroot,
 		"--cert-name", q(r.Name),
 		"--server", q(r.DirectoryURL()),
 	}
@@ -168,65 +201,75 @@ func acmeScript(r proxy.CertRequest, s proxy.Setup) string {
 	} else {
 		args = append(args, "--keep-until-expiring")
 	}
+	return args
+}
+
+// certbotNeeded installs certbot when it's missing and prints its version.
+func certbotNeeded(s proxy.Setup) string {
+	return `if ! command -v certbot >/dev/null 2>&1; then
+  echo "Installing certbot…"
+  ` + indent(s.Install("certbot"), "  ") + `
+fi
+command -v certbot >/dev/null 2>&1 || { echo "certbot isn't installed and couldn't be. Install it by hand, then try again."; exit 1; }
+echo "$(certbot --version 2>&1 | head -n 1)"
+`
+}
+
+// eabConfig puts the EAB HMAC key in a root-only file, not on the command
+// line, and adds it to args.
+func eabConfig(r proxy.CertRequest, args *[]string, fail string) string {
+	if r.EABKid == "" {
+		return ""
+	}
+	*args = append(*args, "--config", `"$cfg"`)
+	return fmt.Sprintf(`cfg=$(mktemp) && chmod 600 "$cfg" && printf 'eab-kid = %%s\neab-hmac-key = %%s\n' %s %s > "$cfg" || { %s; exit 1; }
+`, q(r.EABKid), q(r.EABHMAC), fail)
+}
+
+// certbotRun runs certbot with args (key type when it knows it) and leaves
+// its status in rc.
+func certbotRun(r proxy.CertRequest, args []string) string {
 	keyType := "ecdsa"
 	if r.KeyType == "rsa" {
 		keyType = "rsa"
 	}
+	return fmt.Sprintf(`kt=""
+if certbot --help all 2>/dev/null | grep -q -- '--key-type'; then kt="--key-type %s"; fi
+printf 'Asking %%s for %%s…\n' %s %s
+certbot %s $kt 2>&1
+rc=$?
+`, keyType, q(r.DirectoryURL()), q(strings.Join(r.Domains, ", ")), strings.Join(args, " "))
+}
 
+const acmeRefused = `  echo "The certificate authority refused. Check that these names point to this server and that port 80 is open to the internet."
+  exit 1
+`
+
+func acmeScript(r proxy.CertRequest, s proxy.Setup) string {
+	args := append(acmeArgs(r), "--webroot", "-w", proxy.ACMEWebroot)
 	var b strings.Builder
 	fmt.Fprintf(&b, `command -v nginx >/dev/null 2>&1 || exit %[1]d
 running || { echo "nginx isn't running, so the certificate authority can't reach this server. Start it first."; exit 1; }
-if ! command -v certbot >/dev/null 2>&1; then
-  echo "Installing certbot…"
-  %[2]s
-fi
-command -v certbot >/dev/null 2>&1 || { echo "certbot isn't installed and couldn't be. Install it by hand, then try again."; exit 1; }
-echo "$(certbot --version 2>&1 | head -n 1)"
-mkdir -p %[3]s/.well-known/acme-challenge && chmod 755 %[3]s %[3]s/.well-known %[3]s/.well-known/acme-challenge || exit 1
-mkdir -p "$(dirname %[4]s)" && cat > %[4]s <<'MORCHEH_HOOK'
+%[2]smkdir -p "$(dirname %[3]s)" && cat > %[3]s <<'MORCHEH_HOOK'
 #!/bin/sh
 # Managed by Morcheh: reload nginx after certbot renews a certificate.
 PATH=$PATH:/usr/sbin:/sbin:/usr/local/sbin
 nginx -t >/dev/null 2>&1 || exit 0
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx; then systemctl reload nginx; else nginx -s reload; fi
 MORCHEH_HOOK
-chmod 755 %[4]s
-tmp=%[5]s
-cat > "$tmp" <<'MORCHEH_ACME'
-%[6]sMORCHEH_ACME
-[ -f /proc/net/if_inet6 ] && v6='    listen [::]:80;' || v6=''
-cat >> "$tmp" <<MORCHEH_ACME
-$v6
-MORCHEH_ACME
-cat >> "$tmp" <<'MORCHEH_ACME'
-%[8]sMORCHEH_ACME
-reload() { nginx -s reload >/dev/null 2>&1; sleep 1; }
-cleanup() { rm -f "$tmp" "$cfg"; nginx -t >/dev/null 2>&1 && reload; }
+chmod 755 %[3]s
 cfg=""
-if ! out=$(nginx -t 2>&1); then rm -f "$tmp"; printf '%%s\n' "$out"; exit %[7]d; fi
-reload
-`, proxy.ExitNotInstalled, indent(s.Install("certbot"), "  "), proxy.ACMEWebroot, deployHook,
-		tmp, first, proxy.ExitTestFailed, rest)
-
-	if r.EABKid != "" {
-		// The HMAC key goes in a root-only file, not on the command line.
-		fmt.Fprintf(&b, `cfg=$(mktemp) && chmod 600 "$cfg" && printf 'eab-kid = %%s\neab-hmac-key = %%s\n' %s %s > "$cfg" || { cleanup; exit 1; }
-`, q(r.EABKid), q(r.EABHMAC))
-		args = append(args, "--config", `"$cfg"`)
-	}
-	fmt.Fprintf(&b, `kt=""
-if certbot --help all 2>/dev/null | grep -q -- '--key-type'; then kt="--key-type %s"; fi
-printf 'Asking %%s for %%s…\n' %s %s
-certbot %s $kt 2>&1
-rc=$?
-cleanup
+%[4]scleanup() { rm -f "$tmp" "$cfg"; nginx -t >/dev/null 2>&1 && reload; }
+`, proxy.ExitNotInstalled, certbotNeeded(s), deployHook, acmeOpen(r))
+	b.WriteString(eabConfig(r, &args, "cleanup"))
+	b.WriteString(certbotRun(r, args))
+	fmt.Fprintf(&b, `cleanup
 if [ $rc -ne 0 ]; then
-  echo "The certificate authority refused. Check that these names point to this server and that port 80 is open to the internet."
-  exit 1
+%s
 fi
-[ -f %s ] || { echo "certbot finished but left no certificate."; exit 1; }
-echo "Certificate ready in $(dirname %s). certbot renews it before it expires and reloads nginx."
-`, keyType, q(r.DirectoryURL()), q(strings.Join(r.Domains, ", ")), strings.Join(args, " "), certPath(r), certPath(r))
+[ -f %[2]s ] || { echo "certbot finished but left no certificate."; exit 1; }
+echo "Certificate ready in $(dirname %[2]s). certbot renews it before it expires and reloads nginx."
+`, strings.TrimRight(acmeRefused, "\n"), certPath(r))
 	return b.String()
 }
 

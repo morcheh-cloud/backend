@@ -370,6 +370,7 @@ var policies = map[string]policy{
 	"list-proxy-hosts-everywhere":        active,
 	"get-proxy-traffic":                  active,
 	"create-proxy":                       active, // Engineer on the server, checked by the handler
+	"detect-proxy":                       onServer(auth.Engineer),
 	"get-proxy":                          onProxy(auth.Viewer),
 	"inspect-proxy":                      onProxy(auth.Viewer),
 	"delete-proxy":                       onProxy(auth.Owner),

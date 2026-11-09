@@ -35,6 +35,12 @@ type proxyHandler struct {
 	mu      sync.Mutex
 	locks   map[uuid.UUID]*sync.Mutex
 	traffic map[uuid.UUID]*trafficState
+	// containers is the last inspection of each container proxy's
+	// container (proxy id → *proxy.ContainerInfo).
+	containers sync.Map
+	// healed is when a container proxy was last set up again by itself
+	// (proxy id → time.Time).
+	healed sync.Map
 }
 
 func newProxyHandler(s *serverHandler) *proxyHandler {
@@ -104,6 +110,8 @@ type Proxy struct {
 	ServerStatus  string             `json:"server_status"`
 	Kind          string             `json:"kind"`
 	KindLabel     string             `json:"kind_label"`
+	Runtime       string             `json:"runtime" enum:"host,docker,podman" doc:"host = installed on the server; docker/podman = runs in a container"`
+	Container     string             `json:"container,omitempty" doc:"The container's name (docker/podman)"`
 	Status        string             `json:"status" enum:"unknown,online,stopped,not_installed,not_set_up,config_error,unreachable,error"`
 	StatusMessage string             `json:"status_message"`
 	Version       string             `json:"version"`
@@ -147,37 +155,39 @@ type ProxySiteRef struct {
 }
 
 type ProxyHostState struct {
-	ID        uuid.UUID      `json:"id"`
-	State     string         `json:"state" enum:"ok,changed,missing,off" doc:"changed = the file on the server differs from what the panel wrote; missing = not on the server"`
-	Conflicts []ProxySiteRef `json:"conflicts" doc:"Hand-written sites answering the same name"`
+	ID          uuid.UUID      `json:"id"`
+	State       string         `json:"state" enum:"ok,changed,missing,off" doc:"changed = the file on the server differs from what the panel wrote; missing = not on the server"`
+	Conflicts   []ProxySiteRef `json:"conflicts" doc:"Hand-written sites answering the same name"`
+	Unpublished bool           `json:"unpublished,omitempty" doc:"A port forward the proxy's container doesn't publish: nothing outside the server reaches it"`
 }
 
 type ProxyInspection struct {
-	Proxy        Proxy               `json:"proxy"`
-	Installed    bool                `json:"installed"`
-	Running      bool                `json:"running"`
-	Enabled      bool                `json:"enabled" doc:"Starts at boot"`
-	SetUp        bool                `json:"set_up" doc:"The panel's sites are loaded"`
-	ConfigOK     bool                `json:"config_ok"`
-	ConfigError  string              `json:"config_error,omitempty"`
-	Version      string              `json:"version"`
-	IPv6         bool                `json:"ipv6"`
-	Init         string              `json:"init"`
-	Sites        []proxy.Site        `json:"sites"`
-	Certificates []proxy.Certificate `json:"certificates"`
-	Hosts        []ProxyHostState    `json:"hosts"`
-	Unknown      []string            `json:"unknown" doc:"Files in Morcheh's folder the panel doesn't know"`
-	HTTP3        bool                `json:"http3" doc:"The proxy was built with HTTP/3 (QUIC)"`
-	Certbot      string              `json:"certbot,omitempty" doc:"certbot's version when it's installed (it renews certificates)"`
-	Streams      string              `json:"streams" enum:",ready,no_module,not_wired,taken" doc:"Port forwards: ready; no_module = the stream module is missing; not_wired = setup hasn't added the stream block; taken = nginx.conf has its own stream block. Empty when the kind has no streams"`
-	Geo          string              `json:"geo" enum:",ready,off" doc:"Country lookup for country rules: ready, off (not turned on yet). Empty when the kind can't"`
-	AuthRequest  bool                `json:"auth_request" doc:"Signing in through another service (forward auth) works"`
-	Brotli       bool                `json:"brotli" doc:"The Brotli module is loaded"`
-	WAF          bool                `json:"waf" doc:"The web application firewall works: ModSecurity is loaded and Morcheh's rule set is written"`
-	ImageFilter  bool                `json:"image_filter" doc:"The image filter module is loaded (resizing pictures)"`
-	StreamGeo    string              `json:"stream_geo" enum:",ready,off" doc:"Country rules for port forwards: ready, off (not turned on yet). Empty when the kind can't"`
-	CABundle     string              `json:"ca_bundle,omitempty" doc:"The system's CA file, used to check https upstreams"`
-	Released     []string            `json:"released_default" doc:"Hand-written files Morcheh took default_server from (ports 80 and 443) because one of its sites answers unknown names; they get it back when none does, or when the proxy is removed with its files"`
+	Proxy        Proxy                `json:"proxy"`
+	Installed    bool                 `json:"installed"`
+	Running      bool                 `json:"running"`
+	Enabled      bool                 `json:"enabled" doc:"Starts at boot"`
+	SetUp        bool                 `json:"set_up" doc:"The panel's sites are loaded"`
+	ConfigOK     bool                 `json:"config_ok"`
+	ConfigError  string               `json:"config_error,omitempty"`
+	Version      string               `json:"version"`
+	IPv6         bool                 `json:"ipv6"`
+	Init         string               `json:"init"`
+	Sites        []proxy.Site         `json:"sites"`
+	Certificates []proxy.Certificate  `json:"certificates"`
+	Hosts        []ProxyHostState     `json:"hosts"`
+	Unknown      []string             `json:"unknown" doc:"Files in Morcheh's folder the panel doesn't know"`
+	HTTP3        bool                 `json:"http3" doc:"The proxy was built with HTTP/3 (QUIC)"`
+	Certbot      string               `json:"certbot,omitempty" doc:"certbot's version when it's installed (it renews certificates)"`
+	Streams      string               `json:"streams" enum:",ready,no_module,not_wired,taken" doc:"Port forwards: ready; no_module = the stream module is missing; not_wired = setup hasn't added the stream block; taken = nginx.conf has its own stream block. Empty when the kind has no streams"`
+	Geo          string               `json:"geo" enum:",ready,off" doc:"Country lookup for country rules: ready, off (not turned on yet). Empty when the kind can't"`
+	AuthRequest  bool                 `json:"auth_request" doc:"Signing in through another service (forward auth) works"`
+	Brotli       bool                 `json:"brotli" doc:"The Brotli module is loaded"`
+	WAF          bool                 `json:"waf" doc:"The web application firewall works: ModSecurity is loaded and Morcheh's rule set is written"`
+	ImageFilter  bool                 `json:"image_filter" doc:"The image filter module is loaded (resizing pictures)"`
+	StreamGeo    string               `json:"stream_geo" enum:",ready,off" doc:"Country rules for port forwards: ready, off (not turned on yet). Empty when the kind can't"`
+	CABundle     string               `json:"ca_bundle,omitempty" doc:"The system's CA file, used to check https upstreams"`
+	Container    *proxy.ContainerInfo `json:"container,omitempty" doc:"What the runtime says about the proxy's container (docker/podman only)"`
+	Released     []string             `json:"released_default" doc:"Hand-written files Morcheh took default_server from (ports 80 and 443) because one of its sites answers unknown names; they get it back when none does, or when the proxy is removed with its files"`
 }
 
 type ProxyChangeSummary struct {
@@ -198,6 +208,7 @@ type ProxyFleetHost struct {
 	Kind        string    `json:"kind"`
 	ServerID    uuid.UUID `json:"server_id"`
 	ServerName  string    `json:"server_name"`
+	Container   string    `json:"container,omitempty" doc:"The proxy's container, when it runs in one"`
 	ProxyStatus string    `json:"proxy_status"`
 	WorkspaceID uuid.UUID `json:"workspace_id"`
 }
@@ -314,6 +325,10 @@ func proxyOut(p sqlc.Proxy, name, host string, ws uuid.UUID, serverStatus string
 		StatusMessage: p.StatusMessage, Version: p.Version, HostProblems: int(p.HostProblems),
 		HostCount: int(hosts), LastCheckedAt: p.LastCheckedAt, CreatedAt: p.CreatedAt,
 		Capabilities: proxy.Capabilities{Types: []string{}},
+		Runtime:      p.Runtime, Container: p.Container,
+	}
+	if out.Runtime == "" {
+		out.Runtime = proxy.RuntimeHost
 	}
 	if d, ok := proxy.Get(p.Kind); ok {
 		out.KindLabel, out.Capabilities = d.Label(), d.Capabilities()
@@ -426,13 +441,31 @@ func (h *proxyHandler) root(ctx context.Context, serverID string, c *sshpool.Con
 	return sh, nil
 }
 
-// inspect reads the proxy's state on its server.
-func inspectWith(ctx context.Context, sh *rootShell, d proxy.Driver) (proxy.Inspection, error) {
+// inspect reads the proxy's state on its server. For a container it also
+// reads the container (sh.ci), and the certificates and certbot on the
+// server itself.
+func inspectWith(ctx context.Context, sh *proxyShell, d proxy.Driver) (proxy.Inspection, error) {
+	if sh.box != nil {
+		ci, err := sh.info(ctx)
+		if err != nil {
+			return proxy.Inspection{}, err
+		}
+		sh.ci = ci
+		if !ci.Running {
+			return proxy.Inspection{}, &boxError{proxy.ExitContainerStopped, "The container " + ci.Name + " isn't running"}
+		}
+	}
 	out, err := sh.run(ctx, d.InspectScript())
 	if err != nil {
 		return proxy.Inspection{}, err
 	}
-	return d.ParseInspect(out), nil
+	in := d.ParseInspect(out)
+	if sh.box != nil {
+		sh.hostInspect(ctx, d, &in)
+		in.Init = sh.box.Runtime
+		in.Enabled = sh.ci.Restart == "always" || sh.ci.Restart == "unless-stopped"
+	}
+	return in, nil
 }
 
 // modulesMissing refuses to write sites that use something the proxy on
@@ -524,7 +557,10 @@ func takeoverOf(hosts []sqlc.ProxyHost, in proxy.Inspection) proxy.Takeover {
 }
 
 // applyFiles replaces Morcheh's files on the server and reloads.
-func applyFiles(ctx context.Context, sh *rootShell, d proxy.Driver, files []proxy.File, t proxy.Takeover) error {
+func applyFiles(ctx context.Context, sh *proxyShell, d proxy.Driver, files []proxy.File, t proxy.Takeover) error {
+	if err := sh.pushFiles(ctx, files); err != nil {
+		return err
+	}
 	res, err := sh.exec(ctx, d.ApplyScript(files, t), 2*time.Minute, 64<<10)
 	if err != nil {
 		return err
@@ -616,17 +652,45 @@ func statusOf(in proxy.Inspection, label string) (string, string) {
 // when the server couldn't be read.
 func (h *proxyHandler) check(ctx context.Context, p sqlc.Proxy, d proxy.Driver) (*proxy.Inspection, []ProxyHostState, []string, error) {
 	var in proxy.Inspection
+	var ci *proxy.ContainerInfo
 	err := h.s.withConn(ctx, p.ServerID.String(), func(c *sshpool.Conn) error {
-		sh, err := h.root(ctx, p.ServerID.String(), c)
+		sh, err := h.shell(ctx, p, c)
 		if err != nil {
 			return err
 		}
 		in, err = inspectWith(ctx, sh, d)
+		ci = sh.ci
+		if err == nil && h.heal(ctx, p, d, sh, in) {
+			in, err = inspectWith(ctx, sh, d)
+		}
 		return err
 	})
 	rec := sqlc.RecordProxyCheckParams{ID: p.ID}
 	var hs []ProxyHostState
 	unknown := []string{}
+	var be *boxError
+	if errors.As(err, &be) {
+		// The container is the proxy: a stopped one is a stopped proxy.
+		rec.Status, rec.StatusMessage = "error", be.msg
+		if be.stopped() {
+			rec.Status = "stopped"
+		}
+		if rerr := h.s.q.RecordProxyCheck(context.WithoutCancel(ctx), rec); rerr != nil {
+			slog.Warn("record proxy check", "proxy", p.ID, "error", rerr)
+		}
+		if be.stopped() && ci != nil {
+			stopped := proxy.Inspection{}
+			stopped.Installed, stopped.SetUp, stopped.ConfigOK = true, true, true
+			stopped.Init = ci.Runtime
+			stopped.Enabled = ci.Restart == "always" || ci.Restart == "unless-stopped"
+			h.containers.Store(p.ID, ci)
+			return &stopped, []ProxyHostState{}, []string{}, nil
+		}
+		return nil, nil, nil, err
+	}
+	if ci != nil {
+		h.containers.Store(p.ID, ci)
+	}
 	if err != nil {
 		rec.Status, rec.StatusMessage = "unreachable", proxyProblemText(err)
 		var se huma.StatusError
@@ -640,6 +704,7 @@ func (h *proxyHandler) check(ctx context.Context, p sqlc.Proxy, d proxy.Driver) 
 		}
 		var problems int
 		hs, unknown, problems = states(d, hosts, in)
+		markUnpublished(ci, hosts, hs)
 		rec.Status, rec.StatusMessage = statusOf(in, d.Label())
 		rec.Version, rec.HostProblems = in.Version, int32(problems)
 	}
@@ -719,7 +784,7 @@ func (h *proxyHandler) write(ctx context.Context, rawID string, edit func(q *sql
 	}
 
 	err = h.s.withConn(ctx, r.Proxy.ServerID.String(), func(c *sshpool.Conn) error {
-		sh, err := h.root(ctx, r.Proxy.ServerID.String(), c)
+		sh, err := h.shell(ctx, r.Proxy, c)
 		if err != nil {
 			return err
 		}
@@ -839,8 +904,16 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*Jo
 		return nil, err
 	}
 	server := r.Proxy.ServerID.String()
+	if box := containerOf(r.Proxy); box != nil && kind != proxySetupKind {
+		what := "Country lookup"
+		if m := moduleOfKind(kind); m != "" {
+			what = proxyModuleNames[m]
+		}
+		return nil, huma.Error422UnprocessableEntity(what + " can't be added to " + d.Label() + " in the container " + box.Name +
+			": Morcheh doesn't change a container's image. Use an image that has it, then check the proxy again.")
+	}
 	err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-		_, err := h.root(ctx, server, c)
+		_, err := h.shell(ctx, r.Proxy, c)
 		return err
 	})
 	if err != nil {
@@ -890,11 +963,14 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) 
 		return nil, jobError(err)
 	}
 	err = h.s.withConn(ctx, p.ServerID, func(c *sshpool.Conn) error {
-		sh, err := h.root(ctx, p.ServerID, c)
+		sh, err := h.shell(ctx, r.Proxy, c)
 		if err != nil {
 			return err
 		}
-		facts, err := sh.run(ctx, hostScript)
+		if (geo || mod) && sh.box != nil {
+			return fmt.Errorf("Morcheh doesn't change a container's image: use one that has it")
+		}
+		facts, err := sh.hostRun(ctx, hostScript)
 		if err != nil {
 			return err
 		}
@@ -906,14 +982,14 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) 
 			}
 			return s
 		}
-		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Locked = "Setting up", true })
+		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Locked = "Setting up", sh.box == nil })
 		var last string
 		lines := &lineWriter{fn: func(l string) {
 			last = l
 			t.Logf("%s", l)
 			t.Update(func(pr *jobs.Progress) { pr.Current = l })
 		}}
-		su := proxy.Setup{Init: f.init, PM: f.pm, Install: install}
+		su := proxy.Setup{Init: f.init, PM: f.pm, Install: install, Container: sh.box}
 		script := d.SetupScript(su)
 		switch {
 		case geo:
@@ -953,6 +1029,17 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) 
 		case res.code != 0:
 			return fmt.Errorf("Setting up failed (exit %d): %s", res.code, last)
 		}
+		if sh.box != nil {
+			t.Logf("Setting up log rotation on the server…")
+			res, err := sh.hostExecTo(ctx, d.HostSetupScript(*sh.box), time.Minute, lines)
+			lines.flush()
+			switch {
+			case err != nil:
+				return err
+			case res.code != 0:
+				return fmt.Errorf("Setting up the server's side failed (exit %d): %s", res.code, last)
+			}
+		}
 		hosts, err := h.s.q.ListProxyHosts(ctx, r.Proxy.ID)
 		if err != nil || len(hosts) == 0 {
 			return err
@@ -987,6 +1074,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	base := "/proxies/{id}"
 	registerProxyCertificates(api, h, base, tags)
 	h.registerUpstreamTest(api, base, tags)
+	h.registerDetect(api, tags)
 	h.registerKeptPages(api, base, tags)
 
 	huma.Register(api, huma.Operation{
@@ -1065,7 +1153,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			full := p.Access.ServerLevel(r.WorkspaceID, r.ServerID) >= auth.Operator
 			out.Body.Items[i] = ProxyFleetHost{
 				Host: hostOut(r.ProxyHost, full), Kind: r.Kind, ServerID: r.ServerID,
-				ServerName: r.ServerName, ProxyStatus: r.ProxyStatus, WorkspaceID: r.WorkspaceID,
+				ServerName: r.ServerName, Container: r.Container, ProxyStatus: r.ProxyStatus, WorkspaceID: r.WorkspaceID,
 			}
 		}
 		return out, nil
@@ -1078,8 +1166,10 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		Tags:        tags, DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, in *struct {
 		Body struct {
-			ServerID string `json:"server_id" format:"uuid"`
-			Kind     string `json:"kind" example:"nginx"`
+			ServerID  string `json:"server_id" format:"uuid"`
+			Kind      string `json:"kind" example:"nginx"`
+			Runtime   string `json:"runtime,omitempty" enum:"host,docker,podman" default:"host" doc:"Where the proxy runs: on the server itself, or in a Docker / Podman container"`
+			Container string `json:"container,omitempty" maxLength:"128" doc:"The container's name, for docker and podman"`
 		}
 	}) (*struct{ Body Proxy }, error) {
 		d, ok := proxy.Get(in.Body.Kind)
@@ -1097,8 +1187,25 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		case level < auth.Engineer:
 			return nil, forbidden(auth.Engineer)
 		}
-		p, err := h.s.q.CreateProxy(ctx, sqlc.CreateProxyParams{ServerID: sid, Kind: d.Kind()})
+		rt, box := in.Body.Runtime, strings.TrimSpace(in.Body.Container)
+		if rt == "" {
+			rt = proxy.RuntimeHost
+		}
+		if rt == proxy.RuntimeHost {
+			box = ""
+		} else {
+			if !proxy.ValidContainerName(box) {
+				return nil, fieldError("body.container", "Give the container's name.", box)
+			}
+			if err := h.checkContainer(ctx, sid, rt, box); err != nil {
+				return nil, err
+			}
+		}
+		p, err := h.s.q.CreateProxy(ctx, sqlc.CreateProxyParams{ServerID: sid, Kind: d.Kind(), Runtime: rt, Container: box})
 		if isUniqueViolation(err) {
+			if box != "" {
+				return nil, huma.Error409Conflict("The container " + box + " is already in the panel.")
+			}
 			return nil, huma.Error409Conflict("This server already has " + d.Label() + " in the panel.")
 		}
 		if err != nil {
@@ -1166,7 +1273,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			HTTP3: ins.HTTP3, Certbot: ins.Certbot,
 			AuthRequest: ins.AuthRequest, Brotli: ins.Brotli, CABundle: ins.CABundle,
 			WAF: ins.WAF, ImageFilter: ins.ImageFilter, StreamGeo: streamGeoState(d, *ins),
-			Released: released,
+			Released: released, Container: h.containerOf(r.Proxy),
 		}}, nil
 	})
 
@@ -1187,11 +1294,22 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if in.RemoveFiles {
 			server := r.Proxy.ServerID.String()
 			err := h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-				sh, err := h.root(ctx, server, c)
+				sh, err := h.shell(ctx, r.Proxy, c)
 				if err != nil {
 					return err
 				}
 				_, err = sh.run(ctx, d.RemoveScript())
+				var be *boxError
+				if errors.As(err, &be) {
+					// Nothing to take out of a container that's gone or
+					// stopped; the server's side still goes.
+					slog.Info("proxy removed without its container", "proxy", r.Proxy.ID, "reason", be.msg)
+					err = nil
+				}
+				if err != nil || sh.box == nil {
+					return err
+				}
+				_, err = sh.hostRun(ctx, d.HostRemoveScript(*sh.box))
 				return err
 			})
 			if err != nil {
@@ -1201,6 +1319,8 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if err := h.s.q.DeleteProxy(ctx, r.Proxy.ID); err != nil {
 			return nil, internalError(err)
 		}
+		h.containers.Delete(r.Proxy.ID)
+		h.healed.Delete(r.Proxy.ID)
 		return nil, nil
 	})
 
@@ -1283,7 +1403,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		}{}
 		server := r.Proxy.ServerID.String()
 		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-			sh, err := h.root(ctx, server, c)
+			sh, err := h.shell(ctx, r.Proxy, c)
 			if err != nil {
 				return err
 			}
@@ -1324,19 +1444,24 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		server := r.Proxy.ServerID.String()
 		out := &struct{ Body ProxyActionResult }{}
 		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-			sh, err := h.root(ctx, server, c)
+			sh, err := h.shell(ctx, r.Proxy, c)
 			if err != nil {
 				return err
 			}
-			facts, err := sh.run(ctx, hostScript)
-			if err != nil {
-				return err
+			var res *execResult
+			if sh.box != nil {
+				res, err = containerAction(ctx, sh, d, in.Body.Action)
+			} else {
+				facts, ferr := sh.hostRun(ctx, hostScript)
+				if ferr != nil {
+					return ferr
+				}
+				script, serr := d.ActionScript(in.Body.Action, parseHost(facts).init)
+				if serr != nil {
+					return fieldError("body.action", serr.Error(), in.Body.Action)
+				}
+				res, err = sh.exec(ctx, script, time.Minute, 64<<10)
 			}
-			script, err := d.ActionScript(in.Body.Action, parseHost(facts).init)
-			if err != nil {
-				return fieldError("body.action", err.Error(), in.Body.Action)
-			}
-			res, err := sh.exec(ctx, script, time.Minute, 64<<10)
 			if err != nil {
 				return err
 			}
@@ -1461,7 +1586,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		out := &struct{ Body ProxyActionResult }{}
 		server := r.Proxy.ServerID.String()
 		err = h.s.withConn(ctx, server, func(conn *sshpool.Conn) error {
-			sh, err := h.root(ctx, server, conn)
+			sh, err := h.shell(ctx, r.Proxy, conn)
 			if err != nil {
 				return err
 			}
@@ -1472,7 +1597,11 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			if !state.Installed {
 				return huma.Error409Conflict(d.Label() + " isn't installed on this server. Set it up first.")
 			}
-			res, err := sh.exec(ctx, d.TestScript(render(d, hosts, envOf(state)), takeoverOf(hosts, state)), 2*time.Minute, 64<<10)
+			files := render(d, hosts, envOf(state))
+			if err := sh.pushFiles(ctx, files); err != nil {
+				return err
+			}
+			res, err := sh.exec(ctx, d.TestScript(files, takeoverOf(hosts, state)), 2*time.Minute, 64<<10)
 			if err != nil {
 				return err
 			}
@@ -1674,7 +1803,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		out := &struct{ Body ProxyPurgeResult }{}
 		server := r.Proxy.ServerID.String()
 		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-			sh, err := h.root(ctx, server, c)
+			sh, err := h.shell(ctx, r.Proxy, c)
 			if err != nil {
 				return err
 			}
@@ -1730,13 +1859,21 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		}{}
 		server := r.Proxy.ServerID.String()
 		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-			sh, err := h.root(ctx, server, c)
+			sh, err := h.shell(ctx, r.Proxy, c)
 			if err != nil {
 				return err
 			}
 			text, err := sh.run(ctx, d.LogScript(in.Host, in.Log, in.Lines))
 			if err != nil {
 				return err
+			}
+			if strings.TrimSpace(text) == "@@morcheh-nolog" && in.Host == "" && sh.box != nil {
+				// The official images send nginx's own logs to the
+				// container's output.
+				text, err = sh.hostRun(ctx, containerLogScript(*sh.box, in.Log, in.Lines))
+				if err != nil {
+					return err
+				}
 			}
 			if strings.TrimSpace(text) == "@@morcheh-nolog" {
 				out.Body.Missing = true

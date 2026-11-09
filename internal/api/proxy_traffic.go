@@ -96,7 +96,7 @@ func (h *proxyHandler) collect(ctx context.Context, p sqlc.Proxy, d proxy.Driver
 	defer cancel()
 	var out string
 	err = h.s.withConn(cctx, p.ServerID.String(), func(c *sshpool.Conn) error {
-		sh, err := h.root(cctx, p.ServerID.String(), c)
+		sh, err := h.shell(cctx, p, c)
 		if err != nil {
 			return err
 		}

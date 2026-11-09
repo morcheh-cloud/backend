@@ -510,10 +510,20 @@ func atLeast(v string, want ...int) bool {
 // ---- Scripts ----
 
 // head finds nginx even through sudo's secure_path quirks, and picks the
-// folder the stock nginx.conf includes inside http.
+// folder the stock nginx.conf includes inside http. running only counts a
+// master in its own PID namespace, so nginx in a container doesn't pass for
+// the server's (and the other way round).
 const head = `PATH=$PATH:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/nginx/sbin
 if [ -d /etc/nginx/http.d ]; then inc=/etc/nginx/http.d; else inc=/etc/nginx/conf.d; fi
-running() { for p in /proc/[0-9]*; do tr '\0' ' ' < "$p/cmdline" 2>/dev/null; echo; done | grep -q '[n]ginx: master'; }
+running() {
+  me=$(readlink /proc/self/ns/pid 2>/dev/null)
+  for p in /proc/[0-9]*; do
+    case "$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)" in
+    "nginx: master"*) [ "$(readlink "$p/ns/pid" 2>/dev/null)" = "$me" ] && return 0 ;;
+    esac
+  done
+  return 1
+}
 `
 
 // streamFns: stream_state prints ready, taken, not_wired or no_module (see
@@ -549,6 +559,23 @@ unwire_stream() {
 }
 `
 
+// certsList prints certbot's live folders and Morcheh's own, for parseCerts.
+const certsList = `for d in /etc/letsencrypt/live/*/ ` + proxy.SelfDir + `/*/; do
+  [ -f "$d/fullchain.pem" ] || continue
+  echo "cert ${d%/}"
+  if command -v openssl >/dev/null 2>&1; then
+    openssl x509 -in "$d/fullchain.pem" -noout -enddate 2>/dev/null
+    openssl x509 -in "$d/fullchain.pem" -noout -issuer 2>/dev/null
+    openssl x509 -in "$d/fullchain.pem" -noout -subject 2>/dev/null
+    openssl x509 -in "$d/fullchain.pem" -noout -ext subjectAltName 2>/dev/null
+  fi
+done
+`
+
+// certbotVersion prints certbot's version when it's installed.
+const certbotVersion = `command -v certbot >/dev/null 2>&1 && echo "certbot $(certbot --version 2>&1 | sed -n 's/^certbot \([0-9.]*\).*/\1/p' | head -n 1)"
+`
+
 const sectionMark = "@@morcheh-section:"
 const fileMark = "@@morcheh-file:"
 
@@ -574,17 +601,7 @@ for f in ` + HostsDir + `/*.conf ` + StreamsDir + `/*.conf; do [ -f "$f" ] || co
 M released
 for x in ` + ReleasedDir + `/*.path; do [ -f "$x" ] && { cat "$x"; echo; }; done
 M certs
-for d in /etc/letsencrypt/live/*/ ` + proxy.SelfDir + `/*/; do
-  [ -f "$d/fullchain.pem" ] || continue
-  echo "cert ${d%/}"
-  if command -v openssl >/dev/null 2>&1; then
-    openssl x509 -in "$d/fullchain.pem" -noout -enddate 2>/dev/null
-    openssl x509 -in "$d/fullchain.pem" -noout -issuer 2>/dev/null
-    openssl x509 -in "$d/fullchain.pem" -noout -subject 2>/dev/null
-    openssl x509 -in "$d/fullchain.pem" -noout -ext subjectAltName 2>/dev/null
-  fi
-done
-M tls
+` + certsList + `M tls
 nginx -V 2>&1 | grep -q -- '--with-http_v3_module' && echo http3
 nginx -V 2>&1 | grep -q -- '--with-http_auth_request_module' && echo auth_request
 nginx -V 2>&1 | grep -qi -- 'brotli' && echo brotli
@@ -592,8 +609,7 @@ nginx -V 2>&1 | grep -qi -- 'modsecurity' && echo modsecurity
 nginx -V 2>&1 | grep -qE -- '--with-http_image_filter_module( |$)' && echo image_filter
 [ -f ` + WAFConf + ` ] && echo waf_rules
 for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do [ -f "$f" ] && { echo "cabundle $f"; break; }; done
-command -v certbot >/dev/null 2>&1 && echo "certbot $(certbot --version 2>&1 | sed -n 's/^certbot \([0-9.]*\).*/\1/p' | head -n 1)"
-M end
+` + certbotVersion + `M end
 `
 }
 
@@ -643,16 +659,33 @@ func streamPackage(pm string) string {
 
 func (Driver) SetupScript(su proxy.Setup) string {
 	addModule := `echo "This nginx has no stream module, so port forwards won't be available."`
-	if pkg := streamPackage(su.PM); pkg != "" {
+	if su.Container != nil {
+		addModule = `echo "This nginx image has no stream module, so port forwards won't be available (the official nginx images have it)."`
+	} else if pkg := streamPackage(su.PM); pkg != "" {
 		addModule = `echo "Adding nginx's stream module (for TCP/UDP port forwards)…"
   if ! { ` + su.Install(pkg) + `; } >/dev/null 2>&1; then echo "Couldn't add it, so port forwards won't be available."; fi`
 	}
-	s := head + `if ! command -v nginx >/dev/null 2>&1; then
+	var install, start string
+	if su.Container == nil {
+		install = `if ! command -v nginx >/dev/null 2>&1; then
   echo "Installing nginx…"
   ` + su.Install("nginx") + ` || exit $?
   command -v nginx >/dev/null 2>&1 || { echo "nginx still isn't there after installing it"; exit 1; }
 fi
-` + streamFns + `echo "Adding Morcheh's sites folder to nginx…"
+`
+		start = `echo "Starting nginx…"
+` + serviceCmd(su.Init, "enable") + ` >/dev/null 2>&1
+if running; then nginx -s reload || exit 4; else ` + serviceCmd(su.Init, "start") + ` || exit 4; fi
+`
+	} else {
+		// The image brings nginx and the runtime starts it.
+		install = `command -v nginx >/dev/null 2>&1 || { echo "There's no nginx in this container."; exit ` + strconv.Itoa(proxy.ExitNotInstalled) + `; }
+`
+		start = `echo "Reloading nginx…"
+if running; then nginx -s reload || exit 4; else echo "nginx isn't running in the container."; exit 4; fi
+`
+	}
+	return head + install + streamFns + `echo "Adding Morcheh's sites folder to nginx…"
 ` + writeInclude() + `if ! out=$(nginx -t 2>&1); then printf '%s\n' "$out"; exit 3; fi
 st=$(stream_state)
 if [ "$st" = no_module ]; then
@@ -668,12 +701,8 @@ elif [ "$st" = ready ]; then
 elif [ "$st" = taken ]; then
   echo "nginx.conf has its own stream block: add 'include ` + StreamsDir + `/*.conf;' inside it to use port forwards."
 fi
-echo "Starting nginx…"
-` + serviceCmd(su.Init, "enable") + ` >/dev/null 2>&1
-if running; then nginx -s reload || exit 4; else ` + serviceCmd(su.Init, "start") + ` || exit 4; fi
-echo "nginx is ready."
+` + start + `echo "nginx is ready."
 `
-	return s
 }
 
 func (Driver) ApplyScript(files []proxy.File, t proxy.Takeover) string {

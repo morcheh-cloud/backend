@@ -49,7 +49,7 @@ func (h *proxyHandler) registerUpstreamTest(api huma.API, base string, tags []st
 		out := &struct{ Body ProxyUpstreamTest }{}
 		server := r.Proxy.ServerID.String()
 		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-			sh, err := h.root(ctx, server, c)
+			sh, err := h.shell(ctx, r.Proxy, c)
 			if err != nil {
 				return err
 			}
@@ -57,7 +57,16 @@ func (h *proxyHandler) registerUpstreamTest(api huma.API, base string, tags []st
 			if err != nil {
 				return err
 			}
-			out.Body = parseUpstreamCurl(string(res.output))
+			text := string(res.output)
+			if sh.box != nil && strings.Contains(text, upstreamMark+" nocurl") {
+				// The image has no curl: ask from the server, inside the
+				// container's network, with the name as the container
+				// resolves it.
+				if again, ok := sh.curlInBox(ctx, u, in.Body.UpstreamTLS, text); ok {
+					text = again
+				}
+			}
+			out.Body = parseUpstreamCurl(text)
 			return nil
 		})
 		if err != nil {
@@ -69,7 +78,50 @@ func (h *proxyHandler) registerUpstreamTest(api huma.API, base string, tags []st
 
 const upstreamMark = "MORCHEH_UPSTREAM"
 
+const resolveMark = "MORCHEH_RESOLVE"
+
+// curlInBox runs the upstream check from the server inside the container's
+// network namespace (nsenter), for an image without curl. first is what the
+// container printed: the upstream's address as it resolves it.
+func (s *proxyShell) curlInBox(ctx context.Context, u *url.URL, t proxy.UpstreamTLS, first string) (string, bool) {
+	ci, err := s.info(ctx)
+	if err != nil || !ci.Running || ci.Pid <= 0 {
+		return "", false
+	}
+	args := curlArgs(u, t)
+	for _, line := range strings.Split(first, "\n") {
+		if ip, ok := strings.CutPrefix(strings.TrimSpace(line), resolveMark+" "); ok && net.ParseIP(ip) != nil {
+			port := u.Port()
+			if port == "" {
+				port = map[string]string{"http": "80", "https": "443"}[u.Scheme]
+			}
+			if strings.Contains(ip, ":") {
+				ip = "[" + ip + "]"
+			}
+			args = append(args[:1], append([]string{"--resolve", u.Hostname() + ":" + port + ":" + ip}, args[1:]...)...)
+			break
+		}
+	}
+	script := proxy.HostPath() + "command -v curl >/dev/null 2>&1 && command -v nsenter >/dev/null 2>&1 || { echo '" +
+		upstreamMark + " nocurl'; exit 0; }\nnsenter -t " + strconv.Itoa(ci.Pid) + " -n " + quoteAll(args) + " 2>&1\n"
+	res, err := s.hostExec(ctx, script, 20*time.Second, 8<<10)
+	if err != nil {
+		return "", false
+	}
+	return string(res.output), true
+}
+
 func upstreamCurl(u *url.URL, t proxy.UpstreamTLS) string {
+	resolve := ""
+	if net.ParseIP(u.Hostname()) == nil {
+		resolve = "getent hosts " + quoteAll([]string{u.Hostname()}) +
+			" 2>/dev/null | awk '{print \"" + resolveMark + " \" $1; exit}'; "
+	}
+	return "command -v curl >/dev/null 2>&1 || { echo '" + upstreamMark + " nocurl'; " + resolve + "exit 0; }\n" +
+		quoteAll(curlArgs(u, t)) + " 2>&1\n"
+}
+
+func curlArgs(u *url.URL, t proxy.UpstreamTLS) []string {
 	args := []string{"curl", "-sS", "-o", "/dev/null", "--max-time", "10",
 		"-w", `\n` + upstreamMark + ` %{http_code} %{time_total}\n`}
 	target := u.String()
@@ -93,8 +145,7 @@ func upstreamCurl(u *url.URL, t proxy.UpstreamTLS) string {
 			target = v.String()
 		}
 	}
-	args = append(args, "--", target)
-	return "command -v curl >/dev/null 2>&1 || { echo '" + upstreamMark + " nocurl'; exit 0; }\n" + quoteAll(args) + " 2>&1\n"
+	return append(args, "--", target)
 }
 
 func parseUpstreamCurl(out string) ProxyUpstreamTest {

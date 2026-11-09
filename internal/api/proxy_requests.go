@@ -232,7 +232,7 @@ func (h *proxyHandler) readAccess(ctx context.Context, p sqlc.Proxy, d proxy.Dri
 	var chunk proxy.LogChunk
 	server := p.ServerID.String()
 	err := h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-		sh, err := h.root(ctx, server, c)
+		sh, err := h.shell(ctx, p, c)
 		if err != nil {
 			return err
 		}
@@ -258,7 +258,7 @@ func (h *proxyHandler) readAccessWAF(ctx context.Context, p sqlc.Proxy, d proxy.
 	var lines []string
 	server := p.ServerID.String()
 	err := h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
-		sh, err := h.root(ctx, server, c)
+		sh, err := h.shell(ctx, p, c)
 		if err != nil {
 			return err
 		}

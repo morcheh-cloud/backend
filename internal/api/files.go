@@ -1231,6 +1231,10 @@ func toProblem(err error) error {
 	if errors.As(err, &se) {
 		return err
 	}
+	var be *boxError
+	if errors.As(err, &be) {
+		return boxProblem(be)
+	}
 	var ce *cmdError
 	if errors.As(err, &ce) {
 		return huma.Error422UnprocessableEntity(ce.msg)

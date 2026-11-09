@@ -6,7 +6,7 @@ JOIN servers s ON s.id = p.server_id
 WHERE (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id = ANY (@server_ids::uuid[]))
   AND (sqlc.narg('workspace_id')::uuid IS NULL OR s.workspace_id = sqlc.narg('workspace_id')::uuid)
   AND (sqlc.narg('server_id')::uuid IS NULL OR p.server_id = sqlc.narg('server_id')::uuid)
-ORDER BY lower(s.name), p.kind;
+ORDER BY lower(s.name), p.kind, p.container;
 
 -- name: GetProxy :one
 SELECT sqlc.embed(p), s.name AS server_name, s.host AS server_host, s.workspace_id, s.status AS server_status,
@@ -22,7 +22,7 @@ JOIN servers s ON s.id = p.server_id
 WHERE p.id = $1;
 
 -- name: CreateProxy :one
-INSERT INTO proxies (server_id, kind) VALUES (@server_id, @kind) RETURNING *;
+INSERT INTO proxies (server_id, kind, runtime, container) VALUES (@server_id, @kind, @runtime, @container) RETURNING *;
 
 -- name: DeleteProxy :exec
 DELETE FROM proxies WHERE id = $1;
@@ -48,7 +48,7 @@ SELECT * FROM proxy_hosts WHERE proxy_id = $1 ORDER BY lower(domains[1]), id;
 
 -- name: ListProxyHostsEverywhere :many
 -- Every host of every proxy the caller can see, for the fleet view.
-SELECT sqlc.embed(h), p.kind, p.server_id, p.status AS proxy_status, s.name AS server_name, s.workspace_id
+SELECT sqlc.embed(h), p.kind, p.server_id, p.container, p.status AS proxy_status, s.name AS server_name, s.workspace_id
 FROM proxy_hosts h
 JOIN proxies p ON p.id = h.proxy_id
 JOIN servers s ON s.id = p.server_id

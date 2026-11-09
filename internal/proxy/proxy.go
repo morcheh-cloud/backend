@@ -1220,6 +1220,10 @@ type Setup struct {
 	// Install is a script installing packages with PM (it fails when there
 	// is none).
 	Install func(pkgs ...string) string
+	// Container is set when the proxy runs in a container: SetupScript then
+	// runs inside it and installs nothing; CertificateScript runs on the
+	// server around it (certbot lives there) and copies the files in.
+	Container *Container
 }
 
 // Hit is a count of requests in one minute with one status class.
@@ -1433,8 +1437,21 @@ type Driver interface {
 	TrafficScript(hosts []string, marks map[string]LogMark) string
 	ParseTraffic(out string) ([]Hit, map[string]LogMark)
 	// CertificateScript gets or writes one certificate (see CertRequest).
-	// It ends with exit 0 and the files in place, or prints why not.
+	// It ends with exit 0 and the files in place, or prints why not. With
+	// s.Container set it is a script for the server itself (see Setup).
 	CertificateScript(r CertRequest, s Setup) string
+	// HostInspectScript reads, on the server around a container, what
+	// InspectScript can't see from inside it (certificates, certbot); its
+	// output is ParseInspect's too.
+	HostInspectScript() string
+	// HostSetupScript and HostRemoveScript add and take away what a proxy
+	// in container c needs on the server itself (log rotation, certbot's
+	// hooks).
+	HostSetupScript(c Container) string
+	HostRemoveScript(c Container) string
+	// DetectScript looks for the proxy on the server and in its containers;
+	// ParseDetect reads it.
+	DetectScript() string
 	// PurgeCacheScript clears a site's kept answers (Capabilities.Cache):
 	// those f picks, every one when f is empty. With dryRun it only counts
 	// them. Its last line is ParsePurge's.

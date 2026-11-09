@@ -386,6 +386,8 @@ type Proxy struct {
 	LastCheckedAt *time.Time `json:"last_checked_at"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	Runtime       string     `json:"runtime"`
+	Container     string     `json:"container"`
 }
 
 type ProxyChange struct {
