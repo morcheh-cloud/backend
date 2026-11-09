@@ -368,6 +368,7 @@ var policies = map[string]policy{
 	"list-proxy-kinds":            active,
 	"list-proxies":                active,
 	"list-proxy-hosts-everywhere": active,
+	"get-proxy-traffic":           active,
 	"create-proxy":                active, // Engineer on the server, checked by the handler
 	"get-proxy":                   onProxy(auth.Viewer),
 	"inspect-proxy":               onProxy(auth.Viewer),

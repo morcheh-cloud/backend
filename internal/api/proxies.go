@@ -32,12 +32,13 @@ import (
 type proxyHandler struct {
 	s *serverHandler
 
-	mu    sync.Mutex
-	locks map[uuid.UUID]*sync.Mutex
+	mu      sync.Mutex
+	locks   map[uuid.UUID]*sync.Mutex
+	traffic map[uuid.UUID]*trafficState
 }
 
 func newProxyHandler(s *serverHandler) *proxyHandler {
-	return &proxyHandler{s: s, locks: map[uuid.UUID]*sync.Mutex{}}
+	return &proxyHandler{s: s, locks: map[uuid.UUID]*sync.Mutex{}, traffic: map[uuid.UUID]*trafficState{}}
 }
 
 // lock serializes writes to one proxy: each write replaces every file.
@@ -132,6 +133,7 @@ type ProxyInspection struct {
 	Certificates []proxy.Certificate `json:"certificates"`
 	Hosts        []ProxyHostState    `json:"hosts"`
 	Unknown      []string            `json:"unknown" doc:"Files in Morcheh's folder the panel doesn't know"`
+	Streams      string              `json:"streams" enum:",ready,no_module,not_wired,taken" doc:"Port forwards: ready; no_module = the stream module is missing; not_wired = setup hasn't added the stream block; taken = nginx.conf has its own stream block. Empty when the kind has no streams"`
 }
 
 type ProxyChangeSummary struct {
@@ -309,23 +311,29 @@ func envOf(in proxy.Inspection) proxy.Env {
 	return proxy.Env{Version: in.Version, IPv6: in.IPv6}
 }
 
+// configOf is a stored host's settings.
+func configOf(x sqlc.ProxyHost) proxy.HostConfig {
+	var cfg proxy.HostConfig
+	_ = json.Unmarshal(x.Config, &cfg)
+	cfg.Domains = x.Domains
+	return cfg
+}
+
 // render builds the file of every enabled host.
-func render(d proxy.Driver, hosts []sqlc.ProxyHost, env proxy.Env) map[string]string {
-	files := map[string]string{}
+func render(d proxy.Driver, hosts []sqlc.ProxyHost, env proxy.Env) []proxy.File {
+	files := []proxy.File{}
 	for _, x := range hosts {
 		if !x.Enabled {
 			continue
 		}
-		var cfg proxy.HostConfig
-		_ = json.Unmarshal(x.Config, &cfg)
-		cfg.Domains = x.Domains
-		files[x.ID.String()] = d.Render(x.ID.String(), cfg, env)
+		cfg := configOf(x)
+		files = append(files, proxy.File{ID: x.ID.String(), Config: cfg, Text: d.Render(x.ID.String(), cfg, env)})
 	}
 	return files
 }
 
 // applyFiles replaces Morcheh's files on the server and reloads.
-func applyFiles(ctx context.Context, sh *rootShell, d proxy.Driver, files map[string]string) error {
+func applyFiles(ctx context.Context, sh *rootShell, d proxy.Driver, files []proxy.File) error {
 	res, err := sh.exec(ctx, d.ApplyScript(files), 2*time.Minute, 64<<10)
 	if err != nil {
 		return err
@@ -342,6 +350,8 @@ func applyFiles(ctx context.Context, sh *rootShell, d proxy.Driver, files map[st
 		return huma.Error422UnprocessableEntity(d.Label() + " refused the change, so nothing was changed: " + out)
 	case res.code == proxy.ExitReloadFailed:
 		return huma.Error422UnprocessableEntity(d.Label() + " couldn't reload, so the old sites were put back: " + out)
+	case res.code == proxy.ExitNoStreams, res.code == proxy.ExitPortTaken:
+		return fieldError("body.config.listen_port", lastLines(out, 1)+" Nothing was changed.", nil)
 	}
 	return huma.Error422UnprocessableEntity(fmt.Sprintf("Writing the sites failed (exit %d): %s", res.code, lastLines(out, 5)))
 }
@@ -350,7 +360,10 @@ func applyFiles(ctx context.Context, sh *rootShell, d proxy.Driver, files map[st
 
 // states compares what's on the server with what the panel wrote.
 func states(d proxy.Driver, hosts []sqlc.ProxyHost, in proxy.Inspection) ([]ProxyHostState, []string, int) {
-	files := render(d, hosts, envOf(in))
+	files := map[string]string{}
+	for _, f := range render(d, hosts, envOf(in)) {
+		files[f.ID] = f.Text
+	}
 	out := make([]ProxyHostState, 0, len(hosts))
 	problems := 0
 	known := map[string]bool{}
@@ -552,13 +565,22 @@ func (h *proxyHandler) write(ctx context.Context, rawID string, edit func(q *sql
 	return h.detail(ctx, rawID)
 }
 
-// checkOverlaps refuses two sites answering the same name.
+// checkOverlaps refuses two sites answering the same name, and two forwards
+// on the same port.
 func checkOverlaps(hosts []sqlc.ProxyHost) error {
+	ports := map[string]bool{}
 	for i, a := range hosts {
 		for _, b := range hosts[i+1:] {
 			if dup := proxy.Overlaps(a.Domains, b.Domains); len(dup) > 0 {
 				return fieldError("body.config.domains", fmt.Sprintf("%s is already used by another site here.", dup[0]), dup[0])
 			}
+		}
+		if c := configOf(a); c.IsStream() && a.Enabled {
+			key := fmt.Sprintf("%s/%d", c.Protocol, c.ListenPort)
+			if ports[key] {
+				return fieldError("body.config.listen_port", fmt.Sprintf("Port %d (%s) is already forwarded by another stream here.", c.ListenPort, strings.ToUpper(c.Protocol)), c.ListenPort)
+			}
+			ports[key] = true
 		}
 	}
 	return nil
@@ -578,7 +600,13 @@ func cleanHost(d proxy.Driver, c proxy.HostConfig) (proxy.HostConfig, error) {
 	return c, huma.Error422UnprocessableEntity(probs[0].Message, details...)
 }
 
-func hostLabel(domains []string) string {
+// hostLabel names a site in the history: its first domain, or a forward's
+// port.
+func hostLabel(c proxy.HostConfig) string {
+	if c.IsStream() {
+		return fmt.Sprintf("%s port %d", strings.ToUpper(c.Protocol), c.ListenPort)
+	}
+	domains := c.Domains
 	if len(domains) == 0 {
 		return "a site"
 	}
@@ -645,10 +673,12 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task) (any, error) 
 			return err
 		}
 		f := parseHost(facts)
-		// The package is named after the kind (nginx, caddy, haproxy).
-		install, perr := packageScript(f.pm, "install", d.Kind())
-		if perr != nil {
-			install = "echo 'No package manager Morcheh knows here: install " + d.Kind() + " by hand, then set it up again.'; false"
+		install := func(pkgs ...string) string {
+			s, err := packageScript(f.pm, "install", pkgs...)
+			if err != nil {
+				return "echo 'No package manager Morcheh knows here: install " + strings.Join(pkgs, " ") + " by hand, then set it up again.'; false"
+			}
+			return s
 		}
 		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Locked = "Setting up", true })
 		var last string
@@ -657,7 +687,7 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task) (any, error) 
 			t.Logf("%s", l)
 			t.Update(func(pr *jobs.Progress) { pr.Current = l })
 		}}
-		res, err := sh.execTo(ctx, d.SetupScript(install, f.init), packageTimeout, lines)
+		res, err := sh.execTo(ctx, d.SetupScript(proxy.Setup{Init: f.init, PM: f.pm, Install: install}), packageTimeout, lines)
 		lines.flush()
 		switch {
 		case err != nil:
@@ -700,6 +730,7 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task) (any, error) 
 
 func registerProxies(api huma.API, h *proxyHandler) {
 	tags := []string{"Reverse proxy"}
+	h.registerTraffic(api, tags)
 	base := "/proxies/{id}"
 
 	huma.Register(api, huma.Operation{
@@ -871,6 +902,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			Proxy: proxyRowOut(r), Installed: ins.Installed, Running: ins.Running, Enabled: ins.Enabled,
 			SetUp: ins.SetUp, ConfigOK: ins.ConfigOK, ConfigError: ins.ConfigError, Version: ins.Version,
 			IPv6: ins.IPv6, Init: ins.Init, Sites: sites, Certificates: certs, Hosts: hs, Unknown: unknown,
+			Streams: ins.Streams,
 		}}, nil
 	})
 
@@ -1040,7 +1072,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			if err != nil {
 				return "", internalError(err)
 			}
-			return "Added " + hostLabel(c.Domains), nil
+			return "Added " + hostLabel(c), nil
 		})
 		if err != nil {
 			return nil, err
@@ -1086,7 +1118,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			}); err != nil {
 				return "", internalError(err)
 			}
-			return "Changed " + hostLabel(c.Domains), nil
+			return "Changed " + hostLabel(c), nil
 		})
 		if err != nil {
 			return nil, err
@@ -1120,9 +1152,9 @@ func registerProxies(api huma.API, h *proxyHandler) {
 				return "", internalError(err)
 			}
 			if in.Body.Enabled {
-				return "Turned on " + hostLabel(old.Domains), nil
+				return "Turned on " + hostLabel(configOf(old)), nil
 			}
-			return "Turned off " + hostLabel(old.Domains), nil
+			return "Turned off " + hostLabel(configOf(old)), nil
 		})
 		if err != nil {
 			return nil, err
@@ -1145,7 +1177,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			if err := q.DeleteProxyHost(ctx, sqlc.DeleteProxyHostParams{ID: old.ID, ProxyID: pid}); err != nil {
 				return "", internalError(err)
 			}
-			return "Removed " + hostLabel(old.Domains), nil
+			return "Removed " + hostLabel(configOf(old)), nil
 		})
 		if err != nil {
 			return nil, err

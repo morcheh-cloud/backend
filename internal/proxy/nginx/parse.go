@@ -1,14 +1,21 @@
 package nginx
 
 import (
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/morcheh/backend/internal/proxy"
 )
 
+var (
+	streamBlockRe  = regexp.MustCompile(`(?m)^\s*stream\s*\{`)
+	streamModuleRe = regexp.MustCompile(`(?m)^\s*load_module\s.*ngx_stream_module`)
+)
+
 func (Driver) ParseInspect(out string) proxy.Inspection {
 	in := proxy.Inspection{Files: map[string]string{}}
+	streamStatic := false
 	sections := splitMarked(out, sectionMark)
 	for _, l := range strings.Split(sections["facts"], "\n") {
 		k, v, _ := strings.Cut(strings.TrimSpace(l), " ")
@@ -23,6 +30,8 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 			in.Running = true
 		case "enabled":
 			in.Enabled = true
+		case "stream_static":
+			streamStatic = true
 		}
 	}
 	if !in.Installed {
@@ -37,6 +46,16 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 	}
 	dump := sections["dump"]
 	in.SetUp = strings.Contains(dump, "include "+HostsDir+"/*.conf;")
+	switch {
+	case strings.Contains(dump, "include "+StreamsDir+"/*.conf;"):
+		in.Streams = "ready"
+	case streamBlockRe.MatchString(dump):
+		in.Streams = "taken"
+	case streamStatic || streamModuleRe.MatchString(dump):
+		in.Streams = "not_wired"
+	default:
+		in.Streams = "no_module"
+	}
 	in.Sites = ParseSites(dump)
 	for id, text := range splitMarked(sections["files"]+"\n", fileMark) {
 		in.Files[id] = text
@@ -130,6 +149,10 @@ type directive struct {
 func ParseSites(dump string) []proxy.Site {
 	sites := []proxy.Site{}
 	for _, f := range splitFiles(dump) {
+		// Forwards sit inside stream {}: their server blocks aren't sites.
+		if strings.HasPrefix(f.path, StreamsDir+"/") || f.path == StreamConf {
+			continue
+		}
 		lines := strings.Split(f.text, "\n")
 		var walk func(ds []*directive, parent string)
 		walk = func(ds []*directive, parent string) {

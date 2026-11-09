@@ -127,12 +127,54 @@ func TestRender(t *testing.T) {
 }
 
 func TestApplyScript(t *testing.T) {
-	s := Driver{}.ApplyScript(map[string]string{"b-1": "B\n", "a-2": "A\n"})
+	stream := proxy.Normalize(proxy.HostConfig{Type: "stream", ListenPort: 5432, StreamTo: "10.0.0.5:5432"})
+	s := Driver{}.ApplyScript([]proxy.File{{ID: "b-1", Text: "B\n"}, {ID: "a-2", Text: "A\n"}, {ID: "c-3", Config: stream, Text: "C\n"}})
 	if strings.Index(s, "a-2.conf") > strings.Index(s, "b-1.conf") {
 		t.Error("files should be written in a stable order")
 	}
 	if !strings.Contains(s, "<<'MORCHEH_HOST_a2'\nA\nMORCHEH_HOST_a2\n") {
 		t.Errorf("heredoc:\n%s", s)
+	}
+	if !strings.Contains(s, `"$n/streams/c-3.conf"`) || !strings.Contains(s, "taken_by t 5432") {
+		t.Errorf("stream file:\n%s", s)
+	}
+	if strings.Contains(Driver{}.ApplyScript(nil), "stream_state)") {
+		t.Error("no streams: the module isn't needed")
+	}
+}
+
+func TestRenderStreamAndNotFound(t *testing.T) {
+	st := proxy.Normalize(proxy.HostConfig{Type: "stream", ListenPort: 53, Protocol: "udp", StreamTo: "10.0.0.5:53", TimeoutSeconds: 30, Allow: []string{"10.0.0.0/8"}})
+	if p := proxy.Validate(st); len(p) > 0 {
+		t.Fatalf("stream problems: %v", p)
+	}
+	out := Driver{}.Render("s1", st, proxy.Env{IPv6: true})
+	for _, want := range []string{"listen 53 udp;", "listen [::]:53 udp;", "proxy_pass 10.0.0.5:53;", "proxy_timeout 30s;", "allow 10.0.0.0/8;", "morcheh_stream;"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stream render lacks %q:\n%s", want, out)
+		}
+	}
+	nf := Driver{}.Render("n1", proxy.Normalize(proxy.HostConfig{Domains: []string{"x.com"}, Type: "notfound"}), proxy.Env{})
+	if !strings.Contains(nf, "return 404;") || strings.Contains(nf, "proxy_pass") {
+		t.Errorf("404 render:\n%s", nf)
+	}
+	bad := proxy.Normalize(proxy.HostConfig{Type: "stream", ListenPort: 443, StreamTo: "x"})
+	if len(proxy.Validate(bad)) < 2 {
+		t.Errorf("tcp 443 and a target without a port should be refused: %v", proxy.Validate(bad))
+	}
+}
+
+func TestTraffic(t *testing.T) {
+	s := Driver{}.TrafficScript([]string{"h1", "bad id;"}, map[string]proxy.LogMark{"h1": {Inode: "12", Size: 40}})
+	if !strings.Contains(s, "count h1 12 40\n") || strings.Contains(s, "bad id") {
+		t.Errorf("script:\n%s", s)
+	}
+	hits, marks := Driver{}.ParseTraffic("@@host h1 13 900\n08/Nov/2026:10:15 +0330 2 14 5120\n08/Nov/2026:10:15 +0330 5 1 0\n@@host h2 - 0\n")
+	if marks["h1"] != (proxy.LogMark{Inode: "13", Size: 900}) || len(marks) != 2 {
+		t.Errorf("marks = %v", marks)
+	}
+	if len(hits) != 2 || hits[0].Requests != 14 || hits[0].Bytes != 5120 || hits[1].Class != 5 || hits[0].Minute.Hour() != 6 || hits[0].Minute.Minute() != 45 {
+		t.Errorf("hits = %+v", hits)
 	}
 }
 

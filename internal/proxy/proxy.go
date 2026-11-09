@@ -6,10 +6,12 @@ package proxy
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,12 +21,21 @@ const (
 	TypeProxy    = "proxy"
 	TypeRedirect = "redirect"
 	TypeStatic   = "static"
+	// TypeNotFound answers every request with 404: parks names that must not
+	// fall through to another site.
+	TypeNotFound = "notfound"
+	// TypeStream forwards a TCP or UDP port as is (databases, mail, games).
+	// It has no domains.
+	TypeStream = "stream"
 )
+
+// IsStream says whether a host is a port forward rather than a site.
+func (h HostConfig) IsStream() bool { return h.Type == TypeStream }
 
 // HostConfig is one site: which names it answers and what it does with them.
 type HostConfig struct {
-	Domains []string `json:"domains" minItems:"1" maxItems:"50" doc:"Names it answers, like example.com or *.example.com"`
-	Type    string   `json:"type" enum:"proxy,redirect,static"`
+	Domains []string `json:"domains" maxItems:"50" doc:"Names it answers, like example.com or *.example.com; empty for a stream"`
+	Type    string   `json:"type" enum:"proxy,redirect,static,notfound,stream"`
 
 	// proxy
 	Upstream     string `json:"upstream,omitempty" doc:"Where requests go, like http://127.0.0.1:3000" example:"http://127.0.0.1:3000"`
@@ -39,6 +50,11 @@ type HostConfig struct {
 	// static
 	Root string `json:"root,omitempty" doc:"Folder the files are served from"`
 	SPA  bool   `json:"spa,omitempty" doc:"Answer unknown paths with index.html (single-page apps)"`
+
+	// stream
+	ListenPort int    `json:"listen_port,omitempty" minimum:"0" maximum:"65535" doc:"Port the proxy listens on"`
+	Protocol   string `json:"protocol,omitempty" enum:",tcp,udp" doc:"tcp (default) or udp"`
+	StreamTo   string `json:"stream_to,omitempty" doc:"Where connections go, as host:port" example:"10.0.0.5:5432"`
 
 	TLS HostTLS `json:"tls" required:"false" doc:"Plain http only when left out"`
 
@@ -96,7 +112,7 @@ var (
 // Normalize tidies what people type: trims, lowercases names, drops blanks
 // and duplicates, and clears fields the type doesn't use.
 func Normalize(h HostConfig) HostConfig {
-	var domains []string
+	domains := []string{}
 	for _, d := range h.Domains {
 		d = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(d)), ".")
 		if d != "" && !slices.Contains(domains, d) {
@@ -107,11 +123,27 @@ func Normalize(h HostConfig) HostConfig {
 	h.Upstream = strings.TrimSpace(h.Upstream)
 	h.RedirectTo = strings.TrimSpace(h.RedirectTo)
 	h.Root = strings.TrimSpace(h.Root)
+	h.StreamTo = strings.ToLower(strings.TrimSpace(h.StreamTo))
 	h.TLS.Certificate = strings.TrimSpace(h.TLS.Certificate)
 	h.TLS.Key = strings.TrimSpace(h.TLS.Key)
+	if h.Type != TypeStream {
+		h.ListenPort, h.Protocol, h.StreamTo = 0, "", ""
+	}
 	switch h.Type {
 	case TypeProxy:
 		h.RedirectTo, h.RedirectCode, h.KeepPath, h.Root, h.SPA = "", 0, false, "", false
+	case TypeNotFound:
+		h.Upstream, h.WebSockets, h.PreserveHost, h.Root, h.SPA = "", false, false, "", false
+		h.RedirectTo, h.RedirectCode, h.KeepPath = "", 0, false
+		h.Paths, h.TimeoutSeconds, h.MaxBodyMB = []PathRule{}, 0, 0
+	case TypeStream:
+		h.Domains = []string{}
+		h.Upstream, h.WebSockets, h.PreserveHost, h.Root, h.SPA = "", false, false, "", false
+		h.RedirectTo, h.RedirectCode, h.KeepPath = "", 0, false
+		h.Paths, h.Headers, h.MaxBodyMB, h.TLS = []PathRule{}, []HeaderRule{}, 0, HostTLS{}
+		if h.Protocol == "" {
+			h.Protocol = "tcp"
+		}
 	case TypeRedirect:
 		h.Upstream, h.WebSockets, h.PreserveHost, h.Root, h.SPA = "", false, false, "", false
 		h.Paths, h.TimeoutSeconds = nil, 0
@@ -157,7 +189,7 @@ func Normalize(h HostConfig) HostConfig {
 func Validate(h HostConfig) []Problem {
 	var out []Problem
 	add := func(field, msg string, v any) { out = append(out, Problem{field, msg, v}) }
-	if len(h.Domains) == 0 {
+	if len(h.Domains) == 0 && !h.IsStream() {
 		add("domains", "Add at least one domain.", nil)
 	}
 	for i, d := range h.Domains {
@@ -181,8 +213,22 @@ func Validate(h HostConfig) []Problem {
 		if !safePath(h.Root) {
 			add("root", "Use a full folder path, like /var/www/site (letters, digits and . _ - / only).", h.Root)
 		}
+	case TypeNotFound:
+	case TypeStream:
+		switch {
+		case h.ListenPort < 1 || h.ListenPort > 65535:
+			add("listen_port", "Use a port from 1 to 65535.", h.ListenPort)
+		case h.Protocol == "tcp" && (h.ListenPort == 80 || h.ListenPort == 443):
+			add("listen_port", "80 and 443 carry the sites; pick another port.", h.ListenPort)
+		}
+		if h.Protocol != "tcp" && h.Protocol != "udp" {
+			add("protocol", "Choose tcp or udp.", h.Protocol)
+		}
+		if msg := checkHostPort(h.StreamTo); msg != "" {
+			add("stream_to", msg, h.StreamTo)
+		}
 	default:
-		add("type", "Choose proxy, redirect or static.", h.Type)
+		add("type", "Choose proxy, redirect, static, 404 or stream.", h.Type)
 	}
 	if h.TLS.Enabled {
 		if !safePath(h.TLS.Certificate) {
@@ -247,6 +293,24 @@ func validDomain(d string) bool {
 
 func safePath(p string) bool {
 	return pathRe.MatchString(p) && !slices.Contains(strings.Split(p, "/"), "..")
+}
+
+// checkHostPort accepts host:port, [v6]:port included.
+func checkHostPort(s string) string {
+	if s == "" {
+		return "Say where connections go, like 10.0.0.5:5432."
+	}
+	host, port, err := net.SplitHostPort(s)
+	if err != nil || host == "" {
+		return "Use host:port, like 10.0.0.5:5432 or db.internal:5432."
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return "The port must be from 1 to 65535."
+	}
+	if _, err := netip.ParseAddr(host); err != nil && !domainRe.MatchString(host) {
+		return "Not an address or host name."
+	}
+	return ""
 }
 
 func checkUpstream(s string) string {
@@ -331,6 +395,8 @@ type Capabilities struct {
 	Paths       bool     `json:"paths"`
 	Allow       bool     `json:"allow"`
 	Advanced    bool     `json:"advanced" doc:"Raw directives in the proxy's own language"`
+	Streams     bool     `json:"streams" doc:"Can forward TCP/UDP ports (type stream)"`
+	Traffic     bool     `json:"traffic" doc:"Reports live request counts per site"`
 	Language    string   `json:"language" doc:"The config language, for syntax colors"`
 	ConfigLabel string   `json:"config_label" doc:"What its config is called, like nginx config"`
 }
@@ -341,10 +407,36 @@ type Env struct {
 	IPv6    bool
 }
 
-// Managed is a host as the driver renders it.
-type Managed struct {
+// File is one host rendered for the server.
+type File struct {
 	ID     string
 	Config HostConfig
+	Text   string
+}
+
+// Setup is what a driver's setup needs from the server.
+type Setup struct {
+	Init string
+	PM   string // package manager: apt-get, dnf, yum, apk, zypper, pacman, or ""
+	// Install is a script installing packages with PM (it fails when there
+	// is none).
+	Install func(pkgs ...string) string
+}
+
+// Hit is a count of requests in one minute with one status class.
+type Hit struct {
+	Host     string    // host id
+	Minute   time.Time // start of the minute
+	Class    int       // 2, 3, 4, 5; 0 = anything else
+	Requests int64
+	Bytes    int64
+}
+
+// LogMark is how far a host's access log was read: the file (inode) and
+// the size seen.
+type LogMark struct {
+	Inode string
+	Size  int64
 }
 
 // Status is the proxy's state on its server.
@@ -358,6 +450,10 @@ type Status struct {
 	ConfigError string
 	IPv6        bool
 	Init        string
+	// Streams: "ready", "no_module" (the kind can't forward ports here
+	// yet), "not_wired" (setup hasn't added it) or "taken" (the config
+	// already has its own block for them).
+	Streams string
 }
 
 // Site is a server block (or the kind's equivalent) found in the live config.
@@ -403,12 +499,16 @@ type Driver interface {
 	// InspectScript reads everything; ParseInspect reads its output.
 	InspectScript() string
 	ParseInspect(out string) Inspection
-	// SetupScript installs the proxy with install (a package manager command)
-	// when it's missing, wires it up and starts it under init.
-	SetupScript(install, init string) string
-	// ApplyScript replaces every managed file with files (host id → text),
-	// tests the config and reloads, putting the old files back on failure.
-	ApplyScript(files map[string]string) string
+	// SetupScript installs the proxy when it's missing, wires it up and
+	// starts it.
+	SetupScript(s Setup) string
+	// ApplyScript replaces every managed file with files, tests the config
+	// and reloads, putting the old files back on failure.
+	ApplyScript(files []File) string
+	// TrafficScript reads what was added to the hosts' access logs since
+	// marks; ParseTraffic reads its output.
+	TrafficScript(hosts []string, marks map[string]LogMark) string
+	ParseTraffic(out string) ([]Hit, map[string]LogMark)
 	// RemoveScript takes everything Morcheh wrote off the server.
 	RemoveScript() string
 	// ActionScript is test, reload, start, stop or restart.
@@ -422,6 +522,8 @@ const (
 	ExitNotInstalled = 5
 	ExitTestFailed   = 3
 	ExitReloadFailed = 4
+	ExitNoStreams    = 6
+	ExitPortTaken    = 7
 )
 
 var drivers = map[string]Driver{}
