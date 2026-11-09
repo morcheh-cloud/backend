@@ -21,6 +21,7 @@ func TestWAF(t *testing.T) {
 	got := render(t, h, "1.24.0")
 	has(t, got,
 		"modsecurity on;",
+		`modsecurity_transaction_id "$request_id";`,
 		"setvar:tx.paranoia_level=1",
 		"setvar:tx.inbound_anomaly_score_threshold=5",
 		`"@beginsWith /upload" "id:10100,`,
@@ -105,16 +106,19 @@ func TestStreamCountries(t *testing.T) {
 }
 
 func TestParseWAFEvents(t *testing.T) {
-	out := `{"transaction":{"client_ip":"1.2.3.4","time_stamp":"Mon Nov  9 10:00:00 2026","unique_id":"abc","request":{"method":"GET","uri":"/?id=1' or 1=1"},"response":{"http_code":403},"messages":[{"message":"SQL Injection Attack","details":{"ruleId":"942100","data":"Matched Data: 1' or 1=1","severity":"2"}}]}}
+	out := `{"transaction":{"client_ip":"1.2.3.4","time_stamp":"Mon Nov  9 10:00:00 2026","unique_id":"abc","producer":{"secrules_engine":"Enabled"},"request":{"method":"GET","uri":"/?id=1' or 1=1"},"response":{"http_code":403},"messages":[{"message":"SQL Injection Attack","details":{"ruleId":"942100","data":"Matched Data: 1' or 1=1","severity":"2"}},{"message":"Inbound Anomaly Score Exceeded","details":{"ruleId":"949110"}}]}}
 not json
-{"transaction":{"client_ip":"5.6.7.8","unique_id":"def","request":{"method":"POST","uri":"/login"},"response":{"http_code":200},"messages":[{"message":"XSS","details":{"ruleId":"941100"}}]}}
+{"transaction":{"client_ip":"5.6.7.8","unique_id":"def","producer":{"secrules_engine":"DetectionOnly"},"request":{"method":"POST","uri":"/login"},"response":{"http_code":200},"messages":[{"message":"XSS","details":{"ruleId":"941100"}},{"message":"Inbound Anomaly Score Exceeded","details":{"ruleId":"949110"}}]}}
 {"transaction":{"client_ip":"5.6.7.8","unique_id":"ghi","request":{"method":"GET","uri":"/"},"response":{"http_code":502},"messages":[]}}
 `
 	ev := Driver{}.ParseWAFEvents(out)
 	if len(ev) != 2 || ev[0].ID != "def" || ev[1].IP != "1.2.3.4" || ev[1].Status != 403 {
 		t.Fatalf("events = %+v", ev)
 	}
-	if len(ev[1].Rules) != 1 || ev[1].Rules[0].ID != "942100" || ev[1].Rules[0].Message != "SQL Injection Attack" {
+	if !ev[1].Blocked || ev[0].Blocked {
+		t.Fatalf("blocked = %v, %v; want the Enabled one only", ev[1].Blocked, ev[0].Blocked)
+	}
+	if len(ev[1].Rules) != 2 || ev[1].Rules[0].ID != "942100" || ev[1].Rules[0].Message != "SQL Injection Attack" {
 		t.Fatalf("rules = %+v", ev[1].Rules)
 	}
 }

@@ -30,6 +30,8 @@ import (
 const (
 	requestsWindowCap = 32 << 20 // a window read keeps the last 32 MB
 	requestsFollowCap = 2 << 20  // a follow read, the last 2 MB
+	wafWindowCap      = 16 << 20 // the firewall log beside a window read
+	wafFollowCap      = 1 << 20
 	reportCap         = 64 << 20
 	reportCacheFor    = time.Minute
 	reportTop         = 15
@@ -43,25 +45,37 @@ var requestRanges = map[string]time.Duration{
 
 // ProxyRequest is one line of a site's access log.
 type ProxyRequest struct {
-	Time           time.Time `json:"time"`
-	IP             string    `json:"ip"`
-	User           string    `json:"user,omitempty" doc:"Login name sent with the request"`
-	Method         string    `json:"method" doc:"Empty for a stream"`
-	Path           string    `json:"path" doc:"Path and query string as asked"`
-	Protocol       string    `json:"protocol"`
-	Status         int       `json:"status"`
-	Bytes          int64     `json:"bytes" doc:"Body bytes sent"`
-	Referer        string    `json:"referer,omitempty"`
-	Agent          string    `json:"agent,omitempty"`
-	Domain         string    `json:"domain,omitempty" doc:"Host the request asked for"`
-	DurationMs     *float64  `json:"duration_ms,omitempty" doc:"Time to answer, absent on lines written before detailed logging"`
-	UpstreamMs     *float64  `json:"upstream_ms,omitempty" doc:"Time the upstream took"`
-	UpstreamStatus string    `json:"upstream_status,omitempty"`
-	UpstreamAddr   string    `json:"upstream_addr,omitempty"`
-	Cache          string    `json:"cache,omitempty" doc:"HIT, MISS, EXPIRED, BYPASS…"`
-	RequestLength  *int64    `json:"request_length,omitempty" doc:"Bytes received, headers included"`
-	RequestID      string    `json:"request_id,omitempty"`
-	Line           string    `json:"line" doc:"The line as written"`
+	Time           time.Time             `json:"time"`
+	IP             string                `json:"ip"`
+	User           string                `json:"user,omitempty" doc:"Login name sent with the request"`
+	Method         string                `json:"method" doc:"Empty for a stream"`
+	Path           string                `json:"path" doc:"Path and query string as asked"`
+	Protocol       string                `json:"protocol"`
+	Status         int                   `json:"status"`
+	Bytes          int64                 `json:"bytes" doc:"Body bytes sent"`
+	Referer        string                `json:"referer,omitempty"`
+	Agent          string                `json:"agent,omitempty"`
+	Domain         string                `json:"domain,omitempty" doc:"Host the request asked for"`
+	DurationMs     *float64              `json:"duration_ms,omitempty" doc:"Time to answer, absent on lines written before detailed logging"`
+	UpstreamMs     *float64              `json:"upstream_ms,omitempty" doc:"Time the upstream took"`
+	UpstreamStatus string                `json:"upstream_status,omitempty"`
+	UpstreamAddr   string                `json:"upstream_addr,omitempty"`
+	Cache          string                `json:"cache,omitempty" doc:"HIT, MISS, EXPIRED, BYPASS…"`
+	RequestLength  *int64                `json:"request_length,omitempty" doc:"Bytes received, headers included"`
+	RequestID      string                `json:"request_id,omitempty"`
+	Line           string                `json:"line" doc:"The line as written"`
+	Firewall       *ProxyRequestFirewall `json:"firewall,omitempty" doc:"What the web application firewall made of it, when it flagged it"`
+}
+
+// ProxyRequestFirewall is the firewall's verdict on one request.
+type ProxyRequestFirewall struct {
+	Blocked bool             `json:"blocked" doc:"Refused by the firewall; false = only logged"`
+	Rules   []proxy.WAFMatch `json:"rules"`
+}
+
+type ProxyRequestFirewallCounts struct {
+	Blocked int64 `json:"blocked" doc:"Refused by the firewall"`
+	Flagged int64 `json:"flagged" doc:"Logged by the firewall but let through"`
 }
 
 type ProxyRequestClasses struct {
@@ -72,34 +86,36 @@ type ProxyRequestClasses struct {
 }
 
 type ProxyRequests struct {
-	Items    []ProxyRequest      `json:"items" doc:"Newest first"`
-	Matched  int64               `json:"matched" doc:"Lines matching every filter (more than items when cut by limit)"`
-	Scanned  int64               `json:"scanned" doc:"Lines read in the time range"`
-	Classes  ProxyRequestClasses `json:"classes" doc:"Matching lines per status class, the status filter left out"`
-	Cursor   string              `json:"cursor" doc:"Pass back to get only lines written after this read"`
-	Oldest   *time.Time          `json:"oldest,omitempty" doc:"Oldest line read"`
-	Partial  bool                `json:"partial" doc:"The range held more than could be read: older lines were left out"`
-	Reset    bool                `json:"reset" doc:"The log was rotated since the cursor: read from its start"`
-	Missing  bool                `json:"missing" doc:"No log for this site on the server yet"`
-	Detailed bool                `json:"detailed" doc:"Some lines carry response times (written since detailed logging)"`
-	Stream   bool                `json:"stream"`
+	Items    []ProxyRequest             `json:"items" doc:"Newest first"`
+	Matched  int64                      `json:"matched" doc:"Lines matching every filter (more than items when cut by limit)"`
+	Scanned  int64                      `json:"scanned" doc:"Lines read in the time range"`
+	Classes  ProxyRequestClasses        `json:"classes" doc:"Matching lines per status class, the status filter left out"`
+	Firewall ProxyRequestFirewallCounts `json:"firewall" doc:"Matching lines the firewall flagged, the firewall filter left out"`
+	Cursor   string                     `json:"cursor" doc:"Pass back to get only lines written after this read"`
+	Oldest   *time.Time                 `json:"oldest,omitempty" doc:"Oldest line read"`
+	Partial  bool                       `json:"partial" doc:"The range held more than could be read: older lines were left out"`
+	Reset    bool                       `json:"reset" doc:"The log was rotated since the cursor: read from its start"`
+	Missing  bool                       `json:"missing" doc:"No log for this site on the server yet"`
+	Detailed bool                       `json:"detailed" doc:"Some lines carry response times (written since detailed logging)"`
+	Stream   bool                       `json:"stream"`
 }
 
 type ProxyRequestsInput struct {
-	ID     string `path:"id" format:"uuid"`
-	Host   string `path:"host" format:"uuid"`
-	Cursor string `query:"cursor" doc:"From a previous answer: only lines written since"`
-	Range  string `query:"range" enum:"15m,1h,6h,24h,7d" default:"1h"`
-	From   string `query:"from" doc:"RFC 3339; overrides range"`
-	To     string `query:"to" doc:"RFC 3339"`
-	Q      string `query:"q" maxLength:"200" doc:"Text anywhere in the line, any case"`
-	Status string `query:"status" doc:"Comma list of classes (2xx, 4xx…) and codes (404)"`
-	Method string `query:"method" doc:"Comma list"`
-	Path   string `query:"path" maxLength:"500" doc:"Part of the path, any case"`
-	IP     string `query:"ip" maxLength:"100" doc:"An address or its start (10.0.)"`
-	Domain string `query:"domain" maxLength:"253"`
-	MinMs  int    `query:"min_ms" minimum:"0" doc:"Only requests that took at least this long"`
-	Limit  int    `query:"limit" minimum:"1" maximum:"2000" default:"300"`
+	ID       string `path:"id" format:"uuid"`
+	Host     string `path:"host" format:"uuid"`
+	Cursor   string `query:"cursor" doc:"From a previous answer: only lines written since"`
+	Range    string `query:"range" enum:"15m,1h,6h,24h,7d" default:"1h"`
+	From     string `query:"from" doc:"RFC 3339; overrides range"`
+	To       string `query:"to" doc:"RFC 3339"`
+	Q        string `query:"q" maxLength:"200" doc:"Text anywhere in the line, any case"`
+	Status   string `query:"status" doc:"Comma list of classes (2xx, 4xx…) and codes (404)"`
+	Method   string `query:"method" doc:"Comma list"`
+	Path     string `query:"path" maxLength:"500" doc:"Part of the path, any case"`
+	IP       string `query:"ip" maxLength:"100" doc:"An address or its start (10.0.)"`
+	Domain   string `query:"domain" maxLength:"253"`
+	MinMs    int    `query:"min_ms" minimum:"0" doc:"Only requests that took at least this long"`
+	Firewall string `query:"firewall" enum:"any,blocked,flagged" doc:"Only requests the firewall flagged: any, blocked (refused) or flagged (logged, let through)"`
+	Limit    int    `query:"limit" minimum:"1" maximum:"2000" default:"300"`
 }
 
 // ── Report ──────────────────────────────────────────────────────────────
@@ -230,6 +246,42 @@ func (h *proxyHandler) readAccess(ctx context.Context, p sqlc.Proxy, d proxy.Dri
 	return chunk, err
 }
 
+// readAccessWAF is readAccess plus, when waf is set, the site's firewall
+// log in the same SSH command (its lines, oldest first; none when there's no
+// log or it can't be read).
+func (h *proxyHandler) readAccessWAF(ctx context.Context, p sqlc.Proxy, d proxy.Driver, hostID string, r proxy.LogRead, waf *proxy.LogRead) (proxy.LogChunk, []string, error) {
+	if waf == nil {
+		chunk, err := h.readAccess(ctx, p, d, hostID, r)
+		return chunk, nil, err
+	}
+	var chunk proxy.LogChunk
+	var lines []string
+	server := p.ServerID.String()
+	err := h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
+		sh, err := h.root(ctx, server, c)
+		if err != nil {
+			return err
+		}
+		// Each part in a subshell: the scripts end with exit.
+		out, err := sh.run(ctx, "(\n"+d.AccessScript(hostID, r)+")\necho "+wafSplit+"\n(\n"+d.WAFLogScript(hostID, *waf)+")\n")
+		if err != nil {
+			return err
+		}
+		access, rest, _ := strings.Cut(out, wafSplit+"\n")
+		if chunk, err = d.ParseAccessOutput(access); err != nil {
+			return err
+		}
+		if w, err := d.ParseAccessOutput(rest); err == nil && !w.Missing {
+			lines = w.Lines
+		}
+		return nil
+	})
+	return chunk, lines, err
+}
+
+// wafSplit separates the two reads' output (the data in between is base64).
+const wafSplit = "@@morcheh-waf"
+
 func (h *proxyHandler) siteOf(ctx context.Context, proxyID, hostID string) (sqlc.GetProxyRow, proxy.Driver, sqlc.ProxyHost, proxy.HostConfig, error) {
 	var cfg proxy.HostConfig
 	r, d, err := h.getProxy(ctx, proxyID)
@@ -286,10 +338,21 @@ func (h *proxyHandler) registerRequests(api huma.API, tags []string) {
 			}
 			read.Mark, read.Cap = &proxy.LogMark{Inode: inode, Size: n}, requestsFollowCap
 		}
-		chunk, err := h.readAccess(ctx, r.Proxy, d, in.Host, read)
+		// The firewall log over the same time (a minute more, for clocks a
+		// second apart); a follow read only needs the last minutes.
+		var withWAF *proxy.LogRead
+		if cfg.Type != "stream" {
+			wr := proxy.LogRead{Since: since.Add(-time.Minute), Cap: wafWindowCap}
+			if read.Mark != nil {
+				wr = proxy.LogRead{Since: now.Add(-15 * time.Minute), Cap: wafFollowCap}
+			}
+			withWAF = &wr
+		}
+		chunk, wafLines, err := h.readAccessWAF(ctx, r.Proxy, d, in.Host, read, withWAF)
 		if err != nil {
 			return nil, toProblem(err)
 		}
+		waf := newWAFIndex(d.ParseWAFLines(wafLines))
 		out := ProxyRequests{
 			Items: []ProxyRequest{}, Missing: chunk.Missing, Reset: chunk.Reset,
 			Partial: chunk.Capped, Stream: cfg.Type == "stream",
@@ -323,13 +386,29 @@ func (h *proxyHandler) registerRequests(api huma.API, tags []string) {
 			if !f.match(e) {
 				continue
 			}
-			countClass(&out.Classes, e.Status)
+			ev := waf.find(e, chunk.Lines[i])
+			fw := firewallMatch(in.Firewall, ev)
+			if fw {
+				countClass(&out.Classes, e.Status)
+			}
 			if !f.status(e.Status) {
+				continue
+			}
+			if ev != nil && ev.Blocked {
+				out.Firewall.Blocked++
+			} else if ev != nil {
+				out.Firewall.Flagged++
+			}
+			if !fw {
 				continue
 			}
 			out.Matched++
 			if len(out.Items) < limit {
-				out.Items = append(out.Items, requestOut(e, chunk.Lines[i]))
+				item := requestOut(e, chunk.Lines[i])
+				if ev != nil {
+					item.Firewall = &ProxyRequestFirewall{Blocked: ev.Blocked, Rules: ev.Rules}
+				}
+				out.Items = append(out.Items, item)
 			}
 		}
 		// Rotated files can interleave by a few seconds; the list is by time.
@@ -406,6 +485,69 @@ func (h *proxyHandler) registerRequests(api huma.API, tags []string) {
 		reportCache.Unlock()
 		return &struct{ Body ProxyHostReport }{rep}, nil
 	})
+}
+
+// ── Firewall ────────────────────────────────────────────────────────────
+
+// wafIndex finds the firewall's record of a request: by request id (the
+// firewall is told to use it), or else by address, method, path and second
+// (records written before that).
+type wafIndex struct {
+	byID, byKey map[string]*proxy.WAFEvent
+}
+
+func newWAFIndex(events []proxy.WAFEvent) wafIndex {
+	x := wafIndex{byID: map[string]*proxy.WAFEvent{}, byKey: map[string]*proxy.WAFEvent{}}
+	for i := range events {
+		e := &events[i]
+		if e.ID != "" {
+			x.byID[e.ID] = e
+		}
+		// ModSecurity writes the server's local time, like ctime(3).
+		if t, err := time.Parse(time.ANSIC, e.Time); err == nil {
+			x.byKey[wafKey(e.IP, e.Method, e.URI, t.Format(time.DateTime))] = e
+		}
+	}
+	return x
+}
+
+func wafKey(ip, method, uri, wall string) string {
+	return ip + "\x00" + method + "\x00" + uri + "\x00" + wall
+}
+
+// accessWallRe is a line's local time as written ([09/Nov/2026:14:29:24 +0000]).
+var accessWallRe = regexp.MustCompile(`\[(\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2}) [+-]\d{4}\]`)
+
+func (x wafIndex) find(e proxy.AccessEntry, line string) *proxy.WAFEvent {
+	if len(x.byID) == 0 && len(x.byKey) == 0 {
+		return nil
+	}
+	if e.RequestID != "" {
+		if ev := x.byID[e.RequestID]; ev != nil {
+			return ev
+		}
+	}
+	m := accessWallRe.FindStringSubmatch(line)
+	if m == nil {
+		return nil
+	}
+	t, err := time.Parse("02/Jan/2006:15:04:05", m[1])
+	if err != nil {
+		return nil
+	}
+	return x.byKey[wafKey(e.IP, e.Method, e.Path, t.Format(time.DateTime))]
+}
+
+func firewallMatch(want string, ev *proxy.WAFEvent) bool {
+	switch want {
+	case "any":
+		return ev != nil
+	case "blocked":
+		return ev != nil && ev.Blocked
+	case "flagged":
+		return ev != nil && !ev.Blocked
+	}
+	return true
 }
 
 // ── Filtering ───────────────────────────────────────────────────────────
