@@ -12,9 +12,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/dbmon"
 	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/database/sqlc"
 )
 
 // LocalRunnerName is how the machine Morcheh runs on is shown as a runner.

@@ -139,6 +139,9 @@ type ProxyInspection struct {
 	Certbot      string              `json:"certbot,omitempty" doc:"certbot's version when it's installed (it renews certificates)"`
 	Streams      string              `json:"streams" enum:",ready,no_module,not_wired,taken" doc:"Port forwards: ready; no_module = the stream module is missing; not_wired = setup hasn't added the stream block; taken = nginx.conf has its own stream block. Empty when the kind has no streams"`
 	Geo          string              `json:"geo" enum:",ready,off" doc:"Country lookup for country rules: ready, off (not turned on yet). Empty when the kind can't"`
+	AuthRequest  bool                `json:"auth_request" doc:"Signing in through another service (forward auth) works"`
+	Brotli       bool                `json:"brotli" doc:"The Brotli module is loaded"`
+	CABundle     string              `json:"ca_bundle,omitempty" doc:"The system's CA file, used to check https upstreams"`
 }
 
 type ProxyChangeSummary struct {
@@ -226,6 +229,18 @@ func hostOut(h sqlc.ProxyHost, full bool) ProxyHost {
 	}
 	if !full {
 		out.Config, out.Redacted = redactHost(cfg), true
+	}
+	out.Config = withoutPasswords(out.Config)
+	return out
+}
+
+// snapshotOf is every host as stored, password hashes included, for the
+// history (going back must keep the sign-ins).
+func snapshotOf(rows []sqlc.ProxyHost) []ProxyHost {
+	out := make([]ProxyHost, len(rows))
+	for i, r := range rows {
+		out[i] = hostOut(r, true)
+		out[i].Config.Auth.Users = configOf(r).Auth.Users
 	}
 	return out
 }
@@ -322,7 +337,7 @@ func geoState(d proxy.Driver, in proxy.Inspection) string {
 }
 
 func envOf(in proxy.Inspection) proxy.Env {
-	return proxy.Env{Version: in.Version, IPv6: in.IPv6}
+	return proxy.Env{Version: in.Version, IPv6: in.IPv6, Brotli: in.Brotli, CABundle: in.CABundle}
 }
 
 // configOf is a stored host's settings.
@@ -565,13 +580,19 @@ func (h *proxyHandler) write(ctx context.Context, rawID string, edit func(q *sql
 		}) {
 			return fieldError("body.config.countries", "Country lookup isn't on for this proxy yet: turn it on in Security first.", nil)
 		}
+		if !in.AuthRequest && slices.ContainsFunc(hosts, func(x sqlc.ProxyHost) bool {
+			c := configOf(x)
+			return x.Enabled && !c.IsCustom() && c.Auth.Mode == "forward"
+		}) {
+			return fieldError("body.config.auth.mode", d.Label()+" on this server has no auth_request module, which signing in through another service needs.", nil)
+		}
 		return applyFiles(ctx, sh, d, render(d, hosts, envOf(in)))
 	})
 	if err != nil {
 		return nil, toProblem(err)
 	}
 
-	snap, err := json.Marshal(hostsOut(hosts, true))
+	snap, err := json.Marshal(snapshotOf(hosts))
 	if err != nil {
 		return nil, internalError(err)
 	}
@@ -595,7 +616,14 @@ func (h *proxyHandler) write(ctx context.Context, rawID string, edit func(q *sql
 // on the same port.
 func checkOverlaps(hosts []sqlc.ProxyHost) error {
 	ports := map[string]bool{}
+	catchAll := false
 	for i, a := range hosts {
+		if c := configOf(a); c.CatchAll && a.Enabled && !c.IsCustom() {
+			if catchAll {
+				return fieldError("body.config.catch_all", "Another site here already answers unknown names. Turn that one off first.", nil)
+			}
+			catchAll = true
+		}
 		for _, b := range hosts[i+1:] {
 			if dup := proxy.Overlaps(a.Domains, b.Domains); len(dup) > 0 {
 				return fieldError("body.config.domains", fmt.Sprintf("%s is already used by another site here.", dup[0]), dup[0])
@@ -784,6 +812,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	h.registerTraffic(api, tags)
 	base := "/proxies/{id}"
 	registerProxyCertificates(api, h, base, tags)
+	h.registerUpstreamTest(api, base, tags)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-proxy-kinds", Method: http.MethodGet, Path: "/proxy-kinds",
@@ -956,6 +985,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			IPv6: ins.IPv6, Init: ins.Init, Sites: sites, Certificates: certs, Hosts: hs, Unknown: unknown,
 			Streams: ins.Streams, Geo: geoState(d, *ins),
 			HTTP3: ins.HTTP3, Certbot: ins.Certbot,
+			AuthRequest: ins.AuthRequest, Brotli: ins.Brotli, CABundle: ins.CABundle,
 		}}, nil
 	})
 
@@ -1105,7 +1135,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			id = "new"
 		}
 		version := r.Proxy.Version
-		out.Body.Text = proxy.FileText(d, id, c, proxy.Env{Version: version, IPv6: true})
+		out.Body.Text = proxy.FileText(d, id, c, proxy.Env{Version: version, IPv6: true, Brotli: true})
 		return out, nil
 	})
 
@@ -1129,12 +1159,22 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if err != nil {
 			return nil, err
 		}
-		cfg, _ := json.Marshal(c)
 		defer h.lock(r.Proxy.ID)()
 		hosts, err := h.s.q.ListProxyHosts(ctx, r.Proxy.ID)
 		if err != nil {
 			return nil, internalError(err)
 		}
+		var was *proxy.HostConfig
+		for _, x := range hosts {
+			if x.ID.String() == in.Body.Host {
+				old := configOf(x)
+				was = &old
+			}
+		}
+		if err := hashPasswords(&c, was); err != nil {
+			return nil, err
+		}
+		cfg, _ := json.Marshal(c)
 		this := sqlc.ProxyHost{ID: uuid.New(), ProxyID: r.Proxy.ID, Domains: c.Domains, Enabled: true, Config: cfg}
 		found := false
 		for i, x := range hosts {
@@ -1196,6 +1236,9 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if err != nil {
 			return nil, err
 		}
+		if err := hashPasswords(&c, nil); err != nil {
+			return nil, err
+		}
 		cfg, _ := json.Marshal(c)
 		name, _ := actorName(ctx)
 		out, err := h.write(ctx, in.ID, func(q *sqlc.Queries, pid uuid.UUID) (string, error) {
@@ -1229,7 +1272,6 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if err != nil {
 			return nil, err
 		}
-		cfg, _ := json.Marshal(c)
 		name, _ := actorName(ctx)
 		out, err := h.write(ctx, in.ID, func(q *sqlc.Queries, pid uuid.UUID) (string, error) {
 			old, err := q.GetProxyHost(ctx, sqlc.GetProxyHostParams{ID: uuid.MustParse(in.Host), ProxyID: pid})
@@ -1242,6 +1284,11 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			if in.Body.Revision != nil && !in.Body.Revision.Equal(old.UpdatedAt) {
 				return "", huma.Error409Conflict("Someone else saved this site after you opened it.")
 			}
+			was := configOf(old)
+			if err := hashPasswords(&c, &was); err != nil {
+				return "", err
+			}
+			cfg, _ := json.Marshal(c)
 			enabled := old.Enabled
 			if in.Body.Enabled != nil {
 				enabled = *in.Body.Enabled
@@ -1447,10 +1494,11 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if err != nil {
 			return nil, err
 		}
-		if !canSeeSecrets(ctx) {
-			for i := range hosts {
+		for i := range hosts {
+			if !canSeeSecrets(ctx) {
 				hosts[i].Config, hosts[i].Redacted = redactHost(hosts[i].Config), true
 			}
+			hosts[i].Config = withoutPasswords(hosts[i].Config)
 		}
 		return &struct{ Body ProxyChangeDetail }{ProxyChangeDetail{
 			ProxyChangeSummary: ProxyChangeSummary{ID: c.ID, UserName: c.UserName, Summary: c.Summary, HostCount: len(hosts), CreatedAt: c.CreatedAt},

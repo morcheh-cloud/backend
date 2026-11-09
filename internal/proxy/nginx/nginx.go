@@ -71,6 +71,7 @@ func (Driver) Capabilities() proxy.Capabilities {
 		},
 		WebSockets: true, Headers: true, Paths: true, Allow: true, Advanced: true,
 		Tuning: true, Cache: true,
+		Auth: true, Pages: true, Hardening: true, UpstreamTLS: true, PathActions: true,
 		Countries: true, RateLimit: true,
 		Streams: true, Traffic: true, Certificates: true, TLSOptions: true,
 		Language: "nginx", ConfigLabel: "nginx config",
@@ -133,7 +134,13 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	accessBlocks(w, t, h)
 	w.b.WriteString(lim.blocks.b.String())
 	cacheBlocks(w, t, h)
+	featureBlocks(w, t, h)
 	names := strings.Join(h.Domains, " ")
+	def := ""
+	if h.CatchAll {
+		names = strings.TrimSpace("_ " + names)
+		def = " default_server"
+	}
 	ipv6 := env.IPv6
 	newHTTP2 := atLeast(env.Version, 1, 25, 1)
 
@@ -145,13 +152,13 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	if h.TLS.Enabled && h.TLS.ForceHTTPS {
 		w.line("")
 		w.open("server")
-		w.line("listen 80;")
+		w.line("listen 80%s;", def)
 		if ipv6 {
-			w.line("listen [::]:80;")
+			w.line("listen [::]:80%s;", def)
 		}
 		w.line("server_name %s;", names)
 		logs()
-		acmeLocation(w)
+		acmeLocation(w, proxy.HostConfig{})
 		code := h.TLS.ForceCode
 		if code == 0 {
 			code = 301
@@ -166,19 +173,29 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	w.line("")
 	w.open("server")
 	if !h.TLS.Enabled || !h.TLS.ForceHTTPS {
-		w.line("listen 80;")
+		w.line("listen 80%s;", def)
 		if ipv6 {
-			w.line("listen [::]:80;")
+			w.line("listen [::]:80%s;", def)
 		}
+	}
+	// A catch-all without a certificate refuses https for unknown names
+	// instead of showing another site's certificate.
+	reject := h.CatchAll && !h.TLS.Enabled && atLeast(env.Version, 1, 19, 4)
+	if reject {
+		w.line("listen 443 ssl default_server;")
+		if ipv6 {
+			w.line("listen [::]:443 ssl default_server;")
+		}
+		w.line("ssl_reject_handshake on;")
 	}
 	if h.TLS.Enabled {
 		suffix := ""
 		if h.TLS.HTTP2 && !newHTTP2 {
 			suffix = " http2"
 		}
-		w.line("listen 443 ssl%s;", suffix)
+		w.line("listen 443 ssl%s%s;", def, suffix)
 		if ipv6 {
-			w.line("listen [::]:443 ssl%s;", suffix)
+			w.line("listen [::]:443 ssl%s%s;", def, suffix)
 		}
 		if h.TLS.HTTP3 {
 			reuse := ""
@@ -215,16 +232,21 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 			w.line(`add_header %s "%s" always;`, x.Name, x.Value)
 		}
 	}
+	serverFeatures(w, id, t, h, env)
 
 	if !h.TLS.Enabled || !h.TLS.ForceHTTPS {
-		acmeLocation(w)
+		acmeLocation(w, h)
 	}
 	// Returns sit in location / so the certificate check above still answers.
 	switch h.Type {
 	case proxy.TypeNotFound:
 		w.line("")
+		code := h.NotFoundCode
+		if code == 0 {
+			code = 404
+		}
 		w.open("location /")
-		w.line("return 404;")
+		w.line("return %d;", code)
 		w.close()
 	case proxy.TypeRedirect:
 		w.line("")
@@ -246,18 +268,20 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 				w.line("try_files $uri $uri/ =404;")
 			}
 		}
-		paths(w, h, lim, files)
+		paths(w, h, env, lim, files)
 		w.line("")
 		w.open("location /")
 		files()
 		w.close()
 	default:
-		paths(w, h, lim, func() { proxyPass(w, t, h, h.Upstream, h.WebSockets) })
+		main := func() { proxyPass(w, t, h, env, h.Upstream, h.WebSockets) }
+		paths(w, h, env, lim, main)
 		w.line("")
 		w.open("location /")
-		proxyPass(w, t, h, h.Upstream, h.WebSockets)
+		main()
 		w.close()
 	}
+	internalLocations(w, t, h)
 
 	if h.Advanced != "" {
 		w.line("")
@@ -316,12 +340,17 @@ func hasHeaders(h proxy.HostConfig, to string) bool {
 
 // paths writes the Paths locations, then a location for each path a rate
 // limit names that no Paths entry serves, doing what the site does (main).
-func paths(w *writer, h proxy.HostConfig, lim *limits, main func()) {
+func paths(w *writer, h proxy.HostConfig, env proxy.Env, lim *limits, main func()) {
 	for _, p := range h.Paths {
 		w.line("")
-		w.open("location %s", p.Path)
-		proxyPass(w, lim.t, h, p.Upstream, p.WebSockets)
-		lim.location(w, p.Path)
+		w.open("location %s", locationOf(p))
+		if p.Public {
+			openUp(w, h)
+		}
+		pathBody(w, lim.t, h, env, p)
+		if p.MatchOf() != proxy.MatchRegex {
+			lim.location(w, p.Path)
+		}
 		if p.Advanced != "" {
 			w.raw(p.Advanced)
 		}
@@ -336,7 +365,7 @@ func paths(w *writer, h proxy.HostConfig, lim *limits, main func()) {
 	}
 }
 
-func proxyPass(w *writer, t string, h proxy.HostConfig, upstream string, ws bool) {
+func proxyPass(w *writer, t string, h proxy.HostConfig, env proxy.Env, upstream string, ws bool) {
 	w.line("proxy_pass %s;", upstream)
 	w.line("proxy_http_version 1.1;")
 	if h.PreserveHost {
@@ -352,13 +381,27 @@ func proxyPass(w *writer, t string, h proxy.HostConfig, upstream string, ws bool
 	} else {
 		w.line(`proxy_set_header Connection "";`)
 	}
-	for _, x := range h.Headers {
-		if x.To == "request" {
-			w.line(`proxy_set_header %s "%s";`, x.Name, x.Value)
+	if h.RequestID {
+		w.line("proxy_set_header X-Request-ID $request_id;")
+	}
+	if h.Auth.Mode == "forward" {
+		for i, x := range h.Auth.Forward.Headers {
+			w.line("proxy_set_header %s $%s_auth_%d;", x, t, i)
 		}
 	}
+	for _, x := range h.Headers {
+		switch x.To {
+		case "request":
+			w.line(`proxy_set_header %s "%s";`, x.Name, x.Value)
+		case "hide":
+			w.line("proxy_hide_header %s;", x.Name)
+		}
+	}
+	if h.InterceptErrors {
+		w.line("proxy_intercept_errors on;")
+	}
 	if u, err := url.Parse(upstream); err == nil && u.Scheme == "https" {
-		w.line("proxy_ssl_server_name on;")
+		upstreamTLSLines(w, h, env)
 	}
 	switch {
 	case h.TimeoutSeconds > 0:
@@ -467,6 +510,9 @@ for d in /etc/letsencrypt/live/*/ ` + proxy.SelfDir + `/*/; do
 done
 M tls
 nginx -V 2>&1 | grep -q -- '--with-http_v3_module' && echo http3
+nginx -V 2>&1 | grep -q -- '--with-http_auth_request_module' && echo auth_request
+nginx -V 2>&1 | grep -qi -- 'brotli' && echo brotli
+for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do [ -f "$f" ] && { echo "cabundle $f"; break; }; done
 command -v certbot >/dev/null 2>&1 && echo "certbot $(certbot --version 2>&1 | sed -n 's/^certbot \([0-9.]*\).*/\1/p' | head -n 1)"
 M end
 `
@@ -601,17 +647,19 @@ if command -v ss >/dev/null 2>&1; then
 		b.WriteString("fi\n")
 	}
 	b.WriteString(`b=$(mktemp -d ` + Dir + `/.bak.XXXXXX) || exit 1
-mkdir -p ` + StreamsDir + ` "$b/hosts" "$b/streams"
+mkdir -p ` + StreamsDir + ` ` + AuthDir + ` "$b/hosts" "$b/streams" "$b/auth"
 for f in ` + HostsDir + `/*.conf; do [ -f "$f" ] && cp -p "$f" "$b/hosts"/; done
 for f in ` + StreamsDir + `/*.conf; do [ -f "$f" ] && cp -p "$f" "$b/streams"/; done
+for f in ` + AuthDir + `/*.htpasswd; do [ -f "$f" ] && cp -p "$f" "$b/auth"/; done
 restore() {
-  rm -f ` + HostsDir + `/*.conf ` + StreamsDir + `/*.conf
+  rm -f ` + HostsDir + `/*.conf ` + StreamsDir + `/*.conf ` + AuthDir + `/*.htpasswd
   for f in "$b/hosts"/*.conf; do [ -f "$f" ] && mv -f "$f" ` + HostsDir + `/; done
   for f in "$b/streams"/*.conf; do [ -f "$f" ] && mv -f "$f" ` + StreamsDir + `/; done
+  for f in "$b/auth"/*.htpasswd; do [ -f "$f" ] && mv -f "$f" ` + AuthDir + `/; done
   rm -rf "$b"
 }
 n=$(mktemp -d ` + Dir + `/.new.XXXXXX) || { rm -rf "$b"; exit 1; }
-mkdir -p "$n/hosts" "$n/streams"
+mkdir -p "$n/hosts" "$n/streams" "$n/auth"
 `)
 	sorted := slices.Clone(files)
 	slices.SortFunc(sorted, func(a, c proxy.File) int { return strings.Compare(a.ID, c.ID) })
@@ -622,11 +670,16 @@ mkdir -p "$n/hosts" "$n/streams"
 		}
 		eof := "MORCHEH_HOST_" + strings.ReplaceAll(f.ID, "-", "")
 		b.WriteString(`cat > "$n/` + sub + `/` + f.ID + `.conf" <<'` + eof + "'\n" + f.Text + eof + "\n")
+		if f.Config.Auth.Mode == "basic" {
+			pw := "MORCHEH_AUTH_" + strings.ReplaceAll(f.ID, "-", "")
+			b.WriteString(`cat > "$n/auth/` + f.ID + `.htpasswd" <<'` + pw + "'\n" + htpasswd(f.Config.Auth) + pw + "\n")
+		}
 	}
 	b.WriteString(`chmod 644 "$n"/*/*.conf 2>/dev/null
-rm -f ` + HostsDir + `/*.conf ` + StreamsDir + `/*.conf
+` + authOwner + `rm -f ` + HostsDir + `/*.conf ` + StreamsDir + `/*.conf ` + AuthDir + `/*.htpasswd
 for f in "$n/hosts"/*.conf; do [ -f "$f" ] && mv -f "$f" ` + HostsDir + `/; done
 for f in "$n/streams"/*.conf; do [ -f "$f" ] && mv -f "$f" ` + StreamsDir + `/; done
+for f in "$n/auth"/*.htpasswd; do [ -f "$f" ] && mv -f "$f" ` + AuthDir + `/; done
 rm -rf "$n"
 `)
 	if test {

@@ -475,7 +475,9 @@ func (h *backupHandler) runRestore(ctx context.Context, t *jobs.Task) (any, erro
 
 	// 1. Every file is read back first: a bad one is found before anything
 	// is overwritten.
-	t.Update(func(p *jobs.Progress) { p.Phase, p.Done, p.Total, p.ItemsTotal = "Checking the files", 0, total, len(chain) })
+	t.Update(func(p *jobs.Progress) {
+		p.Phase, p.Done, p.Total, p.ItemsTotal = "Checking the files", 0, total, len(chain)
+	})
 	for i, m := range chain {
 		t.Update(func(p *jobs.Progress) { p.Items, p.Current = i, path.Base(m.Path) })
 		problem, err := h.checkCopy(ctx, t, m, src.ID)

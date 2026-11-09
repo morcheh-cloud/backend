@@ -11,6 +11,7 @@ import (
 
 var (
 	streamBlockRe  = regexp.MustCompile(`(?m)^\s*stream\s*\{`)
+	brotliModuleRe = regexp.MustCompile(`(?m)^\s*load_module\s+\S*brotli`)
 	streamModuleRe = regexp.MustCompile(`(?m)^\s*load_module\s.*ngx_stream_module`)
 )
 
@@ -62,6 +63,9 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 		in.Geo = "ready"
 	}
 	in.Sites = ParseSites(dump)
+	if brotliModuleRe.MatchString(dump) {
+		in.Brotli = true
+	}
 	for id, text := range splitMarked(sections["files"]+"\n", fileMark) {
 		in.Files[id] = text
 	}
@@ -71,6 +75,12 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 		switch k {
 		case "http3":
 			in.HTTP3 = true
+		case "auth_request":
+			in.AuthRequest = true
+		case "brotli":
+			in.Brotli = true
+		case "cabundle":
+			in.CABundle = v
 		case "certbot":
 			in.Certbot = v
 			if v == "" {

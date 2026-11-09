@@ -379,6 +379,7 @@ var policies = map[string]policy{
 	"preview-proxy-host":                 onProxy(auth.Viewer),
 	"create-proxy-host":                  onProxy(auth.Engineer),
 	"test-proxy-host":                    onProxy(auth.Engineer),
+	"test-proxy-upstream":                onProxy(auth.Engineer),
 	"update-proxy-host":                  onProxy(auth.Engineer),
 	"set-proxy-host-enabled":             onProxy(auth.Engineer),
 	"delete-proxy-host":                  onProxy(auth.Engineer),

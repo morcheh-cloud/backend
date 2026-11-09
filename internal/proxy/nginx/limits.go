@@ -3,6 +3,7 @@ package nginx
 import (
 	"fmt"
 	"hash/fnv"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -112,12 +113,16 @@ func accessBlocks(w *writer, t string, h proxy.HostConfig) {
 		w.line("%s %s;", c, listed)
 	}
 	w.close()
+	// volatile: an error page's internal redirect must see its own $uri.
 	w.open("map $uri $%s_acme", t)
+	w.line("volatile;")
 	w.line("default 0;")
 	w.line("%s 1;", acmePath)
+	w.line(`"~^%s" 1;`, regexp.QuoteMeta(internalPrefix))
 	w.close()
 	if len(list) > 0 {
 		w.open(`map "$%s_acme:$%s_ip:$%s_cc" $%s_block`, t, t, t, t)
+		w.line("volatile;")
 		w.line("default 0;")
 		w.line(`"0:d:a" 1;`)
 		w.line(`"0:d:d" 1;`)
@@ -126,6 +131,7 @@ func accessBlocks(w *writer, t string, h proxy.HostConfig) {
 		return
 	}
 	w.open(`map "$%s_acme:$%s_cc" $%s_block`, t, t, t)
+	w.line("volatile;")
 	w.line("default 0;")
 	w.line(`"0:d" 1;`)
 	w.close()

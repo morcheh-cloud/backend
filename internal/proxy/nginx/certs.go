@@ -60,10 +60,11 @@ func tlsLines(w *writer, t proxy.HostTLS) {
 
 // acmeLocation answers certificate authorities' HTTP-01 checks on port 80,
 // whatever the site does with everything else.
-func acmeLocation(w *writer) {
+func acmeLocation(w *writer, h proxy.HostConfig) {
 	w.line("")
 	w.open("location ^~ /.well-known/acme-challenge/")
 	w.line("allow all;")
+	openUp(w, h)
 	w.line("root %s;", proxy.ACMEWebroot)
 	w.line("default_type text/plain;")
 	w.line("try_files $uri =404;")
@@ -133,7 +134,7 @@ func acmeScript(r proxy.CertRequest, s proxy.Setup) string {
 	w.open("server")
 	w.line("listen 80;")
 	w.line("server_name %s;", strings.Join(r.Domains, " "))
-	acmeLocation(w)
+	acmeLocation(w, proxy.HostConfig{})
 	w.line("")
 	w.open("location /")
 	w.line("return 404;")

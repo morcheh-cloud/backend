@@ -84,6 +84,18 @@ type HostConfig struct {
 	HideVersion    bool   `json:"hide_version,omitempty" doc:"Leave the proxy's version out of headers and error pages (sites only)"`
 	Cache          Cache  `json:"cache" required:"false" doc:"What browsers keep, and answers the proxy keeps itself (Capabilities.Cache)"`
 
+	// Capabilities.Auth, Pages, Hardening, UpstreamTLS (see features.go).
+	Auth            Auth        `json:"auth" required:"false" doc:"Visitors sign in first (proxy, static)"`
+	UpstreamTLS     UpstreamTLS `json:"upstream_tls" required:"false" doc:"How an https upstream is reached (proxy)"`
+	Maintenance     Maintenance `json:"maintenance" required:"false" doc:"A 503 page for everyone but some addresses (sites)"`
+	ErrorPages      []ErrorPage `json:"error_pages,omitempty" maxItems:"11" doc:"Own pages for error statuses (sites)"`
+	InterceptErrors bool        `json:"intercept_errors,omitempty" doc:"Show these pages for the upstream's own errors too (proxy)"`
+	Hardening       Hardening   `json:"hardening" required:"false" doc:"Refuse requests no real visitor makes (sites)"`
+	RequestID       bool        `json:"request_id,omitempty" doc:"Give every request an X-Request-ID, sent to the upstream and back to the visitor (sites)"`
+	Brotli          bool        `json:"brotli,omitempty" doc:"Also compress with Brotli when the server's nginx has the module (proxy, static)"`
+	CatchAll        bool        `json:"catch_all,omitempty" doc:"Answer every name no other site has, as the default server (404 hosts; one per proxy)"`
+	NotFoundCode    int         `json:"not_found_code,omitempty" enum:"0,404,410,444" doc:"What a 404 host answers; 444 closes the connection without an answer. 0 = 404"`
+
 	// Custom replaces the generated file: someone wrote it by hand, at their
 	// own risk. The fields above still name the site (domains, type) in the
 	// panel, but no longer change what's written.
@@ -225,19 +237,30 @@ var rateStatuses = []int{429, 503, 444}
 var rateMethods = []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 
 // HeaderRule sets a header on the way in (to the upstream) or out (to the
-// visitor).
+// visitor), or takes one of the upstream's out of its answers (hide).
 type HeaderRule struct {
-	To    string `json:"to" enum:"request,response"`
+	To    string `json:"to" enum:"request,response,hide"`
 	Name  string `json:"name" maxLength:"100"`
 	Value string `json:"value" maxLength:"2000"`
 }
 
-// PathRule sends one path somewhere else.
+// PathRule does something else for some paths: send them to another
+// upstream, redirect, serve files, refuse or answer a fixed text.
 type PathRule struct {
-	Path       string `json:"path" maxLength:"500" doc:"Starts with /; matches it and everything under it"`
-	Upstream   string `json:"upstream"`
-	WebSockets bool   `json:"websockets,omitempty"`
-	Advanced   string `json:"advanced,omitempty" maxLength:"4096"`
+	Path  string `json:"path" maxLength:"500" doc:"prefix: starts with /, matches it and everything under it; exact: only this path; regex: a pattern"`
+	Match string `json:"match,omitempty" enum:",prefix,exact,regex" doc:"Empty = prefix"`
+	// Action: empty = proxy.
+	Action       string `json:"action,omitempty" enum:",proxy,redirect,static,deny,return" doc:"Empty = proxy"`
+	Upstream     string `json:"upstream,omitempty" doc:"proxy: where requests go; empty = the site's own upstream (proxy sites)"`
+	WebSockets   bool   `json:"websockets,omitempty"`
+	StripPrefix  bool   `json:"strip_prefix,omitempty" doc:"proxy, prefix: take the path off before sending (/api/users goes as /users)"`
+	Public       bool   `json:"public,omitempty" doc:"No sign-in on this path, when the site asks for one"`
+	RedirectTo   string `json:"redirect_to,omitempty" doc:"redirect: a full address or a path on this site"`
+	RedirectCode int    `json:"redirect_code,omitempty" enum:"0,301,302,307,308" doc:"redirect: 0 = 302"`
+	Root         string `json:"root,omitempty" doc:"static: folder served for this path (exact: the file)"`
+	Status       int    `json:"status,omitempty" minimum:"0" maximum:"599" doc:"deny: 403, 404, 410 or 444; return: 200–599"`
+	Body         string `json:"body,omitempty" maxLength:"4096" doc:"return: the text answered"`
+	Advanced     string `json:"advanced,omitempty" maxLength:"4096"`
 }
 
 // Problem is one thing wrong with a field, named the way the request body
@@ -346,14 +369,15 @@ func Normalize(h HostConfig) HostConfig {
 	h.Headers = headers
 	paths := h.Paths[:0:0]
 	for _, p := range h.Paths {
-		p.Path, p.Upstream = strings.TrimSpace(p.Path), strings.TrimSpace(p.Upstream)
-		if p.Path != "" || p.Upstream != "" {
+		p = normalizePath(p)
+		if p.Path != "" || p.Upstream != "" || p.RedirectTo != "" || p.Root != "" {
 			paths = append(paths, p)
 		}
 	}
 	h.Paths = paths
 	h.Advanced = strings.TrimSpace(strings.ReplaceAll(h.Advanced, "\r\n", "\n"))
 	h = normalizeTuning(h)
+	h = normalizeFeatures(h)
 	h.Custom = strings.TrimSpace(strings.ReplaceAll(h.Custom, "\r\n", "\n"))
 	return h
 }
@@ -477,7 +501,7 @@ func validAddress(a string) bool {
 func Validate(h HostConfig) []Problem {
 	var out []Problem
 	add := func(field, msg string, v any) { out = append(out, Problem{field, msg, v}) }
-	if len(h.Domains) == 0 && !h.IsStream() {
+	if len(h.Domains) == 0 && !h.IsStream() && !h.CatchAll {
 		add("domains", "Add at least one domain.", nil)
 	}
 	for i, d := range h.Domains {
@@ -561,8 +585,11 @@ func Validate(h HostConfig) []Problem {
 	}
 	validateRate(h.RateLimit, add)
 	for i, x := range h.Headers {
-		if x.To != "request" && x.To != "response" {
-			add(fmt.Sprintf("headers[%d].to", i), "Choose request or response.", x.To)
+		switch {
+		case x.To != "request" && x.To != "response" && x.To != "hide":
+			add(fmt.Sprintf("headers[%d].to", i), "Choose request, response or hide.", x.To)
+		case x.To == "hide" && h.Type != TypeProxy:
+			add(fmt.Sprintf("headers[%d].to", i), "Only proxy sites have an upstream's headers to hide.", x.To)
 		}
 		if !headerRe.MatchString(x.Name) {
 			add(fmt.Sprintf("headers[%d].name", i), "Letters, digits and - only.", x.Name)
@@ -573,23 +600,14 @@ func Validate(h HostConfig) []Problem {
 	}
 	seen := map[string]bool{}
 	for i, p := range h.Paths {
-		f := fmt.Sprintf("paths[%d]", i)
-		switch {
-		case !pathRe.MatchString(p.Path):
-			add(f+".path", "Start with / and use letters, digits and . _ - / only.", p.Path)
-		case p.Path == "/":
-			add(f+".path", "/ is the whole site: set it as the main upstream instead.", p.Path)
-		case seen[p.Path]:
-			add(f+".path", "This path is listed twice.", p.Path)
+		validatePath(h, i, p, add)
+		key := p.MatchOf() + " " + p.Path
+		if seen[key] {
+			add(fmt.Sprintf("paths[%d].path", i), "This path is listed twice.", p.Path)
 		}
-		seen[p.Path] = true
-		if msg := checkUpstream(p.Upstream); msg != "" {
-			add(f+".upstream", msg, p.Upstream)
-		}
-		if msg := checkAdvanced(p.Advanced); msg != "" {
-			add(f+".advanced", msg, nil)
-		}
+		seen[key] = true
 	}
+	validateFeatures(h, add)
 	if msg := checkAdvanced(h.Advanced); msg != "" {
 		add("advanced", msg, nil)
 	}
@@ -825,6 +843,11 @@ type Capabilities struct {
 	Traffic      bool     `json:"traffic" doc:"Reports live request counts per site"`
 	Certificates bool     `json:"certificates" doc:"Can get certificates on the server (ACME CAs like Let's Encrypt, self-signed, uploaded)"`
 	TLSOptions   bool     `json:"tls_options" doc:"Takes HostTLS's extra settings (profile, HTTP/3, OCSP, session cache, client certificates)"`
+	Auth         bool     `json:"auth" doc:"Takes auth: basic sign-in, and forward when the server's proxy can"`
+	Pages        bool     `json:"pages" doc:"Takes maintenance and error_pages"`
+	Hardening    bool     `json:"hardening" doc:"Takes hardening, request_id and catch_all"`
+	UpstreamTLS  bool     `json:"upstream_tls" doc:"Takes upstream_tls"`
+	PathActions  bool     `json:"path_actions" doc:"Paths take match and action (redirect, static, deny, return), strip_prefix and public"`
 	Language     string   `json:"language" doc:"The config language, for syntax colors"`
 	ConfigLabel  string   `json:"config_label" doc:"What its config is called, like nginx config"`
 }
@@ -836,6 +859,9 @@ type Env struct {
 	// QUICReuseport: this host carries reuseport on its HTTP/3 listen; only
 	// one host on the server may.
 	QUICReuseport bool
+	// Brotli: the brotli module is loaded; CABundle is the system's CA file.
+	Brotli   bool
+	CABundle string
 }
 
 // File is one host rendered for the server.
@@ -893,6 +919,12 @@ type Status struct {
 	// Certbot is its version when installed (it gets and renews
 	// certificates), else "".
 	Certbot string
+	// AuthRequest: forward auth works (nginx's auth_request module).
+	AuthRequest bool
+	// Brotli: the brotli module is loaded.
+	Brotli bool
+	// CABundle is the system's CA file, for checking https upstreams.
+	CABundle string
 }
 
 // Site is a server block (or the kind's equivalent) found in the live config.
