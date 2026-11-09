@@ -1,6 +1,7 @@
 package nginx
 
 import (
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -56,11 +57,27 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 	default:
 		in.Streams = "no_module"
 	}
+	in.Geo = "off"
+	if strings.Contains(dump, "geoip2 "+GeoDB) {
+		in.Geo = "ready"
+	}
 	in.Sites = ParseSites(dump)
 	for id, text := range splitMarked(sections["files"]+"\n", fileMark) {
 		in.Files[id] = text
 	}
 	in.Certificates = parseCerts(sections["certs"])
+	for _, l := range strings.Split(sections["tls"], "\n") {
+		k, v, _ := strings.Cut(strings.TrimSpace(l), " ")
+		switch k {
+		case "http3":
+			in.HTTP3 = true
+		case "certbot":
+			in.Certbot = v
+			if v == "" {
+				in.Certbot = "installed"
+			}
+		}
+	}
 	return in
 }
 
@@ -105,31 +122,75 @@ func testErrors(out string) string {
 
 func parseCerts(out string) []proxy.Certificate {
 	var certs []proxy.Certificate
+	var issuer, subject string
+	finish := func() {
+		if len(certs) == 0 {
+			return
+		}
+		c := &certs[len(certs)-1]
+		if issuer != "" && issuer == subject {
+			c.Issuer = "Self-signed"
+		} else {
+			c.Issuer = orgOf(issuer)
+		}
+		issuer, subject = "", ""
+	}
 	for _, l := range strings.Split(out, "\n") {
 		t := strings.TrimSpace(l)
 		switch {
 		case strings.HasPrefix(t, "cert "):
-			name := strings.TrimPrefix(t, "cert ")
-			dir := "/etc/letsencrypt/live/" + name
+			finish()
+			dir := strings.TrimPrefix(t, "cert ")
+			source := "morcheh"
+			if !strings.HasPrefix(dir, "/") {
+				dir = "/etc/letsencrypt/live/" + dir
+			}
+			if strings.HasPrefix(dir, "/etc/letsencrypt/") {
+				source = "certbot"
+			}
 			certs = append(certs, proxy.Certificate{
-				Name: name, Certificate: dir + "/fullchain.pem", Key: dir + "/privkey.pem",
-				Domains: []string{},
+				Name: path.Base(dir), Certificate: dir + "/fullchain.pem", Key: dir + "/privkey.pem",
+				Domains: []string{}, Source: source,
 			})
 		case len(certs) == 0:
 		case strings.HasPrefix(t, "notAfter="):
 			if at, err := time.Parse("Jan _2 15:04:05 2006 MST", strings.Join(strings.Fields(strings.TrimPrefix(t, "notAfter=")), " ")); err == nil {
 				certs[len(certs)-1].Expires = &at
 			}
-		case strings.Contains(t, "DNS:"):
+		case strings.HasPrefix(t, "issuer="):
+			issuer = strings.TrimSpace(strings.TrimPrefix(t, "issuer="))
+		case strings.HasPrefix(t, "subject="):
+			subject = strings.TrimSpace(strings.TrimPrefix(t, "subject="))
+		case strings.Contains(t, "DNS:") || strings.Contains(t, "IP Address:"):
 			c := &certs[len(certs)-1]
 			for _, part := range strings.Split(t, ",") {
-				if d, ok := strings.CutPrefix(strings.TrimSpace(part), "DNS:"); ok {
+				part = strings.TrimSpace(part)
+				if d, ok := strings.CutPrefix(part, "DNS:"); ok {
+					c.Domains = append(c.Domains, d)
+				} else if d, ok := strings.CutPrefix(part, "IP Address:"); ok {
 					c.Domains = append(c.Domains, d)
 				}
 			}
 		}
 	}
+	finish()
 	return certs
+}
+
+var (
+	orgRe = regexp.MustCompile(`(?:^|[,/])\s*O\s*=\s*("[^"]*"|[^,/]+)`)
+	cnRe  = regexp.MustCompile(`(?:^|[,/])\s*CN\s*=\s*("[^"]*"|[^,/]+)`)
+)
+
+// orgOf is an issuer's organization (or common name) out of openssl's
+// one-line form, old (/C=US/O=X) or new (C = US, O = X).
+func orgOf(dn string) string {
+	for _, re := range []*regexp.Regexp{orgRe, cnRe} {
+		if m := re.FindStringSubmatch(dn); m != nil {
+			return strings.Trim(strings.TrimSpace(m[1]), `"`)
+		}
+	}
+	return dn
 }
 
 // ---- nginx -T ----

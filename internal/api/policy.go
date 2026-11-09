@@ -365,25 +365,30 @@ var policies = map[string]policy{
 	"delete-dns-server":         onDNSServer(auth.Owner),
 
 	// Reverse proxies
-	"list-proxy-kinds":            active,
-	"list-proxies":                active,
-	"list-proxy-hosts-everywhere": active,
-	"get-proxy-traffic":           active,
-	"create-proxy":                active, // Engineer on the server, checked by the handler
-	"get-proxy":                   onProxy(auth.Viewer),
-	"inspect-proxy":               onProxy(auth.Viewer),
-	"delete-proxy":                onProxy(auth.Owner),
-	"setup-proxy":                 onProxy(auth.Engineer),
-	"proxy-action":                onProxy(auth.Operator), // stop needs Engineer
-	"preview-proxy-host":          onProxy(auth.Viewer),
-	"create-proxy-host":           onProxy(auth.Engineer),
-	"update-proxy-host":           onProxy(auth.Engineer),
-	"set-proxy-host-enabled":      onProxy(auth.Engineer),
-	"delete-proxy-host":           onProxy(auth.Engineer),
-	"get-proxy-logs":              onProxy(auth.Operator),
-	"list-proxy-history":          onProxy(auth.Viewer),
-	"get-proxy-change":            onProxy(auth.Viewer),
-	"restore-proxy-change":        onProxy(auth.Engineer),
+	"list-proxy-kinds":                   active,
+	"list-proxies":                       active,
+	"list-proxy-hosts-everywhere":        active,
+	"get-proxy-traffic":                  active,
+	"create-proxy":                       active, // Engineer on the server, checked by the handler
+	"get-proxy":                          onProxy(auth.Viewer),
+	"inspect-proxy":                      onProxy(auth.Viewer),
+	"delete-proxy":                       onProxy(auth.Owner),
+	"setup-proxy":                        onProxy(auth.Engineer),
+	"setup-proxy-geo":                    onProxy(auth.Engineer),
+	"proxy-action":                       onProxy(auth.Operator), // stop needs Engineer
+	"preview-proxy-host":                 onProxy(auth.Viewer),
+	"create-proxy-host":                  onProxy(auth.Engineer),
+	"test-proxy-host":                    onProxy(auth.Engineer),
+	"update-proxy-host":                  onProxy(auth.Engineer),
+	"set-proxy-host-enabled":             onProxy(auth.Engineer),
+	"delete-proxy-host":                  onProxy(auth.Engineer),
+	"get-proxy-logs":                     onProxy(auth.Operator),
+	"purge-proxy-host-cache":             onProxy(auth.Operator),
+	"list-proxy-history":                 onProxy(auth.Viewer),
+	"get-proxy-change":                   onProxy(auth.Viewer),
+	"restore-proxy-change":               onProxy(auth.Engineer),
+	"list-proxy-certificate-authorities": onProxy(auth.Viewer),
+	"create-proxy-certificate":           onProxy(auth.Engineer),
 
 	// Databases: a database's level is its workspace's, or that of the
 	// server it's reached through when higher.

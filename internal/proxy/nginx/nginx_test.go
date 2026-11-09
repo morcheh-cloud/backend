@@ -70,8 +70,8 @@ func TestRender(t *testing.T) {
 	h := proxy.Normalize(proxy.HostConfig{
 		Domains: []string{"App.Example.com", "www.app.example.com"}, Type: "proxy",
 		Upstream: "http://127.0.0.1:3000", WebSockets: true, PreserveHost: true,
-		TLS:      proxy.HostTLS{Enabled: true, Certificate: "/etc/ssl/a.pem", Key: "/etc/ssl/a.key", ForceHTTPS: true, HTTP2: true, HSTS: true},
-		Allow:    []string{"10.0.0.0/8"}, MaxBodyMB: 50,
+		TLS:   proxy.HostTLS{Enabled: true, Certificate: "/etc/ssl/a.pem", Key: "/etc/ssl/a.key", ForceHTTPS: true, HTTP2: true, HSTS: true},
+		Allow: []string{"10.0.0.0/8"}, MaxBodyMB: 50,
 		Headers:  []proxy.HeaderRule{{To: "response", Name: "X-Frame-Options", Value: "DENY"}, {To: "request", Name: "X-Env", Value: "prod"}},
 		Paths:    []proxy.PathRule{{Path: "/api/", Upstream: "https://10.0.0.2:8443/"}},
 		Advanced: "location /health {\n    return 200;\n}",

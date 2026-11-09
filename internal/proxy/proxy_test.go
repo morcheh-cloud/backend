@@ -15,10 +15,10 @@ func TestValidate(t *testing.T) {
 	}
 	bad := Normalize(HostConfig{
 		Domains: []string{"bad domain", "a..b"}, Type: TypeProxy, Upstream: "http://x;rm -rf /",
-		TLS:     HostTLS{Enabled: true, Certificate: "relative.pem", Key: "/etc/../x"},
-		Allow:   []string{"nope"},
-		Headers: []HeaderRule{{To: "response", Name: "X Bad", Value: `a"b`}},
-		Paths:   []PathRule{{Path: "/", Upstream: "ftp://x"}, {Path: "/a b", Upstream: "http://x"}},
+		TLS:      HostTLS{Enabled: true, Certificate: "relative.pem", Key: "/etc/../x"},
+		Allow:    []string{"nope"},
+		Headers:  []HeaderRule{{To: "response", Name: "X Bad", Value: `a"b`}},
+		Paths:    []PathRule{{Path: "/", Upstream: "ftp://x"}, {Path: "/a b", Upstream: "http://x"}},
 		Advanced: "}\nserver {",
 	})
 	got := map[string]bool{}
@@ -54,4 +54,20 @@ func TestCheckAdvanced(t *testing.T) {
 		}
 	}
 	_ = strings.TrimSpace
+}
+
+func TestCustom(t *testing.T) {
+	h := Normalize(HostConfig{Type: TypeProxy, Domains: []string{"a.test"}, Upstream: "http://127.0.0.1:1", Custom: "server {\r\n  listen 80;\r\n}\r\n"})
+	if h.Custom != "server {\n  listen 80;\n}" {
+		t.Fatalf("custom not tidied: %q", h.Custom)
+	}
+	if p := Validate(h); len(p) != 0 {
+		t.Fatalf("unexpected problems: %v", p)
+	}
+	for _, bad := range []string{"server {", "}", "MORCHEH_HOST_x", "# @@morcheh-file:x"} {
+		h.Custom = bad
+		if p := Validate(h); len(p) == 0 || p[0].Field != "custom" {
+			t.Errorf("%q: want a custom problem, got %v", bad, p)
+		}
+	}
 }

@@ -41,6 +41,7 @@ map $http_upgrade $morcheh_connection {
     default upgrade;
     ''      close;
 }
+include ` + GeoDir + `/*.conf;
 include ` + HostsDir + `/*.conf;
 `
 
@@ -69,7 +70,9 @@ func (Driver) Capabilities() proxy.Capabilities {
 			proxy.TypeNotFound, proxy.TypeStream,
 		},
 		WebSockets: true, Headers: true, Paths: true, Allow: true, Advanced: true,
-		Streams: true, Traffic: true,
+		Tuning: true, Cache: true,
+		Countries: true, RateLimit: true,
+		Streams: true, Traffic: true, Certificates: true, TLSOptions: true,
 		Language: "nginx", ConfigLabel: "nginx config",
 	}
 }
@@ -125,6 +128,11 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	w := &writer{}
 	w.line("%s: edit this site in the panel; changes made here are overwritten.", marker)
 	w.line("# Host %s", id)
+	t := tag(id)
+	lim := newLimits(t, h)
+	accessBlocks(w, t, h)
+	w.b.WriteString(lim.blocks.b.String())
+	cacheBlocks(w, t, h)
 	names := strings.Join(h.Domains, " ")
 	ipv6 := env.IPv6
 	newHTTP2 := atLeast(env.Version, 1, 25, 1)
@@ -143,8 +151,15 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 		}
 		w.line("server_name %s;", names)
 		logs()
+		acmeLocation(w)
+		code := h.TLS.ForceCode
+		if code == 0 {
+			code = 301
+		}
 		w.line("")
-		w.line("return 301 https://$host$request_uri;")
+		w.open("location /")
+		w.line("return %d https://$host$request_uri;", code)
+		w.close()
 		w.close()
 	}
 
@@ -165,6 +180,16 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 		if ipv6 {
 			w.line("listen [::]:443 ssl%s;", suffix)
 		}
+		if h.TLS.HTTP3 {
+			reuse := ""
+			if env.QUICReuseport {
+				reuse = " reuseport"
+			}
+			w.line("listen 443 quic%s;", reuse)
+			if ipv6 {
+				w.line("listen [::]:443 quic%s;", reuse)
+			}
+		}
 		if h.TLS.HTTP2 && newHTTP2 {
 			w.line("http2 on;")
 		}
@@ -172,22 +197,15 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	w.line("server_name %s;", names)
 	logs()
 	if h.TLS.Enabled {
-		w.line("")
-		w.line("ssl_certificate %s;", h.TLS.Certificate)
-		w.line("ssl_certificate_key %s;", h.TLS.Key)
-		if h.TLS.HSTS {
-			w.line(`add_header Strict-Transport-Security "max-age=31536000" always;`)
-		}
+		tlsLines(w, h.TLS)
 	}
 
-	if len(h.Allow) > 0 || h.MaxBodyMB > 0 || hasHeaders(h, "response") {
+	access(w, t, h)
+	lim.server(w, env)
+	serverTuning(w, h)
+	serverCache(w, t, h)
+	if h.MaxBodyMB > 0 || hasHeaders(h, "response") {
 		w.line("")
-	}
-	for _, a := range h.Allow {
-		w.line("allow %s;", a)
-	}
-	if len(h.Allow) > 0 {
-		w.line("deny all;")
 	}
 	if h.MaxBodyMB > 0 {
 		w.line("client_max_body_size %dm;", h.MaxBodyMB)
@@ -198,35 +216,46 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 		}
 	}
 
+	if !h.TLS.Enabled || !h.TLS.ForceHTTPS {
+		acmeLocation(w)
+	}
+	// Returns sit in location / so the certificate check above still answers.
 	switch h.Type {
 	case proxy.TypeNotFound:
 		w.line("")
+		w.open("location /")
 		w.line("return 404;")
+		w.close()
 	case proxy.TypeRedirect:
 		w.line("")
 		target := h.RedirectTo
 		if h.KeepPath {
 			target = strings.TrimRight(target, "/") + "$request_uri"
 		}
+		w.open("location /")
 		w.line("return %d %s;", h.RedirectCode, target)
+		w.close()
 	case proxy.TypeStatic:
 		w.line("")
 		w.line("root %s;", h.Root)
 		w.line("index index.html index.htm;")
-		paths(w, h)
+		files := func() {
+			if h.SPA {
+				w.line("try_files $uri $uri/ /index.html;")
+			} else {
+				w.line("try_files $uri $uri/ =404;")
+			}
+		}
+		paths(w, h, lim, files)
 		w.line("")
 		w.open("location /")
-		if h.SPA {
-			w.line("try_files $uri $uri/ /index.html;")
-		} else {
-			w.line("try_files $uri $uri/ =404;")
-		}
+		files()
 		w.close()
 	default:
-		paths(w, h)
+		paths(w, h, lim, func() { proxyPass(w, t, h, h.Upstream, h.WebSockets) })
 		w.line("")
 		w.open("location /")
-		proxyPass(w, h, h.Upstream, h.WebSockets)
+		proxyPass(w, t, h, h.Upstream, h.WebSockets)
 		w.close()
 	}
 
@@ -244,6 +273,9 @@ func renderStream(id string, h proxy.HostConfig, env proxy.Env) string {
 	w := &writer{}
 	w.line("%s: edit this forward in the panel; changes made here are overwritten.", marker)
 	w.line("# Stream %s", id)
+	t := tag(id)
+	lim := newLimits(t, h)
+	w.b.WriteString(lim.blocks.b.String())
 	w.line("")
 	w.open("server")
 	udp := ""
@@ -256,18 +288,14 @@ func renderStream(id string, h proxy.HostConfig, env proxy.Env) string {
 	}
 	w.line("access_log %s morcheh_stream;", AccessLog(id))
 	w.line("error_log %s;", ErrorLog(id))
-	if len(h.Allow) > 0 {
-		w.line("")
-		for _, a := range h.Allow {
-			w.line("allow %s;", a)
-		}
-		w.line("deny all;")
-	}
+	access(w, t, h)
+	lim.server(w, env)
 	w.line("")
 	w.line("proxy_pass %s;", h.StreamTo)
 	if h.TimeoutSeconds > 0 {
 		w.line("proxy_timeout %ds;", h.TimeoutSeconds)
 	}
+	streamTuning(w, h)
 	if h.Advanced != "" {
 		w.line("")
 		w.line("# Advanced")
@@ -286,19 +314,29 @@ func hasHeaders(h proxy.HostConfig, to string) bool {
 	return false
 }
 
-func paths(w *writer, h proxy.HostConfig) {
+// paths writes the Paths locations, then a location for each path a rate
+// limit names that no Paths entry serves, doing what the site does (main).
+func paths(w *writer, h proxy.HostConfig, lim *limits, main func()) {
 	for _, p := range h.Paths {
 		w.line("")
 		w.open("location %s", p.Path)
-		proxyPass(w, h, p.Upstream, p.WebSockets)
+		proxyPass(w, lim.t, h, p.Upstream, p.WebSockets)
+		lim.location(w, p.Path)
 		if p.Advanced != "" {
 			w.raw(p.Advanced)
 		}
 		w.close()
 	}
+	for _, p := range lim.extraPaths(h) {
+		w.line("")
+		w.open("location %s", p)
+		main()
+		lim.location(w, p)
+		w.close()
+	}
 }
 
-func proxyPass(w *writer, h proxy.HostConfig, upstream string, ws bool) {
+func proxyPass(w *writer, t string, h proxy.HostConfig, upstream string, ws bool) {
 	w.line("proxy_pass %s;", upstream)
 	w.line("proxy_http_version 1.1;")
 	if h.PreserveHost {
@@ -330,6 +368,8 @@ func proxyPass(w *writer, h proxy.HostConfig, upstream string, ws bool) {
 		w.line("proxy_read_timeout 1h;")
 		w.line("proxy_send_timeout 1h;")
 	}
+	upstreamTuning(w, h)
+	proxyCache(w, t, h)
 }
 
 // atLeast compares a dotted version with major.minor.patch; unknown = no.
@@ -415,14 +455,19 @@ nginx -T 2>/dev/null
 M files
 for f in ` + HostsDir + `/*.conf ` + StreamsDir + `/*.conf; do [ -f "$f" ] || continue; printf '\n` + fileMark + `%s@@\n' "$(basename "$f" .conf)"; cat "$f"; done
 M certs
-for d in /etc/letsencrypt/live/*/; do
+for d in /etc/letsencrypt/live/*/ ` + proxy.SelfDir + `/*/; do
   [ -f "$d/fullchain.pem" ] || continue
-  echo "cert $(basename "$d")"
+  echo "cert ${d%/}"
   if command -v openssl >/dev/null 2>&1; then
     openssl x509 -in "$d/fullchain.pem" -noout -enddate 2>/dev/null
+    openssl x509 -in "$d/fullchain.pem" -noout -issuer 2>/dev/null
+    openssl x509 -in "$d/fullchain.pem" -noout -subject 2>/dev/null
     openssl x509 -in "$d/fullchain.pem" -noout -ext subjectAltName 2>/dev/null
   fi
 done
+M tls
+nginx -V 2>&1 | grep -q -- '--with-http_v3_module' && echo http3
+command -v certbot >/dev/null 2>&1 && echo "certbot $(certbot --version 2>&1 | sed -n 's/^certbot \([0-9.]*\).*/\1/p' | head -n 1)"
 M end
 `
 }
@@ -506,10 +551,17 @@ echo "nginx is ready."
 	return s
 }
 
-func (Driver) ApplyScript(files []proxy.File) string {
+func (Driver) ApplyScript(files []proxy.File) string { return applyScript(files, false) }
+
+// TestScript puts files in place just long enough for nginx -t, then always
+// puts the old ones back; nothing is reloaded.
+func (Driver) TestScript(files []proxy.File) string { return applyScript(files, true) }
+
+func applyScript(files []proxy.File, test bool) string {
 	var b strings.Builder
 	b.WriteString(head)
 	b.WriteString("command -v nginx >/dev/null 2>&1 || exit " + strconv.Itoa(proxy.ExitNotInstalled) + "\n")
+	b.WriteString("mkdir -p " + CacheDir + "\n")
 	b.WriteString(streamFns)
 	b.WriteString(writeInclude())
 	var streams []proxy.File
@@ -520,9 +572,14 @@ func (Driver) ApplyScript(files []proxy.File) string {
 	}
 	noStreams := strconv.Itoa(proxy.ExitNoStreams)
 	if len(streams) > 0 {
+		wire := "wire_stream || exit 1"
+		if test {
+			// A test leaves nginx.conf alone: Save wires the forwards in.
+			wire = `echo "Port forwards aren't wired into nginx yet, so they weren't tested."`
+		}
 		b.WriteString(`case "$(stream_state)" in
 ready) write_stream ;;
-not_wired) wire_stream || exit 1 ;;
+not_wired) ` + wire + ` ;;
 taken) echo "nginx.conf already has its own stream block. Add 'include ` + StreamsDir + `/*.conf;' inside it, then save again."; exit ` + noStreams + ` ;;
 *) echo "This nginx can't forward ports: its stream module is missing. Press Set up on the proxy to add it."; exit ` + noStreams + ` ;;
 esac
@@ -571,7 +628,16 @@ rm -f ` + HostsDir + `/*.conf ` + StreamsDir + `/*.conf
 for f in "$n/hosts"/*.conf; do [ -f "$f" ] && mv -f "$f" ` + HostsDir + `/; done
 for f in "$n/streams"/*.conf; do [ -f "$f" ] && mv -f "$f" ` + StreamsDir + `/; done
 rm -rf "$n"
-if ! out=$(nginx -t 2>&1); then restore; printf '%s\n' "$out"; exit ` + strconv.Itoa(proxy.ExitTestFailed) + `; fi
+`)
+	if test {
+		b.WriteString(`out=$(nginx -t 2>&1); rc=$?
+restore
+printf '%s\n' "$out"
+[ $rc -eq 0 ] || exit ` + strconv.Itoa(proxy.ExitTestFailed) + `
+`)
+		return b.String()
+	}
+	b.WriteString(`if ! out=$(nginx -t 2>&1); then restore; printf '%s\n' "$out"; exit ` + strconv.Itoa(proxy.ExitTestFailed) + `; fi
 if running; then
   if ! out=$(nginx -s reload 2>&1); then restore; nginx -s reload >/dev/null 2>&1; printf '%s\n' "$out"; exit ` + strconv.Itoa(proxy.ExitReloadFailed) + `; fi
 fi
@@ -587,7 +653,8 @@ fi
 for f in /etc/nginx/conf.d/` + IncludeName + ` /etc/nginx/http.d/` + IncludeName + `; do
   [ -f "$f" ] && head -n 1 "$f" | grep -q '^` + marker + `' && rm -f "$f"
 done
-rm -rf ` + Dir + `
+rm -rf ` + Dir + ` ` + CacheDir + `
+rm -f ` + geoCron + `
 command -v nginx >/dev/null 2>&1 || exit 0
 if nginx -t >/dev/null 2>&1 && running; then nginx -s reload; fi
 exit 0

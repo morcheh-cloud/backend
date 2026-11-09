@@ -58,13 +58,95 @@ type HostConfig struct {
 
 	TLS HostTLS `json:"tls" required:"false" doc:"Plain http only when left out"`
 
-	MaxBodyMB      int          `json:"max_body_mb,omitempty" minimum:"0" maximum:"100000" doc:"Largest upload; 0 = the proxy's default"`
-	TimeoutSeconds int          `json:"timeout_seconds,omitempty" minimum:"0" maximum:"86400" doc:"How long to wait for the upstream; 0 = the proxy's default"`
-	Allow          []string     `json:"allow,omitempty" maxItems:"200" doc:"Only these addresses or ranges may visit; empty = everyone"`
-	Headers        []HeaderRule `json:"headers,omitempty" maxItems:"50"`
-	Paths          []PathRule   `json:"paths,omitempty" maxItems:"50" doc:"Paths sent somewhere else than the main upstream"`
-	Advanced       string       `json:"advanced,omitempty" maxLength:"16384" doc:"Extra directives in the proxy's own language, added inside the site"`
+	MaxBodyMB      int      `json:"max_body_mb,omitempty" minimum:"0" maximum:"100000" doc:"Largest upload; 0 = the proxy's default"`
+	TimeoutSeconds int      `json:"timeout_seconds,omitempty" minimum:"0" maximum:"86400" doc:"How long to wait for the upstream; 0 = the proxy's default"`
+	Allow          []string `json:"allow,omitempty" maxItems:"500" doc:"Addresses or ranges always let in"`
+	Deny           []string `json:"deny,omitempty" maxItems:"500" doc:"Addresses or ranges always refused"`
+	// DefaultAccess is what happens to everyone the lists don't name. Left
+	// empty it's deny when allow has entries (how sites saved before deny
+	// existed behave), else allow.
+	DefaultAccess string `json:"default_access,omitempty" enum:",allow,deny" doc:"Everyone else: allow or deny. Empty = deny when allow has entries, else allow"`
+	// Countries limit a site by where its visitors are (http sites only).
+	Countries   []string     `json:"countries,omitempty" maxItems:"250" doc:"Two-letter country codes (ISO 3166-1), like DE"`
+	CountryMode string       `json:"country_mode,omitempty" enum:",allow,deny" doc:"allow = only these countries get in; deny = these are refused"`
+	RateLimit   RateLimit    `json:"rate_limit" required:"false" doc:"Limits on requests, connections and speed"`
+	Headers     []HeaderRule `json:"headers,omitempty" maxItems:"50"`
+	Paths       []PathRule   `json:"paths,omitempty" maxItems:"50" doc:"Paths sent somewhere else than the main upstream"`
+	Advanced    string       `json:"advanced,omitempty" maxLength:"16384" doc:"Extra directives in the proxy's own language, added inside the site"`
+
+	// Tuning (Capabilities.Tuning): each one is used by some types only and
+	// cleared by Normalize for the others.
+	Gzip           bool   `json:"gzip,omitempty" doc:"Compress text answers (proxy, static)"`
+	NoBuffering    bool   `json:"no_buffering,omitempty" doc:"Pass data straight through without buffering it (proxy): live updates, streamed answers, big uploads"`
+	ConnectTimeout int    `json:"connect_timeout_seconds,omitempty" minimum:"0" maximum:"75" doc:"How long to try reaching the upstream; 0 = the proxy's default (proxy, stream)"`
+	RealIP         RealIP `json:"real_ip" required:"false" doc:"Read the visitor's address from a CDN or load balancer in front (sites only)"`
+	ProxyProtocol  bool   `json:"proxy_protocol,omitempty" doc:"Tell the upstream the visitor's address with the PROXY protocol (stream)"`
+	HideVersion    bool   `json:"hide_version,omitempty" doc:"Leave the proxy's version out of headers and error pages (sites only)"`
+	Cache          Cache  `json:"cache" required:"false" doc:"What browsers keep, and answers the proxy keeps itself (Capabilities.Cache)"`
+
+	// Custom replaces the generated file: someone wrote it by hand, at their
+	// own risk. The fields above still name the site (domains, type) in the
+	// panel, but no longer change what's written.
+	Custom string `json:"custom,omitempty" maxLength:"65536" doc:"The whole config file written by hand; when set it's written instead of the generated one"`
 }
+
+// IsCustom says whether the file is written by hand.
+func (h HostConfig) IsCustom() bool { return h.Custom != "" }
+
+// FileText is what's written for a host: the hand-written file when there is
+// one, else what the driver renders.
+func FileText(d Driver, id string, h HostConfig, env Env) string {
+	if h.IsCustom() {
+		return h.Custom + "\n"
+	}
+	return d.Render(id, h, env)
+}
+
+// RealIP trusts a CDN or load balancer in front of the site: requests from
+// these addresses carry the visitor's own address in Header, which then
+// counts for logs, access lists, countries and rate limits.
+type RealIP struct {
+	From   []string `json:"from,omitempty" maxItems:"200" doc:"Addresses or ranges of the CDN or load balancer"`
+	Header string   `json:"header,omitempty" enum:",X-Forwarded-For,X-Real-IP,CF-Connecting-IP,True-Client-IP" doc:"Header holding the visitor's address; empty = X-Forwarded-For"`
+}
+
+// Cache is a site's caching: what browsers keep (proxy and static sites) and
+// the upstream's answers kept on the proxy's disk (proxy sites).
+type Cache struct {
+	AssetDays  int  `json:"asset_days,omitempty" minimum:"0" maximum:"365" doc:"Browsers keep css, js, images, fonts and media this many days; 0 = leave the answer's own header"`
+	PagesFresh bool `json:"pages_fresh,omitempty" doc:"Browsers check for a newer page (html) every time"`
+
+	Enabled        bool     `json:"enabled,omitempty" doc:"Keep the upstream's answers on the proxy's disk and serve them from there (proxy)"`
+	Minutes        int      `json:"minutes,omitempty" minimum:"0" maximum:"43200" doc:"How long an answer stays fresh when the upstream doesn't say; 0 = 10"`
+	MaxSizeMB      int      `json:"max_size_mb,omitempty" minimum:"0" maximum:"1048576" doc:"Disk space the cache may use; 0 = 1024"`
+	ServeStale     bool     `json:"serve_stale,omitempty" doc:"When the upstream is down, slow or failing, answer from the cache; refresh in the background"`
+	IgnoreUpstream bool     `json:"ignore_upstream,omitempty" doc:"Cache even when the upstream says not to (Cache-Control, Expires); answers setting a cookie are still never kept"`
+	SkipPaths      []string `json:"skip_paths,omitempty" maxItems:"50" doc:"Paths never cached, with everything under them, like /admin"`
+	SkipCookies    []string `json:"skip_cookies,omitempty" maxItems:"20" doc:"Requests carrying a cookie whose name starts with one of these skip the cache (signed-in people), like wordpress_logged_in"`
+	StatusHeader   bool     `json:"status_header,omitempty" doc:"Add X-Cache-Status (HIT, MISS, BYPASS…) to answers"`
+}
+
+// Browser says whether the cache sets anything for browsers.
+func (c Cache) Browser() bool { return c.AssetDays > 0 || c.PagesFresh }
+
+// FreshMinutes is how long an answer stays fresh.
+func (c Cache) FreshMinutes() int {
+	if c.Minutes > 0 {
+		return c.Minutes
+	}
+	return 10
+}
+
+// SizeMB is the cache's disk limit.
+func (c Cache) SizeMB() int {
+	if c.MaxSizeMB > 0 {
+		return c.MaxSizeMB
+	}
+	return 1024
+}
+
+// RealIPHeaders are the headers RealIP can read.
+var RealIPHeaders = []string{"X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "True-Client-IP"}
 
 // HostTLS serves the site over HTTPS with a certificate already on the server.
 type HostTLS struct {
@@ -72,9 +154,75 @@ type HostTLS struct {
 	Certificate string `json:"certificate,omitempty" doc:"Path of the certificate (full chain) on the server"`
 	Key         string `json:"key,omitempty" doc:"Path of its private key on the server"`
 	ForceHTTPS  bool   `json:"force_https,omitempty" doc:"Send plain http visitors to https"`
+	ForceCode   int    `json:"force_code,omitempty" enum:"0,301,302,307,308" doc:"Status of that redirect; 0 = 301. 308 keeps the method and body of a POST"`
 	HTTP2       bool   `json:"http2,omitempty"`
-	HSTS        bool   `json:"hsts,omitempty" doc:"Tell browsers to only use https for a year"`
+	HTTP3       bool   `json:"http3,omitempty" doc:"Also answer over HTTP/3 (QUIC, UDP port 443); needs nginx 1.25 or newer built with it"`
+	HSTS        bool   `json:"hsts,omitempty" doc:"Tell browsers to only use https"`
+	HSTSMaxAge  int    `json:"hsts_max_age,omitempty" minimum:"0" maximum:"63072000" doc:"How long browsers remember it, in seconds; 0 = a year"`
+	HSTSSub     bool   `json:"hsts_subdomains,omitempty" doc:"The rule covers every subdomain too"`
+	HSTSPreload bool   `json:"hsts_preload,omitempty" doc:"Ask to be built into browsers (hstspreload.org)"`
+	// Profile picks protocols and ciphers from Mozilla's guidelines; empty =
+	// the proxy's own defaults.
+	Profile      string `json:"profile,omitempty" enum:",modern,intermediate,old" doc:"modern = TLS 1.3 only; intermediate = TLS 1.2 and 1.3 with strong ciphers; old = also TLS 1.0/1.1 for very old clients; empty = the proxy's defaults"`
+	OCSP         bool   `json:"ocsp,omitempty" doc:"OCSP stapling: send the certificate's revocation status along (only for certificates that list an OCSP address)"`
+	SessionCache bool   `json:"session_cache,omitempty" doc:"Remember TLS sessions for a day so returning visitors connect faster"`
+	ClientCA     string `json:"client_ca,omitempty" doc:"Path of a CA file on the server: visitors must show a certificate it signed"`
+	VerifyClient string `json:"verify_client,omitempty" enum:",on,optional" doc:"on = a client certificate is required; optional = asked for, not required; empty = off"`
 }
+
+// HSTSValue is the Strict-Transport-Security header the settings make.
+func (t HostTLS) HSTSValue() string {
+	age := t.HSTSMaxAge
+	if age <= 0 {
+		age = 31536000
+	}
+	v := fmt.Sprintf("max-age=%d", age)
+	if t.HSTSSub {
+		v += "; includeSubDomains"
+	}
+	if t.HSTSPreload {
+		v += "; preload"
+	}
+	return v
+}
+
+// RateLimit slows down or refuses visitors who ask too much. Its zero value
+// limits nothing.
+type RateLimit struct {
+	Rules       []RateRule `json:"rules,omitempty" maxItems:"20" doc:"Request limits; sites only"`
+	ConnPerIP   int        `json:"conn_per_ip,omitempty" minimum:"0" maximum:"100000" doc:"Connections one visitor may hold open at once; 0 = no limit"`
+	ConnTotal   int        `json:"conn_total,omitempty" minimum:"0" maximum:"1000000" doc:"Connections the whole site may hold open at once; 0 = no limit"`
+	DownloadKBs int        `json:"download_kbs,omitempty" minimum:"0" maximum:"10000000" doc:"Speed sent to a visitor, per connection, in KB/s; 0 = no limit"`
+	UploadKBs   int        `json:"upload_kbs,omitempty" minimum:"0" maximum:"10000000" doc:"Speed read from a visitor, per connection, in KB/s; port forwards only"`
+	FullSpeedMB int        `json:"full_speed_mb,omitempty" minimum:"0" maximum:"100000" doc:"The first MB of each answer go at full speed; sites only"`
+	Status      int        `json:"status,omitempty" enum:"0,429,503,444" doc:"Answer to refused requests; 0 = 429"`
+	Exempt      []string   `json:"exempt,omitempty" maxItems:"200" doc:"Addresses or ranges never limited"`
+	DryRun      bool       `json:"dry_run,omitempty" doc:"Only log who would have been limited"`
+}
+
+// IsZero says whether nothing is limited.
+func (r RateLimit) IsZero() bool {
+	return len(r.Rules) == 0 && r.ConnPerIP == 0 && r.ConnTotal == 0 && r.DownloadKBs == 0 && r.UploadKBs == 0
+}
+
+// RateRule is a number of requests per second or minute, counted per
+// visitor or for the whole site, on the whole site or under one path.
+type RateRule struct {
+	Path    string   `json:"path,omitempty" maxLength:"500" doc:"Empty = the whole site; else this path and everything under it"`
+	Rate    int      `json:"rate" minimum:"1" maximum:"1000000"`
+	Per     string   `json:"per" enum:"second,minute"`
+	Burst   int      `json:"burst,omitempty" minimum:"0" maximum:"100000" doc:"Extra requests let through at once above the rate"`
+	Mode    string   `json:"mode,omitempty" enum:",nodelay,queue,delay" doc:"What the burst does: nodelay (default) serves it at once, queue slows it to the rate, delay serves the first ones at once and slows the rest"`
+	Delay   int      `json:"delay,omitempty" minimum:"0" maximum:"100000" doc:"With mode delay: how many of the burst go at once"`
+	Key     string   `json:"key,omitempty" enum:",ip,site" doc:"ip (default) counts each visitor apart; site counts every visitor together"`
+	Methods []string `json:"methods,omitempty" maxItems:"7" doc:"Only these request methods count; empty = all"`
+}
+
+// Rate limit answers.
+var rateStatuses = []int{429, 503, 444}
+
+// Methods a rule can count.
+var rateMethods = []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 
 // HeaderRule sets a header on the way in (to the upstream) or out (to the
 // visitor).
@@ -106,7 +254,8 @@ var (
 	domainRe = regexp.MustCompile(`^(\*\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 	headerRe = regexp.MustCompile(`^[A-Za-z0-9-]{1,100}$`)
 	// Paths and file names that need no quoting anywhere.
-	pathRe = regexp.MustCompile(`^/[A-Za-z0-9._~@%+=,:/\-]*$`)
+	cookieRe = regexp.MustCompile(`^[A-Za-z0-9._\-]+$`)
+	pathRe   = regexp.MustCompile(`^/[A-Za-z0-9._~@%+=,:/\-]*$`)
 )
 
 // Normalize tidies what people type: trims, lowercases names, drops blanks
@@ -126,6 +275,16 @@ func Normalize(h HostConfig) HostConfig {
 	h.StreamTo = strings.ToLower(strings.TrimSpace(h.StreamTo))
 	h.TLS.Certificate = strings.TrimSpace(h.TLS.Certificate)
 	h.TLS.Key = strings.TrimSpace(h.TLS.Key)
+	h.TLS.ClientCA = strings.TrimSpace(h.TLS.ClientCA)
+	if !h.TLS.ForceHTTPS {
+		h.TLS.ForceCode = 0
+	}
+	if !h.TLS.HSTS {
+		h.TLS.HSTSMaxAge, h.TLS.HSTSSub, h.TLS.HSTSPreload = 0, false, false
+	}
+	if h.TLS.ClientCA == "" {
+		h.TLS.VerifyClient = ""
+	}
 	if h.Type != TypeStream {
 		h.ListenPort, h.Protocol, h.StreamTo = 0, "", ""
 	}
@@ -157,13 +316,26 @@ func Normalize(h HostConfig) HostConfig {
 	if !h.TLS.Enabled {
 		h.TLS = HostTLS{}
 	}
-	var allow []string
-	for _, a := range h.Allow {
-		if a = strings.TrimSpace(a); a != "" && !slices.Contains(allow, a) {
-			allow = append(allow, a)
+	h.Allow, h.Deny = tidyList(h.Allow), tidyList(h.Deny)
+	if h.DefaultAccess == "" {
+		h.DefaultAccess = "allow"
+		if len(h.Allow) > 0 {
+			h.DefaultAccess = "deny"
 		}
 	}
-	h.Allow = allow
+	var countries []string
+	for _, c := range h.Countries {
+		if c = strings.ToUpper(strings.TrimSpace(c)); c != "" && !slices.Contains(countries, c) {
+			countries = append(countries, c)
+		}
+	}
+	h.Countries = countries
+	if h.IsStream() || len(h.Countries) == 0 {
+		h.Countries, h.CountryMode = nil, ""
+	} else if h.CountryMode == "" {
+		h.CountryMode = "deny"
+	}
+	h.RateLimit = normalizeRate(h.RateLimit, h.Type)
 	headers := h.Headers[:0:0]
 	for _, x := range h.Headers {
 		x.Name, x.Value = strings.TrimSpace(x.Name), strings.TrimSpace(x.Value)
@@ -181,7 +353,123 @@ func Normalize(h HostConfig) HostConfig {
 	}
 	h.Paths = paths
 	h.Advanced = strings.TrimSpace(strings.ReplaceAll(h.Advanced, "\r\n", "\n"))
+	h = normalizeTuning(h)
+	h.Custom = strings.TrimSpace(strings.ReplaceAll(h.Custom, "\r\n", "\n"))
 	return h
+}
+
+// normalizeTuning clears the tuning options a type doesn't use.
+func normalizeTuning(h HostConfig) HostConfig {
+	if h.Type != TypeProxy && h.Type != TypeStatic {
+		h.Gzip = false
+	}
+	if h.Type != TypeProxy {
+		h.NoBuffering = false
+	}
+	switch h.Type {
+	case TypeProxy:
+	case TypeStatic:
+		h.Cache = Cache{AssetDays: h.Cache.AssetDays, PagesFresh: h.Cache.PagesFresh}
+	default:
+		h.Cache = Cache{}
+	}
+	if !h.Cache.Enabled {
+		h.Cache = Cache{AssetDays: h.Cache.AssetDays, PagesFresh: h.Cache.PagesFresh}
+	}
+	h.Cache.SkipPaths = tidyList(h.Cache.SkipPaths)
+	h.Cache.SkipCookies = tidyList(h.Cache.SkipCookies)
+	if h.Type != TypeProxy && h.Type != TypeStream {
+		h.ConnectTimeout = 0
+	}
+	if h.IsStream() {
+		h.RealIP, h.HideVersion = RealIP{}, false
+	} else {
+		h.ProxyProtocol = false
+	}
+	h.RealIP.From = tidyList(h.RealIP.From)
+	if len(h.RealIP.From) == 0 {
+		h.RealIP = RealIP{}
+	} else if h.RealIP.Header == "" {
+		h.RealIP.Header = "X-Forwarded-For"
+	}
+	return h
+}
+
+// tidyList trims and drops blanks and duplicates.
+func tidyList(in []string) []string {
+	var out []string
+	for _, a := range in {
+		if a = strings.TrimSpace(a); a != "" && !slices.Contains(out, a) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// RateLimited says whether a type can limit requests: redirects and 404
+// hosts answer before any limit would run.
+func RateLimited(t string) bool { return t == TypeProxy || t == TypeStatic || t == TypeStream }
+
+func normalizeRate(r RateLimit, t string) RateLimit {
+	if !RateLimited(t) {
+		return RateLimit{}
+	}
+	r.Exempt = tidyList(r.Exempt)
+	rules := r.Rules[:0:0]
+	for _, x := range r.Rules {
+		x.Path = strings.TrimSpace(x.Path)
+		if x.Path == "/" {
+			x.Path = ""
+		}
+		if x.Per == "" {
+			x.Per = "second"
+		}
+		if x.Mode == "" {
+			x.Mode = "nodelay"
+		}
+		if x.Key == "" {
+			x.Key = "ip"
+		}
+		if x.Burst == 0 || x.Mode != "delay" {
+			x.Delay = 0
+		}
+		var methods []string
+		for _, m := range x.Methods {
+			if m = strings.ToUpper(strings.TrimSpace(m)); m != "" && !slices.Contains(methods, m) {
+				methods = append(methods, m)
+			}
+		}
+		x.Methods = methods
+		if t == TypeStream {
+			continue
+		}
+		rules = append(rules, x)
+	}
+	r.Rules = rules
+	if t == TypeStream {
+		r.FullSpeedMB = 0
+	} else {
+		r.UploadKBs = 0
+	}
+	if r.DownloadKBs == 0 {
+		r.FullSpeedMB = 0
+	}
+	if r.IsZero() {
+		return RateLimit{}
+	}
+	if r.Status == 0 {
+		r.Status = 429
+	}
+	return r
+}
+
+// validAddress accepts an address or a range.
+func validAddress(a string) bool {
+	if _, err := netip.ParsePrefix(a); err == nil {
+		return true
+	}
+	_, err := netip.ParseAddr(a)
+	return err == nil
 }
 
 // Validate checks a normalized host. Every value that ends up in a config
@@ -237,14 +525,41 @@ func Validate(h HostConfig) []Problem {
 		if !safePath(h.TLS.Key) {
 			add("tls.key", "Use the full path of the key file.", h.TLS.Key)
 		}
-	}
-	for i, a := range h.Allow {
-		if _, err := netip.ParsePrefix(a); err != nil {
-			if _, err := netip.ParseAddr(a); err != nil {
-				add(fmt.Sprintf("allow[%d]", i), "Not an address or range (like 10.0.0.0/8).", a)
-			}
+		if h.TLS.ClientCA != "" && !safePath(h.TLS.ClientCA) {
+			add("tls.client_ca", "Use the full path of the CA file.", h.TLS.ClientCA)
+		}
+		if h.TLS.ClientCA != "" && h.TLS.VerifyClient == "" {
+			add("tls.verify_client", "Choose whether a client certificate is required or optional.", "")
+		}
+		if h.TLS.HSTSPreload && (!h.TLS.HSTSSub || h.TLS.HSTSMaxAge != 0 && h.TLS.HSTSMaxAge < 31536000) {
+			add("tls.hsts_preload", "Preloading needs subdomains included and at least a year.", "")
 		}
 	}
+	for i, a := range h.Allow {
+		if !validAddress(a) {
+			add(fmt.Sprintf("allow[%d]", i), "Not an address or range (like 10.0.0.0/8).", a)
+		}
+	}
+	for i, a := range h.Deny {
+		switch {
+		case !validAddress(a):
+			add(fmt.Sprintf("deny[%d]", i), "Not an address or range (like 10.0.0.0/8).", a)
+		case slices.ContainsFunc(h.Allow, func(b string) bool { return SameAddress(a, b) }):
+			add(fmt.Sprintf("deny[%d]", i), "This is also in the list let in; keep it in one list.", a)
+		}
+	}
+	if h.DefaultAccess != "allow" && h.DefaultAccess != "deny" {
+		add("default_access", "Choose allow or deny.", h.DefaultAccess)
+	}
+	for i, c := range h.Countries {
+		if !countryRe.MatchString(c) {
+			add(fmt.Sprintf("countries[%d]", i), "Use a two-letter country code, like DE.", c)
+		}
+	}
+	if len(h.Countries) > 0 && h.CountryMode != "allow" && h.CountryMode != "deny" {
+		add("country_mode", "Choose allow or deny.", h.CountryMode)
+	}
+	validateRate(h.RateLimit, add)
 	for i, x := range h.Headers {
 		if x.To != "request" && x.To != "response" {
 			add(fmt.Sprintf("headers[%d].to", i), "Choose request or response.", x.To)
@@ -278,7 +593,114 @@ func Validate(h HostConfig) []Problem {
 	if msg := checkAdvanced(h.Advanced); msg != "" {
 		add("advanced", msg, nil)
 	}
+	for i, a := range h.RealIP.From {
+		if !validAddress(a) {
+			add(fmt.Sprintf("real_ip.from[%d]", i), "Not an address or range (like 173.245.48.0/20).", a)
+		}
+	}
+	if h.RealIP.Header != "" && !slices.Contains(RealIPHeaders, h.RealIP.Header) {
+		add("real_ip.header", "Choose one of "+strings.Join(RealIPHeaders, ", ")+".", h.RealIP.Header)
+	}
+	if h.Cache.Enabled && h.NoBuffering {
+		add("cache.enabled", "Pass straight through (Advanced) leaves nothing to keep: turn one of them off.", true)
+	}
+	for i, p := range h.Cache.SkipPaths {
+		if !pathRe.MatchString(p) {
+			add(fmt.Sprintf("cache.skip_paths[%d]", i), "Start with / and use letters, digits and . _ - / only.", p)
+		}
+	}
+	for i, c := range h.Cache.SkipCookies {
+		if !cookieRe.MatchString(c) {
+			add(fmt.Sprintf("cache.skip_cookies[%d]", i), "Letters, digits and . _ - only.", c)
+		}
+	}
+	if h.IsCustom() {
+		if msg := checkCustom(h.Custom); msg != "" {
+			add("custom", msg, nil)
+		}
+	}
 	return out
+}
+
+// checkCustom keeps a hand-written file balanced and away from the markers
+// the scripts use to write it.
+func checkCustom(s string) string {
+	for i, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "MORCHEH_") || strings.Contains(line, "@@morcheh-") {
+			return fmt.Sprintf("Line %d starts with a word Morcheh keeps for itself (MORCHEH_ / @@morcheh-).", i+1)
+		}
+	}
+	return checkAdvanced(s)
+}
+
+var countryRe = regexp.MustCompile(`^[A-Z]{2}$`)
+
+// SameAddress says whether two entries name the same addresses (10.0.0.1
+// and 10.0.0.1/32 do).
+func SameAddress(a, b string) bool {
+	pa, ea := ParseAddress(a)
+	pb, eb := ParseAddress(b)
+	return ea == nil && eb == nil && pa == pb
+}
+
+// ParseAddress reads an address or range as a range (an address is a range
+// of one), masked.
+func ParseAddress(a string) (netip.Prefix, error) {
+	if p, err := netip.ParsePrefix(a); err == nil {
+		return p.Masked(), nil
+	}
+	ip, err := netip.ParseAddr(a)
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	return netip.PrefixFrom(ip, ip.BitLen()), nil
+}
+
+func validateRate(r RateLimit, add func(field, msg string, v any)) {
+	if r.IsZero() {
+		return
+	}
+	if !slices.Contains(rateStatuses, r.Status) {
+		add("rate_limit.status", "Use 429, 503 or 444.", r.Status)
+	}
+	for i, a := range r.Exempt {
+		if !validAddress(a) {
+			add(fmt.Sprintf("rate_limit.exempt[%d]", i), "Not an address or range (like 10.0.0.0/8).", a)
+		}
+	}
+	seen := map[string]bool{}
+	for i, x := range r.Rules {
+		f := fmt.Sprintf("rate_limit.rules[%d]", i)
+		if x.Path != "" && !pathRe.MatchString(x.Path) {
+			add(f+".path", "Start with / and use letters, digits and . _ - / only.", x.Path)
+		}
+		if x.Rate < 1 {
+			add(f+".rate", "Allow at least 1 request.", x.Rate)
+		}
+		if x.Per != "second" && x.Per != "minute" {
+			add(f+".per", "Choose second or minute.", x.Per)
+		}
+		if x.Mode != "nodelay" && x.Mode != "queue" && x.Mode != "delay" {
+			add(f+".mode", "Choose nodelay, queue or delay.", x.Mode)
+		}
+		if x.Key != "ip" && x.Key != "site" {
+			add(f+".key", "Choose ip or site.", x.Key)
+		}
+		if x.Mode == "delay" && x.Burst > 0 && (x.Delay < 1 || x.Delay >= x.Burst) {
+			add(f+".delay", fmt.Sprintf("Use 1 to %d: fewer than the burst.", max(x.Burst-1, 1)), x.Delay)
+		}
+		for _, m := range x.Methods {
+			if !slices.Contains(rateMethods, m) {
+				add(f+".methods", "Use GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS.", m)
+				break
+			}
+		}
+		key := fmt.Sprintf("%s|%s|%s|%s", x.Path, x.Key, x.Per, strings.Join(slices.Sorted(slices.Values(x.Methods)), ","))
+		if seen[key] {
+			add(f+".path", "Another limit already counts the same requests here.", x.Path)
+		}
+		seen[key] = true
+	}
 }
 
 func validDomain(d string) bool {
@@ -389,22 +811,31 @@ func Overlaps(a, b []string) []string {
 // Capabilities says which parts of HostConfig a kind can serve, so the panel
 // shows only what works.
 type Capabilities struct {
-	Types       []string `json:"types"`
-	WebSockets  bool     `json:"websockets"`
-	Headers     bool     `json:"headers"`
-	Paths       bool     `json:"paths"`
-	Allow       bool     `json:"allow"`
-	Advanced    bool     `json:"advanced" doc:"Raw directives in the proxy's own language"`
-	Streams     bool     `json:"streams" doc:"Can forward TCP/UDP ports (type stream)"`
-	Traffic     bool     `json:"traffic" doc:"Reports live request counts per site"`
-	Language    string   `json:"language" doc:"The config language, for syntax colors"`
-	ConfigLabel string   `json:"config_label" doc:"What its config is called, like nginx config"`
+	Types        []string `json:"types"`
+	WebSockets   bool     `json:"websockets"`
+	Headers      bool     `json:"headers"`
+	Paths        bool     `json:"paths"`
+	Allow        bool     `json:"allow" doc:"Lists of addresses let in or refused"`
+	Countries    bool     `json:"countries" doc:"Can let in or refuse visitors by country (sites only)"`
+	RateLimit    bool     `json:"rate_limit" doc:"Can limit requests, connections and speed"`
+	Advanced     bool     `json:"advanced" doc:"Raw directives in the proxy's own language"`
+	Cache        bool     `json:"cache" doc:"Takes cache (browsers, and the proxy's own cache for proxy sites) and can clear it"`
+	Tuning       bool     `json:"tuning" doc:"Takes the tuning options: gzip, no_buffering, connect_timeout_seconds, real_ip, proxy_protocol, hide_version"`
+	Streams      bool     `json:"streams" doc:"Can forward TCP/UDP ports (type stream)"`
+	Traffic      bool     `json:"traffic" doc:"Reports live request counts per site"`
+	Certificates bool     `json:"certificates" doc:"Can get certificates on the server (ACME CAs like Let's Encrypt, self-signed, uploaded)"`
+	TLSOptions   bool     `json:"tls_options" doc:"Takes HostTLS's extra settings (profile, HTTP/3, OCSP, session cache, client certificates)"`
+	Language     string   `json:"language" doc:"The config language, for syntax colors"`
+	ConfigLabel  string   `json:"config_label" doc:"What its config is called, like nginx config"`
 }
 
 // Env is what rendering needs to know about the server.
 type Env struct {
 	Version string // like 1.24.0; empty = unknown
 	IPv6    bool
+	// QUICReuseport: this host carries reuseport on its HTTP/3 listen; only
+	// one host on the server may.
+	QUICReuseport bool
 }
 
 // File is one host rendered for the server.
@@ -454,6 +885,14 @@ type Status struct {
 	// yet), "not_wired" (setup hasn't added it) or "taken" (the config
 	// already has its own block for them).
 	Streams string
+	// Geo: "ready" (the IP-to-country lookup works), "off" (not set up yet)
+	// or "" (the kind can't).
+	Geo string
+	// HTTP3: the proxy was built with HTTP/3 (QUIC).
+	HTTP3 bool
+	// Certbot is its version when installed (it gets and renews
+	// certificates), else "".
+	Certbot string
 }
 
 // Site is a server block (or the kind's equivalent) found in the live config.
@@ -470,13 +909,16 @@ type Site struct {
 	Managed  bool     `json:"managed" doc:"Written by Morcheh"`
 }
 
-// Certificate is one found on the server (Let's Encrypt's live folders).
+// Certificate is one found on the server: certbot's live folders and the
+// ones Morcheh made or was given (/etc/ssl/morcheh).
 type Certificate struct {
 	Name        string     `json:"name"`
 	Certificate string     `json:"certificate"`
 	Key         string     `json:"key"`
 	Domains     []string   `json:"domains"`
 	Expires     *time.Time `json:"expires,omitempty"`
+	Issuer      string     `json:"issuer,omitempty" doc:"Who signed it, like Let's Encrypt; Self-signed when it signed itself"`
+	Source      string     `json:"source" enum:"certbot,morcheh" doc:"certbot = renewed by certbot on the server; morcheh = uploaded or self-signed through the panel, never renewed"`
 }
 
 // Inspection is everything the overview shows, read in one go.
@@ -502,13 +944,25 @@ type Driver interface {
 	// SetupScript installs the proxy when it's missing, wires it up and
 	// starts it.
 	SetupScript(s Setup) string
+	// GeoScript turns the IP-to-country lookup on: the module, the database
+	// and its monthly refresh.
+	GeoScript(s Setup) string
 	// ApplyScript replaces every managed file with files, tests the config
 	// and reloads, putting the old files back on failure.
 	ApplyScript(files []File) string
+	// TestScript is ApplyScript without keeping anything: the files go in,
+	// the config is tested (exit ExitTestFailed when refused, printing why)
+	// and the old files come back. Nothing is reloaded.
+	TestScript(files []File) string
 	// TrafficScript reads what was added to the hosts' access logs since
 	// marks; ParseTraffic reads its output.
 	TrafficScript(hosts []string, marks map[string]LogMark) string
 	ParseTraffic(out string) ([]Hit, map[string]LogMark)
+	// CertificateScript gets or writes one certificate (see CertRequest).
+	// It ends with exit 0 and the files in place, or prints why not.
+	CertificateScript(r CertRequest, s Setup) string
+	// PurgeCacheScript empties a site's own cache (Capabilities.Cache).
+	PurgeCacheScript(hostID string) string
 	// RemoveScript takes everything Morcheh wrote off the server.
 	RemoveScript() string
 	// ActionScript is test, reload, start, stop or restart.

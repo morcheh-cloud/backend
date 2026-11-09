@@ -56,6 +56,7 @@ func (h *proxyHandler) lock(id uuid.UUID) func() {
 
 const (
 	proxySetupKind  = "proxy-setup"
+	proxyGeoKind    = "proxy-geo"
 	proxyKeepChange = 50
 	proxyNoRoot     = "Managing the proxy needs root or sudo on this server"
 )
@@ -89,6 +90,7 @@ type ProxyHost struct {
 	Config        proxy.HostConfig `json:"config"`
 	Note          string           `json:"note"`
 	Redacted      bool             `json:"redacted,omitempty" doc:"Header values and raw directives left out (needs Operator)"`
+	Handwritten   bool             `json:"handwritten,omitempty" doc:"Its config file is written by hand (config.custom)"`
 	CreatedByName string           `json:"created_by_name"`
 	UpdatedByName string           `json:"updated_by_name"`
 	CreatedAt     time.Time        `json:"created_at"`
@@ -133,7 +135,10 @@ type ProxyInspection struct {
 	Certificates []proxy.Certificate `json:"certificates"`
 	Hosts        []ProxyHostState    `json:"hosts"`
 	Unknown      []string            `json:"unknown" doc:"Files in Morcheh's folder the panel doesn't know"`
+	HTTP3        bool                `json:"http3" doc:"The proxy was built with HTTP/3 (QUIC)"`
+	Certbot      string              `json:"certbot,omitempty" doc:"certbot's version when it's installed (it renews certificates)"`
 	Streams      string              `json:"streams" enum:",ready,no_module,not_wired,taken" doc:"Port forwards: ready; no_module = the stream module is missing; not_wired = setup hasn't added the stream block; taken = nginx.conf has its own stream block. Empty when the kind has no streams"`
+	Geo          string              `json:"geo" enum:",ready,off" doc:"Country lookup for country rules: ready, off (not turned on yet). Empty when the kind can't"`
 }
 
 type ProxyChangeSummary struct {
@@ -217,7 +222,7 @@ func hostOut(h sqlc.ProxyHost, full bool) ProxyHost {
 	out := ProxyHost{
 		ID: h.ID, ProxyID: h.ProxyID, Domains: h.Domains, Enabled: h.Enabled, Config: cfg,
 		Note: h.Note, CreatedByName: h.CreatedByName, UpdatedByName: h.UpdatedByName,
-		CreatedAt: h.CreatedAt, UpdatedAt: h.UpdatedAt,
+		CreatedAt: h.CreatedAt, UpdatedAt: h.UpdatedAt, Handwritten: cfg.IsCustom(),
 	}
 	if !full {
 		out.Config, out.Redacted = redactHost(cfg), true
@@ -240,6 +245,7 @@ func redactHost(c proxy.HostConfig) proxy.HostConfig {
 	}
 	c.Paths = paths
 	c.Advanced = ""
+	c.Custom = ""
 	return c
 }
 
@@ -307,6 +313,14 @@ func inspectWith(ctx context.Context, sh *rootShell, d proxy.Driver) (proxy.Insp
 	return d.ParseInspect(out), nil
 }
 
+// geoState is the inspection's country lookup state, "" when the kind can't.
+func geoState(d proxy.Driver, in proxy.Inspection) string {
+	if !d.Capabilities().Countries || !in.Installed {
+		return ""
+	}
+	return in.Geo
+}
+
 func envOf(in proxy.Inspection) proxy.Env {
 	return proxy.Env{Version: in.Version, IPv6: in.IPv6}
 }
@@ -322,12 +336,18 @@ func configOf(x sqlc.ProxyHost) proxy.HostConfig {
 // render builds the file of every enabled host.
 func render(d proxy.Driver, hosts []sqlc.ProxyHost, env proxy.Env) []proxy.File {
 	files := []proxy.File{}
+	quic := false
 	for _, x := range hosts {
 		if !x.Enabled {
 			continue
 		}
 		cfg := configOf(x)
-		files = append(files, proxy.File{ID: x.ID.String(), Config: cfg, Text: d.Render(x.ID.String(), cfg, env)})
+		e := env
+		// One HTTP/3 site carries reuseport for every one on the server.
+		if cfg.TLS.HTTP3 && !cfg.IsCustom() && !quic {
+			e.QUICReuseport, quic = true, true
+		}
+		files = append(files, proxy.File{ID: x.ID.String(), Config: cfg, Text: proxy.FileText(d, x.ID.String(), cfg, e)})
 	}
 	return files
 }
@@ -539,6 +559,12 @@ func (h *proxyHandler) write(ctx context.Context, rawID string, edit func(q *sql
 		if !in.Installed {
 			return huma.Error409Conflict(d.Label() + " isn't installed on this server. Set it up first.")
 		}
+		if in.Geo != "ready" && slices.ContainsFunc(hosts, func(x sqlc.ProxyHost) bool {
+			c := configOf(x)
+			return x.Enabled && !c.IsCustom() && len(c.Countries) > 0
+		}) {
+			return fieldError("body.config.countries", "Country lookup isn't on for this proxy yet: turn it on in Security first.", nil)
+		}
 		return applyFiles(ctx, sh, d, render(d, hosts, envOf(in)))
 	})
 	if err != nil {
@@ -623,7 +649,9 @@ type proxySetupParams struct {
 	ServerID string `json:"server_id"`
 }
 
-func (h *proxyHandler) submitSetup(ctx context.Context, rawID string) (*JobOutput, error) {
+// submitSetup starts kind proxySetupKind (install and wire up) or
+// proxyGeoKind (turn the country lookup on); one at a time per proxy.
+func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*JobOutput, error) {
 	r, d, err := h.getProxy(ctx, rawID)
 	if err != nil {
 		return nil, err
@@ -642,19 +670,27 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID string) (*JobOutpu
 	if err != nil {
 		return nil, internalError(err)
 	}
-	if slices.ContainsFunc(list, func(j sqlc.Job) bool { return j.Kind == proxySetupKind }) {
+	if slices.ContainsFunc(list, func(j sqlc.Job) bool { return j.Kind == proxySetupKind || j.Kind == proxyGeoKind }) {
 		return nil, huma.Error409Conflict(d.Label() + " is already being set up on this server")
 	}
+	title := "Set up " + d.Label() + " on " + r.ServerName
+	if kind == proxyGeoKind {
+		if !d.Capabilities().Countries {
+			return nil, huma.Error422UnprocessableEntity(d.Label() + " can't limit by country")
+		}
+		title = "Turn on country lookup on " + r.ServerName
+	}
 	return submit(ctx, h.s.jobs, jobs.Spec{
-		Kind: proxySetupKind, Title: "Set up " + d.Label() + " on " + r.ServerName,
+		Kind: kind, Title: title,
 		Params: proxySetupParams{ProxyID: rawID, ServerID: server}, Refs: refs,
 	})
 }
 
 // runSetup installs the proxy when it's missing (the package manager can't be
 // stopped half way, so the job is locked then), wires in Morcheh's folder,
-// starts it and writes the panel's sites.
-func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task) (any, error) {
+// starts it and writes the panel's sites. With geo it turns the country
+// lookup on instead.
+func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, geo bool) (any, error) {
 	var p proxySetupParams
 	if err := t.Decode(&p); err != nil {
 		return nil, err
@@ -687,13 +723,28 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task) (any, error) 
 			t.Logf("%s", l)
 			t.Update(func(pr *jobs.Progress) { pr.Current = l })
 		}}
-		res, err := sh.execTo(ctx, d.SetupScript(proxy.Setup{Init: f.init, PM: f.pm, Install: install}), packageTimeout, lines)
+		su := proxy.Setup{Init: f.init, PM: f.pm, Install: install}
+		script := d.SetupScript(su)
+		if geo {
+			script = d.GeoScript(su)
+		}
+		res, err := sh.execTo(ctx, script, packageTimeout, lines)
 		lines.flush()
 		switch {
 		case err != nil:
 			return err
 		case res.timedOut:
 			return fmt.Errorf("It took longer than %d minutes, so Morcheh stopped waiting", int(packageTimeout.Minutes()))
+		case geo && res.code == proxy.ExitNotInstalled:
+			return fmt.Errorf("%s isn't installed on this server. Set it up first", d.Label())
+		case geo && res.code == proxy.ExitTestFailed:
+			return fmt.Errorf("Country lookup couldn't be turned on: %s", last)
+		case geo && res.code == proxy.ExitReloadFailed:
+			return fmt.Errorf("%s didn't reload: %s", d.Label(), last)
+		case geo && res.code != 0:
+			return fmt.Errorf("Turning on country lookup failed (exit %d): %s", res.code, last)
+		case geo:
+			return nil
 		case res.code == proxy.ExitTestFailed:
 			return fmt.Errorf("%s's configuration has a problem, so it wasn't started: %s", d.Label(), last)
 		case res.code == proxy.ExitReloadFailed:
@@ -732,6 +783,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	tags := []string{"Reverse proxy"}
 	h.registerTraffic(api, tags)
 	base := "/proxies/{id}"
+	registerProxyCertificates(api, h, base, tags)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-proxy-kinds", Method: http.MethodGet, Path: "/proxy-kinds",
@@ -902,7 +954,8 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			Proxy: proxyRowOut(r), Installed: ins.Installed, Running: ins.Running, Enabled: ins.Enabled,
 			SetUp: ins.SetUp, ConfigOK: ins.ConfigOK, ConfigError: ins.ConfigError, Version: ins.Version,
 			IPv6: ins.IPv6, Init: ins.Init, Sites: sites, Certificates: certs, Hosts: hs, Unknown: unknown,
-			Streams: ins.Streams,
+			Streams: ins.Streams, Geo: geoState(d, *ins),
+			HTTP3: ins.HTTP3, Certbot: ins.Certbot,
 		}}, nil
 	})
 
@@ -947,9 +1000,20 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			"Runs as a background job (kind `" + proxySetupKind + "`); 409 when one is already running.",
 		Tags: tags, DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *ProxyIDPath) (*JobOutput, error) {
-		return h.submitSetup(ctx, in.ID)
+		return h.submitSetup(ctx, in.ID, proxySetupKind)
 	})
-	h.s.jobs.Handle(proxySetupKind, h.runSetup)
+	h.s.jobs.Handle(proxySetupKind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, false) })
+
+	huma.Register(api, huma.Operation{
+		OperationID: "setup-proxy-geo", Method: http.MethodPost, Path: base + "/geo",
+		Summary: "Turn on the IP-to-country lookup for country rules",
+		Description: "Adds nginx's GeoIP2 module, downloads DB-IP's free country database (CC BY 4.0) and refreshes it monthly. " +
+			"Runs as a background job (kind `" + proxyGeoKind + "`); 409 when a setup is already running.",
+		Tags: tags, DefaultStatus: http.StatusAccepted,
+	}, func(ctx context.Context, in *ProxyIDPath) (*JobOutput, error) {
+		return h.submitSetup(ctx, in.ID, proxyGeoKind)
+	})
+	h.s.jobs.Handle(proxyGeoKind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, true) })
 
 	huma.Register(api, huma.Operation{
 		OperationID: "proxy-action", Method: http.MethodPost, Path: base + "/action",
@@ -1041,7 +1105,77 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			id = "new"
 		}
 		version := r.Proxy.Version
-		out.Body.Text = d.Render(id, c, proxy.Env{Version: version, IPv6: true})
+		out.Body.Text = proxy.FileText(d, id, c, proxy.Env{Version: version, IPv6: true})
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "test-proxy-host", Method: http.MethodPost, Path: base + "/hosts/test",
+		Summary:     "Test a site on the server without saving",
+		Description: "Puts every site's file in place with this one as sent, runs the proxy's own config test and puts the old files back. Nothing is reloaded or saved. ok=false carries the proxy's message.",
+		Tags:        tags,
+	}, func(ctx context.Context, in *struct {
+		ID   string `path:"id" format:"uuid"`
+		Body struct {
+			Host   string           `json:"host,omitempty" format:"uuid" doc:"The site being edited; empty for a new one"`
+			Config proxy.HostConfig `json:"config"`
+		}
+	}) (*struct{ Body ProxyActionResult }, error) {
+		r, d, err := h.getProxy(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		c, err := cleanHost(d, in.Body.Config)
+		if err != nil {
+			return nil, err
+		}
+		cfg, _ := json.Marshal(c)
+		defer h.lock(r.Proxy.ID)()
+		hosts, err := h.s.q.ListProxyHosts(ctx, r.Proxy.ID)
+		if err != nil {
+			return nil, internalError(err)
+		}
+		this := sqlc.ProxyHost{ID: uuid.New(), ProxyID: r.Proxy.ID, Domains: c.Domains, Enabled: true, Config: cfg}
+		found := false
+		for i, x := range hosts {
+			if x.ID.String() == in.Body.Host {
+				this.ID = x.ID
+				hosts[i], found = this, true
+			}
+		}
+		if !found {
+			hosts = append(hosts, this)
+		}
+		if err := checkOverlaps(hosts); err != nil {
+			return nil, err
+		}
+		out := &struct{ Body ProxyActionResult }{}
+		server := r.Proxy.ServerID.String()
+		err = h.s.withConn(ctx, server, func(conn *sshpool.Conn) error {
+			sh, err := h.root(ctx, server, conn)
+			if err != nil {
+				return err
+			}
+			state, err := inspectWith(ctx, sh, d)
+			if err != nil {
+				return err
+			}
+			if !state.Installed {
+				return huma.Error409Conflict(d.Label() + " isn't installed on this server. Set it up first.")
+			}
+			res, err := sh.exec(ctx, d.TestScript(render(d, hosts, envOf(state))), 2*time.Minute, 64<<10)
+			if err != nil {
+				return err
+			}
+			if res.timedOut {
+				return huma.Error422UnprocessableEntity(d.Label() + " didn't answer in time")
+			}
+			out.Body = ProxyActionResult{OK: res.code == 0, ExitCode: res.code, Output: strings.TrimSpace(string(res.output))}
+			return nil
+		})
+		if err != nil {
+			return nil, toProblem(err)
+		}
 		return out, nil
 	})
 
@@ -1183,6 +1317,44 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			return nil, err
 		}
 		return &struct{ Body ProxyDetail }{*out}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "purge-proxy-host-cache", Method: http.MethodPost, Path: base + "/hosts/{host}/cache/purge",
+		Summary:     "Empty a site's cache",
+		Description: "Removes every answer the proxy kept for the site; the next visits ask the upstream again. Browsers keep their own copies.",
+		Tags:        tags,
+	}, func(ctx context.Context, in *ProxyHostPath) (*struct{ Body ProxyActionResult }, error) {
+		r, d, err := h.getProxy(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !d.Capabilities().Cache {
+			return nil, huma.Error422UnprocessableEntity(d.Label() + " can't cache answers")
+		}
+		if _, err := h.s.q.GetProxyHost(ctx, sqlc.GetProxyHostParams{ID: uuid.MustParse(in.Host), ProxyID: r.Proxy.ID}); isNotFound(err) {
+			return nil, huma.Error404NotFound("site not found")
+		} else if err != nil {
+			return nil, internalError(err)
+		}
+		out := &struct{ Body ProxyActionResult }{}
+		server := r.Proxy.ServerID.String()
+		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
+			sh, err := h.root(ctx, server, c)
+			if err != nil {
+				return err
+			}
+			res, err := sh.exec(ctx, d.PurgeCacheScript(in.Host), 5*time.Minute, 16<<10)
+			if err != nil {
+				return err
+			}
+			out.Body = ProxyActionResult{OK: res.code == 0, ExitCode: res.code, Output: strings.TrimSpace(string(res.output))}
+			return nil
+		})
+		if err != nil {
+			return nil, toProblem(err)
+		}
+		return out, nil
 	})
 
 	huma.Register(api, huma.Operation{
