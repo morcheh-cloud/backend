@@ -23,6 +23,9 @@ const (
 	// block that loads them.
 	StreamsDir = Dir + "/streams"
 	StreamConf = Dir + "/stream.conf"
+	// ReleasedDir keeps, per hand-written file Morcheh took default_server
+	// from, its path (.path), the file before (.orig) and after (.now).
+	ReleasedDir = Dir + "/released"
 	// streamHook is the main-context include put where nginx loads modules
 	// (Debian, Ubuntu), else appended to nginx.conf.
 	streamHook     = "/etc/nginx/modules-enabled/zz-morcheh-stream.conf"
@@ -33,10 +36,19 @@ const (
 	marker      = "# Managed by Morcheh"
 )
 
+// AccessFormat is the sites' log format: nginx's combined one with the
+// domain, times, upstream and cache after it, so readers of combined lines
+// (the traffic counter) read both, and older lines still parse.
+const (
+	AccessFormat     = "morcheh_access"
+	accessFormatText = `$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$host" $request_time "$upstream_response_time" "$upstream_cache_status" "$upstream_status" "$upstream_addr" $request_length "$request_id"`
+)
+
 // Include is the whole include file. The map lets WebSocket hosts close
 // plain connections properly.
 const Include = marker + `: sites added in the panel live in ` + HostsDir + `.
 # Changes made here are overwritten.
+log_format ` + AccessFormat + ` '` + accessFormatText + `';
 map $http_upgrade $morcheh_connection {
     default upgrade;
     ''      close;
@@ -72,6 +84,7 @@ func (Driver) Capabilities() proxy.Capabilities {
 		WebSockets: true, Headers: true, Paths: true, Allow: true, Advanced: true,
 		Tuning: true, Cache: true,
 		Auth: true, Pages: true, Hardening: true, UpstreamTLS: true, PathActions: true,
+		Balancing: true,
 		Countries: true, RateLimit: true,
 		Streams: true, Traffic: true, Certificates: true, TLSOptions: true,
 		Language: "nginx", ConfigLabel: "nginx config",
@@ -135,6 +148,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	w.b.WriteString(lim.blocks.b.String())
 	cacheBlocks(w, t, h)
 	featureBlocks(w, t, h)
+	upstreamBlock(w, t, h)
 	names := strings.Join(h.Domains, " ")
 	def := ""
 	if h.CatchAll {
@@ -145,7 +159,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	newHTTP2 := atLeast(env.Version, 1, 25, 1)
 
 	logs := func() {
-		w.line("access_log %s;", AccessLog(id))
+		w.line("access_log %s %s;", AccessLog(id), AccessFormat)
 		w.line("error_log %s;", ErrorLog(id))
 	}
 
@@ -300,6 +314,7 @@ func renderStream(id string, h proxy.HostConfig, env proxy.Env) string {
 	t := tag(id)
 	lim := newLimits(t, h)
 	w.b.WriteString(lim.blocks.b.String())
+	upstreamBlock(w, t, h)
 	w.line("")
 	w.open("server")
 	udp := ""
@@ -315,7 +330,12 @@ func renderStream(id string, h proxy.HostConfig, env proxy.Env) string {
 	access(w, t, h)
 	lim.server(w, env)
 	w.line("")
-	w.line("proxy_pass %s;", h.StreamTo)
+	if h.Balance.On() {
+		w.line("proxy_pass %s;", poolName(t))
+		retryLines(w, h.Balance, true)
+	} else {
+		w.line("proxy_pass %s;", h.StreamTo)
+	}
 	if h.TimeoutSeconds > 0 {
 		w.line("proxy_timeout %ds;", h.TimeoutSeconds)
 	}
@@ -366,10 +386,15 @@ func paths(w *writer, h proxy.HostConfig, env proxy.Env, lim *limits, main func(
 }
 
 func proxyPass(w *writer, t string, h proxy.HostConfig, env proxy.Env, upstream string, ws bool) {
+	upstream, pool := pooled(t, h, upstream)
 	w.line("proxy_pass %s;", upstream)
 	w.line("proxy_http_version 1.1;")
-	if h.PreserveHost {
+	switch {
+	case h.PreserveHost:
 		w.line("proxy_set_header Host $host;")
+	case pool:
+		// Else nginx would send the pool's name.
+		w.line("proxy_set_header Host %s;", mainHost(h))
 	}
 	w.line("proxy_set_header X-Real-IP $remote_addr;")
 	w.line("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;")
@@ -401,7 +426,10 @@ func proxyPass(w *writer, t string, h proxy.HostConfig, env proxy.Env, upstream 
 		w.line("proxy_intercept_errors on;")
 	}
 	if u, err := url.Parse(upstream); err == nil && u.Scheme == "https" {
-		upstreamTLSLines(w, h, env)
+		upstreamTLSLines(w, h, env, pool)
+	}
+	if pool {
+		retryLines(w, h.Balance, false)
 	}
 	switch {
 	case h.TimeoutSeconds > 0:
@@ -497,6 +525,8 @@ M dump
 nginx -T 2>/dev/null
 M files
 for f in ` + HostsDir + `/*.conf ` + StreamsDir + `/*.conf; do [ -f "$f" ] || continue; printf '\n` + fileMark + `%s@@\n' "$(basename "$f" .conf)"; cat "$f"; done
+M released
+for x in ` + ReleasedDir + `/*.path; do [ -f "$x" ] && { cat "$x"; echo; }; done
 M certs
 for d in /etc/letsencrypt/live/*/ ` + proxy.SelfDir + `/*/; do
   [ -f "$d/fullchain.pem" ] || continue
@@ -597,13 +627,67 @@ echo "nginx is ready."
 	return s
 }
 
-func (Driver) ApplyScript(files []proxy.File) string { return applyScript(files, false) }
+func (Driver) ApplyScript(files []proxy.File, t proxy.Takeover) string {
+	return applyScript(files, t, false)
+}
 
 // TestScript puts files in place just long enough for nginx -t, then always
 // puts the old ones back; nothing is reloaded.
-func (Driver) TestScript(files []proxy.File) string { return applyScript(files, true) }
+func (Driver) TestScript(files []proxy.File, t proxy.Takeover) string {
+	return applyScript(files, t, true)
+}
 
-func applyScript(files []proxy.File, test bool) string {
+// defaultFns: take FILE strips default_server from the listen lines on
+// port 80 and 443 of a hand-written file, keeping copies in ReleasedDir;
+// give_back puts back every file taken before, unless it changed since.
+// Files are written through (cat >), so a symlink stays one. When $b is
+// set, keep saves a file's first state there for restore().
+const defaultFns = `R=` + ReleasedDir + `
+keep() {
+  [ -n "$b" ] || return 0
+  mkdir -p "$b/hand"
+  [ -f "$b/hand/$2.path" ] && return 0
+  printf '%s' "$1" > "$b/hand/$2.path"; cat "$1" > "$b/hand/$2.data"
+}
+take() {
+  [ -f "$1" ] || return 0
+  k=$(printf '%s' "$1" | cksum | cut -d' ' -f1)
+  t=$(mktemp) || return 1
+  sed -E '/^[[:space:]]*listen[[:space:]]+([^;[:space:]]*:)?(80|443)([[:space:];]|$)/ s/[[:space:]]+default_server([[:space:];])/\1/' "$1" > "$t"
+  if cmp -s "$t" "$1"; then rm -f "$t"; return 0; fi
+  keep "$1" "$k"
+  mkdir -p "$R"
+  cat "$1" > "$R/$k.orig"; printf '%s' "$1" > "$R/$k.path"
+  cat "$t" > "$1"; cat "$1" > "$R/$k.now"; rm -f "$t"
+}
+give_back() {
+  for x in "$R"/*.path; do
+    [ -f "$x" ] || continue
+    k=${x%.path}; p=$(cat "$x")
+    if [ -f "$p" ] && cmp -s "$p" "$k.now"; then
+      keep "$p" "$(basename "$k")"
+      cat "$k.orig" > "$p"
+    else
+      echo "$p changed after Morcheh took the default site from it, so default_server wasn't put back there."
+    fi
+    rm -f "$k.path" "$k.orig" "$k.now"
+  done
+}
+`
+
+// takeoverLines does what t says, after the managed files are in place.
+func takeoverLines(t proxy.Takeover) string {
+	if !t.Hold {
+		return "give_back\n"
+	}
+	var b strings.Builder
+	for _, f := range t.From {
+		b.WriteString("take " + shellQuote(f) + " || { restore; exit 1; }\n")
+	}
+	return b.String()
+}
+
+func applyScript(files []proxy.File, t proxy.Takeover, test bool) string {
 	var b strings.Builder
 	b.WriteString(head)
 	b.WriteString("command -v nginx >/dev/null 2>&1 || exit " + strconv.Itoa(proxy.ExitNotInstalled) + "\n")
@@ -646,8 +730,10 @@ if command -v ss >/dev/null 2>&1; then
 		}
 		b.WriteString("fi\n")
 	}
+	b.WriteString(defaultFns)
 	b.WriteString(`b=$(mktemp -d ` + Dir + `/.bak.XXXXXX) || exit 1
-mkdir -p ` + StreamsDir + ` ` + AuthDir + ` "$b/hosts" "$b/streams" "$b/auth"
+mkdir -p ` + StreamsDir + ` ` + AuthDir + ` "$b/hosts" "$b/streams" "$b/auth" "$b/hand"
+[ -d "$R" ] && cp -pR "$R" "$b/released"
 for f in ` + HostsDir + `/*.conf; do [ -f "$f" ] && cp -p "$f" "$b/hosts"/; done
 for f in ` + StreamsDir + `/*.conf; do [ -f "$f" ] && cp -p "$f" "$b/streams"/; done
 for f in ` + AuthDir + `/*.htpasswd; do [ -f "$f" ] && cp -p "$f" "$b/auth"/; done
@@ -656,6 +742,8 @@ restore() {
   for f in "$b/hosts"/*.conf; do [ -f "$f" ] && mv -f "$f" ` + HostsDir + `/; done
   for f in "$b/streams"/*.conf; do [ -f "$f" ] && mv -f "$f" ` + StreamsDir + `/; done
   for f in "$b/auth"/*.htpasswd; do [ -f "$f" ] && mv -f "$f" ` + AuthDir + `/; done
+  for f in "$b/hand"/*.path; do [ -f "$f" ] && cat "${f%.path}.data" > "$(cat "$f")"; done
+  rm -rf "$R"; [ -d "$b/released" ] && mv "$b/released" "$R"
   rm -rf "$b"
 }
 n=$(mktemp -d ` + Dir + `/.new.XXXXXX) || { rm -rf "$b"; exit 1; }
@@ -682,6 +770,7 @@ for f in "$n/streams"/*.conf; do [ -f "$f" ] && mv -f "$f" ` + StreamsDir + `/; 
 for f in "$n/auth"/*.htpasswd; do [ -f "$f" ] && mv -f "$f" ` + AuthDir + `/; done
 rm -rf "$n"
 `)
+	b.WriteString(takeoverLines(t))
 	if test {
 		b.WriteString(`out=$(nginx -t 2>&1); rc=$?
 restore
@@ -700,7 +789,8 @@ rm -rf "$b"
 }
 
 func (Driver) RemoveScript() string {
-	return head + `if command -v nginx >/dev/null 2>&1; then
+	return head + defaultFns + `give_back
+if command -v nginx >/dev/null 2>&1; then
 ` + streamFns + `unwire_stream
 fi
 for f in /etc/nginx/conf.d/` + IncludeName + ` /etc/nginx/http.d/` + IncludeName + `; do

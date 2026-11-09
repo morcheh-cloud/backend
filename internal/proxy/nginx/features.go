@@ -369,11 +369,18 @@ func pageHTML(title, message string) string {
 }
 
 // upstreamTLSLines go with a proxy_pass to an https address.
-func upstreamTLSLines(w *writer, h proxy.HostConfig, env proxy.Env) {
+// A pool's name means nothing to the servers, so the main address's host is
+// sent (SNI) and checked unless a name is set.
+func upstreamTLSLines(w *writer, h proxy.HostConfig, env proxy.Env, pool bool) {
 	w.line("proxy_ssl_server_name on;")
 	u := h.UpstreamTLS
-	if u.Name != "" {
+	switch {
+	case u.Name != "":
 		w.line("proxy_ssl_name %s;", u.Name)
+	case pool:
+		if m, err := url.Parse(h.Upstream); err == nil {
+			w.line("proxy_ssl_name %s;", m.Hostname())
+		}
 	}
 	if u.Verify {
 		ca := u.CA

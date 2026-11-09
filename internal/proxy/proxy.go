@@ -56,6 +56,10 @@ type HostConfig struct {
 	Protocol   string `json:"protocol,omitempty" enum:",tcp,udp" doc:"tcp (default) or udp"`
 	StreamTo   string `json:"stream_to,omitempty" doc:"Where connections go, as host:port" example:"10.0.0.5:5432"`
 
+	// Balance spreads the traffic over more servers (proxy, stream; see
+	// balance.go).
+	Balance Balance `json:"balance" required:"false" doc:"Load balancing over more servers (proxy, stream)"`
+
 	TLS HostTLS `json:"tls" required:"false" doc:"Plain http only when left out"`
 
 	MaxBodyMB      int      `json:"max_body_mb,omitempty" minimum:"0" maximum:"100000" doc:"Largest upload; 0 = the proxy's default"`
@@ -378,6 +382,7 @@ func Normalize(h HostConfig) HostConfig {
 	h.Advanced = strings.TrimSpace(strings.ReplaceAll(h.Advanced, "\r\n", "\n"))
 	h = normalizeTuning(h)
 	h = normalizeFeatures(h)
+	h = normalizeBalance(h)
 	h.Custom = strings.TrimSpace(strings.ReplaceAll(h.Custom, "\r\n", "\n"))
 	return h
 }
@@ -608,6 +613,7 @@ func Validate(h HostConfig) []Problem {
 		seen[key] = true
 	}
 	validateFeatures(h, add)
+	validateBalance(h, add)
 	if msg := checkAdvanced(h.Advanced); msg != "" {
 		add("advanced", msg, nil)
 	}
@@ -847,6 +853,7 @@ type Capabilities struct {
 	Pages        bool     `json:"pages" doc:"Takes maintenance and error_pages"`
 	Hardening    bool     `json:"hardening" doc:"Takes hardening, request_id and catch_all"`
 	UpstreamTLS  bool     `json:"upstream_tls" doc:"Takes upstream_tls"`
+	Balancing    bool     `json:"balancing" doc:"Takes balance: load balancing over several servers (proxy, stream)"`
 	PathActions  bool     `json:"path_actions" doc:"Paths take match and action (redirect, static, deny, return), strip_prefix and public"`
 	Language     string   `json:"language" doc:"The config language, for syntax colors"`
 	ConfigLabel  string   `json:"config_label" doc:"What its config is called, like nginx config"`
@@ -896,6 +903,52 @@ type LogMark struct {
 	Size  int64
 }
 
+// LogRead says what to read from a host's access log: what came after Mark
+// (following it live), or else every line from Since on, rotated files
+// included. Only lines holding Grep (any case) are kept, and only the
+// newest Cap bytes.
+type LogRead struct {
+	Mark  *LogMark
+	Since time.Time
+	Grep  string
+	Cap   int64
+}
+
+// LogChunk is what AccessScript read.
+type LogChunk struct {
+	Lines   []string
+	Mark    LogMark
+	Missing bool // no log yet
+	Capped  bool // older lines were left out to stay under Cap
+	Reset   bool // the log was rotated or emptied since Mark
+}
+
+// AccessEntry is one request (or, for a stream, one connection) from a
+// host's access log. Times are seconds; -1 = not logged.
+type AccessEntry struct {
+	Time           time.Time
+	IP             string
+	User           string
+	Method         string
+	Path           string
+	Protocol       string
+	Status         int
+	Bytes          int64
+	Referer        string
+	Agent          string
+	Domain         string
+	Duration       float64
+	Upstream       float64
+	UpstreamStatus string
+	UpstreamAddr   string
+	Cache          string
+	RequestLength  int64
+	RequestID      string
+	// Detailed: the line has the fields after the combined format (domain,
+	// times, upstream, cache).
+	Detailed bool
+}
+
 // Status is the proxy's state on its server.
 type Status struct {
 	Installed   bool
@@ -925,6 +978,10 @@ type Status struct {
 	Brotli bool
 	// CABundle is the system's CA file, for checking https upstreams.
 	CABundle string
+	// Released are the hand-written files Morcheh took default_server from
+	// (see Takeover); they get it back when no site of Morcheh's answers
+	// unknown names any more.
+	Released []string
 }
 
 // Site is a server block (or the kind's equivalent) found in the live config.
@@ -953,6 +1010,38 @@ type Certificate struct {
 	Source      string     `json:"source" enum:"certbot,morcheh" doc:"certbot = renewed by certbot on the server; morcheh = uploaded or self-signed through the panel, never renewed"`
 }
 
+// Takeover is what an apply does with the hand-written default server
+// (the site answering names no other site has, or the bare IP). While one
+// of Morcheh's sites is a catch-all (Hold), it takes that role: the word
+// default_server is taken off the web ports' listen lines in From, a copy of
+// each file is kept, and nothing else in them changes. Without one, every
+// file taken from before gets its copy back, unless it was edited since.
+type Takeover struct {
+	Hold bool
+	From []string
+}
+
+// webPortRe is a listen value on port 80 or 443 ("80", "[::]:443 ssl", …).
+var webPortRe = regexp.MustCompile(`^(?:\S*:)?(?:80|443)(?:\s|$)`)
+
+// DefaultHolders are the files of hand-written sites that are the default
+// server on port 80 or 443: what a catch-all site of Morcheh's takes over.
+func DefaultHolders(sites []Site) []string {
+	var files []string
+	for _, s := range sites {
+		if s.Managed || slices.Contains(files, s.File) {
+			continue
+		}
+		for _, l := range s.Listen {
+			if webPortRe.MatchString(l) && slices.Contains(strings.Fields(l), "default_server") {
+				files = append(files, s.File)
+				break
+			}
+		}
+	}
+	return files
+}
+
 // Inspection is everything the overview shows, read in one go.
 type Inspection struct {
 	Status
@@ -979,13 +1068,14 @@ type Driver interface {
 	// GeoScript turns the IP-to-country lookup on: the module, the database
 	// and its monthly refresh.
 	GeoScript(s Setup) string
-	// ApplyScript replaces every managed file with files, tests the config
-	// and reloads, putting the old files back on failure.
-	ApplyScript(files []File) string
+	// ApplyScript replaces every managed file with files, does what t says
+	// with the hand-written default server, tests the config and reloads,
+	// putting the old files (hand-written ones too) back on failure.
+	ApplyScript(files []File, t Takeover) string
 	// TestScript is ApplyScript without keeping anything: the files go in,
 	// the config is tested (exit ExitTestFailed when refused, printing why)
 	// and the old files come back. Nothing is reloaded.
-	TestScript(files []File) string
+	TestScript(files []File, t Takeover) string
 	// TrafficScript reads what was added to the hosts' access logs since
 	// marks; ParseTraffic reads its output.
 	TrafficScript(hosts []string, marks map[string]LogMark) string
@@ -995,12 +1085,18 @@ type Driver interface {
 	CertificateScript(r CertRequest, s Setup) string
 	// PurgeCacheScript empties a site's own cache (Capabilities.Cache).
 	PurgeCacheScript(hostID string) string
-	// RemoveScript takes everything Morcheh wrote off the server.
+	// RemoveScript takes everything Morcheh wrote off the server and gives
+	// the default server back to the hand-written files it was taken from.
 	RemoveScript() string
 	// ActionScript is test, reload, start, stop or restart.
 	ActionScript(action, init string) (string, error)
 	// LogScript prints the last lines of a host's log ("" = the proxy's own).
 	LogScript(hostID, log string, lines int) string
+	// AccessScript reads a host's access log as LogRead says;
+	// ParseAccessOutput reads its output and ParseAccess one of its lines.
+	AccessScript(hostID string, r LogRead) string
+	ParseAccessOutput(out string) (LogChunk, error)
+	ParseAccess(line string) (AccessEntry, bool)
 }
 
 // Exit codes the scripts share.

@@ -2,6 +2,9 @@ package nginx
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -95,7 +98,7 @@ func TestRender(t *testing.T) {
 		"proxy_set_header Connection $morcheh_connection;",
 		`proxy_set_header X-Env "prod";`,
 		"proxy_set_header Host $host;",
-		"access_log /var/log/nginx/morcheh-h1.access.log;",
+		"access_log /var/log/nginx/morcheh-h1.access.log morcheh_access;",
 		"    # Advanced\n    location /health {\n        return 200;\n    }\n}\n",
 	} {
 		if !strings.Contains(got, want) {
@@ -128,7 +131,7 @@ func TestRender(t *testing.T) {
 
 func TestApplyScript(t *testing.T) {
 	stream := proxy.Normalize(proxy.HostConfig{Type: "stream", ListenPort: 5432, StreamTo: "10.0.0.5:5432"})
-	s := Driver{}.ApplyScript([]proxy.File{{ID: "b-1", Text: "B\n"}, {ID: "a-2", Text: "A\n"}, {ID: "c-3", Config: stream, Text: "C\n"}})
+	s := Driver{}.ApplyScript([]proxy.File{{ID: "b-1", Text: "B\n"}, {ID: "a-2", Text: "A\n"}, {ID: "c-3", Config: stream, Text: "C\n"}}, proxy.Takeover{})
 	if strings.Index(s, "a-2.conf") > strings.Index(s, "b-1.conf") {
 		t.Error("files should be written in a stable order")
 	}
@@ -138,7 +141,7 @@ func TestApplyScript(t *testing.T) {
 	if !strings.Contains(s, `"$n/streams/c-3.conf"`) || !strings.Contains(s, "taken_by t 5432") {
 		t.Errorf("stream file:\n%s", s)
 	}
-	if strings.Contains(Driver{}.ApplyScript(nil), "stream_state)") {
+	if strings.Contains(Driver{}.ApplyScript(nil, proxy.Takeover{}), "stream_state)") {
 		t.Error("no streams: the module isn't needed")
 	}
 }
@@ -183,5 +186,73 @@ func TestAtLeast(t *testing.T) {
 		if atLeast(v, 1, 25, 1) != want {
 			t.Errorf("atLeast(%q) != %v", v, want)
 		}
+	}
+}
+
+func TestDefaultHolders(t *testing.T) {
+	sites := []proxy.Site{
+		{File: "/etc/nginx/sites-enabled/default", Listen: []string{"80 default_server", "[::]:80 default_server"}},
+		{File: "/etc/nginx/conf.d/alt.conf", Listen: []string{"8080 default_server"}},
+		{File: "/etc/nginx/conf.d/tls.conf", Listen: []string{"443 ssl default_server"}},
+		{File: "/etc/nginx/morcheh/hosts/x.conf", Listen: []string{"80 default_server"}, Managed: true},
+		{File: "/etc/nginx/conf.d/plain.conf", Listen: []string{"80"}},
+	}
+	got := proxy.DefaultHolders(sites)
+	want := []string{"/etc/nginx/sites-enabled/default", "/etc/nginx/conf.d/tls.conf"}
+	if !slices.Equal(got, want) {
+		t.Errorf("holders = %v, want %v", got, want)
+	}
+}
+
+// The takeover's shell functions, run for real on a scratch file.
+func TestTakeAndGiveBack(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "default")
+	orig := "server {\n  listen 80 default_server;\n  listen [::]:80 default_server;\n  # listen 443 ssl default_server;\n  listen 8080 default_server;\n  server_name _;\n}\n"
+	if err := os.WriteFile(conf, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "enabled")
+	if err := os.Symlink(conf, link); err != nil {
+		t.Fatal(err)
+	}
+	fns := strings.Replace(defaultFns, "R="+ReleasedDir, "R="+filepath.Join(dir, "released"), 1)
+	run := func(s string) string {
+		out, err := exec.Command("sh", "-c", fns+s).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", s, err, out)
+		}
+		return string(out)
+	}
+
+	run("take " + shellQuote(link))
+	got, _ := os.ReadFile(conf)
+	want := "server {\n  listen 80;\n  listen [::]:80;\n  # listen 443 ssl default_server;\n  listen 8080 default_server;\n  server_name _;\n}\n"
+	if string(got) != want {
+		t.Errorf("after take:\n%s", got)
+	}
+	if fi, _ := os.Lstat(link); fi.Mode()&os.ModeSymlink == 0 {
+		t.Error("the symlink should stay a symlink")
+	}
+	if p := run(`cat "$R"/*.path`); p != link {
+		t.Errorf("recorded path = %q", p)
+	}
+
+	run("give_back")
+	if got, _ := os.ReadFile(conf); string(got) != orig {
+		t.Errorf("after give_back:\n%s", got)
+	}
+
+	// Edited after the takeover: left alone, with a note.
+	run("take " + shellQuote(link))
+	os.WriteFile(conf, []byte("server { listen 80; }\n"), 0o644)
+	if out := run("give_back"); !strings.Contains(out, "changed after") {
+		t.Errorf("give_back note: %q", out)
+	}
+	if got, _ := os.ReadFile(conf); string(got) != "server { listen 80; }\n" {
+		t.Errorf("an edited file should be left alone:\n%s", got)
+	}
+	if out := run(`ls "$R"`); out != "" {
+		t.Errorf("records should be gone: %q", out)
 	}
 }

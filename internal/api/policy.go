@@ -384,6 +384,8 @@ var policies = map[string]policy{
 	"set-proxy-host-enabled":             onProxy(auth.Engineer),
 	"delete-proxy-host":                  onProxy(auth.Engineer),
 	"get-proxy-logs":                     onProxy(auth.Operator),
+	"list-proxy-host-requests":           onProxy(auth.Operator),
+	"get-proxy-host-report":              onProxy(auth.Operator),
 	"purge-proxy-host-cache":             onProxy(auth.Operator),
 	"list-proxy-history":                 onProxy(auth.Viewer),
 	"get-proxy-change":                   onProxy(auth.Viewer),

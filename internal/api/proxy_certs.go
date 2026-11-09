@@ -164,7 +164,7 @@ func (h *proxyHandler) runCertificate(ctx context.Context, t *jobs.Task) (any, e
 			t.Update(func(pr *jobs.Progress) { pr.Phase = "Preparing" })
 			if in, err := inspectWith(ctx, sh, d); err == nil && in.SetUp {
 				if hosts, err := h.s.q.ListProxyHosts(ctx, r.Proxy.ID); err == nil && len(hosts) > 0 {
-					if err := applyFiles(ctx, sh, d, render(d, hosts, envOf(in))); err != nil {
+					if err := applyFiles(ctx, sh, d, render(d, hosts, envOf(in)), takeoverOf(hosts, in)); err != nil {
 						t.Logf("Couldn't rewrite the sites first (%s); going on.", proxyProblemText(err))
 					}
 				}

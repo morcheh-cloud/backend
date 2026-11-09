@@ -142,6 +142,7 @@ type ProxyInspection struct {
 	AuthRequest  bool                `json:"auth_request" doc:"Signing in through another service (forward auth) works"`
 	Brotli       bool                `json:"brotli" doc:"The Brotli module is loaded"`
 	CABundle     string              `json:"ca_bundle,omitempty" doc:"The system's CA file, used to check https upstreams"`
+	Released     []string            `json:"released_default" doc:"Hand-written files Morcheh took default_server from (ports 80 and 443) because one of its sites answers unknown names; they get it back when none does, or when the proxy is removed with its files"`
 }
 
 type ProxyChangeSummary struct {
@@ -367,9 +368,23 @@ func render(d proxy.Driver, hosts []sqlc.ProxyHost, env proxy.Env) []proxy.File 
 	return files
 }
 
+// takeoverOf says what happens to the hand-written default server: an
+// enabled catch-all site of Morcheh's takes it over, else it goes back.
+func takeoverOf(hosts []sqlc.ProxyHost, in proxy.Inspection) proxy.Takeover {
+	hold := slices.ContainsFunc(hosts, func(x sqlc.ProxyHost) bool {
+		c := configOf(x)
+		return x.Enabled && c.CatchAll && !c.IsCustom()
+	})
+	t := proxy.Takeover{Hold: hold}
+	if hold {
+		t.From = proxy.DefaultHolders(in.Sites)
+	}
+	return t
+}
+
 // applyFiles replaces Morcheh's files on the server and reloads.
-func applyFiles(ctx context.Context, sh *rootShell, d proxy.Driver, files []proxy.File) error {
-	res, err := sh.exec(ctx, d.ApplyScript(files), 2*time.Minute, 64<<10)
+func applyFiles(ctx context.Context, sh *rootShell, d proxy.Driver, files []proxy.File, t proxy.Takeover) error {
+	res, err := sh.exec(ctx, d.ApplyScript(files, t), 2*time.Minute, 64<<10)
 	if err != nil {
 		return err
 	}
@@ -586,7 +601,7 @@ func (h *proxyHandler) write(ctx context.Context, rawID string, edit func(q *sql
 		}) {
 			return fieldError("body.config.auth.mode", d.Label()+" on this server has no auth_request module, which signing in through another service needs.", nil)
 		}
-		return applyFiles(ctx, sh, d, render(d, hosts, envOf(in)))
+		return applyFiles(ctx, sh, d, render(d, hosts, envOf(in)), takeoverOf(hosts, in))
 	})
 	if err != nil {
 		return nil, toProblem(err)
@@ -790,7 +805,7 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, geo bool) (an
 		if err != nil {
 			return err
 		}
-		if err := applyFiles(ctx, sh, d, render(d, hosts, envOf(in))); err != nil {
+		if err := applyFiles(ctx, sh, d, render(d, hosts, envOf(in)), takeoverOf(hosts, in)); err != nil {
 			return errors.New(proxyProblemText(err))
 		}
 		return nil
@@ -810,6 +825,7 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, geo bool) (an
 func registerProxies(api huma.API, h *proxyHandler) {
 	tags := []string{"Reverse proxy"}
 	h.registerTraffic(api, tags)
+	h.registerRequests(api, tags)
 	base := "/proxies/{id}"
 	registerProxyCertificates(api, h, base, tags)
 	h.registerUpstreamTest(api, base, tags)
@@ -979,6 +995,10 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if certs == nil {
 			certs = []proxy.Certificate{}
 		}
+		released := ins.Released
+		if released == nil {
+			released = []string{}
+		}
 		return &struct{ Body ProxyInspection }{ProxyInspection{
 			Proxy: proxyRowOut(r), Installed: ins.Installed, Running: ins.Running, Enabled: ins.Enabled,
 			SetUp: ins.SetUp, ConfigOK: ins.ConfigOK, ConfigError: ins.ConfigError, Version: ins.Version,
@@ -986,13 +1006,14 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			Streams: ins.Streams, Geo: geoState(d, *ins),
 			HTTP3: ins.HTTP3, Certbot: ins.Certbot,
 			AuthRequest: ins.AuthRequest, Brotli: ins.Brotli, CABundle: ins.CABundle,
+			Released: released,
 		}}, nil
 	})
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-proxy", Method: http.MethodDelete, Path: base,
 		Summary:     "Stop managing a proxy",
-		Description: "With remove_files, first takes Morcheh's sites off the server and reloads (the proxy itself stays installed). Hand-written sites are never touched.",
+		Description: "With remove_files, first takes Morcheh's sites off the server and reloads (the proxy itself stays installed). Hand-written sites are left as they are, except that files Morcheh took default_server from get it back.",
 		Tags:        tags, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *struct {
 		ID          string `path:"id" format:"uuid"`
@@ -1203,7 +1224,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			if !state.Installed {
 				return huma.Error409Conflict(d.Label() + " isn't installed on this server. Set it up first.")
 			}
-			res, err := sh.exec(ctx, d.TestScript(render(d, hosts, envOf(state))), 2*time.Minute, 64<<10)
+			res, err := sh.exec(ctx, d.TestScript(render(d, hosts, envOf(state)), takeoverOf(hosts, state)), 2*time.Minute, 64<<10)
 			if err != nil {
 				return err
 			}

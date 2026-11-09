@@ -69,6 +69,11 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 	for id, text := range splitMarked(sections["files"]+"\n", fileMark) {
 		in.Files[id] = text
 	}
+	for _, l := range strings.Split(sections["released"], "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			in.Released = append(in.Released, l)
+		}
+	}
 	in.Certificates = parseCerts(sections["certs"])
 	for _, l := range strings.Split(sections["tls"], "\n") {
 		k, v, _ := strings.Cut(strings.TrimSpace(l), " ")
