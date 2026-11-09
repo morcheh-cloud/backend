@@ -375,6 +375,7 @@ var policies = map[string]policy{
 	"delete-proxy":                       onProxy(auth.Owner),
 	"setup-proxy":                        onProxy(auth.Engineer),
 	"setup-proxy-geo":                    onProxy(auth.Engineer),
+	"setup-proxy-brotli":                 onProxy(auth.Engineer),
 	"proxy-action":                       onProxy(auth.Operator), // stop needs Engineer
 	"preview-proxy-host":                 onProxy(auth.Viewer),
 	"create-proxy-host":                  onProxy(auth.Engineer),
@@ -387,6 +388,7 @@ var policies = map[string]policy{
 	"list-proxy-host-requests":           onProxy(auth.Operator),
 	"get-proxy-host-report":              onProxy(auth.Operator),
 	"purge-proxy-host-cache":             onProxy(auth.Operator),
+	"list-proxy-host-kept-pages":         onProxy(auth.Operator),
 	"list-proxy-history":                 onProxy(auth.Viewer),
 	"get-proxy-change":                   onProxy(auth.Viewer),
 	"restore-proxy-change":               onProxy(auth.Engineer),

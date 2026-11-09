@@ -102,6 +102,20 @@ func s3Endpoint(raw string, port int) (string, bool, error) {
 	return host, u.Scheme == "https", nil
 }
 
+// S3Origin is where a storage's S3 API answers, as scheme://host[:port],
+// for things that reach it without the SDK (a reverse proxy serving a
+// bucket as a site).
+func S3Origin(raw string, port int) (string, error) {
+	host, secure, err := s3Endpoint(raw, port)
+	if err != nil {
+		return "", err
+	}
+	if secure {
+		return "https://" + host, nil
+	}
+	return "http://" + host, nil
+}
+
 func s3ConnError(err error) error {
 	code := minio.ToErrorResponse(err).Code
 	switch code {

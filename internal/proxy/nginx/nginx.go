@@ -79,12 +79,12 @@ func (Driver) Capabilities() proxy.Capabilities {
 	return proxy.Capabilities{
 		Types: []string{
 			proxy.TypeProxy, proxy.TypeRedirect, proxy.TypeStatic,
-			proxy.TypeNotFound, proxy.TypeStream,
+			proxy.TypeNotFound, proxy.TypeStream, proxy.TypeStorage,
 		},
 		WebSockets: true, Headers: true, Paths: true, Allow: true, Advanced: true,
 		Tuning: true, Cache: true,
 		Auth: true, Pages: true, Hardening: true, UpstreamTLS: true, PathActions: true,
-		Balancing: true,
+		Balancing: true, Mirror: true,
 		Countries: true, RateLimit: true,
 		Streams: true, Traffic: true, Certificates: true, TLSOptions: true,
 		Language: "nginx", ConfigLabel: "nginx config",
@@ -146,9 +146,10 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	lim := newLimits(t, h)
 	accessBlocks(w, t, h)
 	w.b.WriteString(lim.blocks.b.String())
-	cacheBlocks(w, t, h)
+	cacheBlocks(w, id, t, h)
 	featureBlocks(w, t, h)
 	upstreamBlock(w, t, h)
+	mirrorBlocks(w, t, h)
 	names := strings.Join(h.Domains, " ")
 	def := ""
 	if h.CatchAll {
@@ -247,6 +248,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 		}
 	}
 	serverFeatures(w, id, t, h, env)
+	mirrorServer(w, h)
 
 	if !h.TLS.Enabled || !h.TLS.ForceHTTPS {
 		acmeLocation(w, h)
@@ -282,20 +284,33 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 				w.line("try_files $uri $uri/ =404;")
 			}
 		}
-		paths(w, h, env, lim, files)
+		paths(w, id, h, env, lim, files)
 		w.line("")
 		w.open("location /")
 		files()
 		w.close()
+	case proxy.TypeStorage:
+		storageSite(w, id, t, h, env, lim)
 	default:
-		main := func() { proxyPass(w, t, h, env, h.Upstream, h.WebSockets) }
-		paths(w, h, env, lim, main)
+		slow := slowWait(h)
+		main := func(slow int) {
+			proxyPass(w, t, h, env, h.Upstream, h.WebSockets, slow)
+			cacheRules(w, t, h, slow)
+		}
+		paths(w, id, h, env, lim, func() { main(0) })
 		w.line("")
 		w.open("location /")
-		main()
+		if slow > 0 {
+			slowRoute(w, t, h)
+		}
+		main(slow)
 		w.close()
+		if slow > 0 {
+			slowPass(w, t, h, env)
+		}
 	}
 	internalLocations(w, t, h)
+	mirrorLocations(w, t, h)
 
 	if h.Advanced != "" {
 		w.line("")
@@ -360,12 +375,16 @@ func hasHeaders(h proxy.HostConfig, to string) bool {
 
 // paths writes the Paths locations, then a location for each path a rate
 // limit names that no Paths entry serves, doing what the site does (main).
-func paths(w *writer, h proxy.HostConfig, env proxy.Env, lim *limits, main func()) {
+func paths(w *writer, id string, h proxy.HostConfig, env proxy.Env, lim *limits, main func()) {
 	for _, p := range h.Paths {
 		w.line("")
 		w.open("location %s", locationOf(p))
+		pathAccess(w, p)
 		if p.Public {
 			openUp(w, h)
+		}
+		if p.Login {
+			authLines(w, id, lim.t, h, true)
 		}
 		pathBody(w, lim.t, h, env, p)
 		if p.MatchOf() != proxy.MatchRegex {
@@ -385,8 +404,13 @@ func paths(w *writer, h proxy.HostConfig, env proxy.Env, lim *limits, main func(
 	}
 }
 
-func proxyPass(w *writer, t string, h proxy.HostConfig, env proxy.Env, upstream string, ws bool) {
+// slow > 0 = Always online's wait for a page to start coming back (the
+// location also carries slowRoute, so only pages get it).
+func proxyPass(w *writer, t string, h proxy.HostConfig, env proxy.Env, upstream string, ws bool, slow int) {
 	upstream, pool := pooled(t, h, upstream)
+	if h.Cache.Online.Mode == "copies" {
+		upstream, pool = offlineUpstream, false
+	}
 	w.line("proxy_pass %s;", upstream)
 	w.line("proxy_http_version 1.1;")
 	switch {
@@ -432,6 +456,11 @@ func proxyPass(w *writer, t string, h proxy.HostConfig, env proxy.Env, upstream 
 		retryLines(w, h.Balance, false)
 	}
 	switch {
+	case slow > 0:
+		w.line("proxy_read_timeout %ds;", slow)
+		if h.TimeoutSeconds > 0 {
+			w.line("proxy_send_timeout %ds;", h.TimeoutSeconds)
+		}
 	case h.TimeoutSeconds > 0:
 		w.line("proxy_read_timeout %ds;", h.TimeoutSeconds)
 		w.line("proxy_send_timeout %ds;", h.TimeoutSeconds)

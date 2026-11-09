@@ -35,7 +35,7 @@ func (h HostConfig) IsStream() bool { return h.Type == TypeStream }
 // HostConfig is one site: which names it answers and what it does with them.
 type HostConfig struct {
 	Domains []string `json:"domains" maxItems:"50" doc:"Names it answers, like example.com or *.example.com; empty for a stream"`
-	Type    string   `json:"type" enum:"proxy,redirect,static,notfound,stream"`
+	Type    string   `json:"type" enum:"proxy,redirect,static,notfound,stream,storage"`
 
 	// proxy
 	Upstream     string `json:"upstream,omitempty" doc:"Where requests go, like http://127.0.0.1:3000" example:"http://127.0.0.1:3000"`
@@ -50,6 +50,9 @@ type HostConfig struct {
 	// static
 	Root string `json:"root,omitempty" doc:"Folder the files are served from"`
 	SPA  bool   `json:"spa,omitempty" doc:"Answer unknown paths with index.html (single-page apps)"`
+
+	// storage (sites.go)
+	Storage StorageSite `json:"storage" required:"false" doc:"The bucket a storage site serves (type storage)"`
 
 	// stream
 	ListenPort int    `json:"listen_port,omitempty" minimum:"0" maximum:"65535" doc:"Port the proxy listens on"`
@@ -96,7 +99,8 @@ type HostConfig struct {
 	InterceptErrors bool        `json:"intercept_errors,omitempty" doc:"Show these pages for the upstream's own errors too (proxy)"`
 	Hardening       Hardening   `json:"hardening" required:"false" doc:"Refuse requests no real visitor makes (sites)"`
 	RequestID       bool        `json:"request_id,omitempty" doc:"Give every request an X-Request-ID, sent to the upstream and back to the visitor (sites)"`
-	Brotli          bool        `json:"brotli,omitempty" doc:"Also compress with Brotli when the server's nginx has the module (proxy, static)"`
+	Brotli          bool        `json:"brotli,omitempty" doc:"Also compress with Brotli when the server's nginx has the module (proxy, static, storage)"`
+	Mirror          Mirror      `json:"mirror" required:"false" doc:"A copy of requests sent to a test server (proxy; Capabilities.Mirror)"`
 	CatchAll        bool        `json:"catch_all,omitempty" doc:"Answer every name no other site has, as the default server (404 hosts; one per proxy)"`
 	NotFoundCode    int         `json:"not_found_code,omitempty" enum:"0,404,410,444" doc:"What a 404 host answers; 444 closes the connection without an answer. 0 = 404"`
 
@@ -140,6 +144,178 @@ type Cache struct {
 	SkipPaths      []string `json:"skip_paths,omitempty" maxItems:"50" doc:"Paths never cached, with everything under them, like /admin"`
 	SkipCookies    []string `json:"skip_cookies,omitempty" maxItems:"20" doc:"Requests carrying a cookie whose name starts with one of these skip the cache (signed-in people), like wordpress_logged_in"`
 	StatusHeader   bool     `json:"status_header,omitempty" doc:"Add X-Cache-Status (HIT, MISS, BYPASS…) to answers"`
+
+	Query       string       `json:"query,omitempty" enum:",none,only" doc:"What of the query string tells answers apart: empty = all of it, none = ignored (one copy per path), only = just QueryParams"`
+	QueryParams []string     `json:"query_params,omitempty" maxItems:"20" doc:"With query only: the parameters that count, like page or lang; others (utm_source…) share one copy"`
+	Groups      []CacheGroup `json:"groups,omitempty" maxItems:"30" doc:"Cache rules: named sets of addresses with their own cache time (or never kept), cleared together; a group may also pick answers by a header the app sends (clearing only)"`
+
+	VaryDevice   bool     `json:"vary_device,omitempty" doc:"Separate copies for phones, tablets and computers (told apart by User-Agent)"`
+	VaryOS       bool     `json:"vary_os,omitempty" doc:"Separate copies per operating system: windows, macos, linux, android, ios, chromeos, other"`
+	VaryLanguage bool     `json:"vary_language,omitempty" doc:"Separate copies per visitor language: the first one in Accept-Language, like en or fa"`
+	VaryHeaders  []string `json:"vary_headers,omitempty" maxItems:"3" doc:"Request headers whose value keeps copies apart, like X-Country"`
+	VaryCookies  []string `json:"vary_cookies,omitempty" maxItems:"3" doc:"Cookies whose value keeps copies apart, like lang or currency"`
+
+	Online AlwaysOnline `json:"always_online" required:"false" doc:"Keep the site answering from its last good copies while the app is down (proxy; works with the cache off too)"`
+}
+
+// AlwaysOnline keeps a proxy site answering while its app is down: the
+// proxy keeps the app's last good answer of each page on its disk and hands
+// it out when the app can't answer. With the cache off it uses the cache's
+// machinery (and its Never keep lists) only for these copies.
+type AlwaysOnline struct {
+	Mode        string `json:"mode,omitempty" enum:",backup,fast,copies" doc:"empty = off; backup = every visit asks the app, copies only when it fails; fast = answer from the copy at once and refresh it in the background; copies = never ask the app (maintenance), pages without a copy fail"`
+	KeepDays    int    `json:"keep_days,omitempty" minimum:"0" maximum:"365" doc:"A copy no one asks for is dropped after this many days; 0 = 7"`
+	WaitSeconds int    `json:"wait_seconds,omitempty" minimum:"0" maximum:"60" doc:"How long to try reaching the app before using the copy; 0 = 5"`
+	SlowSeconds int    `json:"slow_seconds,omitempty" minimum:"0" maximum:"300" doc:"Use the copy when the app takes longer than this to start answering a page (GET/HEAD); 0 = wait the site's own timeout. Other requests keep the site's timeout"`
+	Statuses    []int  `json:"statuses,omitempty" maxItems:"5" doc:"App answers that also count as down (500, 502, 503, 504, 429); no answer at all always does"`
+	KeepPrivate bool   `json:"keep_private,omitempty" doc:"Keep copies even when the app marks a page private or no-store (cache off only; with the cache on its own setting decides)"`
+}
+
+// OnlineStatuses are the app answers AlwaysOnline.Statuses may name.
+var OnlineStatuses = []int{500, 502, 503, 504, 429}
+
+// On says whether the site keeps copies for when the app is down.
+func (o AlwaysOnline) On() bool { return o.Mode != "" }
+
+// Days is how long an unasked copy is kept.
+func (o AlwaysOnline) Days() int {
+	if o.KeepDays > 0 {
+		return o.KeepDays
+	}
+	return 7
+}
+
+// Wait is how long, in seconds, the proxy tries to reach the app.
+func (o AlwaysOnline) Wait() int {
+	if o.WaitSeconds > 0 {
+		return o.WaitSeconds
+	}
+	return 5
+}
+
+// Slow is how long, in seconds, a page may take to start coming back
+// before its copy is used instead; 0 = the site's own timeout. Never in
+// copies mode (the app isn't asked) or past a shorter site timeout.
+func (o AlwaysOnline) Slow(timeout int) int {
+	if !o.On() || o.Mode == "copies" || o.SlowSeconds <= 0 {
+		return 0
+	}
+	if timeout <= 0 {
+		timeout = 60 // nginx's own read timeout
+	}
+	if timeout <= o.SlowSeconds {
+		return 0
+	}
+	return o.SlowSeconds
+}
+
+// Keeps says whether the proxy keeps answers at all: the cache, or the
+// copies of Always online.
+func (c Cache) Keeps() bool { return c.Enabled || c.Online.On() }
+
+// Varies says whether kept answers are split by more than the address.
+func (c Cache) Varies() bool {
+	return c.VaryDevice || c.VaryOS || c.VaryLanguage || len(c.VaryHeaders) > 0 || len(c.VaryCookies) > 0
+}
+
+// CacheGroup is a cache rule: a named part of a site's cache, cleared in
+// one go (see PurgeFilter for how its addresses and header match), which
+// may keep its answers for its own time, or never.
+type CacheGroup struct {
+	Name    string   `json:"name" maxLength:"60" doc:"Like Blog or Product images"`
+	Paths   []string `json:"paths,omitempty" maxItems:"100" doc:"Addresses, as in PurgeFilter.Paths"`
+	Header  string   `json:"header,omitempty" maxLength:"64" doc:"An answer header the app sends, like Cache-Tag (clearing only)"`
+	Value   string   `json:"value,omitempty" maxLength:"200" doc:"That header's value (or one item of a comma-separated list); * = any characters; empty = any value"`
+	Minutes int      `json:"minutes,omitempty" minimum:"0" maximum:"43200" doc:"Answers at these addresses stay fresh this long; 0 = the site's time"`
+	Never   bool     `json:"never,omitempty" doc:"Answers at these addresses are never kept"`
+}
+
+// Rule says whether the group changes how its addresses are kept.
+func (g CacheGroup) Rule() bool { return len(g.Paths) > 0 && (g.Minutes > 0 || g.Never) }
+
+// LongestMinutes is the longest time any answer stays fresh.
+func (c Cache) LongestMinutes() int {
+	m := c.FreshMinutes()
+	for _, g := range c.Groups {
+		if g.Rule() && !g.Never {
+			m = max(m, g.Minutes)
+		}
+	}
+	return m
+}
+
+// PurgeFilter picks kept answers to clear; empty = all of them. An answer
+// matches when one of Paths matches its address and, with a Header, the
+// app sent that header with Value.
+//
+// A path is /blog/post (that page, everything under it, any query string),
+// with * for any characters (/img/*.png), optionally with ?query
+// (/search?q=*), a domain in front (shop.example.com/cart) or a whole URL.
+type PurgeFilter struct {
+	Paths  []string
+	Header string
+	Value  string
+}
+
+// Empty says whether the filter clears everything.
+func (f PurgeFilter) Empty() bool { return len(f.Paths) == 0 && f.Header == "" }
+
+// Filter is what the group clears.
+func (g CacheGroup) Filter() PurgeFilter {
+	return PurgeFilter{Paths: g.Paths, Header: g.Header, Value: g.Value}
+}
+
+// FindGroup returns the group of that name.
+func (c Cache) FindGroup(name string) (CacheGroup, bool) {
+	for _, g := range c.Groups {
+		if strings.EqualFold(g.Name, name) {
+			return g, true
+		}
+	}
+	return CacheGroup{}, false
+}
+
+var (
+	purgePathRe   = regexp.MustCompile(`^(?:https?://)?[A-Za-z0-9.*\-]*(?::[0-9]+)?(?:/[A-Za-z0-9._~@%+=,:;!$&()*/\-]*(?:\?[A-Za-z0-9._~@%+=,:;!$&()*/?\-]*)?)?$`)
+	headerValueRe = regexp.MustCompile(`^[^\x00-\x1f\x7f'"\\]*$`)
+	rulePathRe    = regexp.MustCompile(`^[/*][A-Za-z0-9._~@%+=,:!*/\-]*$`)
+)
+
+// ParsePurge reads the script's last line: answers matched and their KiB.
+func ParsePurge(out string) (n int, kb int64, ok bool) {
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if f := strings.Fields(line); len(f) == 3 && f[0] == "MORCHEH_PURGE" {
+			a, e1 := strconv.Atoi(f[1])
+			b, e2 := strconv.ParseInt(f[2], 10, 64)
+			n, kb, ok = a, b, e1 == nil && e2 == nil
+		}
+	}
+	return
+}
+
+// CheckPurgePath says what's wrong with a PurgeFilter path ("" = fine).
+func CheckPurgePath(p string) string {
+	if len(p) > 500 {
+		return "At most 500 characters."
+	}
+	if p == "" || p == "*" || !purgePathRe.MatchString(p) {
+		return "A path like /blog/post or /images/*.png, with a domain in front if needed (shop.example.com/cart)."
+	}
+	return ""
+}
+
+// CheckPurgeHeader says what's wrong with a header and its value ("" = fine).
+func CheckPurgeHeader(name, value string) (field, msg string) {
+	if name != "" && !headerNameRe.MatchString(name) {
+		return "header", "A header name: letters, digits and - only, like Cache-Tag."
+	}
+	if value != "" && name == "" {
+		return "header", "Name the header this value is in."
+	}
+	if !headerValueRe.MatchString(value) {
+		return "value", "No quotes, backslashes or control characters."
+	}
+	return "", ""
 }
 
 // Browser says whether the cache sets anything for browsers.
@@ -254,17 +430,25 @@ type PathRule struct {
 	Path  string `json:"path" maxLength:"500" doc:"prefix: starts with /, matches it and everything under it; exact: only this path; regex: a pattern"`
 	Match string `json:"match,omitempty" enum:",prefix,exact,regex" doc:"Empty = prefix"`
 	// Action: empty = proxy.
-	Action       string `json:"action,omitempty" enum:",proxy,redirect,static,deny,return" doc:"Empty = proxy"`
-	Upstream     string `json:"upstream,omitempty" doc:"proxy: where requests go; empty = the site's own upstream (proxy sites)"`
-	WebSockets   bool   `json:"websockets,omitempty"`
-	StripPrefix  bool   `json:"strip_prefix,omitempty" doc:"proxy, prefix: take the path off before sending (/api/users goes as /users)"`
-	Public       bool   `json:"public,omitempty" doc:"No sign-in on this path, when the site asks for one"`
-	RedirectTo   string `json:"redirect_to,omitempty" doc:"redirect: a full address or a path on this site"`
-	RedirectCode int    `json:"redirect_code,omitempty" enum:"0,301,302,307,308" doc:"redirect: 0 = 302"`
-	Root         string `json:"root,omitempty" doc:"static: folder served for this path (exact: the file)"`
-	Status       int    `json:"status,omitempty" minimum:"0" maximum:"599" doc:"deny: 403, 404, 410 or 444; return: 200–599"`
-	Body         string `json:"body,omitempty" maxLength:"4096" doc:"return: the text answered"`
-	Advanced     string `json:"advanced,omitempty" maxLength:"4096"`
+	Action      string `json:"action,omitempty" enum:",proxy,redirect,static,deny,return" doc:"Empty = proxy"`
+	Upstream    string `json:"upstream,omitempty" doc:"proxy: where requests go; empty = the site's own upstream (proxy sites)"`
+	WebSockets  bool   `json:"websockets,omitempty"`
+	StripPrefix bool   `json:"strip_prefix,omitempty" doc:"proxy, prefix: take the path off before sending (/api/users goes as /users)"`
+	Public      bool   `json:"public,omitempty" doc:"No sign-in on this path, when the site asks for one"`
+	// Login asks to sign in here when the site's sign-in covers chosen
+	// paths only (Auth.OnlyPaths).
+	Login bool `json:"login,omitempty" doc:"Ask to sign in on this path, when the site's sign-in is set to chosen paths only (proxy and static paths)"`
+	// Access is who can open the path; empty = as the site's lists say.
+	// Its own list replaces the site's Allow/Deny here; country rules
+	// still apply.
+	Access       string   `json:"access,omitempty" enum:",only,except,everyone" doc:"Who can open it: empty = as the site; only = only Addresses; except = everyone but Addresses; everyone = anyone, the site's address lists don't apply here (proxy and static paths)"`
+	Addresses    []string `json:"addresses,omitempty" maxItems:"200" doc:"Addresses or ranges for access only / except"`
+	RedirectTo   string   `json:"redirect_to,omitempty" doc:"redirect: a full address or a path on this site"`
+	RedirectCode int      `json:"redirect_code,omitempty" enum:"0,301,302,307,308" doc:"redirect: 0 = 302"`
+	Root         string   `json:"root,omitempty" doc:"static: folder served for this path (exact: the file)"`
+	Status       int      `json:"status,omitempty" minimum:"0" maximum:"599" doc:"deny: 403, 404, 410 or 444; return: 200–599"`
+	Body         string   `json:"body,omitempty" maxLength:"4096" doc:"return: the text answered"`
+	Advanced     string   `json:"advanced,omitempty" maxLength:"4096"`
 }
 
 // Problem is one thing wrong with a field, named the way the request body
@@ -339,6 +523,9 @@ func Normalize(h HostConfig) HostConfig {
 	case TypeStatic:
 		h.Upstream, h.WebSockets, h.PreserveHost = "", false, false
 		h.RedirectTo, h.RedirectCode, h.KeepPath, h.TimeoutSeconds = "", 0, false, 0
+	case TypeStorage:
+		h.Upstream, h.WebSockets, h.PreserveHost, h.Root = "", false, false, ""
+		h.RedirectTo, h.RedirectCode, h.KeepPath, h.MaxBodyMB = "", 0, false, 0
 	}
 	if !h.TLS.Enabled {
 		h.TLS = HostTLS{}
@@ -383,13 +570,14 @@ func Normalize(h HostConfig) HostConfig {
 	h = normalizeTuning(h)
 	h = normalizeFeatures(h)
 	h = normalizeBalance(h)
+	h = normalizeSites(h)
 	h.Custom = strings.TrimSpace(strings.ReplaceAll(h.Custom, "\r\n", "\n"))
 	return h
 }
 
 // normalizeTuning clears the tuning options a type doesn't use.
 func normalizeTuning(h HostConfig) HostConfig {
-	if h.Type != TypeProxy && h.Type != TypeStatic {
+	if !Serves(h.Type) {
 		h.Gzip = false
 	}
 	if h.Type != TypeProxy {
@@ -397,17 +585,65 @@ func normalizeTuning(h HostConfig) HostConfig {
 	}
 	switch h.Type {
 	case TypeProxy:
-	case TypeStatic:
+	case TypeStatic, TypeStorage:
 		h.Cache = Cache{AssetDays: h.Cache.AssetDays, PagesFresh: h.Cache.PagesFresh}
 	default:
 		h.Cache = Cache{}
 	}
-	if !h.Cache.Enabled {
+	// serve_stale was the first, plainer Always online.
+	if h.Cache.Enabled && h.Cache.ServeStale && !h.Cache.Online.On() {
+		h.Cache.Online = AlwaysOnline{Mode: "fast", Statuses: []int{500, 502, 503, 504}}
+	}
+	h.Cache.ServeStale = false
+	if o := &h.Cache.Online; !o.On() {
+		*o = AlwaysOnline{}
+	} else {
+		var st []int
+		for _, s := range OnlineStatuses {
+			if slices.Contains(o.Statuses, s) {
+				st = append(st, s)
+			}
+		}
+		for _, s := range o.Statuses {
+			if !slices.Contains(OnlineStatuses, s) && !slices.Contains(st, s) {
+				st = append(st, s) // Validate says why
+			}
+		}
+		o.Statuses = st
+		if h.Cache.Enabled {
+			o.KeepPrivate = false
+		}
+	}
+	switch {
+	case !h.Cache.Keeps():
 		h.Cache = Cache{AssetDays: h.Cache.AssetDays, PagesFresh: h.Cache.PagesFresh}
+	case !h.Cache.Enabled:
+		// Copies only: the Never keep lists still apply, the rest is the cache's.
+		h.Cache = Cache{
+			AssetDays: h.Cache.AssetDays, PagesFresh: h.Cache.PagesFresh,
+			SkipPaths: h.Cache.SkipPaths, SkipCookies: h.Cache.SkipCookies,
+			Online: h.Cache.Online,
+		}
 	}
 	h.Cache.SkipPaths = tidyList(h.Cache.SkipPaths)
 	h.Cache.SkipCookies = tidyList(h.Cache.SkipCookies)
-	if h.Type != TypeProxy && h.Type != TypeStream {
+	h.Cache.QueryParams = tidyList(h.Cache.QueryParams)
+	h.Cache.VaryHeaders = tidyList(h.Cache.VaryHeaders)
+	h.Cache.VaryCookies = tidyList(h.Cache.VaryCookies)
+	for i, v := range h.Cache.VaryHeaders {
+		h.Cache.VaryHeaders[i] = strings.TrimSuffix(v, ":")
+	}
+	if h.Cache.Query != "only" {
+		h.Cache.QueryParams = nil
+	}
+	for i := range h.Cache.Groups {
+		g := &h.Cache.Groups[i]
+		g.Name = strings.TrimSpace(g.Name)
+		g.Paths = tidyList(g.Paths)
+		g.Header = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(g.Header), ":"))
+		g.Value = strings.TrimSpace(g.Value)
+	}
+	if h.Type != TypeProxy && h.Type != TypeStream && h.Type != TypeStorage {
 		h.ConnectTimeout = 0
 	}
 	if h.IsStream() {
@@ -437,7 +673,11 @@ func tidyList(in []string) []string {
 
 // RateLimited says whether a type can limit requests: redirects and 404
 // hosts answer before any limit would run.
-func RateLimited(t string) bool { return t == TypeProxy || t == TypeStatic || t == TypeStream }
+func RateLimited(t string) bool { return Serves(t) || t == TypeStream }
+
+// Serves says whether a type serves pages itself or through an upstream
+// (proxy, static, storage), as opposed to redirects, 404 hosts and streams.
+func Serves(t string) bool { return t == TypeProxy || t == TypeStatic || t == TypeStorage }
 
 func normalizeRate(r RateLimit, t string) RateLimit {
 	if !RateLimited(t) {
@@ -530,7 +770,7 @@ func Validate(h HostConfig) []Problem {
 		if !safePath(h.Root) {
 			add("root", "Use a full folder path, like /var/www/site (letters, digits and . _ - / only).", h.Root)
 		}
-	case TypeNotFound:
+	case TypeNotFound, TypeStorage:
 	case TypeStream:
 		switch {
 		case h.ListenPort < 1 || h.ListenPort > 65535:
@@ -545,7 +785,7 @@ func Validate(h HostConfig) []Problem {
 			add("stream_to", msg, h.StreamTo)
 		}
 	default:
-		add("type", "Choose proxy, redirect, static, 404 or stream.", h.Type)
+		add("type", "Choose proxy, redirect, static, storage, 404 or stream.", h.Type)
 	}
 	if h.TLS.Enabled {
 		if !safePath(h.TLS.Certificate) {
@@ -614,6 +854,7 @@ func Validate(h HostConfig) []Problem {
 	}
 	validateFeatures(h, add)
 	validateBalance(h, add)
+	validateSites(h, add)
 	if msg := checkAdvanced(h.Advanced); msg != "" {
 		add("advanced", msg, nil)
 	}
@@ -628,6 +869,19 @@ func Validate(h HostConfig) []Problem {
 	if h.Cache.Enabled && h.NoBuffering {
 		add("cache.enabled", "Pass straight through (Advanced) leaves nothing to keep: turn one of them off.", true)
 	}
+	if h.Cache.Online.On() && h.NoBuffering {
+		add("cache.always_online.mode", "Pass straight through (Advanced) leaves nothing to keep: turn one of them off.", h.Cache.Online.Mode)
+	}
+	if o := h.Cache.Online; o.On() {
+		if !slices.Contains([]string{"backup", "fast", "copies"}, o.Mode) {
+			add("cache.always_online.mode", "Choose backup, fast or copies.", o.Mode)
+		}
+		for i, s := range o.Statuses {
+			if !slices.Contains(OnlineStatuses, s) {
+				add(fmt.Sprintf("cache.always_online.statuses[%d]", i), "Choose from 500, 502, 503, 504 and 429.", s)
+			}
+		}
+	}
 	for i, p := range h.Cache.SkipPaths {
 		if !pathRe.MatchString(p) {
 			add(fmt.Sprintf("cache.skip_paths[%d]", i), "Start with / and use letters, digits and . _ - / only.", p)
@@ -638,12 +892,85 @@ func Validate(h HostConfig) []Problem {
 			add(fmt.Sprintf("cache.skip_cookies[%d]", i), "Letters, digits and . _ - only.", c)
 		}
 	}
+	validateCacheKey(h.Cache, add)
 	if h.IsCustom() {
 		if msg := checkCustom(h.Custom); msg != "" {
 			add("custom", msg, nil)
 		}
 	}
 	return out
+}
+
+// validateCacheKey checks the query-string choice and the clear groups.
+func validateCacheKey(c Cache, add func(field, msg string, v any)) {
+	if c.Query == "only" && len(c.QueryParams) == 0 {
+		add("cache.query_params", "Name at least one parameter, or let the whole query string count.", nil)
+	}
+	for i, q := range c.QueryParams {
+		if !varNameRe.MatchString(q) {
+			add(fmt.Sprintf("cache.query_params[%d]", i), "Letters, digits and _ only.", q)
+		}
+	}
+	for i, n := range c.VaryHeaders {
+		at := fmt.Sprintf("cache.vary_headers[%d]", i)
+		switch strings.ToLower(n) {
+		case "user-agent":
+			add(at, "Too many different values: use Device type or Operating system instead.", n)
+		case "accept-language":
+			add(at, "Too many different values: use Language instead.", n)
+		case "cookie":
+			add(at, "List the cookie's name under Cookies instead.", n)
+		case "authorization":
+			add(at, "Signed-in requests never use the cache.", n)
+		default:
+			if !headerNameRe.MatchString(n) {
+				add(at, "Letters, digits and - only, like X-Country.", n)
+			}
+		}
+	}
+	for i, n := range c.VaryCookies {
+		if !varNameRe.MatchString(n) {
+			add(fmt.Sprintf("cache.vary_cookies[%d]", i), "Letters, digits and _ only (nginx can't read other cookie names).", n)
+		}
+	}
+	var names []string
+	for i, g := range c.Groups {
+		at := fmt.Sprintf("cache.groups[%d].", i)
+		switch {
+		case g.Name == "":
+			add(at+"name", "Give the group a name.", nil)
+		case slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(n, g.Name) }):
+			add(at+"name", "Another group has this name.", g.Name)
+		}
+		names = append(names, g.Name)
+		if len(g.Paths) == 0 && g.Header == "" {
+			add(at+"paths", "Add an address, or a header the app sends.", nil)
+		}
+		for j, p := range g.Paths {
+			if msg := CheckPurgePath(p); msg != "" {
+				add(fmt.Sprintf("%spaths[%d]", at, j), msg, p)
+			}
+		}
+		if f, msg := CheckPurgeHeader(g.Header, g.Value); msg != "" {
+			add(at+f, msg, nil)
+		}
+		if g.Minutes == 0 && !g.Never {
+			continue
+		}
+		switch {
+		case g.Minutes > 0 && g.Never:
+			add(at+"minutes", "Pick a time or never keep, not both.", g.Minutes)
+		case g.Header != "":
+			add(at+"header", "A rule with its own cache time works on addresses only; clear by a header in a group without a time.", g.Header)
+		case len(g.Paths) == 0:
+			add(at+"paths", "Add the addresses this time is for.", nil)
+		}
+		for j, p := range g.Paths {
+			if CheckPurgePath(p) == "" && !rulePathRe.MatchString(p) {
+				add(fmt.Sprintf("%spaths[%d]", at, j), "A rule with its own cache time takes paths only, like /api/ or *.css: no domain or ?query.", p)
+			}
+		}
+	}
 }
 
 // checkCustom keeps a hand-written file balanced and away from the markers
@@ -854,7 +1181,8 @@ type Capabilities struct {
 	Hardening    bool     `json:"hardening" doc:"Takes hardening, request_id and catch_all"`
 	UpstreamTLS  bool     `json:"upstream_tls" doc:"Takes upstream_tls"`
 	Balancing    bool     `json:"balancing" doc:"Takes balance: load balancing over several servers (proxy, stream)"`
-	PathActions  bool     `json:"path_actions" doc:"Paths take match and action (redirect, static, deny, return), strip_prefix and public"`
+	PathActions  bool     `json:"path_actions" doc:"Paths take match and action (redirect, static, deny, return), strip_prefix, public, login, access and addresses"`
+	Mirror       bool     `json:"mirror" doc:"Takes mirror: a copy of requests sent to a test server (proxy)"`
 	Language     string   `json:"language" doc:"The config language, for syntax colors"`
 	ConfigLabel  string   `json:"config_label" doc:"What its config is called, like nginx config"`
 }
@@ -1068,6 +1396,9 @@ type Driver interface {
 	// GeoScript turns the IP-to-country lookup on: the module, the database
 	// and its monthly refresh.
 	GeoScript(s Setup) string
+	// BrotliScript adds the Brotli compression module from the system's
+	// packages (exit 0 when it's already loaded).
+	BrotliScript(s Setup) string
 	// ApplyScript replaces every managed file with files, does what t says
 	// with the hand-written default server, tests the config and reloads,
 	// putting the old files (hand-written ones too) back on failure.
@@ -1083,8 +1414,13 @@ type Driver interface {
 	// CertificateScript gets or writes one certificate (see CertRequest).
 	// It ends with exit 0 and the files in place, or prints why not.
 	CertificateScript(r CertRequest, s Setup) string
-	// PurgeCacheScript empties a site's own cache (Capabilities.Cache).
-	PurgeCacheScript(hostID string) string
+	// PurgeCacheScript clears a site's kept answers (Capabilities.Cache):
+	// those f picks, every one when f is empty. With dryRun it only counts
+	// them. Its last line is ParsePurge's.
+	PurgeCacheScript(hostID string, f PurgeFilter, dryRun bool) string
+	// KeptPagesScript counts a site's kept answers and lists the newest
+	// limit of them, for ParseKeptPages.
+	KeptPagesScript(hostID string, limit int) string
 	// RemoveScript takes everything Morcheh wrote off the server and gives
 	// the default server back to the hand-written files it was taken from.
 	RemoveScript() string

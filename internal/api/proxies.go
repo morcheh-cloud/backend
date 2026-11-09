@@ -57,6 +57,7 @@ func (h *proxyHandler) lock(id uuid.UUID) func() {
 const (
 	proxySetupKind  = "proxy-setup"
 	proxyGeoKind    = "proxy-geo"
+	proxyBrotliKind = "proxy-brotli"
 	proxyKeepChange = 50
 	proxyNoRoot     = "Managing the proxy needs root or sudo on this server"
 )
@@ -183,6 +184,77 @@ type ProxyActionResult struct {
 	OK       bool   `json:"ok"`
 	ExitCode int    `json:"exit_code"`
 	Output   string `json:"output"`
+}
+
+// ProxyPurgeBody picks the answers to clear; empty = all of them.
+type ProxyPurgeBody struct {
+	Paths  []string `json:"paths,omitempty" maxItems:"200" doc:"Addresses: /blog/post (that page, everything under it, any query string), * for any characters (/img/*.png), ?query (/search?q=*), a domain in front (shop.example.com/cart) or a whole URL"`
+	Header string   `json:"header,omitempty" maxLength:"64" doc:"Only answers the app sent with this header, like Cache-Tag"`
+	Value  string   `json:"value,omitempty" maxLength:"200" doc:"That header's value, or one item of its comma-separated list; * = any characters; empty = any value"`
+	Group  string   `json:"group,omitempty" maxLength:"60" doc:"A saved group of the site (cache.groups), instead of paths and header"`
+	DryRun bool     `json:"dry_run,omitempty" doc:"Only count what would be cleared"`
+}
+
+type ProxyPurgeResult struct {
+	OK       bool   `json:"ok"`
+	ExitCode int    `json:"exit_code"`
+	Output   string `json:"output" doc:"What happened, in words; the script's output when it failed"`
+	Matched  int    `json:"matched" doc:"Answers cleared (or, with dry_run, that would be)"`
+	Bytes    int64  `json:"bytes" doc:"Their size on disk"`
+}
+
+// purgeFilter checks a purge request and turns a group into its filter.
+func purgeFilter(b ProxyPurgeBody, c proxy.Cache) (proxy.PurgeFilter, error) {
+	if b.Group != "" {
+		if len(b.Paths) > 0 || b.Header != "" {
+			return proxy.PurgeFilter{}, huma.Error422UnprocessableEntity("Pick a group or addresses, not both")
+		}
+		g, ok := c.FindGroup(b.Group)
+		if !ok {
+			return proxy.PurgeFilter{}, huma.Error422UnprocessableEntity("The site has no group " + strconv.Quote(b.Group) + "; save the site first")
+		}
+		return g.Filter(), nil
+	}
+	f := proxy.PurgeFilter{Header: strings.TrimSuffix(strings.TrimSpace(b.Header), ":"), Value: strings.TrimSpace(b.Value)}
+	var errs []error
+	for i, p := range b.Paths {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		} else if msg := proxy.CheckPurgePath(p); msg != "" {
+			errs = append(errs, &huma.ErrorDetail{Location: fmt.Sprintf("body.paths[%d]", i), Message: msg, Value: p})
+		} else if !slices.Contains(f.Paths, p) {
+			f.Paths = append(f.Paths, p)
+		}
+	}
+	if field, msg := proxy.CheckPurgeHeader(f.Header, f.Value); msg != "" {
+		errs = append(errs, &huma.ErrorDetail{Location: "body." + field, Message: msg})
+	}
+	if len(errs) > 0 {
+		return f, huma.Error422UnprocessableEntity("Check the addresses", errs...)
+	}
+	return f, nil
+}
+
+// purgeSummary says what a purge did, or (dry run) would do.
+func purgeSummary(n int, bytes int64, dry, all bool) string {
+	what := fmt.Sprintf("%d kept answers", n)
+	if n == 1 {
+		what = "1 kept answer"
+	}
+	if n > 0 {
+		what += " (" + humanBytes(bytes) + ")"
+	}
+	switch {
+	case n == 0 && all:
+		return "The cache is empty."
+	case n == 0:
+		return "Nothing kept matches."
+	case dry && all:
+		return what + " in the cache."
+	case dry:
+		return what + " match."
+	}
+	return "Cleared " + what + "."
 }
 
 type ProxyHostPath struct {
@@ -692,8 +764,9 @@ type proxySetupParams struct {
 	ServerID string `json:"server_id"`
 }
 
-// submitSetup starts kind proxySetupKind (install and wire up) or
-// proxyGeoKind (turn the country lookup on); one at a time per proxy.
+// submitSetup starts kind proxySetupKind (install and wire up),
+// proxyGeoKind (turn the country lookup on) or proxyBrotliKind (add the
+// Brotli module); one at a time per proxy.
 func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*JobOutput, error) {
 	r, d, err := h.getProxy(ctx, rawID)
 	if err != nil {
@@ -713,7 +786,9 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*Jo
 	if err != nil {
 		return nil, internalError(err)
 	}
-	if slices.ContainsFunc(list, func(j sqlc.Job) bool { return j.Kind == proxySetupKind || j.Kind == proxyGeoKind }) {
+	if slices.ContainsFunc(list, func(j sqlc.Job) bool {
+		return j.Kind == proxySetupKind || j.Kind == proxyGeoKind || j.Kind == proxyBrotliKind
+	}) {
 		return nil, huma.Error409Conflict(d.Label() + " is already being set up on this server")
 	}
 	title := "Set up " + d.Label() + " on " + r.ServerName
@@ -723,6 +798,9 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*Jo
 		}
 		title = "Turn on country lookup on " + r.ServerName
 	}
+	if kind == proxyBrotliKind {
+		title = "Add Brotli to " + d.Label() + " on " + r.ServerName
+	}
 	return submit(ctx, h.s.jobs, jobs.Spec{
 		Kind: kind, Title: title,
 		Params: proxySetupParams{ProxyID: rawID, ServerID: server}, Refs: refs,
@@ -731,9 +809,11 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*Jo
 
 // runSetup installs the proxy when it's missing (the package manager can't be
 // stopped half way, so the job is locked then), wires in Morcheh's folder,
-// starts it and writes the panel's sites. With geo it turns the country
-// lookup on instead.
-func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, geo bool) (any, error) {
+// starts it and writes the panel's sites. proxyGeoKind turns the country
+// lookup on instead; proxyBrotliKind adds the Brotli module, then writes the
+// sites again so those with Brotli on start using it.
+func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) (any, error) {
+	geo, brotli := kind == proxyGeoKind, kind == proxyBrotliKind
 	var p proxySetupParams
 	if err := t.Decode(&p); err != nil {
 		return nil, err
@@ -768,8 +848,11 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, geo bool) (an
 		}}
 		su := proxy.Setup{Init: f.init, PM: f.pm, Install: install}
 		script := d.SetupScript(su)
-		if geo {
+		switch {
+		case geo:
 			script = d.GeoScript(su)
+		case brotli:
+			script = d.BrotliScript(su)
 		}
 		res, err := sh.execTo(ctx, script, packageTimeout, lines)
 		lines.flush()
@@ -788,6 +871,14 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, geo bool) (an
 			return fmt.Errorf("Turning on country lookup failed (exit %d): %s", res.code, last)
 		case geo:
 			return nil
+		case brotli && res.code == proxy.ExitNotInstalled:
+			return fmt.Errorf("%s isn't installed on this server. Set it up first", d.Label())
+		case brotli && res.code == proxy.ExitTestFailed:
+			return fmt.Errorf("Brotli couldn't be added: %s", last)
+		case brotli && res.code == proxy.ExitReloadFailed:
+			return fmt.Errorf("%s didn't reload: %s", d.Label(), last)
+		case brotli && res.code != 0:
+			return fmt.Errorf("Adding Brotli failed: %s", last)
 		case res.code == proxy.ExitTestFailed:
 			return fmt.Errorf("%s's configuration has a problem, so it wasn't started: %s", d.Label(), last)
 		case res.code == proxy.ExitReloadFailed:
@@ -829,6 +920,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	base := "/proxies/{id}"
 	registerProxyCertificates(api, h, base, tags)
 	h.registerUpstreamTest(api, base, tags)
+	h.registerKeptPages(api, base, tags)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-proxy-kinds", Method: http.MethodGet, Path: "/proxy-kinds",
@@ -1053,7 +1145,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	}, func(ctx context.Context, in *ProxyIDPath) (*JobOutput, error) {
 		return h.submitSetup(ctx, in.ID, proxySetupKind)
 	})
-	h.s.jobs.Handle(proxySetupKind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, false) })
+	h.s.jobs.Handle(proxySetupKind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, proxySetupKind) })
 
 	huma.Register(api, huma.Operation{
 		OperationID: "setup-proxy-geo", Method: http.MethodPost, Path: base + "/geo",
@@ -1064,7 +1156,18 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	}, func(ctx context.Context, in *ProxyIDPath) (*JobOutput, error) {
 		return h.submitSetup(ctx, in.ID, proxyGeoKind)
 	})
-	h.s.jobs.Handle(proxyGeoKind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, true) })
+	h.s.jobs.Handle(proxyGeoKind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, proxyGeoKind) })
+
+	huma.Register(api, huma.Operation{
+		OperationID: "setup-proxy-brotli", Method: http.MethodPost, Path: base + "/brotli",
+		Summary: "Add the Brotli compression module",
+		Description: "Installs nginx's Brotli module from the system's packages (Debian/Ubuntu libnginx-mod-http-brotli-filter, Alpine nginx-mod-http-brotli), " +
+			"reloads, and writes the panel's sites again. Runs as a background job (kind `" + proxyBrotliKind + "`); 409 when a setup is already running.",
+		Tags: tags, DefaultStatus: http.StatusAccepted,
+	}, func(ctx context.Context, in *ProxyIDPath) (*JobOutput, error) {
+		return h.submitSetup(ctx, in.ID, proxyBrotliKind)
+	})
+	h.s.jobs.Handle(proxyBrotliKind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, proxyBrotliKind) })
 
 	huma.Register(api, huma.Operation{
 		OperationID: "proxy-action", Method: http.MethodPost, Path: base + "/action",
@@ -1144,6 +1247,14 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			}
 		}{}
 		out.Body.Problems = []ProxyProblem{}
+		p, err := h.resolveStorage(ctx, &in.Body.Config)
+		if err != nil {
+			return nil, err
+		}
+		if p != nil {
+			out.Body.Problems = append(out.Body.Problems, ProxyProblem{Field: "body.config." + p.Field, Message: p.Message})
+			return out, nil
+		}
 		c := proxy.Normalize(in.Body.Config)
 		for _, p := range append(proxy.Validate(c), d.Validate(c)...) {
 			out.Body.Problems = append(out.Body.Problems, ProxyProblem{Field: "body.config." + p.Field, Message: p.Message})
@@ -1174,6 +1285,9 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	}) (*struct{ Body ProxyActionResult }, error) {
 		r, d, err := h.getProxy(ctx, in.ID)
 		if err != nil {
+			return nil, err
+		}
+		if err := h.withStorage(ctx, &in.Body.Config); err != nil {
 			return nil, err
 		}
 		c, err := cleanHost(d, in.Body.Config)
@@ -1253,6 +1367,9 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if err != nil {
 			return nil, err
 		}
+		if err := h.withStorage(ctx, &in.Body.Config); err != nil {
+			return nil, err
+		}
 		c, err := cleanHost(d, in.Body.Config)
 		if err != nil {
 			return nil, err
@@ -1287,6 +1404,9 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	}) (*struct{ Body ProxyDetail }, error) {
 		_, d, err := h.getProxy(ctx, in.ID)
 		if err != nil {
+			return nil, err
+		}
+		if err := h.withStorage(ctx, &in.Body.Config); err != nil {
 			return nil, err
 		}
 		c, err := cleanHost(d, in.Body.Config)
@@ -1389,10 +1509,13 @@ func registerProxies(api huma.API, h *proxyHandler) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "purge-proxy-host-cache", Method: http.MethodPost, Path: base + "/hosts/{host}/cache/purge",
-		Summary:     "Empty a site's cache",
-		Description: "Removes every answer the proxy kept for the site; the next visits ask the upstream again. Browsers keep their own copies.",
+		Summary:     "Clear a site's cache, or part of it",
+		Description: "Removes the answers the proxy kept for the site (all of them, those of some addresses, of a saved group or carrying an answer header); the next visits ask the upstream again. Browsers keep their own copies. `dry_run` only counts them.",
 		Tags:        tags,
-	}, func(ctx context.Context, in *ProxyHostPath) (*struct{ Body ProxyActionResult }, error) {
+	}, func(ctx context.Context, in *struct {
+		ProxyHostPath
+		Body *ProxyPurgeBody
+	}) (*struct{ Body ProxyPurgeResult }, error) {
 		r, d, err := h.getProxy(ctx, in.ID)
 		if err != nil {
 			return nil, err
@@ -1400,23 +1523,38 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if !d.Capabilities().Cache {
 			return nil, huma.Error422UnprocessableEntity(d.Label() + " can't cache answers")
 		}
-		if _, err := h.s.q.GetProxyHost(ctx, sqlc.GetProxyHostParams{ID: uuid.MustParse(in.Host), ProxyID: r.Proxy.ID}); isNotFound(err) {
+		host, err := h.s.q.GetProxyHost(ctx, sqlc.GetProxyHostParams{ID: uuid.MustParse(in.Host), ProxyID: r.Proxy.ID})
+		if isNotFound(err) {
 			return nil, huma.Error404NotFound("site not found")
 		} else if err != nil {
 			return nil, internalError(err)
 		}
-		out := &struct{ Body ProxyActionResult }{}
+		var b ProxyPurgeBody
+		if in.Body != nil {
+			b = *in.Body
+		}
+		f, err := purgeFilter(b, configOf(host).Cache)
+		if err != nil {
+			return nil, err
+		}
+		out := &struct{ Body ProxyPurgeResult }{}
 		server := r.Proxy.ServerID.String()
 		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
 			sh, err := h.root(ctx, server, c)
 			if err != nil {
 				return err
 			}
-			res, err := sh.exec(ctx, d.PurgeCacheScript(in.Host), 5*time.Minute, 16<<10)
+			res, err := sh.exec(ctx, d.PurgeCacheScript(in.Host, f, b.DryRun), 5*time.Minute, 16<<10)
 			if err != nil {
 				return err
 			}
-			out.Body = ProxyActionResult{OK: res.code == 0, ExitCode: res.code, Output: strings.TrimSpace(string(res.output))}
+			text := strings.TrimSpace(string(res.output))
+			n, kb, ok := proxy.ParsePurge(text)
+			if res.code != 0 || !ok {
+				out.Body = ProxyPurgeResult{ExitCode: res.code, Output: text}
+				return nil
+			}
+			out.Body = ProxyPurgeResult{OK: true, Matched: n, Bytes: kb * 1024, Output: purgeSummary(n, kb*1024, b.DryRun, f.Empty())}
 			return nil
 		})
 		if err != nil {

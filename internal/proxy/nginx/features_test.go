@@ -141,3 +141,60 @@ func TestRenderCatchAll(t *testing.T) {
 		}
 	}
 }
+
+func TestPathAccessAndLogin(t *testing.T) {
+	h := proxy.Normalize(proxy.HostConfig{
+		Type: proxy.TypeProxy, Domains: []string{"app.example.com"},
+		Upstream: "http://10.0.0.5:8080",
+		Allow:    []string{"10.0.0.0/8"}, DefaultAccess: "deny",
+		Auth: proxy.Auth{
+			Mode: "forward", OnlyPaths: true,
+			Forward: proxy.ForwardAuth{URL: "http://127.0.0.1:9091/auth", SigninURL: "https://sso.example.com/"},
+		},
+		ErrorPages: []proxy.ErrorPage{{Codes: []int{502}}},
+		Paths: []proxy.PathRule{
+			{Path: "/admin/", Access: "only", Addresses: []string{" 192.168.1.0/24 ", "192.168.1.0/24"}, Login: true},
+			{Path: "/hooks/", Access: "everyone", Addresses: []string{"1.2.3.4"}},
+			{Path: "/api/", Access: "except", Addresses: []string{"5.6.7.8"}},
+			{Path: "/old", Action: proxy.ActionRedirect, RedirectTo: "/new", Access: "only", Addresses: []string{"1.1.1.1"}, Login: true},
+		},
+	})
+	if p := proxy.Validate(h); len(p) > 0 {
+		t.Fatalf("problems: %+v", p)
+	}
+	if got := h.Paths[0].Addresses; len(got) != 1 || got[0] != "192.168.1.0/24" {
+		t.Fatalf("addresses not tidied: %v", got)
+	}
+	if h.Paths[1].Addresses != nil || h.Paths[3].Access != "" || h.Paths[3].Login {
+		t.Fatalf("leftovers kept: %+v", h.Paths)
+	}
+	out := Driver{}.Render("abc-123", h, proxy.Env{Version: "1.24.0"})
+	server := out[strings.Index(out, "server_name"):]
+	if strings.Contains(server[:strings.Index(server, "location")], "auth_request /__morcheh/auth;") {
+		t.Error("the whole site asks to sign in")
+	}
+	admin := server[strings.Index(server, "location /admin/"):]
+	admin = admin[:strings.Index(admin, "}")]
+	for _, want := range []string{
+		"allow 192.168.1.0/24;", "deny all;", "auth_request /__morcheh/auth;",
+		"error_page 502 /__morcheh/error-0.html;", "error_page 401 =302 https://sso.example.com/?rd=",
+	} {
+		if !strings.Contains(admin, want) {
+			t.Errorf("/admin/ is missing %q:\n%s", want, admin)
+		}
+	}
+	for _, want := range []string{"location /hooks/ {\n        allow all;", "deny 5.6.7.8;\n        allow all;"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+
+	h.Paths[0].Login = false
+	if p := proxy.Validate(h); len(p) != 1 || p[0].Field != "auth.only_paths" {
+		t.Errorf("want auth.only_paths, got %+v", p)
+	}
+	h.Paths[2].Addresses = []string{"nope"}
+	if p := proxy.Validate(h); len(p) != 2 || p[0].Field != "paths[2].addresses[0]" {
+		t.Errorf("want paths[2].addresses[0], got %+v", p)
+	}
+}

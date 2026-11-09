@@ -20,6 +20,8 @@ type Auth struct {
 	Forward ForwardAuth `json:"forward" required:"false"`
 	// SkipForAllowed lets the addresses in Allow in without signing in.
 	SkipForAllowed bool `json:"skip_for_allowed,omitempty" doc:"Addresses in the Always let in list don't have to sign in"`
+	// OnlyPaths asks only on the paths marked Login, not the whole site.
+	OnlyPaths bool `json:"only_paths,omitempty" doc:"Ask only on the paths marked login, not on the whole site"`
 }
 
 // On says whether visitors have to sign in.
@@ -128,8 +130,7 @@ var (
 
 // normalizeFeatures tidies and clears the newer options by type.
 func normalizeFeatures(h HostConfig) HostConfig {
-	site := h.Type == TypeProxy || h.Type == TypeStatic
-	if !site {
+	if !Serves(h.Type) {
 		h.Auth = Auth{}
 	}
 	switch h.Auth.Mode {
@@ -155,6 +156,15 @@ func normalizeFeatures(h HostConfig) HostConfig {
 	}
 	if len(h.Allow) == 0 {
 		h.Auth.SkipForAllowed = false
+	}
+	for i := range h.Paths {
+		p := &h.Paths[i]
+		if !h.Auth.On() || h.Auth.OnlyPaths {
+			p.Public = false
+		}
+		if !h.Auth.On() || !h.Auth.OnlyPaths {
+			p.Login = false
+		}
 	}
 
 	if h.Type != TypeProxy {
@@ -210,7 +220,7 @@ func normalizeFeatures(h HostConfig) HostConfig {
 		h.Hardening.Status = 404
 	}
 
-	if h.Type != TypeProxy && h.Type != TypeStatic {
+	if !Serves(h.Type) {
 		h.Brotli = false
 	}
 	if h.Type == TypeNotFound {
@@ -257,6 +267,16 @@ func normalizePath(p PathRule) PathRule {
 	}
 	if p.ActionOf() != ActionStatic {
 		p.Root = ""
+	}
+	// Redirects, blocks and fixed answers go out before any address check
+	// or sign-in would run.
+	if a := p.ActionOf(); a != ActionProxy && a != ActionStatic {
+		p.Access, p.Login = "", false
+	}
+	if p.Access == "" || p.Access == "everyone" {
+		p.Addresses = nil
+	} else {
+		p.Addresses = tidyList(p.Addresses)
 	}
 	switch p.ActionOf() {
 	case ActionDeny:
@@ -329,6 +349,9 @@ func validateFeatures(h HostConfig, add func(field, msg string, v any)) {
 		}
 	default:
 		add("auth.mode", "Choose basic or forward.", a.Mode)
+	}
+	if a.On() && a.OnlyPaths && !slices.ContainsFunc(h.Paths, func(p PathRule) bool { return p.Login }) {
+		add("auth.only_paths", "Turn on Sign in for at least one path on the Routing tab, or ask on the whole site.", nil)
 	}
 
 	u := h.UpstreamTLS
@@ -459,6 +482,20 @@ func validatePath(h HostConfig, i int, p PathRule, add func(field, msg string, v
 		}
 	default:
 		add(f+".action", "Choose proxy, redirect, static, deny or return.", p.Action)
+	}
+	switch p.Access {
+	case "", "everyone":
+	case "only", "except":
+		if len(p.Addresses) == 0 {
+			add(f+".addresses", "Add at least one address or range.", nil)
+		}
+		for j, a := range p.Addresses {
+			if !validAddress(a) {
+				add(fmt.Sprintf("%s.addresses[%d]", f, j), "Not an address or range (like 10.0.0.0/8).", a)
+			}
+		}
+	default:
+		add(f+".access", "Choose only, except or everyone.", p.Access)
 	}
 	if msg := checkAdvanced(p.Advanced); msg != "" {
 		add(f+".advanced", msg, nil)

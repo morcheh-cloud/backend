@@ -194,29 +194,8 @@ func serverFeatures(w *writer, id, t string, h proxy.HostConfig, env proxy.Env) 
 		}
 	}
 
-	a := h.Auth
-	switch a.Mode {
-	case "basic":
-		w.line("")
-		if a.SkipForAllowed && len(h.Allow) > 0 {
-			w.line("auth_basic $%s_realm;", t)
-		} else {
-			w.line(`auth_basic "%s";`, realm(a))
-		}
-		w.line("auth_basic_user_file %s;", AuthFile(id))
-	case "forward":
-		w.line("")
-		w.line("auth_request %s;", authLocation)
-		for i, x := range a.Forward.Headers {
-			w.line("auth_request_set $%s_auth_%d $upstream_http_%s;", t, i, headerVar(x))
-		}
-		if s := a.Forward.SigninURL; s != "" {
-			sep := "?"
-			if strings.Contains(s, "?") {
-				sep = "&"
-			}
-			w.line("error_page 401 =302 %s%srd=$scheme://$http_host$request_uri;", s, sep)
-		}
+	if !h.Auth.OnlyPaths {
+		authLines(w, id, t, h, false)
 	}
 
 	if h.RequestID {
@@ -233,6 +212,91 @@ func serverFeatures(w *writer, id, t string, h proxy.HostConfig, env proxy.Env) 
 		} else {
 			w.line("# Brotli is on in the panel, but this nginx has no brotli module.")
 		}
+	}
+}
+
+// authLines asks visitors to sign in: in the server block, or in a path's
+// location when the sign-in covers chosen paths only (inPath).
+func authLines(w *writer, id, t string, h proxy.HostConfig, inPath bool) {
+	a := h.Auth
+	switch a.Mode {
+	case "basic":
+		if !inPath {
+			w.line("")
+		}
+		if a.SkipForAllowed && len(h.Allow) > 0 {
+			w.line("auth_basic $%s_realm;", t)
+		} else {
+			w.line(`auth_basic "%s";`, realm(a))
+		}
+		w.line("auth_basic_user_file %s;", AuthFile(id))
+	case "forward":
+		if !inPath {
+			w.line("")
+		}
+		w.line("auth_request %s;", authLocation)
+		for i, x := range a.Forward.Headers {
+			w.line("auth_request_set $%s_auth_%d $upstream_http_%s;", t, i, headerVar(x))
+		}
+		if a.Forward.SigninURL != "" {
+			// An error_page here drops the server's: repeat them.
+			if inPath {
+				errorPageLines(w, h)
+			}
+			signinLine(w, a)
+		}
+	}
+}
+
+// signinLine sends a visitor the forward auth turned away to its sign-in.
+func signinLine(w *writer, a proxy.Auth) {
+	s := a.Forward.SigninURL
+	sep := "?"
+	if strings.Contains(s, "?") {
+		sep = "&"
+	}
+	w.line("error_page 401 =302 %s%srd=$scheme://$http_host$request_uri;", s, sep)
+}
+
+// serverErrorPages repeats every error_page the server block has, for a
+// location that sets one of its own (which drops the inherited ones).
+func serverErrorPages(w *writer, h proxy.HostConfig) {
+	errorPageLines(w, h)
+	if a := h.Auth; a.Mode == "forward" && !a.OnlyPaths && a.Forward.SigninURL != "" {
+		signinLine(w, a)
+	}
+}
+
+// errorPageLines are the server's error_page lines.
+func errorPageLines(w *writer, h proxy.HostConfig) {
+	if h.Maintenance.Enabled {
+		w.line("error_page 503 %s;", maintPage)
+	}
+	for i, p := range h.ErrorPages {
+		codes := make([]string, len(p.Codes))
+		for j, c := range p.Codes {
+			codes[j] = strconv.Itoa(c)
+		}
+		w.line("error_page %s %s;", strings.Join(codes, " "), errorPage(i))
+	}
+}
+
+// pathAccess is a path's own address check, which takes the place of the
+// site's allow and deny lines inside its location.
+func pathAccess(w *writer, p proxy.PathRule) {
+	switch p.Access {
+	case "only":
+		for _, a := range p.Addresses {
+			w.line("allow %s;", a)
+		}
+		w.line("deny all;")
+	case "except":
+		for _, a := range p.Addresses {
+			w.line("deny %s;", a)
+		}
+		w.line("allow all;")
+	case "everyone":
+		w.line("allow all;")
 	}
 }
 
@@ -450,7 +514,7 @@ func pathBody(w *writer, t string, h proxy.HostConfig, env proxy.Env, p proxy.Pa
 			w.line(`rewrite "^%s/?(.*)$" "%s/$1" break;`, prefix, base)
 			up = proxy.Origin(up)
 		}
-		proxyPass(w, t, h, env, up, p.WebSockets)
+		proxyPass(w, t, h, env, up, p.WebSockets, 0)
 	}
 }
 

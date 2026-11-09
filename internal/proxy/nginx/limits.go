@@ -28,8 +28,22 @@ const (
 	acmePath = `~^/\.well-known/acme-challenge/`
 )
 
-// tag is the start of a host's variable and zone names.
+// tag is the start of a host's variable and zone names. It stays short:
+// nginx's variables hash (variables_hash_bucket_size 64 by default) refuses
+// a variable name over 46 characters, and the longest suffix is 12. So a
+// real id (a UUID) becomes 12 hex characters of its hash.
 func tag(id string) string {
+	if d := cacheDirName(id); len(d) <= len("morcheh_")+12 {
+		return d
+	}
+	f := fnv.New64a()
+	f.Write([]byte(id))
+	return fmt.Sprintf("morcheh_%012x", f.Sum64()&(1<<48-1))
+}
+
+// cacheDirName names a site's cache folder under CacheDir: the whole id,
+// as it always was, so answers kept before stay found.
+func cacheDirName(id string) string {
 	return "morcheh_" + strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' {
 			return r

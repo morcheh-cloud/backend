@@ -1,6 +1,7 @@
 package nginx
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -134,5 +135,37 @@ func TestStreamLimits(t *testing.T) {
 		if strings.Contains(got, no) {
 			t.Errorf("stream has %q:\n%s", no, got)
 		}
+	}
+}
+
+// nginx -t fails ("could not build variables_hash") on a variable name
+// over 46 characters, so every name a real (UUID) site gets must fit.
+func TestVariableNamesFit(t *testing.T) {
+	id := "01a1bb40-b9e8-74d3-ac12-f55f7660205d"
+	h := fullHost()
+	h.Countries, h.CountryMode, h.DefaultAccess = []string{"DE"}, "allow", "allow"
+	h.RateLimit = proxy.RateLimit{Rules: []proxy.RateRule{
+		{Rate: 10}, {Path: "/login", Rate: 5, Per: "minute", Methods: []string{"post"}},
+	}, Exempt: []string{"10.0.0.0/8"}}
+	h.Cache = proxy.Cache{
+		Enabled: true, Query: "only", QueryParams: []string{"page"}, AssetDays: 7,
+		SkipPaths: []string{"/admin"}, SkipCookies: []string{"session"},
+		VaryDevice: true, VaryOS: true, VaryLanguage: true,
+		VaryHeaders: []string{"X-Country"}, VaryCookies: []string{"currency"},
+		Groups: []proxy.CacheGroup{{Name: "Img", Paths: []string{"*.png"}, Minutes: 60}},
+	}
+	h = proxy.Normalize(h)
+	got := Driver{}.Render(id, h, proxy.Env{Version: "1.24.0"})
+	names := regexp.MustCompile(`\$(morcheh_[a-z0-9_]+)`).FindAllStringSubmatch(got, -1)
+	if len(names) < 10 {
+		t.Fatalf("too few variables found:\n%s", got)
+	}
+	for _, n := range names {
+		if len(n[1]) > 46 {
+			t.Errorf("%s is %d characters", n[1], len(n[1]))
+		}
+	}
+	if !strings.Contains(got, CacheDir+"/morcheh_01a1bb40b9e874d3ac12f55f7660205d ") {
+		t.Errorf("the cache folder keeps the whole id:\n%s", got)
 	}
 }
