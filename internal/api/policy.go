@@ -375,7 +375,8 @@ var policies = map[string]policy{
 	"delete-proxy":                       onProxy(auth.Owner),
 	"setup-proxy":                        onProxy(auth.Engineer),
 	"setup-proxy-geo":                    onProxy(auth.Engineer),
-	"setup-proxy-brotli":                 onProxy(auth.Engineer),
+	"setup-proxy-module":                 onProxy(auth.Engineer),
+	"list-proxy-host-waf-events":         onProxy(auth.Operator),
 	"proxy-action":                       onProxy(auth.Operator), // stop needs Engineer
 	"preview-proxy-host":                 onProxy(auth.Viewer),
 	"create-proxy-host":                  onProxy(auth.Engineer),

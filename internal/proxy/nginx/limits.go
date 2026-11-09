@@ -21,6 +21,8 @@ const (
 	GeoDB     = GeoDir + "/country.mmdb"
 	GeoConf   = GeoDir + "/country.conf"
 	GeoUpdate = GeoDir + "/update.sh"
+	// GeoStream loads the database for port forwards (in stream {}).
+	GeoStream = GeoDir + "/country.stream"
 	// countryVar is the visitor's country code, set by GeoConf.
 	countryVar = "$morcheh_country"
 	// acmePath matches Let's Encrypt's challenge requests, which no country
@@ -424,4 +426,71 @@ func (l *limits) extraPaths(h proxy.HostConfig) []string {
 		out = append(out, r.Path)
 	}
 	return out
+}
+
+// streamCountries is a port forward's country rule. stream {} has no if or
+// return, so the check picks where the connection goes: the real upstream,
+// or one that's never up (nginx closes the connection). The address lists
+// are part of it, like a site's.
+func streamCountries(w *writer, t string, h proxy.HostConfig) {
+	if len(h.Countries) == 0 {
+		return
+	}
+	yes, no := "a", "d"
+	other, unknown, listed := no, no, yes
+	if h.DefaultAccess == "allow" {
+		unknown = yes
+	}
+	if h.CountryMode == "deny" {
+		listed, other = no, unknown
+	}
+	target := t + "_main"
+	if h.Balance.On() {
+		target = poolName(t)
+	} else {
+		w.line("")
+		w.open("upstream %s", target)
+		w.line("server %s;", h.StreamTo)
+		w.close()
+	}
+	refuse := t + "_refuse"
+	w.line("")
+	w.open("upstream %s", refuse)
+	w.line("server 127.0.0.1:1 down;")
+	w.close()
+	w.line("")
+	w.line("# Who can connect: addresses first, then countries.")
+	list := entries(h)
+	if len(list) > 0 {
+		w.open("geo $%s_ip", t)
+		w.line("default n;")
+		for _, e := range list {
+			v := no
+			if e.allow {
+				v = yes
+			}
+			w.line("%s %s;", e.addr, v)
+		}
+		w.close()
+	}
+	w.open("map %s $%s_cc", countryVar, t)
+	w.line("default %s;", other)
+	w.line(`"" %s;`, unknown)
+	for _, c := range h.Countries {
+		w.line("%s %s;", c, listed)
+	}
+	w.close()
+	if len(list) > 0 {
+		w.open(`map "$%s_ip:$%s_cc" $%s_to`, t, t, t)
+		w.line("default %s;", target)
+		w.line(`"d:a" %s;`, refuse)
+		w.line(`"d:d" %s;`, refuse)
+		w.line(`"n:d" %s;`, refuse)
+		w.close()
+		return
+	}
+	w.open("map $%s_cc $%s_to", t, t)
+	w.line("default %s;", target)
+	w.line("d %s;", refuse)
+	w.close()
 }

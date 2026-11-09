@@ -45,8 +45,10 @@ func storageSite(w *writer, id, t string, h proxy.HostConfig, env proxy.Env, lim
 	paths(w, id, h, env, lim, main)
 	w.line("")
 	w.open("location /")
+	imageRoute(w, t, h)
 	main()
 	w.close()
+	imageServe(w, t, h, main)
 	w.line("")
 	if h.SPA {
 		w.open("location @%s_index", t)

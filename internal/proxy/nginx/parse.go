@@ -13,6 +13,8 @@ var (
 	streamBlockRe  = regexp.MustCompile(`(?m)^\s*stream\s*\{`)
 	brotliModuleRe = regexp.MustCompile(`(?m)^\s*load_module\s+\S*brotli`)
 	streamModuleRe = regexp.MustCompile(`(?m)^\s*load_module\s.*ngx_stream_module`)
+	wafModuleRe    = regexp.MustCompile(`(?m)^\s*load_module\s+\S*modsecurity`)
+	imageModuleRe  = regexp.MustCompile(`(?m)^\s*load_module\s+\S*image_filter`)
 )
 
 func (Driver) ParseInspect(out string) proxy.Inspection {
@@ -66,6 +68,12 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 	if brotliModuleRe.MatchString(dump) {
 		in.Brotli = true
 	}
+	waf, wafRules := wafModuleRe.MatchString(dump), false
+	in.ImageFilter = imageModuleRe.MatchString(dump)
+	in.StreamGeo = "off"
+	if strings.Contains(dump, "# configuration file "+GeoStream+":") {
+		in.StreamGeo = "ready"
+	}
 	for id, text := range splitMarked(sections["files"]+"\n", fileMark) {
 		in.Files[id] = text
 	}
@@ -84,6 +92,12 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 			in.AuthRequest = true
 		case "brotli":
 			in.Brotli = true
+		case "modsecurity":
+			waf = true
+		case "waf_rules":
+			wafRules = true
+		case "image_filter":
+			in.ImageFilter = true
 		case "cabundle":
 			in.CABundle = v
 		case "certbot":
@@ -93,6 +107,7 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 			}
 		}
 	}
+	in.WAF = waf && wafRules
 	return in
 }
 

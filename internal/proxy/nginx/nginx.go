@@ -63,6 +63,7 @@ const StreamBlock = marker + `: ports forwarded in the panel live in ` + Streams
 # Changes made here are overwritten.
 stream {
     log_format morcheh_stream '$remote_addr - - [$time_local] "$protocol" $status $bytes_sent "-" "-"';
+    include ` + GeoDir + `/*.stream;
     include ` + StreamsDir + `/*.conf;
 }
 `
@@ -148,6 +149,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	w.b.WriteString(lim.blocks.b.String())
 	cacheBlocks(w, id, t, h)
 	featureBlocks(w, t, h)
+	imageBlocks(w, t, h)
 	upstreamBlock(w, t, h)
 	mirrorBlocks(w, t, h)
 	names := strings.Join(h.Domains, " ")
@@ -233,6 +235,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	}
 
 	access(w, t, h)
+	wafServer(w, id, h)
 	lim.server(w, env)
 	serverTuning(w, h)
 	serverCache(w, t, h)
@@ -287,8 +290,10 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 		paths(w, id, h, env, lim, files)
 		w.line("")
 		w.open("location /")
+		imageRoute(w, t, h)
 		files()
 		w.close()
+		imageServe(w, t, h, func() { w.line("try_files $uri =404;") })
 	case proxy.TypeStorage:
 		storageSite(w, id, t, h, env, lim)
 	default:
@@ -300,6 +305,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 		paths(w, id, h, env, lim, func() { main(0) })
 		w.line("")
 		w.open("location /")
+		imageRoute(w, t, h)
 		if slow > 0 {
 			slowRoute(w, t, h)
 		}
@@ -308,6 +314,9 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 		if slow > 0 {
 			slowPass(w, t, h, env)
 		}
+		imageServe(w, t, h, func() {
+			proxyPass(w, t, h, env, h.Upstream, false, 0)
+		})
 	}
 	internalLocations(w, t, h)
 	mirrorLocations(w, t, h)
@@ -330,6 +339,7 @@ func renderStream(id string, h proxy.HostConfig, env proxy.Env) string {
 	lim := newLimits(t, h)
 	w.b.WriteString(lim.blocks.b.String())
 	upstreamBlock(w, t, h)
+	streamCountries(w, t, h)
 	w.line("")
 	w.open("server")
 	udp := ""
@@ -342,10 +352,17 @@ func renderStream(id string, h proxy.HostConfig, env proxy.Env) string {
 	}
 	w.line("access_log %s morcheh_stream;", AccessLog(id))
 	w.line("error_log %s;", ErrorLog(id))
-	access(w, t, h)
+	if len(h.Countries) == 0 {
+		access(w, t, h)
+	}
 	lim.server(w, env)
 	w.line("")
-	if h.Balance.On() {
+	if len(h.Countries) > 0 {
+		w.line("proxy_pass $%s_to;", t)
+		if h.Balance.On() {
+			retryLines(w, h.Balance, true)
+		}
+	} else if h.Balance.On() {
 		w.line("proxy_pass %s;", poolName(t))
 		retryLines(w, h.Balance, true)
 	} else {
@@ -571,6 +588,9 @@ M tls
 nginx -V 2>&1 | grep -q -- '--with-http_v3_module' && echo http3
 nginx -V 2>&1 | grep -q -- '--with-http_auth_request_module' && echo auth_request
 nginx -V 2>&1 | grep -qi -- 'brotli' && echo brotli
+nginx -V 2>&1 | grep -qi -- 'modsecurity' && echo modsecurity
+nginx -V 2>&1 | grep -qE -- '--with-http_image_filter_module( |$)' && echo image_filter
+[ -f ` + WAFConf + ` ] && echo waf_rules
 for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do [ -f "$f" ] && { echo "cabundle $f"; break; }; done
 command -v certbot >/dev/null 2>&1 && echo "certbot $(certbot --version 2>&1 | sed -n 's/^certbot \([0-9.]*\).*/\1/p' | head -n 1)"
 M end

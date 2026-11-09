@@ -65,6 +65,9 @@ func acmeLocation(w *writer, h proxy.HostConfig) {
 	w.open("location ^~ /.well-known/acme-challenge/")
 	w.line("allow all;")
 	openUp(w, h)
+	if h.WAF.On() {
+		w.line("modsecurity off;")
+	}
 	w.line("root %s;", proxy.ACMEWebroot)
 	w.line("default_type text/plain;")
 	w.line("try_files $uri =404;")

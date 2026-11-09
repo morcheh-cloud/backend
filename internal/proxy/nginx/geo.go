@@ -39,7 +39,7 @@ rm -f "$t.gz"
 if [ -z "$ok" ]; then rm -f "$t"; echo "Couldn't download the IP-to-country database from db-ip.com."; exit 1; fi
 chmod 644 "$t"
 mv -f "$t" "$dir/country.mmdb"
-if [ -f ` + GeoConf + ` ] && nginx -t >/dev/null 2>&1; then nginx -s reload >/dev/null 2>&1; fi
+if { [ -f ` + GeoConf + ` ] || [ -f ` + GeoStream + ` ]; } && nginx -t >/dev/null 2>&1; then nginx -s reload >/dev/null 2>&1; fi
 exit 0
 `
 
@@ -54,28 +54,43 @@ func geoPackage(pm string) string {
 	return ""
 }
 
-func (Driver) GeoScript(su proxy.Setup) string {
-	module := `echo "Add nginx's GeoIP2 module by hand: no package for it is known here."`
-	if pkg := geoPackage(su.PM); pkg != "" {
-		module = `echo "Adding nginx's GeoIP2 module…"
-if ! { ` + su.Install(pkg) + `; } >/dev/null 2>&1; then echo "The package manager couldn't add ` + pkg + `."; fi`
-	}
+// geoData installs the database's refresh script and downloads it.
+func geoData(su proxy.Setup) string {
 	fetcher := `echo "Neither curl nor wget is here: install one, then try again."; exit 1`
 	if su.PM != "" {
 		fetcher = `{ ` + su.Install("curl") + `; } >/dev/null 2>&1 || { echo "Couldn't install curl."; exit 1; }`
 	}
-	test := strconv.Itoa(proxy.ExitTestFailed)
-	return head + `command -v nginx >/dev/null 2>&1 || exit ` + strconv.Itoa(proxy.ExitNotInstalled) + `
-if ! out=$(nginx -t 2>&1); then printf '%s\n' "$out"; echo "nginx's configuration already has a problem; fix it first."; exit ` + test + `; fi
-` + module + `
-command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || ` + fetcher + `
+	return `command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || ` + fetcher + `
 mkdir -p ` + GeoDir + ` || exit 1
 cat > ` + GeoUpdate + ` <<'MORCHEH_GEO_UPDATE'
 ` + geoUpdate + `MORCHEH_GEO_UPDATE
 chmod 755 ` + GeoUpdate + `
 echo "Downloading the IP-to-country database (DB-IP Lite)…"
 ` + GeoUpdate + ` || exit 1
-cat > ` + GeoConf + ` <<'MORCHEH_GEO_CONF'
+`
+}
+
+// geoCronPart refreshes the database every month.
+const geoCronPart = `done_cron=
+for d in /etc/cron.monthly /etc/periodic/monthly; do
+  [ -d "$d" ] || continue
+  printf '#!/bin/sh\n` + marker + `\nexec ` + GeoUpdate + ` >/dev/null 2>&1\n' > "$d/morcheh-geoip"
+  chmod 755 "$d/morcheh-geoip"; done_cron=1; break
+done
+[ -n "$done_cron" ] || echo "No monthly cron folder here: run ` + GeoUpdate + ` now and then to keep the countries current."
+`
+
+func (Driver) GeoScript(su proxy.Setup) string {
+	module := `echo "Add nginx's GeoIP2 module by hand: no package for it is known here."`
+	if pkg := geoPackage(su.PM); pkg != "" {
+		module = `echo "Adding nginx's GeoIP2 module…"
+if ! { ` + su.Install(pkg) + `; } >/dev/null 2>&1; then echo "The package manager couldn't add ` + pkg + `."; fi`
+	}
+	test := strconv.Itoa(proxy.ExitTestFailed)
+	return head + `command -v nginx >/dev/null 2>&1 || exit ` + strconv.Itoa(proxy.ExitNotInstalled) + `
+if ! out=$(nginx -t 2>&1); then printf '%s\n' "$out"; echo "nginx's configuration already has a problem; fix it first."; exit ` + test + `; fi
+` + module + `
+` + geoData(su) + `cat > ` + GeoConf + ` <<'MORCHEH_GEO_CONF'
 ` + geoConf + `MORCHEH_GEO_CONF
 chmod 644 ` + GeoConf + `
 ` + writeInclude() + `if ! out=$(nginx -t 2>&1); then
@@ -84,14 +99,7 @@ chmod 644 ` + GeoConf + `
   echo "nginx couldn't load the GeoIP2 module, so country rules can't be used on this server."
   exit ` + test + `
 fi
-done_cron=
-for d in /etc/cron.monthly /etc/periodic/monthly; do
-  [ -d "$d" ] || continue
-  printf '#!/bin/sh\n` + marker + `\nexec ` + GeoUpdate + ` >/dev/null 2>&1\n' > "$d/morcheh-geoip"
-  chmod 755 "$d/morcheh-geoip"; done_cron=1; break
-done
-[ -n "$done_cron" ] || echo "No monthly cron folder here: run ` + GeoUpdate + ` now and then to keep the countries current."
-if running; then nginx -s reload || exit ` + strconv.Itoa(proxy.ExitReloadFailed) + `; fi
+` + geoCronPart + `if running; then nginx -s reload || exit ` + strconv.Itoa(proxy.ExitReloadFailed) + `; fi
 echo "Country lookup is ready."
 `
 }

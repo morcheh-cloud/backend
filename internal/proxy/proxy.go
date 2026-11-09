@@ -73,7 +73,8 @@ type HostConfig struct {
 	// empty it's deny when allow has entries (how sites saved before deny
 	// existed behave), else allow.
 	DefaultAccess string `json:"default_access,omitempty" enum:",allow,deny" doc:"Everyone else: allow or deny. Empty = deny when allow has entries, else allow"`
-	// Countries limit a site by where its visitors are (http sites only).
+	// Countries limit a site by where its visitors are (on a port forward
+	// they need the stream-geo module).
 	Countries   []string     `json:"countries,omitempty" maxItems:"250" doc:"Two-letter country codes (ISO 3166-1), like DE"`
 	CountryMode string       `json:"country_mode,omitempty" enum:",allow,deny" doc:"allow = only these countries get in; deny = these are refused"`
 	RateLimit   RateLimit    `json:"rate_limit" required:"false" doc:"Limits on requests, connections and speed"`
@@ -101,6 +102,8 @@ type HostConfig struct {
 	RequestID       bool        `json:"request_id,omitempty" doc:"Give every request an X-Request-ID, sent to the upstream and back to the visitor (sites)"`
 	Brotli          bool        `json:"brotli,omitempty" doc:"Also compress with Brotli when the server's nginx has the module (proxy, static, storage)"`
 	Mirror          Mirror      `json:"mirror" required:"false" doc:"A copy of requests sent to a test server (proxy; Capabilities.Mirror)"`
+	WAF             WAF         `json:"waf" required:"false" doc:"Web application firewall (proxy, static, storage; needs the waf module)"`
+	Images          Images      `json:"images" required:"false" doc:"Resize images on the fly (proxy, static, storage; needs the image-filter module)"`
 	CatchAll        bool        `json:"catch_all,omitempty" doc:"Answer every name no other site has, as the default server (404 hosts; one per proxy)"`
 	NotFoundCode    int         `json:"not_found_code,omitempty" enum:"0,404,410,444" doc:"What a 404 host answers; 444 closes the connection without an answer. 0 = 404"`
 
@@ -544,7 +547,7 @@ func Normalize(h HostConfig) HostConfig {
 		}
 	}
 	h.Countries = countries
-	if h.IsStream() || len(h.Countries) == 0 {
+	if len(h.Countries) == 0 {
 		h.Countries, h.CountryMode = nil, ""
 	} else if h.CountryMode == "" {
 		h.CountryMode = "deny"
@@ -569,6 +572,7 @@ func Normalize(h HostConfig) HostConfig {
 	h.Advanced = strings.TrimSpace(strings.ReplaceAll(h.Advanced, "\r\n", "\n"))
 	h = normalizeTuning(h)
 	h = normalizeFeatures(h)
+	h = normalizeModules(h)
 	h = normalizeBalance(h)
 	h = normalizeSites(h)
 	h.Custom = strings.TrimSpace(strings.ReplaceAll(h.Custom, "\r\n", "\n"))
@@ -853,6 +857,7 @@ func Validate(h HostConfig) []Problem {
 		seen[key] = true
 	}
 	validateFeatures(h, add)
+	validateModules(h, add)
 	validateBalance(h, add)
 	validateSites(h, add)
 	if msg := checkAdvanced(h.Advanced); msg != "" {
@@ -1167,7 +1172,7 @@ type Capabilities struct {
 	Headers      bool     `json:"headers"`
 	Paths        bool     `json:"paths"`
 	Allow        bool     `json:"allow" doc:"Lists of addresses let in or refused"`
-	Countries    bool     `json:"countries" doc:"Can let in or refuse visitors by country (sites only)"`
+	Countries    bool     `json:"countries" doc:"Can let in or refuse visitors by country (port forwards too, with the stream-geo module)"`
 	RateLimit    bool     `json:"rate_limit" doc:"Can limit requests, connections and speed"`
 	Advanced     bool     `json:"advanced" doc:"Raw directives in the proxy's own language"`
 	Cache        bool     `json:"cache" doc:"Takes cache (browsers, and the proxy's own cache for proxy sites) and can clear it"`
@@ -1197,6 +1202,8 @@ type Env struct {
 	// Brotli: the brotli module is loaded; CABundle is the system's CA file.
 	Brotli   bool
 	CABundle string
+	// WAF, ImageFilter: those modules are ready (see Status).
+	WAF, ImageFilter bool
 }
 
 // File is one host rendered for the server.
@@ -1304,6 +1311,12 @@ type Status struct {
 	AuthRequest bool
 	// Brotli: the brotli module is loaded.
 	Brotli bool
+	// WAF: the firewall module is loaded and its rules are in place;
+	// ImageFilter: the image resizing module is loaded.
+	WAF, ImageFilter bool
+	// StreamGeo: "ready" (port forwards can use countries), "off", or ""
+	// (the kind can't).
+	StreamGeo string
 	// CABundle is the system's CA file, for checking https upstreams.
 	CABundle string
 	// Released are the hand-written files Morcheh took default_server from
@@ -1396,9 +1409,17 @@ type Driver interface {
 	// GeoScript turns the IP-to-country lookup on: the module, the database
 	// and its monthly refresh.
 	GeoScript(s Setup) string
-	// BrotliScript adds the Brotli compression module from the system's
-	// packages (exit 0 when it's already loaded).
-	BrotliScript(s Setup) string
+	// ModuleScript adds one of Modules from the system's packages and sets
+	// it up (exit 0 when it's already there).
+	ModuleScript(module string, s Setup) string
+	// WAFEventsScript prints the newest firewall events of a host (at most
+	// limit); ParseWAFEvents reads them, newest first.
+	WAFEventsScript(hostID string, limit int) string
+	ParseWAFEvents(out string) []WAFEvent
+	// WAFLogScript reads a host's firewall log like AccessScript (output
+	// for ParseAccessOutput); ParseWAFLines reads its lines, newest first.
+	WAFLogScript(hostID string, r LogRead) string
+	ParseWAFLines(lines []string) []WAFEvent
 	// ApplyScript replaces every managed file with files, does what t says
 	// with the hand-written default server, tests the config and reloads,
 	// putting the old files (hand-written ones too) back on failure.

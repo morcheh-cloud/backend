@@ -57,10 +57,41 @@ func (h *proxyHandler) lock(id uuid.UUID) func() {
 const (
 	proxySetupKind  = "proxy-setup"
 	proxyGeoKind    = "proxy-geo"
-	proxyBrotliKind = "proxy-brotli"
 	proxyKeepChange = 50
 	proxyNoRoot     = "Managing the proxy needs root or sudo on this server"
 )
+
+// proxyModuleKinds are the job kinds that add a module to the proxy, by
+// module (proxy.Modules).
+var proxyModuleKinds = map[string]string{
+	proxy.ModuleBrotli:      "proxy-brotli",
+	proxy.ModuleWAF:         "proxy-waf",
+	proxy.ModuleImageFilter: "proxy-image-filter",
+	proxy.ModuleStreamGeo:   "proxy-stream-geo",
+}
+
+// proxyModuleNames name each module in job titles and errors.
+var proxyModuleNames = map[string]string{
+	proxy.ModuleBrotli:      "Brotli",
+	proxy.ModuleWAF:         "the web application firewall",
+	proxy.ModuleImageFilter: "image resizing",
+	proxy.ModuleStreamGeo:   "country rules for port forwards",
+}
+
+// moduleOfKind is the module a job kind adds, "" when it adds none.
+func moduleOfKind(kind string) string {
+	for m, k := range proxyModuleKinds {
+		if k == kind {
+			return m
+		}
+	}
+	return ""
+}
+
+// isSetupKind says whether a job kind changes the proxy's install.
+func isSetupKind(kind string) bool {
+	return kind == proxySetupKind || kind == proxyGeoKind || moduleOfKind(kind) != ""
+}
 
 // ---- Types ----
 
@@ -142,6 +173,9 @@ type ProxyInspection struct {
 	Geo          string              `json:"geo" enum:",ready,off" doc:"Country lookup for country rules: ready, off (not turned on yet). Empty when the kind can't"`
 	AuthRequest  bool                `json:"auth_request" doc:"Signing in through another service (forward auth) works"`
 	Brotli       bool                `json:"brotli" doc:"The Brotli module is loaded"`
+	WAF          bool                `json:"waf" doc:"The web application firewall works: ModSecurity is loaded and Morcheh's rule set is written"`
+	ImageFilter  bool                `json:"image_filter" doc:"The image filter module is loaded (resizing pictures)"`
+	StreamGeo    string              `json:"stream_geo" enum:",ready,off" doc:"Country rules for port forwards: ready, off (not turned on yet). Empty when the kind can't"`
 	CABundle     string              `json:"ca_bundle,omitempty" doc:"The system's CA file, used to check https upstreams"`
 	Released     []string            `json:"released_default" doc:"Hand-written files Morcheh took default_server from (ports 80 and 443) because one of its sites answers unknown names; they get it back when none does, or when the proxy is removed with its files"`
 }
@@ -401,6 +435,38 @@ func inspectWith(ctx context.Context, sh *rootShell, d proxy.Driver) (proxy.Insp
 	return d.ParseInspect(out), nil
 }
 
+// modulesMissing refuses to write sites that use something the proxy on
+// this server can't do yet (a module that isn't added).
+func modulesMissing(d proxy.Driver, in proxy.Inspection, hosts []sqlc.ProxyHost) error {
+	uses := func(fn func(c proxy.HostConfig) bool) bool {
+		return slices.ContainsFunc(hosts, func(x sqlc.ProxyHost) bool {
+			c := configOf(x)
+			return x.Enabled && !c.IsCustom() && fn(c)
+		})
+	}
+	stream := func(c proxy.HostConfig) bool { return c.Type == proxy.TypeStream }
+	switch {
+	case in.Geo != "ready" && uses(func(c proxy.HostConfig) bool { return !stream(c) && len(c.Countries) > 0 }):
+		return fieldError("body.config.countries", "Country lookup isn't on for this proxy yet: turn it on in Security first.", nil)
+	case in.StreamGeo != "ready" && uses(func(c proxy.HostConfig) bool { return stream(c) && len(c.Countries) > 0 }):
+		return fieldError("body.config.countries", "Country rules for port forwards aren't on for this proxy yet: turn them on first.", nil)
+	case !in.WAF && uses(func(c proxy.HostConfig) bool { return c.WAF.On() }):
+		return fieldError("body.config.waf.mode", d.Label()+" on this server has no web application firewall yet: add it first.", nil)
+	case !in.ImageFilter && uses(func(c proxy.HostConfig) bool { return c.Images.Enabled }):
+		return fieldError("body.config.images.enabled", d.Label()+" on this server has no image filter module yet: add it first.", nil)
+	}
+	return nil
+}
+
+// streamGeoState is the inspection's country lookup state for port
+// forwards, "" when the kind can't.
+func streamGeoState(d proxy.Driver, in proxy.Inspection) string {
+	if !d.Capabilities().Countries || !d.Capabilities().Streams || !in.Installed {
+		return ""
+	}
+	return in.StreamGeo
+}
+
 // geoState is the inspection's country lookup state, "" when the kind can't.
 func geoState(d proxy.Driver, in proxy.Inspection) string {
 	if !d.Capabilities().Countries || !in.Installed {
@@ -410,7 +476,10 @@ func geoState(d proxy.Driver, in proxy.Inspection) string {
 }
 
 func envOf(in proxy.Inspection) proxy.Env {
-	return proxy.Env{Version: in.Version, IPv6: in.IPv6, Brotli: in.Brotli, CABundle: in.CABundle}
+	return proxy.Env{
+		Version: in.Version, IPv6: in.IPv6, Brotli: in.Brotli, CABundle: in.CABundle,
+		WAF: in.WAF, ImageFilter: in.ImageFilter,
+	}
 }
 
 // configOf is a stored host's settings.
@@ -661,11 +730,8 @@ func (h *proxyHandler) write(ctx context.Context, rawID string, edit func(q *sql
 		if !in.Installed {
 			return huma.Error409Conflict(d.Label() + " isn't installed on this server. Set it up first.")
 		}
-		if in.Geo != "ready" && slices.ContainsFunc(hosts, func(x sqlc.ProxyHost) bool {
-			c := configOf(x)
-			return x.Enabled && !c.IsCustom() && len(c.Countries) > 0
-		}) {
-			return fieldError("body.config.countries", "Country lookup isn't on for this proxy yet: turn it on in Security first.", nil)
+		if err := modulesMissing(d, in, hosts); err != nil {
+			return err
 		}
 		if !in.AuthRequest && slices.ContainsFunc(hosts, func(x sqlc.ProxyHost) bool {
 			c := configOf(x)
@@ -765,8 +831,8 @@ type proxySetupParams struct {
 }
 
 // submitSetup starts kind proxySetupKind (install and wire up),
-// proxyGeoKind (turn the country lookup on) or proxyBrotliKind (add the
-// Brotli module); one at a time per proxy.
+// proxyGeoKind (turn the country lookup on) or one of proxyModuleKinds (add
+// a module); one at a time per proxy.
 func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*JobOutput, error) {
 	r, d, err := h.getProxy(ctx, rawID)
 	if err != nil {
@@ -787,7 +853,7 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*Jo
 		return nil, internalError(err)
 	}
 	if slices.ContainsFunc(list, func(j sqlc.Job) bool {
-		return j.Kind == proxySetupKind || j.Kind == proxyGeoKind || j.Kind == proxyBrotliKind
+		return isSetupKind(j.Kind)
 	}) {
 		return nil, huma.Error409Conflict(d.Label() + " is already being set up on this server")
 	}
@@ -798,8 +864,8 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*Jo
 		}
 		title = "Turn on country lookup on " + r.ServerName
 	}
-	if kind == proxyBrotliKind {
-		title = "Add Brotli to " + d.Label() + " on " + r.ServerName
+	if m := moduleOfKind(kind); m != "" {
+		title = "Add " + proxyModuleNames[m] + " to " + d.Label() + " on " + r.ServerName
 	}
 	return submit(ctx, h.s.jobs, jobs.Spec{
 		Kind: kind, Title: title,
@@ -810,10 +876,11 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*Jo
 // runSetup installs the proxy when it's missing (the package manager can't be
 // stopped half way, so the job is locked then), wires in Morcheh's folder,
 // starts it and writes the panel's sites. proxyGeoKind turns the country
-// lookup on instead; proxyBrotliKind adds the Brotli module, then writes the
-// sites again so those with Brotli on start using it.
+// lookup on instead; a module kind adds that module, then writes the sites
+// again so those using it start to.
 func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) (any, error) {
-	geo, brotli := kind == proxyGeoKind, kind == proxyBrotliKind
+	geo, module := kind == proxyGeoKind, moduleOfKind(kind)
+	mod := module != ""
 	var p proxySetupParams
 	if err := t.Decode(&p); err != nil {
 		return nil, err
@@ -851,8 +918,8 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) 
 		switch {
 		case geo:
 			script = d.GeoScript(su)
-		case brotli:
-			script = d.BrotliScript(su)
+		case mod:
+			script = d.ModuleScript(module, su)
 		}
 		res, err := sh.execTo(ctx, script, packageTimeout, lines)
 		lines.flush()
@@ -871,14 +938,14 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) 
 			return fmt.Errorf("Turning on country lookup failed (exit %d): %s", res.code, last)
 		case geo:
 			return nil
-		case brotli && res.code == proxy.ExitNotInstalled:
+		case mod && res.code == proxy.ExitNotInstalled:
 			return fmt.Errorf("%s isn't installed on this server. Set it up first", d.Label())
-		case brotli && res.code == proxy.ExitTestFailed:
-			return fmt.Errorf("Brotli couldn't be added: %s", last)
-		case brotli && res.code == proxy.ExitReloadFailed:
+		case mod && res.code == proxy.ExitTestFailed:
+			return fmt.Errorf("Adding %s didn't work: %s", proxyModuleNames[module], last)
+		case mod && res.code == proxy.ExitReloadFailed:
 			return fmt.Errorf("%s didn't reload: %s", d.Label(), last)
-		case brotli && res.code != 0:
-			return fmt.Errorf("Adding Brotli failed: %s", last)
+		case mod && res.code != 0:
+			return fmt.Errorf("Adding %s failed: %s", proxyModuleNames[module], last)
 		case res.code == proxy.ExitTestFailed:
 			return fmt.Errorf("%s's configuration has a problem, so it wasn't started: %s", d.Label(), last)
 		case res.code == proxy.ExitReloadFailed:
@@ -1098,6 +1165,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			Streams: ins.Streams, Geo: geoState(d, *ins),
 			HTTP3: ins.HTTP3, Certbot: ins.Certbot,
 			AuthRequest: ins.AuthRequest, Brotli: ins.Brotli, CABundle: ins.CABundle,
+			WAF: ins.WAF, ImageFilter: ins.ImageFilter, StreamGeo: streamGeoState(d, *ins),
 			Released: released,
 		}}, nil
 	})
@@ -1159,15 +1227,81 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	h.s.jobs.Handle(proxyGeoKind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, proxyGeoKind) })
 
 	huma.Register(api, huma.Operation{
-		OperationID: "setup-proxy-brotli", Method: http.MethodPost, Path: base + "/brotli",
-		Summary: "Add the Brotli compression module",
-		Description: "Installs nginx's Brotli module from the system's packages (Debian/Ubuntu libnginx-mod-http-brotli-filter, Alpine nginx-mod-http-brotli), " +
-			"reloads, and writes the panel's sites again. Runs as a background job (kind `" + proxyBrotliKind + "`); 409 when a setup is already running.",
+		OperationID: "setup-proxy-module", Method: http.MethodPost, Path: base + "/modules/{module}",
+		Summary: "Add a module to the proxy",
+		Description: "Installs one of nginx's extra modules from the system's packages, reloads, and writes the panel's sites again: " +
+			"`brotli` (Brotli compression), `waf` (ModSecurity with the OWASP Core Rule Set; Debian/Ubuntu), " +
+			"`image-filter` (resizing pictures) or `stream-geo` (country rules for port forwards; also downloads the country database). " +
+			"Runs as a background job (kind `proxy-<module>`); 409 when a setup is already running.",
 		Tags: tags, DefaultStatus: http.StatusAccepted,
-	}, func(ctx context.Context, in *ProxyIDPath) (*JobOutput, error) {
-		return h.submitSetup(ctx, in.ID, proxyBrotliKind)
+	}, func(ctx context.Context, in *struct {
+		ID     string `path:"id" format:"uuid"`
+		Module string `path:"module" enum:"brotli,waf,image-filter,stream-geo"`
+	}) (*JobOutput, error) {
+		if in.Module == proxy.ModuleStreamGeo {
+			_, d, err := h.getProxy(ctx, in.ID)
+			if err != nil {
+				return nil, err
+			}
+			if caps := d.Capabilities(); !caps.Countries || !caps.Streams {
+				return nil, huma.Error422UnprocessableEntity(d.Label() + " can't limit port forwards by country")
+			}
+		}
+		return h.submitSetup(ctx, in.ID, proxyModuleKinds[in.Module])
 	})
-	h.s.jobs.Handle(proxyBrotliKind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, proxyBrotliKind) })
+	for _, kind := range proxyModuleKinds {
+		h.s.jobs.Handle(kind, func(ctx context.Context, t *jobs.Task) (any, error) { return h.runSetup(ctx, t, kind) })
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-proxy-host-waf-events", Method: http.MethodGet, Path: base + "/hosts/{host}/waf-events",
+		Summary:     "Requests the site's firewall flagged, newest first",
+		Description: "Read from the site's ModSecurity audit log on the server (only requests that matched a rule). Empty when the firewall is off or nothing matched yet.",
+		Tags:        tags,
+	}, func(ctx context.Context, in *struct {
+		ID    string `path:"id" format:"uuid"`
+		Host  string `path:"host" format:"uuid"`
+		Limit int    `query:"limit" minimum:"1" maximum:"500" default:"100"`
+	}) (*struct {
+		Body struct {
+			Events []proxy.WAFEvent `json:"events"`
+		}
+	}, error) {
+		r, d, err := h.getProxy(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := h.s.q.GetProxyHost(ctx, sqlc.GetProxyHostParams{ID: uuid.MustParse(in.Host), ProxyID: r.Proxy.ID}); isNotFound(err) {
+			return nil, huma.Error404NotFound("site not found")
+		} else if err != nil {
+			return nil, internalError(err)
+		}
+		out := &struct {
+			Body struct {
+				Events []proxy.WAFEvent `json:"events"`
+			}
+		}{}
+		server := r.Proxy.ServerID.String()
+		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
+			sh, err := h.root(ctx, server, c)
+			if err != nil {
+				return err
+			}
+			text, err := sh.run(ctx, d.WAFEventsScript(in.Host, in.Limit))
+			if err != nil {
+				return err
+			}
+			out.Body.Events = d.ParseWAFEvents(text)
+			return nil
+		})
+		if err != nil {
+			return nil, toProblem(err)
+		}
+		if out.Body.Events == nil {
+			out.Body.Events = []proxy.WAFEvent{}
+		}
+		return out, nil
+	})
 
 	huma.Register(api, huma.Operation{
 		OperationID: "proxy-action", Method: http.MethodPost, Path: base + "/action",

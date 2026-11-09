@@ -23,11 +23,24 @@ func (Driver) AccessScript(hostID string, r proxy.LogRead) string {
 	if !hostIDRe.MatchString(hostID) {
 		return "echo @@morcheh-nolog\n"
 	}
+	return logScript(AccessLog(hostID), r)
+}
+
+// WAFLogScript reads a host's firewall log (one JSON record a line) the way
+// AccessScript reads its access log; ParseAccessOutput reads the output and
+// ParseWAFLines its lines.
+func (Driver) WAFLogScript(hostID string, r proxy.LogRead) string {
+	if !hostIDRe.MatchString(hostID) {
+		return "echo @@morcheh-nolog\n"
+	}
+	return logScript(WAFLog(hostID), r)
+}
+
+func logScript(f string, r proxy.LogRead) string {
 	limit := r.Cap
 	if limit <= 0 || limit > accessReadMax {
 		limit = accessReadMax
 	}
-	f := AccessLog(hostID)
 	var b strings.Builder
 	fmt.Fprintf(&b, "f=%s\n", f)
 	b.WriteString(`if [ ! -f "$f" ]; then echo @@morcheh-nolog; exit 0; fi
