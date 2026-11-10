@@ -203,7 +203,7 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 		return auth.Owner, nil
 	}
 
-	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindBackupPlan: "backup plan", kindBackup: "backup", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run", kindDNSServer: "DNS server", kindScript: "script", kindProxy: "proxy"}[pol.kind]
+	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindBackupPlan: "backup plan", kindBackup: "backup", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run", kindDNSServer: "DNS server", kindScript: "script", kindProxy: "proxy", kindSoftwareRecipe: "application", kindSoftwareInstall: "application"}[pol.kind]
 	missing := &denied{http.StatusNotFound, noun + " not found"}
 	id, err := uuid.Parse(rawID)
 	if err != nil {
@@ -290,6 +290,24 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 			return auth.None, err
 		}
 		level = acc.ServerLevel(r.WorkspaceID, r.ID)
+	case kindSoftwareRecipe:
+		ws, err := a.q.GetSoftwareRecipeWorkspace(ctx, id)
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		level = acc.WorkspaceLevel(ws)
+	case kindSoftwareInstall:
+		r, err := a.q.GetSoftwareInstallServer(ctx, id)
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		level = acc.ServerLevel(r.WorkspaceID, r.ServerID)
 	case kindScript:
 		ws, err := a.q.GetScriptWorkspace(ctx, id)
 		if isNotFound(err) {

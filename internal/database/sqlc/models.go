@@ -601,6 +601,92 @@ type Session struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type SoftwareHost struct {
+	ServerID       uuid.UUID `json:"server_id"`
+	Pm             string    `json:"pm"`
+	Docker         string    `json:"docker"`
+	Compose        string    `json:"compose"`
+	Upgradable     int32     `json:"upgradable"`
+	Security       int32     `json:"security"`
+	RebootRequired bool      `json:"reboot_required"`
+	Packages       []byte    `json:"packages"`
+	Error          string    `json:"error"`
+	CheckedAt      time.Time `json:"checked_at"`
+}
+
+type SoftwareInstall struct {
+	ID              uuid.UUID  `json:"id"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	ServerID        uuid.UUID  `json:"server_id"`
+	RecipeID        string     `json:"recipe_id"`
+	Name            string     `json:"name"`
+	Kind            string     `json:"kind"`
+	Origin          string     `json:"origin"`
+	Status          string     `json:"status"`
+	Version         string     `json:"version"`
+	Latest          string     `json:"latest"`
+	UpdateAvailable bool       `json:"update_available"`
+	State           string     `json:"state"`
+	Params          []byte     `json:"params"`
+	Secrets         []byte     `json:"secrets"`
+	Dir             string     `json:"dir"`
+	Project         string     `json:"project"`
+	Images          []byte     `json:"images"`
+	CanRollback     bool       `json:"can_rollback"`
+	Pinned          bool       `json:"pinned"`
+	Error           string     `json:"error"`
+	CheckedAt       *time.Time `json:"checked_at"`
+	InstalledAt     *time.Time `json:"installed_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type SoftwareRecipe struct {
+	ID          uuid.UUID  `json:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	Slug        string     `json:"slug"`
+	Spec        []byte     `json:"spec"`
+	CreatedBy   *uuid.UUID `json:"created_by"`
+	UpdatedBy   *uuid.UUID `json:"updated_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type SoftwareRun struct {
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	Action        string     `json:"action"`
+	Name          string     `json:"name"`
+	Options       []byte     `json:"options"`
+	Params        []byte     `json:"params"`
+	Secrets       []byte     `json:"secrets"`
+	State         string     `json:"state"`
+	Error         string     `json:"error"`
+	JobID         *uuid.UUID `json:"job_id"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+}
+
+type SoftwareRunTarget struct {
+	RunID         uuid.UUID  `json:"run_id"`
+	Position      int32      `json:"position"`
+	ServerID      *uuid.UUID `json:"server_id"`
+	ServerName    string     `json:"server_name"`
+	RecipeID      string     `json:"recipe_id"`
+	RecipeName    string     `json:"recipe_name"`
+	State         string     `json:"state"`
+	Error         string     `json:"error"`
+	Output        string     `json:"output"`
+	Truncated     bool       `json:"truncated"`
+	VersionBefore string     `json:"version_before"`
+	VersionAfter  string     `json:"version_after"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+}
+
 type Storage struct {
 	ID            uuid.UUID  `json:"id"`
 	Name          string     `json:"name"`

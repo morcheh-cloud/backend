@@ -1,0 +1,50 @@
+id: vaultwarden
+name: Vaultwarden
+summary: Password manager server compatible with Bitwarden apps.
+kind: docker
+category: Security
+icon: key-round
+logo: vaultwarden
+website: https://github.com/dani-garcia/vaultwarden
+requires: [docker]
+params:
+  - name: PORT
+    label: Port
+    type: port
+    default: "8222"
+  - name: DOMAIN
+    label: Address
+    help: The https address people will use, like https://vault.example.com. Bitwarden apps need HTTPS.
+    type: text
+    default: http://localhost
+  - name: ADMIN_TOKEN
+    label: Admin page token
+    help: Opens /admin. Leave empty to have one made.
+    type: password
+    generate: hex
+  - name: SIGNUPS
+    label: Anyone can sign up
+    type: bool
+    default: "true"
+links:
+  - label: Vaultwarden
+    port: PORT
+  - label: Admin page
+    port: PORT
+    path: /admin
+notes: Put it behind Reverse proxy with HTTPS; turn sign-ups off once your people have accounts.
+compose: |
+  services:
+    vaultwarden:
+      image: vaultwarden/server:latest
+      restart: unless-stopped
+      environment:
+        DOMAIN: ${DOMAIN}
+        ADMIN_TOKEN: ${ADMIN_TOKEN}
+        SIGNUPS_ALLOWED: ${SIGNUPS}
+      ports:
+        - "${PORT}:80"
+      volumes:
+        - data:/data
+  volumes:
+    data:

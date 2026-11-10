@@ -35,6 +35,11 @@ const (
 	kindScript
 	// The server level on the server the proxy in {id} runs on.
 	kindProxy
+	// A workspace level, on the workspace of the custom application recipe
+	// in {id}.
+	kindSoftwareRecipe
+	// The server level on the server of the installed application in {id}.
+	kindSoftwareInstall
 )
 
 type policy struct {
@@ -56,6 +61,12 @@ func onScheduleRun(l auth.Level) policy { return policy{kindScheduleRun, l} }
 func onDNSServer(l auth.Level) policy   { return policy{kindDNSServer, l} }
 func onScript(l auth.Level) policy      { return policy{kindScript, l} }
 func onProxy(l auth.Level) policy       { return policy{kindProxy, l} }
+func onSoftwareRecipe(l auth.Level) policy {
+	return policy{kindSoftwareRecipe, l}
+}
+func onSoftwareInstall(l auth.Level) policy {
+	return policy{kindSoftwareInstall, l}
+}
 
 var (
 	public  = policy{kind: kindPublic}
@@ -271,6 +282,31 @@ var policies = map[string]policy{
 	"get-script-run":          active,
 	"cancel-script-run":       active,
 	"delete-script-run":       active,
+
+	// Applications. Workspace lists filter by server; a run is checked
+	// against every server it touches (Engineer to start, Owner to remove
+	// software; Operator to read it).
+	"list-software-catalog":   onWorkspace(auth.Viewer),
+	"create-software-recipe":  onWorkspace(auth.Engineer),
+	"update-software-recipe":  onSoftwareRecipe(auth.Engineer),
+	"delete-software-recipe":  onSoftwareRecipe(auth.Engineer),
+	"list-software-installs":  active,
+	"list-server-software":    onServer(auth.Viewer),
+	"get-software-install":    onSoftwareInstall(auth.Viewer),
+	"reveal-software-secrets": onSoftwareInstall(auth.Owner),
+	"forget-software-install": onSoftwareInstall(auth.Engineer),
+	"software-install-action": onSoftwareInstall(auth.Operator),
+	"software-install-logs":   onSoftwareInstall(auth.Operator),
+	"get-software-compose":    onSoftwareInstall(auth.Engineer),
+	"save-software-compose":   onSoftwareInstall(auth.Engineer),
+	"software-preflight":      active,
+	"start-software-run":      active,
+	"list-software-runs":      onWorkspace(auth.Operator),
+	"get-software-run":        active,
+	"cancel-software-run":     active,
+	"delete-software-run":     active,
+	"scan-server-software":    onServer(auth.Operator),
+	"scan-workspace-software": active,
 
 	// Terminal recordings. Lists filter to the caller's own below Owner; one
 	// recording is the caller's own or an Owner's (checked inside).

@@ -1,0 +1,39 @@
+id: gitea
+name: Gitea
+summary: Lightweight Git hosting with issues and pull requests.
+kind: docker
+category: Developer tools
+icon: git-fork
+logo: gitea
+website: https://about.gitea.com
+requires: [docker]
+params:
+  - name: PORT
+    label: Web port
+    type: port
+    default: "3000"
+  - name: SSH_PORT
+    label: SSH port
+    help: For git over SSH. Not 22, which the server's own SSH uses.
+    type: port
+    default: "2222"
+links:
+  - label: Gitea
+    port: PORT
+notes: Open it to finish the setup (the defaults use SQLite inside the app's volume).
+compose: |
+  services:
+    gitea:
+      image: gitea/gitea:latest
+      restart: unless-stopped
+      environment:
+        USER_UID: "1000"
+        USER_GID: "1000"
+        GITEA__server__SSH_PORT: ${SSH_PORT}
+      ports:
+        - "${PORT}:3000"
+        - "${SSH_PORT}:22"
+      volumes:
+        - data:/data
+  volumes:
+    data:

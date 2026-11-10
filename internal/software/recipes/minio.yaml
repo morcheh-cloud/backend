@@ -1,0 +1,49 @@
+id: minio
+name: MinIO
+summary: S3-compatible object storage.
+kind: docker
+category: Storage
+icon: database-backup
+logo: minio
+website: https://min.io
+requires: [docker]
+params:
+  - name: API_PORT
+    label: S3 API port
+    type: port
+    default: "9000"
+  - name: CONSOLE_PORT
+    label: Console port
+    type: port
+    default: "9001"
+  - name: ROOT_USER
+    label: Root user
+    type: text
+    default: admin
+  - name: ROOT_PASSWORD
+    label: Root password
+    help: At least 8 characters. Leave empty to have one made.
+    type: password
+    generate: password
+links:
+  - label: Console
+    port: CONSOLE_PORT
+  - label: S3 API
+    port: API_PORT
+notes: Add it to Morcheh under Storage (S3, MinIO preset) with the root user and password, or a key made in the console.
+compose: |
+  services:
+    minio:
+      image: minio/minio:latest
+      restart: unless-stopped
+      command: server /data --console-address :9001
+      environment:
+        MINIO_ROOT_USER: ${ROOT_USER}
+        MINIO_ROOT_PASSWORD: ${ROOT_PASSWORD}
+      ports:
+        - "${API_PORT}:9000"
+        - "${CONSOLE_PORT}:9001"
+      volumes:
+        - data:/data
+  volumes:
+    data:

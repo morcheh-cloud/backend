@@ -1,0 +1,35 @@
+id: redis
+name: Redis
+summary: In-memory key-value store, with a password and saved to disk.
+kind: docker
+category: Databases
+icon: layers
+logo: redis
+website: https://redis.io
+requires: [docker]
+params:
+  - name: BIND
+    label: Listen on
+    type: select
+    options: ["127.0.0.1", "0.0.0.0"]
+    default: "127.0.0.1"
+  - name: PORT
+    label: Port
+    type: port
+    default: "6379"
+  - name: PASSWORD
+    label: Password
+    type: password
+    generate: password
+compose: |
+  services:
+    redis:
+      image: redis:8
+      restart: unless-stopped
+      command: redis-server --requirepass "${PASSWORD}" --appendonly yes
+      ports:
+        - "${BIND}:${PORT}:6379"
+      volumes:
+        - data:/data
+  volumes:
+    data:

@@ -1,0 +1,38 @@
+id: mariadb
+name: MariaDB
+summary: MySQL-compatible database in a container.
+kind: docker
+category: Databases
+icon: database
+logo: mariadb
+website: https://mariadb.org
+requires: [docker]
+params:
+  - name: BIND
+    label: Listen on
+    help: 127.0.0.1 keeps it reachable only from the server itself. 0.0.0.0 opens it to the network.
+    type: select
+    options: ["127.0.0.1", "0.0.0.0"]
+    default: "127.0.0.1"
+  - name: PORT
+    label: Port
+    type: port
+    default: "3306"
+  - name: ROOT_PASSWORD
+    label: root password
+    type: password
+    generate: password
+notes: Add it under Databases (through this server, 127.0.0.1) to monitor and back it up.
+compose: |
+  services:
+    mariadb:
+      image: mariadb:11
+      restart: unless-stopped
+      environment:
+        MARIADB_ROOT_PASSWORD: ${ROOT_PASSWORD}
+      ports:
+        - "${BIND}:${PORT}:3306"
+      volumes:
+        - data:/var/lib/mysql
+  volumes:
+    data:

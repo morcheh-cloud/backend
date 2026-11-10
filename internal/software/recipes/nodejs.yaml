@@ -1,0 +1,27 @@
+id: nodejs
+name: Node.js
+summary: JavaScript runtime with npm, from NodeSource.
+kind: package
+category: Developer tools
+icon: hexagon
+logo: nodedotjs
+website: https://nodejs.org
+os: [apt, dnf, yum]
+params:
+  - name: NODE_MAJOR
+    label: Version
+    help: The major version to install. Updates stay on it.
+    type: select
+    options: ["20", "22", "24"]
+    default: "22"
+packages:
+  default: [nodejs]
+version: node --version | sed 's/^v//'
+install: |
+  command -v curl >/dev/null 2>&1 || { pkg_refresh; pkg_install curl; }
+  case "$PM" in
+    apt) curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - ;;
+    *) curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | bash - ;;
+  esac
+  pkg_install nodejs
+  node --version

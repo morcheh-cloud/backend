@@ -35,12 +35,40 @@ import (
 // ScheduleTask holds what the action needs; only the action's own field is
 // set. sync, archive and fetch use the schedule's source and destinations.
 type ScheduleTask struct {
-	Script  *ScheduleScript  `json:"script,omitempty" doc:"action script"`
-	Ansible *ScheduleAnsible `json:"ansible,omitempty" doc:"action ansible"`
-	Service *ScheduleService `json:"service,omitempty" doc:"action service"`
-	Reboot  *ScheduleReboot  `json:"reboot,omitempty" doc:"action reboot"`
-	Fetch   *ScheduleFetch   `json:"fetch,omitempty" doc:"action fetch: what to download into the destination folders"`
-	Verify  *ScheduleVerify  `json:"verify,omitempty" doc:"action verify-backup"`
+	Script   *ScheduleScript   `json:"script,omitempty" doc:"action script"`
+	Ansible  *ScheduleAnsible  `json:"ansible,omitempty" doc:"action ansible"`
+	Service  *ScheduleService  `json:"service,omitempty" doc:"action service"`
+	Reboot   *ScheduleReboot   `json:"reboot,omitempty" doc:"action reboot"`
+	Fetch    *ScheduleFetch    `json:"fetch,omitempty" doc:"action fetch: what to download into the destination folders"`
+	Verify   *ScheduleVerify   `json:"verify,omitempty" doc:"action verify-backup"`
+	Software *ScheduleSoftware `json:"software,omitempty" doc:"action software-update"`
+}
+
+// ScheduleSoftware updates applications on servers, as the Updates tab of
+// Applications does.
+type ScheduleSoftware struct {
+	ServerIDs    []string `json:"server_ids" minItems:"1" maxItems:"200" format:"uuid"`
+	Recipes      []string `json:"recipes,omitempty" maxItems:"100" doc:"Applications to update; empty = every one with an update, read at each run"`
+	System       bool     `json:"system,omitempty" doc:"Also upgrade the system packages"`
+	SecurityOnly bool     `json:"security_only,omitempty" doc:"System packages: only security updates (apt servers)"`
+	Parallel     int      `json:"parallel,omitempty" minimum:"0" maximum:"20" doc:"Servers at a time; default 1"`
+	KeepGoing    bool     `json:"keep_going,omitempty" doc:"Carry on with the other servers after one fails"`
+}
+
+// body is the run it starts.
+func (t ScheduleSoftware) body() startSoftwareRunBody {
+	recipes := slices.Clone(t.Recipes)
+	if len(recipes) == 0 {
+		recipes = []string{"*"}
+	}
+	if t.System && !slices.Contains(recipes, "system") {
+		recipes = append(recipes, "system")
+	}
+	stop := !t.KeepGoing
+	return startSoftwareRunBody{
+		Action: "update", ServerIDs: t.ServerIDs, Recipes: recipes,
+		Options: SoftwareRunOptions{Parallel: t.Parallel, StopOnFailure: &stop, SecurityOnly: t.SecurityOnly},
+	}
 }
 
 // ScheduleScript is a saved script or a command, as when starting a run.
@@ -113,6 +141,8 @@ func taskRefs(action string, t ScheduleTask) []ScheduleRef {
 		add("server", t.Reboot.ServerIDs...)
 	case action == "verify-backup" && t.Verify != nil:
 		add("database", t.Verify.DatabaseID)
+	case action == "software-update" && t.Software != nil:
+		add("server", t.Software.ServerIDs...)
 	}
 	return refs
 }
@@ -447,6 +477,25 @@ func (k *scheduleChecker) script(b ScheduleBody) error {
 	return nil
 }
 
+func (k *scheduleChecker) software(b ScheduleBody) error {
+	t := b.Task.Software
+	if t == nil || len(t.ServerIDs) == 0 {
+		return fieldError("body.task.software.server_ids", "Choose at least one server.", nil)
+	}
+	ids, err := k.servers("body.task.software.server_ids", t.ServerIDs, auth.Engineer)
+	if err != nil {
+		return err
+	}
+	out := *t
+	out.ServerIDs = ids
+	out.Recipes = slices.DeleteFunc(slices.Clone(t.Recipes), func(id string) bool { return id == "*" })
+	if _, err := k.h.soft.plan(k.ctx, out.body(), k.ws); err != nil {
+		return within("body.task.software", err)
+	}
+	k.c.task.Software = &out
+	return nil
+}
+
 func (k *scheduleChecker) playbook(b ScheduleBody) error {
 	t := b.Task.Ansible
 	if t == nil || t.PlaybookID == "" {
@@ -620,6 +669,8 @@ func (h *scheduleHandler) runTask(ctx context.Context, t *jobs.Task) (any, error
 		return r.archive(ctx)
 	case "verify-backup":
 		return r.verify(ctx)
+	case "software-update":
+		return r.software(ctx)
 	}
 	return fail(fmt.Errorf("Unknown action %q.", r.plan.Action))
 }
@@ -739,6 +790,37 @@ func (r *taskRun) script(ctx context.Context) (any, error) {
 	r.t.Logf("Running %s on %d server(s)", plan.src.Name, len(plan.ids))
 	_, execErr := r.h.scripts.execute(ctx, r.t, run.ID)
 	done, err := r.h.q.GetScriptRun(context.WithoutCancel(ctx), run.ID)
+	if err != nil {
+		return r.ended(ctx, jobs.Failed, "", execErr)
+	}
+	return r.ended(ctx, done.State, done.Error, execErr)
+}
+
+func (r *taskRun) software(ctx context.Context) (any, error) {
+	t := r.plan.Task.Software
+	if t == nil {
+		return r.finish(ctx, "It has no servers.")
+	}
+	plan, err := r.h.soft.plan(ctx, t.body(), r.ws)
+	if err != nil {
+		return r.finish(ctx, r.asWho(err))
+	}
+	if len(plan.steps) == 0 {
+		r.t.Logf("%s", plan.nothing)
+		return r.h.closeRun(ctx, r.id, jobs.Succeeded, "", r.results, 0, 0)
+	}
+	run, err := r.h.soft.create(ctx, plan)
+	if err != nil {
+		return r.finish(ctx, problemText(err))
+	}
+	jobID := r.t.ID
+	if err := r.h.q.SetSoftwareRunJob(ctx, sqlc.SetSoftwareRunJobParams{JobID: &jobID, ID: run.ID}); err != nil {
+		slog.Warn("link a software run to its job", "run", run.ID, "error", err)
+	}
+	r.link("software-run", run.ID)
+	r.t.Logf("%s (%d step(s))", plan.name, len(plan.steps))
+	_, execErr := r.h.soft.execute(ctx, r.t, run.ID)
+	done, err := r.h.q.GetSoftwareRun(context.WithoutCancel(ctx), run.ID)
 	if err != nil {
 		return r.ended(ctx, jobs.Failed, "", execErr)
 	}

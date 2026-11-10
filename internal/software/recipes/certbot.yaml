@@ -1,0 +1,13 @@
+id: certbot
+name: Certbot
+summary: Free HTTPS certificates from Let's Encrypt.
+kind: package
+category: Security
+icon: shield-check
+website: https://certbot.eff.org
+packages:
+  default: [certbot]
+version: certbot --version 2>&1 | awk '/^certbot /{print $2; exit}'
+notes: |
+  Get a certificate with certbot certonly --standalone -d example.com
+  (port 80 must be free), or use Reverse proxy › HTTPS in Morcheh.

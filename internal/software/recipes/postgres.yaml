@@ -1,0 +1,38 @@
+id: postgres
+name: PostgreSQL
+summary: The PostgreSQL database in a container.
+kind: docker
+category: Databases
+icon: database
+logo: postgresql
+website: https://www.postgresql.org
+requires: [docker]
+params:
+  - name: BIND
+    label: Listen on
+    help: 127.0.0.1 keeps it reachable only from the server itself (Morcheh reaches it over SSH). 0.0.0.0 opens it to the network.
+    type: select
+    options: ["127.0.0.1", "0.0.0.0"]
+    default: "127.0.0.1"
+  - name: PORT
+    label: Port
+    type: port
+    default: "5432"
+  - name: POSTGRES_PASSWORD
+    label: postgres password
+    type: password
+    generate: password
+notes: Add it under Databases (through this server, 127.0.0.1) to monitor and back it up.
+compose: |
+  services:
+    postgres:
+      image: postgres:17
+      restart: unless-stopped
+      environment:
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      ports:
+        - "${BIND}:${PORT}:5432"
+      volumes:
+        - data:/var/lib/postgresql/data
+  volumes:
+    data:

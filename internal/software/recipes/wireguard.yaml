@@ -1,0 +1,15 @@
+id: wireguard
+name: WireGuard
+summary: Fast, modern VPN tools (wg, wg-quick).
+kind: package
+category: Networking
+icon: shield
+logo: wireguard
+website: https://www.wireguard.com
+packages:
+  apt: [wireguard-tools]
+  dnf: [wireguard-tools]
+  zypper: [wireguard-tools]
+  apk: [wireguard-tools]
+  pacman: [wireguard-tools]
+version: wg --version | awk '{print $2}'

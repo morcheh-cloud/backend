@@ -1,0 +1,40 @@
+id: prometheus
+name: Prometheus
+summary: Metrics database that scrapes your services.
+kind: docker
+category: Monitoring
+icon: flame
+logo: prometheus
+website: https://prometheus.io
+requires: [docker]
+params:
+  - name: PORT
+    label: Port
+    type: port
+    default: "9090"
+  - name: RETENTION
+    label: Keep data for
+    help: Like 15d or 90d.
+    type: text
+    default: 15d
+links:
+  - label: Prometheus
+    port: PORT
+notes: |
+  It scrapes only itself at first. Edit the compose file or mount a
+  prometheus.yml to add targets (Node Exporter is in the catalog too).
+compose: |
+  services:
+    prometheus:
+      image: prom/prometheus:latest
+      restart: unless-stopped
+      command:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --storage.tsdb.retention.time=${RETENTION}
+      ports:
+        - "${PORT}:9090"
+      volumes:
+        - data:/prometheus
+  volumes:
+    data:

@@ -1,0 +1,42 @@
+id: n8n
+name: n8n
+summary: Workflow automation with a visual editor.
+kind: docker
+category: Automation
+icon: workflow
+logo: n8n
+website: https://n8n.io
+requires: [docker]
+params:
+  - name: PORT
+    label: Port
+    type: port
+    default: "5678"
+  - name: SECURE_COOKIE
+    label: Needs HTTPS
+    help: Turn off to open it over plain http (no reverse proxy yet).
+    type: bool
+    default: "false"
+  - name: TZ
+    label: Time zone
+    type: text
+    default: UTC
+links:
+  - label: n8n
+    port: PORT
+notes: Open it to create the owner account. Put it behind Reverse proxy with HTTPS for real use.
+compose: |
+  services:
+    n8n:
+      image: n8nio/n8n:latest
+      restart: unless-stopped
+      ports:
+        - "${PORT}:5678"
+      environment:
+        N8N_SECURE_COOKIE: ${SECURE_COOKIE}
+        GENERIC_TIMEZONE: ${TZ}
+        TZ: ${TZ}
+      volumes:
+        - data:/home/node/.n8n
+  volumes:
+    data:

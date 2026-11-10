@@ -1,0 +1,29 @@
+id: uptime-kuma
+name: Uptime Kuma
+summary: Self-hosted uptime monitoring with status pages.
+kind: docker
+category: Monitoring
+icon: heart-pulse
+logo: uptimekuma
+website: https://uptime.kuma.pet
+requires: [docker]
+params:
+  - name: PORT
+    label: Port
+    type: port
+    default: "3001"
+links:
+  - label: Uptime Kuma
+    port: PORT
+notes: Open it to create the admin user.
+compose: |
+  services:
+    uptime-kuma:
+      image: louislam/uptime-kuma:2
+      restart: unless-stopped
+      ports:
+        - "${PORT}:3001"
+      volumes:
+        - data:/app/data
+  volumes:
+    data:

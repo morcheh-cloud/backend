@@ -1,0 +1,11 @@
+id: git
+name: Git
+summary: Version control.
+kind: package
+category: Developer tools
+icon: git-branch
+logo: git
+website: https://git-scm.com
+packages:
+  default: [git]
+version: git --version | awk '{print $3}'

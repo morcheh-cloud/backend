@@ -1,0 +1,30 @@
+id: node-exporter
+name: Node Exporter
+summary: Server metrics (CPU, memory, disks, network) for Prometheus.
+kind: docker
+category: Monitoring
+icon: gauge
+logo: prometheus
+website: https://github.com/prometheus/node_exporter
+requires: [docker]
+params:
+  - name: PORT
+    label: Port
+    type: port
+    default: "9100"
+links:
+  - label: Metrics
+    port: PORT
+    path: /metrics
+compose: |
+  services:
+    node-exporter:
+      image: prom/node-exporter:latest
+      restart: unless-stopped
+      network_mode: host
+      pid: host
+      command:
+        - --path.rootfs=/host
+        - --web.listen-address=:${PORT}
+      volumes:
+        - /:/host:ro,rslave

@@ -12,6 +12,8 @@ import (
 )
 
 type Querier interface {
+	// Runs still going that touch these servers.
+	ActiveSoftwareRunsOn(ctx context.Context, serverIds []uuid.UUID) ([]ActiveSoftwareRunsOnRow, error)
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
 	AddProxyChange(ctx context.Context, arg AddProxyChangeParams) error
@@ -21,6 +23,8 @@ type Querier interface {
 	BackupChain(ctx context.Context, id uuid.UUID) ([]DatabaseBackup, error)
 	// What builds on a backup, directly or not, newest first.
 	BackupDependents(ctx context.Context, parentID *uuid.UUID) ([]uuid.UUID, error)
+	// A run starts installing an app on a server: a new row, or the old one again.
+	BeginSoftwareInstall(ctx context.Context, arg BeginSoftwareInstallParams) (SoftwareInstall, error)
 	CancelQueuedJob(ctx context.Context, id uuid.UUID) (int64, error)
 	// Moves a due plan on; 0 rows means something else already did.
 	ClaimBackupPlan(ctx context.Context, arg ClaimBackupPlanParams) (int64, error)
@@ -38,6 +42,7 @@ type Querier interface {
 	CountServerNotes(ctx context.Context, serverID uuid.UUID) (int32, error)
 	CountServerScriptRuns(ctx context.Context, arg CountServerScriptRunsParams) (int64, error)
 	CountServers(ctx context.Context, arg CountServersParams) (CountServersRow, error)
+	CountSoftwareRuns(ctx context.Context, arg CountSoftwareRunsParams) (int64, error)
 	CountTerminalRecordings(ctx context.Context, arg CountTerminalRecordingsParams) (int32, error)
 	CountUserSessions(ctx context.Context, userID uuid.UUID) (int32, error)
 	CountUsers(ctx context.Context) (int32, error)
@@ -71,6 +76,9 @@ type Querier interface {
 	CreateServerNote(ctx context.Context, arg CreateServerNoteParams) (ServerNote, error)
 	// ---- Sessions ----
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateSoftwareRecipe(ctx context.Context, arg CreateSoftwareRecipeParams) (SoftwareRecipe, error)
+	CreateSoftwareRun(ctx context.Context, arg CreateSoftwareRunParams) (SoftwareRun, error)
+	CreateSoftwareRunTarget(ctx context.Context, arg CreateSoftwareRunTargetParams) error
 	CreateStorage(ctx context.Context, arg CreateStorageParams) (Storage, error)
 	CreateTerminalRecording(ctx context.Context, arg CreateTerminalRecordingParams) (uuid.UUID, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
@@ -100,10 +108,13 @@ type Querier interface {
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteFinishedJobs(ctx context.Context, arg DeleteFinishedJobsParams) (int64, error)
 	DeleteFolder(ctx context.Context, id uuid.UUID) (int64, error)
+	// A scan no longer found an app it had found before: forget it.
+	DeleteGoneFoundSoftware(ctx context.Context, arg DeleteGoneFoundSoftwareParams) error
 	DeleteGrant(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteGroup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteJob(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteOldScriptRuns(ctx context.Context) error
+	DeleteOldSoftwareRuns(ctx context.Context) error
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeletePlaybook(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteProxy(ctx context.Context, id uuid.UUID) error
@@ -116,6 +127,9 @@ type Querier interface {
 	DeleteServerNote(ctx context.Context, arg DeleteServerNoteParams) (int64, error)
 	DeleteServers(ctx context.Context, ids []uuid.UUID) (int64, error)
 	DeleteSession(ctx context.Context, id uuid.UUID) error
+	DeleteSoftwareInstall(ctx context.Context, id uuid.UUID) error
+	DeleteSoftwareRecipe(ctx context.Context, id uuid.UUID) error
+	DeleteSoftwareRun(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteStorage(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteTerminalRecording(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUser(ctx context.Context, id uuid.UUID) (int64, error)
@@ -133,6 +147,7 @@ type Querier interface {
 	// A run whose job ended without it (canceled while queued, Morcheh restarted):
 	// the run and whatever on it hadn't finished.
 	EndScriptRun(ctx context.Context, arg EndScriptRunParams) error
+	EndSoftwareRun(ctx context.Context, arg EndSoftwareRunParams) error
 	EndTerminalRecording(ctx context.Context, arg EndTerminalRecordingParams) error
 	// Copies of a run that ended without storing them.
 	FailBackupCopies(ctx context.Context, backupID uuid.UUID) error
@@ -144,6 +159,10 @@ type Querier interface {
 	FinishScheduleRun(ctx context.Context, arg FinishScheduleRunParams) error
 	FinishScriptRun(ctx context.Context, arg FinishScriptRunParams) error
 	FinishScriptTarget(ctx context.Context, arg FinishScriptTargetParams) error
+	// What a finished install or update found on the server.
+	FinishSoftwareInstall(ctx context.Context, arg FinishSoftwareInstallParams) error
+	FinishSoftwareRun(ctx context.Context, arg FinishSoftwareRunParams) error
+	FinishSoftwareTarget(ctx context.Context, arg FinishSoftwareTargetParams) error
 	// Whether candidate is folder_id itself or one of its descendants; moving a
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
@@ -193,6 +212,14 @@ type Querier interface {
 	GetSessionUser(ctx context.Context, id uuid.UUID) (GetSessionUserRow, error)
 	// ---- Settings ----
 	GetSettings(ctx context.Context) (AppSetting, error)
+	GetSoftwareHost(ctx context.Context, serverID uuid.UUID) (SoftwareHost, error)
+	GetSoftwareInstall(ctx context.Context, id uuid.UUID) (GetSoftwareInstallRow, error)
+	GetSoftwareInstallByRecipe(ctx context.Context, arg GetSoftwareInstallByRecipeParams) (SoftwareInstall, error)
+	GetSoftwareInstallServer(ctx context.Context, id uuid.UUID) (GetSoftwareInstallServerRow, error)
+	GetSoftwareRecipe(ctx context.Context, id uuid.UUID) (SoftwareRecipe, error)
+	GetSoftwareRecipeBySlug(ctx context.Context, arg GetSoftwareRecipeBySlugParams) (SoftwareRecipe, error)
+	GetSoftwareRecipeWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetSoftwareRun(ctx context.Context, id uuid.UUID) (SoftwareRun, error)
 	GetStorage(ctx context.Context, id uuid.UUID) (Storage, error)
 	GetStorageWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetTerminalRecordingData(ctx context.Context, id uuid.UUID) (GetTerminalRecordingDataRow, error)
@@ -213,6 +240,7 @@ type Querier interface {
 	InterruptRunningJobs(ctx context.Context) (int64, error)
 	// What the last process left running can't go on after a restart.
 	InterruptScriptRuns(ctx context.Context) error
+	InterruptSoftwareRuns(ctx context.Context) error
 	// At start-up: shells recorded by a previous run of Morcheh are gone.
 	InterruptTerminalRecordings(ctx context.Context) (int64, error)
 	// Each plan's newest finished run; of a run over several databases, the one
@@ -311,6 +339,7 @@ type Querier interface {
 	ListServerNotes(ctx context.Context, serverID uuid.UUID) ([]ServerNote, error)
 	// Runs that touched one server, newest first, with what they did there.
 	ListServerScriptRuns(ctx context.Context, arg ListServerScriptRunsParams) ([]ListServerScriptRunsRow, error)
+	ListServerSoftwareInstalls(ctx context.Context, serverID uuid.UUID) ([]ListServerSoftwareInstallsRow, error)
 	ListServerWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListServerWorkspacesRow, error)
 	// Filters combine with AND; values inside one filter (os, status, tags)
 	// combine with OR. A folder filter includes its subfolders unless direct_only
@@ -321,6 +350,12 @@ type Querier interface {
 	ListServersDueForCheck(ctx context.Context, before time.Time) ([]Server, error)
 	// Online servers that aren't known to be something other than Linux.
 	ListServersToSample(ctx context.Context) ([]Server, error)
+	ListSoftwareHosts(ctx context.Context, workspaceID uuid.UUID) ([]ListSoftwareHostsRow, error)
+	// Everything installed in a workspace, with the server's name.
+	ListSoftwareInstalls(ctx context.Context, workspaceID uuid.UUID) ([]ListSoftwareInstallsRow, error)
+	ListSoftwareRecipes(ctx context.Context, workspaceID uuid.UUID) ([]SoftwareRecipe, error)
+	ListSoftwareRunTargets(ctx context.Context, runID uuid.UUID) ([]SoftwareRunTarget, error)
+	ListSoftwareRuns(ctx context.Context, arg ListSoftwareRunsParams) ([]ListSoftwareRunsRow, error)
 	ListStorageWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListStorageWorkspacesRow, error)
 	ListStorages(ctx context.Context, arg ListStoragesParams) ([]Storage, error)
 	// Storages whose last check is older than @before (or that were never
@@ -343,6 +378,8 @@ type Querier interface {
 	ListWorkspaces(ctx context.Context) ([]ListWorkspacesRow, error)
 	// Serializes first-run setup and last-admin checks for the transaction.
 	LockAuth(ctx context.Context) error
+	// A scan no longer finds an app Morcheh installed.
+	MarkMissingSoftware(ctx context.Context, arg MarkMissingSoftwareParams) error
 	// Categories belong to one workspace, so moved services leave theirs.
 	MoveAppsToWorkspace(ctx context.Context, arg MoveAppsToWorkspaceParams) (int64, error)
 	MoveFolderServers(ctx context.Context, arg MoveFolderServersParams) error
@@ -389,13 +426,20 @@ type Querier interface {
 	ReparentFolderChildren(ctx context.Context, arg ReparentFolderChildrenParams) error
 	ResetServerHostKey(ctx context.Context, id uuid.UUID) error
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
+	// Installs left mid-change by a restart.
+	ResetStuckSoftwareInstalls(ctx context.Context) error
 	// Puts back a host from a history snapshot, with its old id.
 	RestoreProxyHost(ctx context.Context, arg RestoreProxyHostParams) error
 	SaveAnsibleRunProgress(ctx context.Context, arg SaveAnsibleRunProgressParams) error
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
+	// What a scan found installed. A run in progress keeps its status.
+	SaveScannedSoftware(ctx context.Context, arg SaveScannedSoftwareParams) error
 	// While it runs, so the page shows each finished destination.
 	SaveScheduleRunResults(ctx context.Context, arg SaveScheduleRunResultsParams) error
 	SaveScriptTargetOutput(ctx context.Context, arg SaveScriptTargetOutputParams) error
+	SaveSoftwareHost(ctx context.Context, arg SaveSoftwareHostParams) error
+	SaveSoftwareHostError(ctx context.Context, arg SaveSoftwareHostErrorParams) error
+	SaveSoftwareTargetOutput(ctx context.Context, arg SaveSoftwareTargetOutputParams) error
 	SaveTerminalRecording(ctx context.Context, arg SaveTerminalRecordingParams) error
 	ServerCheckSeries(ctx context.Context, arg ServerCheckSeriesParams) ([]ServerCheckSeriesRow, error)
 	ServerCheckSummary(ctx context.Context, arg ServerCheckSummaryParams) ([]ServerCheckSummaryRow, error)
@@ -407,6 +451,8 @@ type Querier interface {
 	ServerStatusChanges(ctx context.Context, arg ServerStatusChangesParams) ([]ServerStatusChange, error)
 	ServerStatusFacets(ctx context.Context, arg ServerStatusFacetsParams) ([]ServerStatusFacetsRow, error)
 	ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams) ([]ServerTagFacetsRow, error)
+	// Online servers whose last scan is older than the interval (or never ran).
+	ServersToScanSoftware(ctx context.Context, seconds float64) ([]uuid.UUID, error)
 	SetAnsibleRunJob(ctx context.Context, arg SetAnsibleRunJobParams) error
 	SetAppCategoryPosition(ctx context.Context, arg SetAppCategoryPositionParams) error
 	SetAppLogoKind(ctx context.Context, arg SetAppLogoKindParams) (App, error)
@@ -433,6 +479,8 @@ type Querier interface {
 	SetServerFavorite(ctx context.Context, arg SetServerFavoriteParams) (Server, error)
 	// Pinning isn't an edit: it keeps who changed it last and when.
 	SetServerNotePinned(ctx context.Context, arg SetServerNotePinnedParams) (ServerNote, error)
+	SetSoftwareInstallStatus(ctx context.Context, arg SetSoftwareInstallStatusParams) error
+	SetSoftwareRunJob(ctx context.Context, arg SetSoftwareRunJobParams) error
 	SetStorageFavorite(ctx context.Context, arg SetStorageFavoriteParams) (Storage, error)
 	SetTerminalRecordingSettings(ctx context.Context, arg SetTerminalRecordingSettingsParams) (TerminalRecordingSetting, error)
 	// Replaces the groups of one user (approving someone, editing them).
@@ -450,6 +498,8 @@ type Querier interface {
 	StartScheduleRun(ctx context.Context, id uuid.UUID) error
 	StartScriptRun(ctx context.Context, id uuid.UUID) error
 	StartScriptTarget(ctx context.Context, arg StartScriptTargetParams) error
+	StartSoftwareRun(ctx context.Context, id uuid.UUID) error
+	StartSoftwareTarget(ctx context.Context, arg StartSoftwareTargetParams) error
 	// The same activity, totalled per storage (a transfer between two storages
 	// counts for both).
 	StorageActivityByStorage(ctx context.Context, arg StorageActivityByStorageParams) ([]StorageActivityByStorageRow, error)
@@ -485,12 +535,15 @@ type Querier interface {
 	// it passes the stored ones back unchanged when the request leaves them out.
 	UpdateServer(ctx context.Context, arg UpdateServerParams) (Server, error)
 	UpdateServerNote(ctx context.Context, arg UpdateServerNoteParams) (ServerNote, error)
+	UpdateSoftwareRecipe(ctx context.Context, arg UpdateSoftwareRecipeParams) (SoftwareRecipe, error)
 	// Full replace of the editable fields; the handler resolves secrets first.
 	UpdateStorage(ctx context.Context, arg UpdateStorageParams) (Storage, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
 	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)
 	UserStatusCounts(ctx context.Context) ([]UserStatusCountsRow, error)
+	// A workspace's servers a scan can reach now.
+	WorkspaceServersToScan(ctx context.Context, workspaceID uuid.UUID) ([]uuid.UUID, error)
 }
 
 var _ Querier = (*Queries)(nil)

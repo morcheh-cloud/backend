@@ -1,0 +1,34 @@
+id: portainer
+name: Portainer
+summary: Web UI to manage Docker containers, images and volumes.
+kind: docker
+category: Containers
+icon: layout-dashboard
+logo: portainer
+website: https://www.portainer.io
+requires: [docker]
+params:
+  - name: PORT
+    label: Port
+    type: port
+    default: "9443"
+links:
+  - label: Portainer
+    port: PORT
+    scheme: https
+notes: |
+  Open it within 5 minutes of installing to create the admin user, or
+  Portainer locks itself (restart it from Morcheh to try again). It uses a
+  self-signed certificate: your browser will warn once.
+compose: |
+  services:
+    portainer:
+      image: portainer/portainer-ce:lts
+      restart: unless-stopped
+      ports:
+        - "${PORT}:9443"
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - data:/data
+  volumes:
+    data:

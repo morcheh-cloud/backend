@@ -1,0 +1,26 @@
+id: dozzle
+name: Dozzle
+summary: Live logs of every container in the browser.
+kind: docker
+category: Monitoring
+icon: scroll-text
+website: https://dozzle.dev
+requires: [docker]
+params:
+  - name: PORT
+    label: Port
+    type: port
+    default: "8080"
+links:
+  - label: Dozzle
+    port: PORT
+notes: It has no login by default; keep it behind a firewall or Reverse proxy with a login.
+compose: |
+  services:
+    dozzle:
+      image: amir20/dozzle:latest
+      restart: unless-stopped
+      ports:
+        - "${PORT}:8080"
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock:ro

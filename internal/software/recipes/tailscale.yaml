@@ -1,0 +1,26 @@
+id: tailscale
+name: Tailscale
+summary: Puts the server on your tailnet (WireGuard-based VPN).
+kind: package
+category: Networking
+icon: network
+logo: tailscale
+website: https://tailscale.com
+params:
+  - name: TS_AUTHKEY
+    label: Auth key
+    help: Optional. With a key the server joins your tailnet at once; without one, run tailscale up on it later.
+    type: password
+packages:
+  default: [tailscale]
+version: tailscale version 2>/dev/null | head -n1
+install: |
+  command -v curl >/dev/null 2>&1 || { pkg_refresh; pkg_install curl; }
+  curl -fsSL https://tailscale.com/install.sh | sh
+  systemctl enable --now tailscaled 2>/dev/null || true
+  if [ -n "$TS_AUTHKEY" ]; then
+    tailscale up --auth-key="$TS_AUTHKEY"
+    tailscale ip -4 || true
+  else
+    echo "Installed. Run tailscale up on the server to join your tailnet."
+  fi

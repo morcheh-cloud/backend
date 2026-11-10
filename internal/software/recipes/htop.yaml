@@ -1,0 +1,11 @@
+id: htop
+name: htop
+summary: Interactive process viewer for the terminal.
+kind: package
+category: System
+icon: activity
+logo: htop
+website: https://htop.dev
+packages:
+  default: [htop]
+version: htop --version | awk 'NR==1{print $2}'

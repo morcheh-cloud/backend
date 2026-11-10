@@ -83,7 +83,7 @@ type Schedule struct {
 	WorkspaceID  string            `json:"workspace_id" format:"uuid"`
 	Name         string            `json:"name"`
 	Description  string            `json:"description"`
-	Action       string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup"`
+	Action       string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup,software-update"`
 	Cron         string            `json:"cron" example:"0 3 * * *"`
 	Timezone     string            `json:"timezone" example:"Asia/Tehran"`
 	Enabled      bool              `json:"enabled"`
@@ -109,7 +109,7 @@ type ScheduleBody struct {
 	Cron         string          `json:"cron" minLength:"1" maxLength:"200" doc:"Five fields (minute hour day month weekday), or @hourly, @daily, @weekly, @monthly, @every 2h" example:"0 3 * * *"`
 	Timezone     string          `json:"timezone,omitempty" maxLength:"64" doc:"IANA zone the times are read in; default UTC" example:"Asia/Tehran"`
 	Enabled      *bool           `json:"enabled,omitempty" doc:"Default true"`
-	Action       string          `json:"action,omitempty" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup" default:"sync" doc:"What it does. sync and archive use source and destinations, fetch only destinations (server folders); the rest use task"`
+	Action       string          `json:"action,omitempty" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup,software-update" default:"sync" doc:"What it does. sync and archive use source and destinations, fetch only destinations (server folders); the rest use task"`
 	Source       *ScheduleEnd    `json:"source,omitempty"`
 	Destinations []ScheduleEnd   `json:"destinations,omitempty" maxItems:"20"`
 	Options      ScheduleOptions `json:"options,omitempty"`
@@ -148,7 +148,7 @@ type schedulePlan struct {
 // ScheduleRunLink is the record a run made elsewhere: a script run, an
 // Ansible run, or the database whose backups it checked.
 type ScheduleRunLink struct {
-	Kind string `json:"kind" enum:"script-run,ansible-run,database"`
+	Kind string `json:"kind" enum:"script-run,ansible-run,database,software-run"`
 	ID   string `json:"id" format:"uuid"`
 }
 
@@ -159,7 +159,7 @@ type ScheduleRun struct {
 	DryRun        bool              `json:"dry_run" doc:"A test run: counted, nothing changed"`
 	State         string            `json:"state" enum:"queued,running,succeeded,partial,failed,canceled,interrupted,skipped"`
 	Error         string            `json:"error"`
-	Action        string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup"`
+	Action        string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup,software-update"`
 	Source        *ScheduleEndView  `json:"source,omitempty"`
 	Options       ScheduleOptions   `json:"options"`
 	Results       []ScheduleRunDest `json:"results" doc:"One row per destination, server or backup checked"`
@@ -184,12 +184,13 @@ type scheduleHandler struct {
 	scripts *scriptHandler
 	ansible *ansibleHandler
 	backups *backupHandler
+	soft    *softwareHandler
 }
 
-func newScheduleHandler(st *storageHandler, a *authz, scripts *scriptHandler, playbooks *ansibleHandler, backups *backupHandler) *scheduleHandler {
+func newScheduleHandler(st *storageHandler, a *authz, scripts *scriptHandler, playbooks *ansibleHandler, backups *backupHandler, soft *softwareHandler) *scheduleHandler {
 	return &scheduleHandler{
 		q: st.q, st: st, authz: a, runner: st.servers.jobs,
-		scripts: scripts, ansible: playbooks, backups: backups,
+		scripts: scripts, ansible: playbooks, backups: backups, soft: soft,
 	}
 }
 
@@ -414,6 +415,8 @@ func (h *scheduleHandler) check(ctx context.Context, ws uuid.UUID, b ScheduleBod
 		err = k.reboot(b)
 	case "verify-backup":
 		err = k.verify(b)
+	case "software-update":
+		err = k.software(b)
 	default:
 		err = fieldError("body.action", "Unknown action.", b.Action)
 	}

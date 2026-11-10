@@ -1,0 +1,50 @@
+id: docker
+name: Docker
+summary: Container engine with the compose and buildx plugins.
+description: |
+  Docker Engine from Docker's own repository (get.docker.com), with the
+  compose plugin that every Docker app in this catalog needs. On a server
+  that already has Docker (for example the distro's docker.io), only the
+  missing compose plugin is added; the engine is left as it is.
+kind: package
+category: Containers
+icon: container
+logo: docker
+website: https://docs.docker.com/engine/
+os: [apt, dnf, yum, zypper]
+packages:
+  apt: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin, docker-buildx-plugin]
+  dnf: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin, docker-buildx-plugin]
+  zypper: [docker, docker-compose]
+version: docker version --format '{{.Server.Version}}' 2>/dev/null || docker --version | sed 's/^Docker version \([^,]*\).*/\1/'
+install: |
+  if command -v docker >/dev/null 2>&1; then
+    # Docker is already here (maybe the distro's docker.io): leave the
+    # engine alone and add only the compose plugin when it's missing.
+    if docker compose version >/dev/null 2>&1; then
+      echo "Docker and its compose plugin are already installed."
+    else
+      echo "Docker is installed; adding its compose plugin…"
+      pkg_refresh
+      case "$PM" in
+        apt) pkg_install docker-compose-plugin || pkg_install docker-compose-v2 ;;
+        zypper) pkg_install docker-compose ;;
+        *) pkg_install docker-compose-plugin ;;
+      esac
+    fi
+  elif [ "$PM" = zypper ]; then
+    pkg_refresh
+    pkg_install docker docker-compose
+  else
+    command -v curl >/dev/null 2>&1 || { pkg_refresh; pkg_install curl; }
+    echo "Running Docker's install script (get.docker.com)…"
+    curl -fsSL https://get.docker.com -o /tmp/morcheh-get-docker.sh
+    sh /tmp/morcheh-get-docker.sh
+    rm -f /tmp/morcheh-get-docker.sh
+  fi
+  systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true
+  docker version
+  docker compose version
+notes: |
+  Add a user to the docker group to run docker without sudo:
+  usermod -aG docker <user> (then sign in again).
