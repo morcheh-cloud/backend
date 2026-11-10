@@ -1,0 +1,29 @@
+id: qemu-guest-agent
+name: QEMU guest agent
+summary: Lets Proxmox or another KVM host see the VM's IP, shut it down cleanly and take consistent backups.
+kind: package
+category: System
+icon: server
+logo: qemu
+website: https://www.qemu.org
+packages:
+  default: [qemu-guest-agent]
+notes: |
+  Turn on the agent for this VM on the host too (Proxmox: Options › QEMU
+  Guest Agent), then stop and start the VM once from the host. The agent
+  only runs when the VM has its channel.
+install: |
+  echo "Installing qemu-guest-agent with $PM…"
+  pkg_refresh
+  pkg_install qemu-guest-agent
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable qemu-guest-agent >/dev/null 2>&1 || true
+    if systemctl start qemu-guest-agent 2>/dev/null; then
+      echo "The agent is running."
+    else
+      echo "Installed. It starts once the VM has the agent's channel: turn it on for this VM on the host, then stop and start the VM."
+    fi
+  elif command -v rc-update >/dev/null 2>&1; then
+    rc-update add qemu-guest-agent default >/dev/null 2>&1 || true
+    rc-service qemu-guest-agent start || true
+  fi

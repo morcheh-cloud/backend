@@ -1,0 +1,61 @@
+id: k3s
+name: k3s
+summary: Lightweight Kubernetes in one binary; start a cluster or join one.
+description: |
+  Installed with the official script from get.k3s.io. Without a cluster
+  address this server starts a new cluster; with one it joins as a worker
+  (agent). Updating runs the script again with the same role.
+kind: script
+category: Containers
+icon: hexagon
+logo: k3s
+website: https://k3s.io
+params:
+  - name: K3S_URL
+    label: Join a cluster
+    help: Optional. The first server's API address, like https://10.0.0.5:6443. Empty = start a new cluster here.
+    type: text
+  - name: K3S_TOKEN
+    label: Cluster token
+    help: Needed to join. On the first server it's in /var/lib/rancher/k3s/server/node-token.
+    type: password
+notes: |
+  kubectl is on the server (k3s kubectl, or kubectl as root); the
+  kubeconfig is /etc/rancher/k3s/k3s.yaml. Other servers join with the
+  token in /var/lib/rancher/k3s/server/node-token and need port 6443 open
+  to this one.
+version: k3s --version | awk 'NR==1{print $3}'
+install: |
+  command -v curl >/dev/null 2>&1 || { pkg_refresh; pkg_install curl; }
+  if [ -n "$K3S_URL" ]; then
+    case "$K3S_URL" in https://*) ;; *) echo "Join a cluster: use the API address, like https://10.0.0.5:6443." >&2; exit 1 ;; esac
+    if [ -z "$K3S_TOKEN" ]; then echo "To join a cluster, give its token too." >&2; exit 1; fi
+    export K3S_URL K3S_TOKEN
+    echo "Joining $K3S_URL as an agent…"
+  else
+    unset K3S_URL
+    if [ -n "$K3S_TOKEN" ]; then export K3S_TOKEN; else unset K3S_TOKEN; fi
+    echo "Starting a new k3s cluster on this server…"
+  fi
+  curl -sfL https://get.k3s.io | sh -
+  if [ -z "$K3S_URL" ]; then
+    echo "Other servers join with the token in /var/lib/rancher/k3s/server/node-token."
+  fi
+update: |
+  command -v curl >/dev/null 2>&1 || { pkg_refresh; pkg_install curl; }
+  unset K3S_URL K3S_TOKEN
+  for f in /etc/systemd/system/k3s-agent.service.env /etc/systemd/system/k3s.service.env; do
+    if [ -f "$f" ]; then set -a; . "$f"; set +a; fi
+  done
+  if [ -n "$K3S_URL" ]; then echo "Updating the k3s agent…"; else echo "Updating the k3s server…"; fi
+  curl -sfL https://get.k3s.io | sh -
+uninstall: |
+  if [ -x /usr/local/bin/k3s-uninstall.sh ]; then
+    echo "Removing k3s with its cluster data…"
+    /usr/local/bin/k3s-uninstall.sh
+  elif [ -x /usr/local/bin/k3s-agent-uninstall.sh ]; then
+    echo "Removing the k3s agent…"
+    /usr/local/bin/k3s-agent-uninstall.sh
+  else
+    echo "k3s's uninstall script isn't here; nothing to remove."
+  fi

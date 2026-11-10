@@ -1,0 +1,33 @@
+id: basic-tools
+name: Basic tools
+summary: The everyday command-line kit, in one go (htop, btop, ncdu, tmux, jq…).
+description: |
+  curl, wget, htop, btop, ncdu, tmux, jq, unzip, rsync, lsof and the DNS
+  tools (dig, nslookup). A package this server's repositories don't have
+  is skipped and listed in the output; on RHEL, Rocky and Alma some come
+  from EPEL.
+kind: package
+category: System
+icon: wrench
+packages:
+  apt: [jq, curl, wget, htop, btop, ncdu, tmux, unzip, rsync, lsof, dnsutils]
+  dnf: [jq, curl, wget, htop, btop, ncdu, tmux, unzip, rsync, lsof, bind-utils]
+  yum: [jq, curl, wget, htop, ncdu, tmux, unzip, rsync, lsof, bind-utils]
+  zypper: [jq, curl, wget, htop, btop, ncdu, tmux, unzip, rsync, lsof, bind-utils]
+  apk: [jq, curl, wget, htop, btop, ncdu, tmux, unzip, rsync, lsof, bind-tools]
+  pacman: [jq, curl, wget, htop, btop, ncdu, tmux, unzip, rsync, lsof, bind]
+install: |
+  echo "Installing $PKGS with $PM…"
+  pkg_refresh
+  # shellcheck disable=SC2086
+  if ! pkg_install $PKGS; then
+    echo "Some of them aren't in this server's repositories: installing one by one…"
+    skipped=""
+    for p in $PKGS; do
+      pkg_install "$p" >/dev/null 2>&1 || skipped="$skipped $p"
+    done
+    if [ -n "$skipped" ]; then
+      echo "Not available with $PM here:$skipped"
+      case "$PM" in dnf|yum) echo "On RHEL, Rocky or Alma they come from EPEL: install epel-release, then install Basic tools again." ;; esac
+    fi
+  fi

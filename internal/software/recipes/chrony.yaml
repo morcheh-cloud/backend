@@ -1,0 +1,23 @@
+id: chrony
+name: Chrony
+summary: Keeps the server's clock right (NTP), so logs, TLS and schedules agree.
+description: |
+  Replaces systemd-timesyncd on Debian and Ubuntu. Uses the distro's time
+  servers; check it with chronyc tracking.
+kind: package
+category: System
+icon: activity
+packages:
+  default: [chrony]
+install: |
+  echo "Installing chrony with $PM…"
+  pkg_refresh
+  pkg_install chrony
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable --now chronyd 2>/dev/null || systemctl enable --now chrony 2>/dev/null || true
+  elif command -v rc-update >/dev/null 2>&1; then
+    rc-update add chronyd default >/dev/null 2>&1 || true
+    rc-service chronyd start || true
+  fi
+  sleep 2
+  chronyc tracking 2>/dev/null | grep -E '^(Reference ID|System time)' || true

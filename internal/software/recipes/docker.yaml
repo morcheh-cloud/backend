@@ -16,6 +16,11 @@ packages:
   apt: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin, docker-buildx-plugin]
   dnf: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin, docker-buildx-plugin]
   zypper: [docker, docker-compose]
+# The distro's own build (Ubuntu/Debian docker.io, Fedora moby-engine):
+# updated and removed as it is, never swapped for Docker's.
+also:
+  apt: [docker.io, docker-compose-v2, docker-buildx, docker-compose, containerd, runc]
+  dnf: [moby-engine, docker-compose, docker-buildx]
 version: docker version --format '{{.Server.Version}}' 2>/dev/null || docker --version | sed 's/^Docker version \([^,]*\).*/\1/'
 install: |
   if command -v docker >/dev/null 2>&1; then

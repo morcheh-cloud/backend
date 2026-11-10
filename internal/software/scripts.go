@@ -17,9 +17,63 @@ for p in apt-get dnf yum zypper apk pacman; do
     break
   fi
 done
-pkg_refresh() {
+# Another package manager (unattended-upgrades, a person's apt…) holds the
+# lock: wait for it, up to 15 minutes, instead of failing at once. apt also
+# waits on its own when it starts while the lock is taken.
+APT_LOCK="-o DPkg::Lock::Timeout=900"
+export ZYPP_LOCK_TIMEOUT=900
+pkg_holder() {
   case "$PM" in
-    apt) apt-get update -q ;;
+    apt)
+      # The lock files say it best; fuser isn't always there.
+      if command -v fuser >/dev/null 2>&1 && fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1; then
+        echo "another apt or dpkg"
+        return 0
+      fi
+      # unattended-upgrade-shutdown (same short name) idles all day: skip it.
+      for pid in $(pgrep -x unattended-upgr 2>/dev/null); do
+        if ! tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q shutdown; then
+          echo "unattended-upgrades ($pid)"
+          return 0
+        fi
+      done
+      names="apt apt-get aptitude dpkg" ;;
+    dnf) names="dnf dnf5 rpm" ;;
+    yum) names="yum rpm" ;;
+    zypper) names="zypper rpm" ;;
+    apk) names="apk" ;;
+    pacman) names="pacman" ;;
+    *) return 1 ;;
+  esac
+  for n in $names; do
+    pid=$(pgrep -x "$n" 2>/dev/null | head -n1)
+    if [ -n "$pid" ]; then
+      echo "$n ($pid)"
+      return 0
+    fi
+  done
+  return 1
+}
+pkg_wait() {
+  command -v pgrep >/dev/null 2>&1 || return 0
+  waited=0
+  while holder=$(pkg_holder); do
+    if [ "$waited" -eq 0 ]; then
+      echo "Another package manager is running: $holder. Waiting for it to finish…"
+    fi
+    if [ "$waited" -ge 900 ]; then
+      echo "It's still running after 15 minutes: $holder. Try again once it's done." >&2
+      return 1
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  if [ "$waited" -gt 0 ]; then echo "It finished after $waited s; going on."; fi
+}
+pkg_refresh() {
+  pkg_wait || return 1
+  case "$PM" in
+    apt) apt-get $APT_LOCK update -q ;;
     dnf) dnf -q -y makecache ;;
     yum) yum -q -y makecache ;;
     zypper) zypper -q -n refresh ;;
@@ -29,8 +83,9 @@ pkg_refresh() {
   esac
 }
 pkg_install() {
+  pkg_wait || return 1
   case "$PM" in
-    apt) apt-get install -y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" ;;
+    apt) apt-get $APT_LOCK install -y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" ;;
     dnf) dnf install -y -q "$@" ;;
     yum) yum install -y -q "$@" ;;
     zypper) zypper -n -q install "$@" ;;
@@ -40,8 +95,9 @@ pkg_install() {
   esac
 }
 pkg_remove() {
+  pkg_wait || return 1
   case "$PM" in
-    apt) apt-get remove -y -q "$@" ;;
+    apt) apt-get $APT_LOCK remove -y -q "$@" ;;
     dnf) dnf remove -y -q "$@" ;;
     yum) yum remove -y -q "$@" ;;
     zypper) zypper -n -q remove "$@" ;;
@@ -51,8 +107,9 @@ pkg_remove() {
   esac
 }
 pkg_upgrade() {
+  pkg_wait || return 1
   case "$PM" in
-    apt) apt-get install -y -q --only-upgrade -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" ;;
+    apt) apt-get $APT_LOCK install -y -q --only-upgrade -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" ;;
     dnf) dnf upgrade -y -q "$@" ;;
     yum) yum update -y -q "$@" ;;
     zypper) zypper -n -q update "$@" ;;
@@ -77,6 +134,14 @@ pkg_latest() {
     apk) apk list -u "$1" 2>/dev/null | awk '{print $1; exit}' | sed "s/^$1-//" ;;
     pacman) pacman -Qu "$1" 2>/dev/null | awk '{print $4; exit}' ;;
   esac
+}
+# The ones of the named packages that are installed here.
+pkg_have() {
+  have=""
+  for p in "$@"; do
+    if [ -n "$(pkg_version "$p")" ]; then have="$have $p"; fi
+  done
+  echo "${have# }"
 }
 need_root() {
   if [ "$(id -u)" != 0 ]; then echo "This needs root: the login user can't use sudo." >&2; exit 1; fi
@@ -129,24 +194,33 @@ func writeFile(b *strings.Builder, path, content, mode string) {
 
 // pkgsCase sets PKGS to the recipe's packages for the server's manager.
 func pkgsCase(r Recipe) string {
+	return pmCase("PKGS", r.Packages) + pmCase("ALSO", r.Also)
+}
+
+// pmCase sets the shell variable name to the list for the server's package
+// manager (yum takes dnf's when it has none of its own).
+func pmCase(name string, lists map[string][]string) string {
+	if len(lists) == 0 {
+		return name + "=''\n"
+	}
 	var b strings.Builder
 	b.WriteString("case \"$PM\" in\n")
-	pms := make([]string, 0, len(r.Packages))
-	for pm := range r.Packages {
+	pms := make([]string, 0, len(lists))
+	for pm := range lists {
 		if pm != "default" {
 			pms = append(pms, pm)
 		}
 	}
 	sort.Strings(pms)
 	for _, pm := range pms {
-		fmt.Fprintf(&b, "  %s) PKGS=%q ;;\n", pm, strings.Join(r.Packages[pm], " "))
+		fmt.Fprintf(&b, "  %s) %s=%q ;;\n", pm, name, strings.Join(lists[pm], " "))
 	}
-	if _, ok := r.Packages["dnf"]; ok {
-		if _, ok := r.Packages["yum"]; !ok {
-			fmt.Fprintf(&b, "  yum) PKGS=%q ;;\n", strings.Join(r.Packages["dnf"], " "))
+	if _, ok := lists["dnf"]; ok {
+		if _, ok := lists["yum"]; !ok {
+			fmt.Fprintf(&b, "  yum) %s=%q ;;\n", name, strings.Join(lists["dnf"], " "))
 		}
 	}
-	fmt.Fprintf(&b, "  *) PKGS=%q ;;\n", strings.Join(r.Packages["default"], " "))
+	fmt.Fprintf(&b, "  *) %s=%q ;;\n", name, strings.Join(lists["default"], " "))
 	b.WriteString("esac\n")
 	return b.String()
 }
@@ -273,10 +347,14 @@ func UpdateScript(r Recipe) string {
 			b.WriteString(r.Update)
 			b.WriteString("\n")
 		case r.Kind == KindPackage:
-			b.WriteString("if [ -z \"$PKGS\" ]; then echo 'There is no package to update on this server.' >&2; exit 1; fi\n")
-			b.WriteString("echo \"Updating $PKGS with $PM…\"\n")
+			// Only what is installed: the server may have the distro's
+			// build (ALSO) or just some of the packages.
+			b.WriteString("if [ -z \"$PKGS$ALSO\" ]; then echo 'There is no package to update on this server.' >&2; exit 1; fi\n")
+			b.WriteString("# shellcheck disable=SC2086\nHAVE=$(pkg_have $PKGS $ALSO)\n")
+			b.WriteString("if [ -z \"$HAVE\" ]; then echo \"None of its packages ($PKGS $ALSO) is installed with $PM here, so $PM can't update it. It may have been installed another way (a snap, a static binary…).\" >&2; exit 1; fi\n")
+			b.WriteString("echo \"Updating $HAVE with $PM…\"\n")
 			b.WriteString("pkg_refresh\n")
-			b.WriteString("# shellcheck disable=SC2086\npkg_upgrade $PKGS\n")
+			b.WriteString("# shellcheck disable=SC2086\npkg_upgrade $HAVE\n")
 		default:
 			b.WriteString("echo 'This app has no update script.' >&2; exit 1\n")
 		}
@@ -340,9 +418,11 @@ func UninstallScript(r Recipe, opt UninstallOptions) string {
 			b.WriteString(r.Uninstall)
 			b.WriteString("\n")
 		case r.Kind == KindPackage:
-			b.WriteString("if [ -z \"$PKGS\" ]; then echo 'There is no package to remove on this server.' >&2; exit 1; fi\n")
-			b.WriteString("echo \"Removing $PKGS…\"\n")
-			b.WriteString("# shellcheck disable=SC2086\npkg_remove $PKGS\n")
+			b.WriteString("if [ -z \"$PKGS$ALSO\" ]; then echo 'There is no package to remove on this server.' >&2; exit 1; fi\n")
+			b.WriteString("# shellcheck disable=SC2086\nHAVE=$(pkg_have $PKGS $ALSO)\n")
+			b.WriteString("if [ -z \"$HAVE\" ]; then echo 'None of its packages is installed here; nothing to remove.'; exit 0; fi\n")
+			b.WriteString("echo \"Removing $HAVE…\"\n")
+			b.WriteString("# shellcheck disable=SC2086\npkg_remove $HAVE\n")
 		default:
 			b.WriteString("echo 'This app has no uninstall script.' >&2; exit 1\n")
 		}
@@ -365,15 +445,16 @@ func SystemUpgradeScript(opt SystemOptions) string {
 	b.WriteString("need_root\n")
 	b.WriteString("echo \"Refreshing the package lists ($PM)…\"\n")
 	b.WriteString("pkg_refresh\n")
+	b.WriteString("pkg_wait\n")
 	b.WriteString("case \"$PM\" in\n")
 	b.WriteString("  apt)\n")
-	o := "-y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+	o := "$APT_LOCK -y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
 	if opt.SecurityOnly {
 		b.WriteString("    pkgs=$(apt list --upgradable 2>/dev/null | grep -e '-security' | cut -d/ -f1 | tr '\\n' ' ')\n")
 		b.WriteString("    if [ -z \"$pkgs\" ]; then echo 'No security updates.'; exit 0; fi\n")
 		fmt.Fprintf(&b, "    # shellcheck disable=SC2086\n    apt-get install --only-upgrade %s $pkgs ;;\n", o)
 	} else if opt.Full {
-		fmt.Fprintf(&b, "    apt-get full-upgrade %s && apt-get autoremove -y -q ;;\n", o)
+		fmt.Fprintf(&b, "    apt-get full-upgrade %s && apt-get $APT_LOCK autoremove -y -q ;;\n", o)
 	} else {
 		fmt.Fprintf(&b, "    apt-get upgrade %s ;;\n", o)
 	}

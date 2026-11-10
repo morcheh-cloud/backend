@@ -63,6 +63,10 @@ type Recipe struct {
 	// Package names per package manager (apt, dnf…, or default). The first
 	// is the one whose version is shown.
 	Packages map[string][]string `json:"packages,omitempty" yaml:"packages"`
+	// Packages that may stand in for those on a server (the distro's own
+	// build, e.g. docker.io for docker-ce): never installed, but updated,
+	// removed and read for the version when they're the ones there.
+	Also map[string][]string `json:"also,omitempty" yaml:"also" doc:"Other package names it may be installed as (e.g. the distro's build), per package manager: updated and removed when they're the ones on the server"`
 	// A command that prints the installed version (used when no package
 	// tells it).
 	VersionCommand string `json:"version_command,omitempty" yaml:"version"`
@@ -74,6 +78,9 @@ type Recipe struct {
 	Compose string `json:"compose,omitempty" yaml:"compose"`
 
 	Builtin bool `json:"builtin" yaml:"-"`
+	// Taken out of the catalog: no new installs, but earlier ones can still
+	// be updated, managed and removed.
+	Retired bool `json:"retired,omitempty" yaml:"-" doc:"No longer offered for new installs; earlier installs can still be updated and removed"`
 	// A workspace's own recipe: its id, for editing.
 	RecordID string `json:"record_id,omitempty" yaml:"-"`
 }
@@ -103,7 +110,7 @@ type RecipeLink struct {
 	Scheme string `json:"scheme,omitempty" yaml:"scheme" enum:"http,https,"`
 }
 
-//go:embed recipes/*.yaml
+//go:embed recipes/*.yaml recipes/retired/*.yaml
 var builtinFS embed.FS
 
 var builtins []Recipe
@@ -113,6 +120,11 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	retired, err := fs.Glob(builtinFS, "recipes/retired/*.yaml")
+	if err != nil {
+		panic(err)
+	}
+	files = append(files, retired...)
 	for _, f := range files {
 		raw, err := builtinFS.ReadFile(f)
 		if err != nil {
@@ -123,6 +135,7 @@ func init() {
 			panic(fmt.Sprintf("%s: %v", f, err))
 		}
 		r.Builtin = true
+		r.Retired = strings.HasPrefix(f, "recipes/retired/")
 		if err := r.Check(); err != nil {
 			panic(fmt.Sprintf("%s: %v", f, err))
 		}
@@ -201,6 +214,16 @@ func (r Recipe) Check() error {
 	if r.Name == "" || len(r.Name) > 100 {
 		return bad("name", "Give it a name (up to 100 characters).")
 	}
+	for pm, names := range r.Also {
+		if pm != "default" && !slices.Contains(PackageManagers, pm) {
+			return bad("also", "Unknown package manager "+pm+".")
+		}
+		for _, n := range names {
+			if !packageNameRe.MatchString(n) {
+				return bad("also", "Bad package name "+n+".")
+			}
+		}
+	}
 	switch r.Kind {
 	case KindPackage:
 		if len(r.Packages) == 0 {
@@ -220,6 +243,9 @@ func (r Recipe) Check() error {
 			}
 		}
 	case KindDocker:
+		if len(r.Also) > 0 {
+			return bad("also", "Only a package recipe has other package names.")
+		}
 		if strings.TrimSpace(r.Compose) == "" {
 			return bad("compose", "Write the compose file.")
 		}

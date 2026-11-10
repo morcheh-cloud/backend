@@ -1,0 +1,13 @@
+id: restic
+name: restic
+summary: Fast, encrypted, deduplicated backups to S3, SFTP, a disk and more.
+kind: package
+category: Backup
+icon: database-backup
+website: https://restic.net
+packages:
+  default: [restic]
+notes: |
+  Start a repository with restic init (it asks for a password: keep it
+  safe, the backups can't be read without it), then run restic backup on a
+  schedule, e.g. from Cron jobs › Script.

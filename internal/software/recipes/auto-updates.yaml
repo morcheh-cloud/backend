@@ -1,0 +1,88 @@
+id: auto-updates
+name: Automatic security updates
+summary: Installs updates by itself every day (unattended-upgrades or dnf-automatic).
+description: |
+  Debian and Ubuntu get unattended-upgrades, Fedora, RHEL, Rocky and Alma
+  get dnf-automatic. Security updates only by default; a reboot only when
+  you allow it. Install it again to change the settings.
+kind: package
+category: Security
+icon: shield-check
+os: [apt, dnf]
+params:
+  - name: UPDATES
+    label: Which updates
+    help: security = security fixes only. all = every update from the distro.
+    type: select
+    options: [security, all]
+    default: security
+  - name: REBOOT
+    label: Reboot when an update needs it
+    help: Otherwise Morcheh shows "Reboot needed" and you choose when.
+    type: bool
+    default: "false"
+  - name: REBOOT_TIME
+    label: Reboot at
+    help: Server time, HH:MM. Used by unattended-upgrades; dnf-automatic reboots right after updating.
+    type: text
+    default: "04:00"
+packages:
+  apt: [unattended-upgrades]
+  dnf: [dnf-automatic]
+also:
+  dnf: [dnf5-plugin-automatic]
+install: |
+  case "$REBOOT_TIME" in
+    [0-2][0-9]:[0-5][0-9]) ;;
+    *) echo "Reboot at: use HH:MM, like 04:00." >&2; exit 1 ;;
+  esac
+  pkg_refresh
+  case "$PM" in
+    apt)
+      echo "Installing unattended-upgrades…"
+      pkg_install unattended-upgrades
+      printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' > /etc/apt/apt.conf.d/20auto-upgrades
+      {
+        echo '// Written by Morcheh (Automatic security updates).'
+        if [ "$UPDATES" = all ]; then
+          echo 'Unattended-Upgrade::Allowed-Origins:: "${distro_id}:${distro_codename}-updates";'
+        fi
+        echo "Unattended-Upgrade::Automatic-Reboot \"$REBOOT\";"
+        echo "Unattended-Upgrade::Automatic-Reboot-Time \"$REBOOT_TIME\";"
+      } > /etc/apt/apt.conf.d/52morcheh-unattended
+      systemctl enable --now apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+      unattended-upgrade --dry-run >/dev/null 2>&1 && echo "Checked: unattended-upgrades reads its settings." || true
+      ;;
+    dnf)
+      echo "Installing dnf-automatic…"
+      pkg_install dnf-automatic || pkg_install dnf5-plugin-automatic
+      kind=default
+      [ "$UPDATES" = security ] && kind=security
+      reboot=never
+      [ "$REBOOT" = true ] && reboot=when-needed
+      conf=/etc/dnf/automatic.conf
+      if [ -f "$conf" ] && grep -q '^\[commands\]' "$conf"; then
+        sed -i -e 's/^#\{0,1\} *apply_updates *=.*/apply_updates = yes/' \
+          -e "s/^#\{0,1\} *upgrade_type *=.*/upgrade_type = $kind/" "$conf"
+        if grep -q '^#\{0,1\} *reboot *=' "$conf"; then
+          sed -i "s/^#\{0,1\} *reboot *=.*/reboot = $reboot/" "$conf"
+        else
+          sed -i "/^\[commands\]/a reboot = $reboot" "$conf"
+        fi
+      else
+        mkdir -p /etc/dnf
+        printf '[commands]\napply_updates = yes\nupgrade_type = %s\nreboot = %s\n' "$kind" "$reboot" > "$conf"
+      fi
+      systemctl enable --now dnf-automatic.timer 2>/dev/null || systemctl enable --now dnf5-automatic.timer
+      ;;
+  esac
+  echo "Done: updates ($UPDATES) install by themselves every day."
+uninstall: |
+  rm -f /etc/apt/apt.conf.d/52morcheh-unattended
+  systemctl disable --now dnf-automatic.timer dnf5-automatic.timer >/dev/null 2>&1 || true
+  # shellcheck disable=SC2086
+  HAVE=$(pkg_have $PKGS $ALSO)
+  if [ -z "$HAVE" ]; then echo 'None of its packages is installed here; nothing to remove.'; exit 0; fi
+  echo "Removing $HAVE…"
+  # shellcheck disable=SC2086
+  pkg_remove $HAVE

@@ -1,0 +1,30 @@
+id: portainer-agent
+name: Portainer Agent
+summary: Lets one Portainer manage this server's Docker too.
+kind: docker
+category: Containers
+icon: layout-dashboard
+logo: portainer
+website: https://docs.portainer.io/admin/environments/add/docker/agent
+requires: [docker]
+params:
+  - name: PORT
+    label: Port
+    type: port
+    default: "9001"
+notes: |
+  In Portainer: Environments › Add environment › Docker Standalone ›
+  Agent, and give it this server's address and port. Anyone who reaches
+  the port can control Docker here: let only your Portainer server in
+  (Firewall).
+compose: |
+  services:
+    agent:
+      image: portainer/agent:lts
+      restart: unless-stopped
+      ports:
+        - "${PORT}:9001"
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - /var/lib/docker/volumes:/var/lib/docker/volumes
+        - /:/host

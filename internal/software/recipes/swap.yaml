@@ -1,0 +1,62 @@
+id: swap
+name: Swap file
+summary: Adds a swap file, so a memory spike slows the server down instead of killing apps.
+description: |
+  Creates /swapfile, turns it on, keeps it across reboots (/etc/fstab) and
+  sets how eagerly the kernel uses it. Install it again with another size
+  to resize it. Containers (LXC, OpenVZ) usually can't have swap.
+kind: script
+category: System
+icon: hard-drive
+params:
+  - name: SIZE
+    label: Size (GB)
+    help: About the size of the RAM up to 4 GB; 2–4 GB is plenty for most servers.
+    type: number
+    default: "2"
+    required: true
+  - name: SWAPPINESS
+    label: Swappiness
+    help: 0–100. Lower keeps apps in RAM longer; 10 suits servers.
+    type: number
+    default: "10"
+version: swapon --show=NAME,SIZE --noheadings | awk '$1=="/swapfile"{print $2}'
+install: |
+  case "$SIZE" in ''|*[!0-9]*) echo "Size: use a whole number of GB." >&2; exit 1 ;; esac
+  case "$SWAPPINESS" in ''|*[!0-9]*) echo "Swappiness: use a number from 0 to 100." >&2; exit 1 ;; esac
+  if [ "$SIZE" -lt 1 ] || [ "$SIZE" -gt 64 ]; then echo "Size: from 1 to 64 GB." >&2; exit 1; fi
+  if [ "$SWAPPINESS" -gt 100 ]; then echo "Swappiness: from 0 to 100." >&2; exit 1; fi
+  if grep -q '^/swapfile ' /proc/swaps 2>/dev/null; then
+    echo "Turning off the current /swapfile (its pages move back to RAM)…"
+    swapoff /swapfile
+  fi
+  rm -f /swapfile
+  free_kb=$(df -Pk / | awk 'NR==2{print $4}')
+  need_kb=$((SIZE * 1024 * 1024))
+  if [ "$free_kb" -lt $((need_kb + 1048576)) ]; then
+    echo "Not enough free space on /: ${SIZE} GB plus 1 GB to spare is needed." >&2
+    exit 1
+  fi
+  echo "Creating a ${SIZE} GB /swapfile…"
+  if [ "$(stat -f -c %T / 2>/dev/null)" = btrfs ] && btrfs filesystem mkswapfile --help >/dev/null 2>&1; then
+    btrfs filesystem mkswapfile --size "${SIZE}g" /swapfile
+  else
+    fallocate -l "${SIZE}G" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=$((SIZE * 1024)) status=none
+  fi
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  grep -q '^/swapfile[[:space:]]' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  echo "vm.swappiness=$SWAPPINESS" > /etc/sysctl.d/90-morcheh-swap.conf
+  sysctl -q -w vm.swappiness="$SWAPPINESS" || true
+  free -h 2>/dev/null | grep -i '^swap' || true
+update: |
+  echo "Nothing to update: to change the size, install Swap file again with the new size."
+uninstall: |
+  if grep -q '^/swapfile ' /proc/swaps 2>/dev/null; then
+    echo "Turning off /swapfile (its pages move back to RAM)…"
+    swapoff /swapfile
+  fi
+  sed -i '\#^/swapfile[[:space:]]#d' /etc/fstab
+  rm -f /swapfile /etc/sysctl.d/90-morcheh-swap.conf
+  echo "Removed /swapfile."

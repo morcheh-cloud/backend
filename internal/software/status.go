@@ -128,7 +128,7 @@ esac | head -n 5000
 		fmt.Fprintf(&b, "echo '@@ recipe:%s'\n(\n", r.ID)
 		if r.Kind == KindPackage {
 			b.WriteString(pkgsCase(r))
-			b.WriteString("for p in $PKGS; do v=$(pkg_version \"$p\"); if [ -n \"$v\" ]; then echo \"pkg=$v\"; echo \"latest=$(pkg_latest \"$p\")\"; fi; break; done\n")
+			b.WriteString("for p in ${PKGS%% *} $ALSO; do v=$(pkg_version \"$p\"); if [ -n \"$v\" ]; then echo \"pkg=$v\"; echo \"latest=$(pkg_latest \"$p\")\"; break; fi; done\n")
 		}
 		if r.VersionCommand != "" {
 			// Only when its program is here: a "not found" printed to

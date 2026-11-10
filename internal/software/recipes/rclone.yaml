@@ -1,0 +1,46 @@
+id: rclone
+name: rclone
+summary: Copies and syncs files to 70+ clouds and storages (S3, Drive, SFTP…).
+description: |
+  Installed with the official script from rclone.org, which is newer than
+  the distros' builds. Set up remotes with rclone config.
+kind: script
+category: Backup
+icon: cloud
+logo: rclone
+website: https://rclone.org
+version: rclone version | awk 'NR==1{print $2}'
+install: |
+  need=""
+  for p in curl unzip bash; do
+    command -v "$p" >/dev/null 2>&1 || need="$need $p"
+  done
+  if [ -n "$need" ]; then
+    pkg_refresh
+    # shellcheck disable=SC2086
+    pkg_install $need
+  fi
+  set +e
+  curl -fsSL https://rclone.org/install.sh | bash
+  rc=$?
+  set -e
+  if [ "$rc" -eq 3 ]; then
+    echo "The newest rclone is already installed."
+  elif [ "$rc" -ne 0 ]; then
+    exit "$rc"
+  fi
+update: |
+  if [ -n "$(pkg_version rclone)" ]; then
+    echo "rclone came with $PM: updating it there…"
+    pkg_refresh
+    pkg_upgrade rclone
+  else
+    rclone selfupdate
+  fi
+uninstall: |
+  if [ -n "$(pkg_version rclone)" ]; then
+    pkg_remove rclone
+  else
+    rm -f /usr/bin/rclone /usr/local/bin/rclone /usr/local/share/man/man1/rclone.1
+    echo "Removed rclone. Its settings stay in each user's ~/.config/rclone."
+  fi

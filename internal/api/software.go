@@ -204,6 +204,9 @@ func newSoftwareHandler(servers *serverHandler, a *authz, scripts *scriptHandler
 	return h
 }
 
+// The answer to installing a built-in recipe taken out of the catalog.
+const retiredText = "This application is no longer in the catalog. Earlier installs can still be updated and removed."
+
 // catalog is every recipe a workspace's servers can install: the built-in
 // ones and the workspace's own.
 func (h *softwareHandler) catalog(ctx context.Context, ws uuid.UUID) ([]software.Recipe, error) {
@@ -1010,6 +1013,9 @@ func registerSoftware(api huma.API, h *softwareHandler) {
 		r, ok := software.Find(list, in.Body.RecipeID)
 		if !ok {
 			return nil, fieldError("body.recipe_id", "There is no such application in this workspace's catalog.", in.Body.RecipeID)
+		}
+		if r.Retired {
+			return nil, fieldError("body.recipe_id", retiredText, in.Body.RecipeID)
 		}
 		out := &struct {
 			Body struct {

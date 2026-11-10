@@ -132,6 +132,9 @@ func (h *softwareHandler) plan(ctx context.Context, b startSoftwareRunBody, ws u
 		if !ok || r.ID == software.System {
 			return p, fieldError("body.recipes", "There is no such application in this workspace's catalog.", recipes[0])
 		}
+		if r.Retired {
+			return p, fieldError("body.recipes", retiredText, recipes[0])
+		}
 		main = r
 		if err := r.CheckGiven(b.Params); err != nil {
 			return p, recipeError(err)
@@ -863,6 +866,14 @@ func (h *softwareHandler) scanServer(ctx context.Context, id uuid.UUID, opt soft
 	list, err := h.catalog(ctx, s.WorkspaceID)
 	if err != nil {
 		return scan, err
+	}
+	// A package or script taken out of the catalog is only looked for where
+	// it was installed before, so it isn't newly "found" anywhere else.
+	if before, err := h.q.ListServerSoftwareInstalls(ctx, id); err == nil {
+		list = slices.DeleteFunc(list, func(r software.Recipe) bool {
+			return r.Retired && r.Kind != software.KindDocker &&
+				!slices.ContainsFunc(before, func(row sqlc.ListServerSoftwareInstallsRow) bool { return row.RecipeID == r.ID })
+		})
 	}
 	var text string
 	err = h.servers.withConn(ctx, id.String(), func(c *sshConn) error {

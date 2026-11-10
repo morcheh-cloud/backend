@@ -1,0 +1,10 @@
+id: podman
+name: Podman
+summary: Runs containers without a daemon, rootless if you like; docker-compatible commands.
+kind: package
+category: Containers
+icon: container
+logo: podman
+website: https://podman.io
+packages:
+  default: [podman]
