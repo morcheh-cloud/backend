@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type AccessGrant struct {
@@ -373,6 +374,117 @@ type Job struct {
 	StartedAt  *time.Time  `json:"started_at"`
 	FinishedAt *time.Time  `json:"finished_at"`
 	CreatedBy  *uuid.UUID  `json:"created_by"`
+}
+
+type Monitor struct {
+	ID              uuid.UUID  `json:"id"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	Name            string     `json:"name"`
+	Kind            string     `json:"kind"`
+	Config          []byte     `json:"config"`
+	SecretsEnc      []byte     `json:"secrets_enc"`
+	Description     string     `json:"description"`
+	Tags            []string   `json:"tags"`
+	ViaServerID     *uuid.UUID `json:"via_server_id"`
+	ServerID        *uuid.UUID `json:"server_id"`
+	IntervalSeconds int32      `json:"interval_seconds"`
+	RetrySeconds    int32      `json:"retry_seconds"`
+	TimeoutSeconds  int32      `json:"timeout_seconds"`
+	Retries         int32      `json:"retries"`
+	ResendEvery     int32      `json:"resend_every"`
+	NotifyDegraded  bool       `json:"notify_degraded"`
+	AllowInternal   bool       `json:"allow_internal"`
+	Paused          bool       `json:"paused"`
+	PushToken       *string    `json:"push_token"`
+	Status          string     `json:"status"`
+	StatusMessage   string     `json:"status_message"`
+	StatusSince     time.Time  `json:"status_since"`
+	FailCount       int32      `json:"fail_count"`
+	DownChecks      int32      `json:"down_checks"`
+	LastLatencyMs   *int32     `json:"last_latency_ms"`
+	LastCheckedAt   *time.Time `json:"last_checked_at"`
+	NextCheckAt     time.Time  `json:"next_check_at"`
+	CertExpiresAt   *time.Time `json:"cert_expires_at"`
+	CreatedByName   string     `json:"created_by_name"`
+	UpdatedByName   string     `json:"updated_by_name"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type MonitorChannel struct {
+	MonitorID uuid.UUID `json:"monitor_id"`
+	ChannelID uuid.UUID `json:"channel_id"`
+}
+
+type MonitorCheck struct {
+	ID        int64     `json:"id"`
+	MonitorID uuid.UUID `json:"monitor_id"`
+	At        time.Time `json:"at"`
+	Status    string    `json:"status"`
+	LatencyMs *int32    `json:"latency_ms"`
+	Code      string    `json:"code"`
+	Message   string    `json:"message"`
+}
+
+type MonitorDay struct {
+	MonitorID    uuid.UUID   `json:"monitor_id"`
+	Day          pgtype.Date `json:"day"`
+	Checks       int32       `json:"checks"`
+	Up           int32       `json:"up"`
+	Degraded     int32       `json:"degraded"`
+	Down         int32       `json:"down"`
+	LatencySum   int64       `json:"latency_sum"`
+	LatencyCount int32       `json:"latency_count"`
+	LatencyMax   int32       `json:"latency_max"`
+}
+
+type MonitorEvent struct {
+	ID         int64     `json:"id"`
+	MonitorID  uuid.UUID `json:"monitor_id"`
+	At         time.Time `json:"at"`
+	FromStatus string    `json:"from_status"`
+	ToStatus   string    `json:"to_status"`
+	Message    string    `json:"message"`
+}
+
+type MonitorIncident struct {
+	ID                 uuid.UUID  `json:"id"`
+	MonitorID          uuid.UUID  `json:"monitor_id"`
+	StartedAt          time.Time  `json:"started_at"`
+	ResolvedAt         *time.Time `json:"resolved_at"`
+	Cause              string     `json:"cause"`
+	AcknowledgedAt     *time.Time `json:"acknowledged_at"`
+	AcknowledgedByName string     `json:"acknowledged_by_name"`
+	Note               string     `json:"note"`
+}
+
+type NotificationChannel struct {
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	Name          string     `json:"name"`
+	Kind          string     `json:"kind"`
+	Config        []byte     `json:"config"`
+	SecretsEnc    []byte     `json:"secrets_enc"`
+	Enabled       bool       `json:"enabled"`
+	IsDefault     bool       `json:"is_default"`
+	AllowInternal bool       `json:"allow_internal"`
+	LastSentAt    *time.Time `json:"last_sent_at"`
+	LastError     string     `json:"last_error"`
+	LastErrorAt   *time.Time `json:"last_error_at"`
+	CreatedByName string     `json:"created_by_name"`
+	UpdatedByName string     `json:"updated_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type NotificationLog struct {
+	ID        int64      `json:"id"`
+	ChannelID uuid.UUID  `json:"channel_id"`
+	MonitorID *uuid.UUID `json:"monitor_id"`
+	At        time.Time  `json:"at"`
+	Title     string     `json:"title"`
+	Ok        bool       `json:"ok"`
+	Error     string     `json:"error"`
 }
 
 type Proxy struct {

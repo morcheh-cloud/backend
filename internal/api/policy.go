@@ -40,6 +40,11 @@ const (
 	kindSoftwareRecipe
 	// The server level on the server of the installed application in {id}.
 	kindSoftwareInstall
+	// A workspace level, on the workspace of the uptime monitor, notification
+	// channel or monitor incident in {id}.
+	kindMonitor
+	kindNotificationChannel
+	kindMonitorIncident
 )
 
 type policy struct {
@@ -66,6 +71,13 @@ func onSoftwareRecipe(l auth.Level) policy {
 }
 func onSoftwareInstall(l auth.Level) policy {
 	return policy{kindSoftwareInstall, l}
+}
+func onMonitor(l auth.Level) policy { return policy{kindMonitor, l} }
+func onNotificationChannel(l auth.Level) policy {
+	return policy{kindNotificationChannel, l}
+}
+func onMonitorIncident(l auth.Level) policy {
+	return policy{kindMonitorIncident, l}
 }
 
 var (
@@ -517,4 +529,32 @@ var policies = map[string]policy{
 	"delete-job":  active,
 	"clear-jobs":  active,
 	"stream-jobs": active,
+
+	// Uptime monitors.
+	"list-monitors":                active,
+	"create-monitor":               active,
+	"test-monitor-settings":        active,
+	"get-monitor":                  onMonitor(auth.Viewer),
+	"update-monitor":               onMonitor(auth.Engineer),
+	"delete-monitor":               onMonitor(auth.Owner),
+	"check-monitor":                onMonitor(auth.Operator),
+	"pause-monitor":                onMonitor(auth.Operator),
+	"get-monitor-report":           onMonitor(auth.Viewer),
+	"list-monitor-checks":          onMonitor(auth.Viewer),
+	"list-monitor-events":          onMonitor(auth.Viewer),
+	"list-monitor-incidents":       onMonitor(auth.Viewer),
+	"list-incidents":               active,
+	"acknowledge-monitor-incident": onMonitorIncident(auth.Operator),
+	"push-heartbeat":               public,
+	"push-heartbeat-post":          public,
+
+	// Notification channels.
+	"list-notification-channels":  active,
+	"create-notification-channel": active,
+	"test-notification-settings":  active,
+	"get-notification-channel":    onNotificationChannel(auth.Viewer),
+	"update-notification-channel": onNotificationChannel(auth.Owner),
+	"delete-notification-channel": onNotificationChannel(auth.Owner),
+	"test-notification-channel":   onNotificationChannel(auth.Owner),
+	"list-notification-log":       onNotificationChannel(auth.Viewer),
 }

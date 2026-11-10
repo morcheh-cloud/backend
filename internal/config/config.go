@@ -41,6 +41,12 @@ type Config struct {
 	ServerHistory time.Duration `env:"SERVER_HISTORY" envDefault:"744h"`
 	// Same for DNS servers. 0 = off.
 	DNSCheckInterval time.Duration `env:"DNS_CHECK_INTERVAL" envDefault:"30s"`
+	// PanelURL is where the panel is served, for links in alerts. Default:
+	// the first CORS origin.
+	PanelURL string `env:"PANEL_URL"`
+	// MonitorHistory is how long uptime checks are kept one by one (daily
+	// totals stay for good).
+	MonitorHistory time.Duration `env:"MONITOR_HISTORY" envDefault:"336h"`
 	// How often each reverse proxy is re-checked over SSH; 0 turns it off.
 	ProxyCheckInterval time.Duration `env:"PROXY_CHECK_INTERVAL" envDefault:"60s"`
 	// How often each online server is scanned for installed applications and

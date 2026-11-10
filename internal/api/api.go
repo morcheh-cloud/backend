@@ -127,6 +127,14 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	dns := &dnsHandler{q: sqlc.New(db), box: box, authz: a}
 	startDNSMonitor(dns, cfg.DNSCheckInterval)
 	registerDNS(api, dns)
+	panelURL := cfg.PanelURL
+	if panelURL == "" && len(cfg.CORSOrigins) > 0 && cfg.CORSOrigins[0] != "*" {
+		panelURL = cfg.CORSOrigins[0]
+	}
+	up := newUptimeHandler(sqlc.New(db), box, a, servers, panelURL, cfg.MonitorHistory)
+	startUptimeMonitor(up)
+	registerMonitors(api, up)
+	registerNotifications(api, up)
 	apps := newAppHandler(sqlc.New(db), db, box, a)
 	registerApps(api, apps)
 	registerAppCategories(api, apps)

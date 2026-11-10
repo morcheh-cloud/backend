@@ -12,10 +12,13 @@ import (
 )
 
 type Querier interface {
+	AcknowledgeMonitorIncident(ctx context.Context, arg AcknowledgeMonitorIncidentParams) (MonitorIncident, error)
 	// Runs still going that touch these servers.
 	ActiveSoftwareRunsOn(ctx context.Context, serverIds []uuid.UUID) ([]ActiveSoftwareRunsOnRow, error)
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
+	AddMonitorChannel(ctx context.Context, arg AddMonitorChannelParams) error
+	AddMonitorDay(ctx context.Context, arg AddMonitorDayParams) error
 	AddProxyChange(ctx context.Context, arg AddProxyChangeParams) error
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
 	AnyBackupPlanEnabled(ctx context.Context, databaseID uuid.UUID) (bool, error)
@@ -26,16 +29,19 @@ type Querier interface {
 	// A run starts installing an app on a server: a new row, or the old one again.
 	BeginSoftwareInstall(ctx context.Context, arg BeginSoftwareInstallParams) (SoftwareInstall, error)
 	CancelQueuedJob(ctx context.Context, id uuid.UUID) (int64, error)
+	ChannelsToNotify(ctx context.Context, monitorID uuid.UUID) ([]NotificationChannel, error)
 	// Moves a due plan on; 0 rows means something else already did.
 	ClaimBackupPlan(ctx context.Context, arg ClaimBackupPlanParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
 	ClaimSchedule(ctx context.Context, arg ClaimScheduleParams) (int64, error)
 	ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error
+	ClearMonitorChannels(ctx context.Context, monitorID uuid.UUID) error
 	CountActiveAdmins(ctx context.Context) (int32, error)
 	CountActiveRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountAnsibleRuns(ctx context.Context, arg CountAnsibleRunsParams) (int64, error)
 	CountBackupChildren(ctx context.Context, ids []uuid.UUID) ([]CountBackupChildrenRow, error)
 	CountBackups(ctx context.Context, databaseID uuid.UUID) (int64, error)
+	CountChannelMonitors(ctx context.Context, ids []uuid.UUID) ([]CountChannelMonitorsRow, error)
 	CountRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountScheduleRuns(ctx context.Context, arg CountScheduleRunsParams) (int64, error)
 	CountScriptRuns(ctx context.Context, arg CountScriptRunsParams) (int64, error)
@@ -63,6 +69,8 @@ type Querier interface {
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (UserGroup, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
+	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
+	CreateNotificationChannel(ctx context.Context, arg CreateNotificationChannelParams) (NotificationChannel, error)
 	CreatePlaybook(ctx context.Context, arg CreatePlaybookParams) (AnsiblePlaybook, error)
 	CreateProxy(ctx context.Context, arg CreateProxyParams) (Proxy, error)
 	CreateProxyHost(ctx context.Context, arg CreateProxyHostParams) (ProxyHost, error)
@@ -95,6 +103,8 @@ type Querier interface {
 	DatabaseInsightSummary(ctx context.Context, arg DatabaseInsightSummaryParams) ([]DatabaseInsightSummaryRow, error)
 	// Oldest first: what the "fills up in N days" estimates fit a line through.
 	DatabaseSizeTrend(ctx context.Context, arg DatabaseSizeTrendParams) ([]DatabaseSizeTrendRow, error)
+	DefaultChannels(ctx context.Context, workspaceID uuid.UUID) ([]uuid.UUID, error)
+	DelayMonitor(ctx context.Context, arg DelayMonitorParams) error
 	DeleteAlertChannel(ctx context.Context, arg DeleteAlertChannelParams) (int64, error)
 	DeleteAnsibleRun(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteApp(ctx context.Context, id uuid.UUID) (int64, error)
@@ -113,6 +123,8 @@ type Querier interface {
 	DeleteGrant(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteGroup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteJob(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteMonitor(ctx context.Context, id uuid.UUID) error
+	DeleteNotificationChannel(ctx context.Context, id uuid.UUID) error
 	DeleteOldScriptRuns(ctx context.Context) error
 	DeleteOldSoftwareRuns(ctx context.Context) error
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
@@ -189,6 +201,12 @@ type Querier interface {
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
 	GetGroup(ctx context.Context, id uuid.UUID) (UserGroup, error)
 	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
+	GetMonitor(ctx context.Context, id uuid.UUID) (Monitor, error)
+	GetMonitorByPushToken(ctx context.Context, pushToken *string) (Monitor, error)
+	GetMonitorIncident(ctx context.Context, id uuid.UUID) (MonitorIncident, error)
+	GetMonitorWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetNotificationChannel(ctx context.Context, id uuid.UUID) (NotificationChannel, error)
+	GetNotificationChannelWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPlaybook(ctx context.Context, id uuid.UUID) (AnsiblePlaybook, error)
 	GetPlaybookWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetProxy(ctx context.Context, id uuid.UUID) (GetProxyRow, error)
@@ -232,6 +250,9 @@ type Querier interface {
 	GetWorkspaceLogoStamp(ctx context.Context, workspaceID uuid.UUID) (time.Time, error)
 	InsertDatabaseEvent(ctx context.Context, arg InsertDatabaseEventParams) (DatabaseEvent, error)
 	InsertDatabaseSample(ctx context.Context, arg InsertDatabaseSampleParams) error
+	// ---- Checks and history ----
+	InsertMonitorCheck(ctx context.Context, arg InsertMonitorCheckParams) error
+	InsertMonitorEvent(ctx context.Context, arg InsertMonitorEventParams) error
 	InsertServerSample(ctx context.Context, arg InsertServerSampleParams) error
 	InsertServerStatusChange(ctx context.Context, arg InsertServerStatusChangeParams) error
 	InsertStorageCheck(ctx context.Context, arg InsertStorageCheckParams) error
@@ -294,6 +315,7 @@ type Querier interface {
 	// What the monitor should look at now.
 	ListDatabasesDue(ctx context.Context) ([]Database, error)
 	ListDueBackupPlans(ctx context.Context, now *time.Time) ([]DatabaseBackupPlan, error)
+	ListDueMonitors(ctx context.Context, lim int32) ([]Monitor, error)
 	ListDueSchedules(ctx context.Context, now *time.Time) ([]Schedule, error)
 	ListEnabledSchedulesWithoutNext(ctx context.Context) ([]Schedule, error)
 	ListFirewallChanges(ctx context.Context, serverID uuid.UUID) ([]ListFirewallChangesRow, error)
@@ -310,6 +332,15 @@ type Querier interface {
 	// Newest first. ref narrows to one server or storage; active to queued and
 	// running jobs, finished to the rest; created_by to one person's.
 	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
+	ListMonitorChannels(ctx context.Context, monitorID uuid.UUID) ([]uuid.UUID, error)
+	ListMonitorChannelsFor(ctx context.Context, ids []uuid.UUID) ([]MonitorChannel, error)
+	ListMonitorEvents(ctx context.Context, arg ListMonitorEventsParams) ([]MonitorEvent, error)
+	ListMonitorIncidents(ctx context.Context, arg ListMonitorIncidentsParams) ([]MonitorIncident, error)
+	// ---- Monitors ----
+	ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]Monitor, error)
+	// ---- Notification channels ----
+	ListNotificationChannels(ctx context.Context, arg ListNotificationChannelsParams) ([]NotificationChannel, error)
+	ListNotificationLog(ctx context.Context, arg ListNotificationLogParams) ([]ListNotificationLogRow, error)
 	// Every good backup of a plan, newest first: what retention looks at.
 	ListPlanBackups(ctx context.Context, planID *uuid.UUID) ([]DatabaseBackup, error)
 	// With each playbook's newest run, for the list.
@@ -371,6 +402,8 @@ type Querier interface {
 	ListUserNames(ctx context.Context, ids []uuid.UUID) ([]ListUserNamesRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	ListWorkspaceApps(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceAppsRow, error)
+	// Incidents of every monitor in scope, open ones first.
+	ListWorkspaceIncidents(ctx context.Context, arg ListWorkspaceIncidentsParams) ([]ListWorkspaceIncidentsRow, error)
 	// The light list for an access page: never the sealed credentials.
 	ListWorkspaceServers(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceServersRow, error)
 	ListWorkspaceStorages(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceStoragesRow, error)
@@ -378,8 +411,17 @@ type Querier interface {
 	ListWorkspaces(ctx context.Context) ([]ListWorkspacesRow, error)
 	// Serializes first-run setup and last-admin checks for the transaction.
 	LockAuth(ctx context.Context) error
+	LogNotification(ctx context.Context, arg LogNotificationParams) error
 	// A scan no longer finds an app Morcheh installed.
 	MarkMissingSoftware(ctx context.Context, arg MarkMissingSoftwareParams) error
+	// Checks grouped into buckets of @step seconds.
+	MonitorBuckets(ctx context.Context, arg MonitorBucketsParams) ([]MonitorBucketsRow, error)
+	MonitorChecksBetween(ctx context.Context, arg MonitorChecksBetweenParams) ([]MonitorChecksBetweenRow, error)
+	MonitorDaysSince(ctx context.Context, arg MonitorDaysSinceParams) ([]MonitorDay, error)
+	// Seconds each monitor spent in incidents since a time (open ones up to now).
+	MonitorDowntimeSince(ctx context.Context, arg MonitorDowntimeSinceParams) ([]MonitorDowntimeSinceRow, error)
+	// Counts per monitor since a time, from the raw checks.
+	MonitorUptimeSince(ctx context.Context, arg MonitorUptimeSinceParams) ([]MonitorUptimeSinceRow, error)
 	// Categories belong to one workspace, so moved services leave theirs.
 	MoveAppsToWorkspace(ctx context.Context, arg MoveAppsToWorkspaceParams) (int64, error)
 	MoveFolderServers(ctx context.Context, arg MoveFolderServersParams) error
@@ -389,11 +431,14 @@ type Querier interface {
 	MoveStoragesToWorkspace(ctx context.Context, arg MoveStoragesToWorkspaceParams) (int64, error)
 	// Where a service lands at the end of its category (or of the uncategorized).
 	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
+	// ---- Incidents ----
+	OpenMonitorIncident(ctx context.Context, arg OpenMonitorIncidentParams) error
 	// Rows of runs that left no backup, past the newest @keep of a plan.
 	PruneBackupRecords(ctx context.Context, arg PruneBackupRecordsParams) error
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
 	PruneFirewallChanges(ctx context.Context, arg PruneFirewallChangesParams) error
+	PruneMonitorChecks(ctx context.Context, before time.Time) (int64, error)
 	PruneProxyChanges(ctx context.Context, arg PruneProxyChangesParams) error
 	// Keeps a schedule's newest runs, and every one still going.
 	PruneScheduleRuns(ctx context.Context, arg PruneScheduleRunsParams) error
@@ -410,7 +455,10 @@ type Querier interface {
 	PutAppFavicon(ctx context.Context, arg PutAppFaviconParams) (int64, error)
 	PutAppLogo(ctx context.Context, arg PutAppLogoParams) error
 	PutWorkspaceLogo(ctx context.Context, arg PutWorkspaceLogoParams) error
+	// Each monitor's newest checks, newest first, for the list's bars.
+	RecentMonitorChecks(ctx context.Context, arg RecentMonitorChecksParams) ([]RecentMonitorChecksRow, error)
 	RecordAlertDelivery(ctx context.Context, arg RecordAlertDeliveryParams) error
+	RecordChannelSend(ctx context.Context, arg RecordChannelSendParams) error
 	// Version and domain keep their last known value while a server is away.
 	RecordDNSServerCheck(ctx context.Context, arg RecordDNSServerCheckParams) (DnsServer, error)
 	RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseCheckParams) (Database, error)
@@ -428,10 +476,12 @@ type Querier interface {
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
 	// Installs left mid-change by a restart.
 	ResetStuckSoftwareInstalls(ctx context.Context) error
+	ResolveMonitorIncident(ctx context.Context, arg ResolveMonitorIncidentParams) error
 	// Puts back a host from a history snapshot, with its old id.
 	RestoreProxyHost(ctx context.Context, arg RestoreProxyHostParams) error
 	SaveAnsibleRunProgress(ctx context.Context, arg SaveAnsibleRunProgressParams) error
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
+	SaveMonitorState(ctx context.Context, arg SaveMonitorStateParams) (Monitor, error)
 	// What a scan found installed. A run in progress keeps its status.
 	SaveScannedSoftware(ctx context.Context, arg SaveScannedSoftwareParams) error
 	// While it runs, so the page shows each finished destination.
@@ -467,6 +517,8 @@ type Querier interface {
 	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
 	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)
 	SetDatabasePaused(ctx context.Context, arg SetDatabasePausedParams) (Database, error)
+	// Resuming starts over: pending until the next check says otherwise.
+	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) (Monitor, error)
 	SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error)
 	SetRestoreJob(ctx context.Context, arg SetRestoreJobParams) error
 	SetRestoreSafety(ctx context.Context, arg SetRestoreSafetyParams) error
@@ -527,6 +579,9 @@ type Querier interface {
 	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)
 	UpdateGroup(ctx context.Context, arg UpdateGroupParams) (UserGroup, error)
+	// A changed monitor is checked again at once.
+	UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (Monitor, error)
+	UpdateNotificationChannel(ctx context.Context, arg UpdateNotificationChannelParams) (NotificationChannel, error)
 	UpdatePlaybook(ctx context.Context, arg UpdatePlaybookParams) (AnsiblePlaybook, error)
 	UpdateProxyHost(ctx context.Context, arg UpdateProxyHostParams) (ProxyHost, error)
 	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (Schedule, error)
