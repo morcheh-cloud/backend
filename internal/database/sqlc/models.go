@@ -40,6 +40,61 @@ type AlertChannel struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+type AlertEvent struct {
+	ID          int64      `json:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	RuleID      *uuid.UUID `json:"rule_id"`
+	ServerID    *uuid.UUID `json:"server_id"`
+	RuleName    string     `json:"rule_name"`
+	ServerName  string     `json:"server_name"`
+	Metric      string     `json:"metric"`
+	Severity    string     `json:"severity"`
+	Kind        string     `json:"kind"`
+	Value       float64    `json:"value"`
+	Threshold   float64    `json:"threshold"`
+	Detail      string     `json:"detail"`
+	LastedSecs  int64      `json:"lasted_secs"`
+	At          time.Time  `json:"at"`
+}
+
+type AlertRule struct {
+	ID             uuid.UUID   `json:"id"`
+	WorkspaceID    uuid.UUID   `json:"workspace_id"`
+	Name           string      `json:"name"`
+	Enabled        bool        `json:"enabled"`
+	Metric         string      `json:"metric"`
+	Op             string      `json:"op"`
+	Threshold      float64     `json:"threshold"`
+	Mount          string      `json:"mount"`
+	ForMinutes     int32       `json:"for_minutes"`
+	Severity       string      `json:"severity"`
+	Scope          string      `json:"scope"`
+	ServerIds      []uuid.UUID `json:"server_ids"`
+	Tags           []string    `json:"tags"`
+	RepeatMinutes  int32       `json:"repeat_minutes"`
+	NotifyResolved bool        `json:"notify_resolved"`
+	CreatedByName  string      `json:"created_by_name"`
+	UpdatedByName  string      `json:"updated_by_name"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
+}
+
+type AlertRuleChannel struct {
+	RuleID    uuid.UUID `json:"rule_id"`
+	ChannelID uuid.UUID `json:"channel_id"`
+}
+
+type AlertState struct {
+	RuleID      uuid.UUID  `json:"rule_id"`
+	ServerID    uuid.UUID  `json:"server_id"`
+	BreachSince *time.Time `json:"breach_since"`
+	FiringSince *time.Time `json:"firing_since"`
+	LastSentAt  *time.Time `json:"last_sent_at"`
+	Value       float64    `json:"value"`
+	Detail      string     `json:"detail"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
 type AnsiblePlaybook struct {
 	ID          uuid.UUID  `json:"id"`
 	WorkspaceID uuid.UUID  `json:"workspace_id"`
@@ -502,6 +557,7 @@ type NotificationLog struct {
 	Title     string     `json:"title"`
 	Ok        bool       `json:"ok"`
 	Error     string     `json:"error"`
+	RuleID    *uuid.UUID `json:"rule_id"`
 }
 
 type Proxy struct {
@@ -707,6 +763,7 @@ type ServerSample struct {
 	DiskMaxMount   string    `json:"disk_max_mount"`
 	RxBytesPerSec  float64   `json:"rx_bytes_per_sec"`
 	TxBytesPerSec  float64   `json:"tx_bytes_per_sec"`
+	Disks          []byte    `json:"disks"`
 }
 
 type ServerStatusChange struct {

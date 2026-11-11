@@ -36,7 +36,7 @@ type Config struct {
 	// Each online Linux server's CPU, memory, disk and network are read this
 	// often for Servers › Insights (about a second of work on the server).
 	// 0 = off.
-	ServerSampleInterval time.Duration `env:"SERVER_SAMPLE_INTERVAL" envDefault:"5m"`
+	ServerSampleInterval time.Duration `env:"SERVER_SAMPLE_INTERVAL" envDefault:"1m"`
 	// Server check history and resource samples are kept this long.
 	ServerHistory time.Duration `env:"SERVER_HISTORY" envDefault:"744h"`
 	// Same for DNS servers. 0 = off.

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -43,6 +44,9 @@ func (h *serverHandler) recordCheckHistory(ctx context.Context, prev sqlc.Server
 	if err := h.q.RecordServerCheckBucket(ctx, b); err != nil {
 		slog.Warn("record server check history", "server", prev.ID, "error", err)
 	}
+	if h.alerts != nil {
+		h.alerts.onStatus(ctx, prev, res)
+	}
 	// The first check of a new server isn't a change.
 	if prev.LastCheckedAt == nil || prev.Status == res.Status {
 		return
@@ -77,6 +81,9 @@ func startServerSampler(h *serverHandler, every, keep time.Duration) {
 				if _, err := h.q.PruneServerSamples(ctx, before); err != nil {
 					slog.Warn("prune server samples", "error", err)
 				}
+				if _, err := h.q.PruneAlertEvents(ctx, before); err != nil {
+					slog.Warn("prune alert events", "error", err)
+				}
 			}
 			if every <= 0 {
 				time.Sleep(10 * time.Minute)
@@ -109,7 +116,7 @@ func (h *serverHandler) sampleAll(ctx context.Context, skip map[uuid.UUID]time.T
 			defer func() { <-sem; wg.Done() }()
 			sctx, cancel := context.WithTimeout(ctx, sampleTimeout)
 			defer cancel()
-			err := h.sample(sctx, s.ID)
+			err := h.sample(sctx, s)
 			if errors.Is(err, sysstats.ErrUnsupported) {
 				mu.Lock()
 				skip[s.ID] = time.Now()
@@ -122,7 +129,8 @@ func (h *serverHandler) sampleAll(ctx context.Context, skip map[uuid.UUID]time.T
 	wg.Wait()
 }
 
-func (h *serverHandler) sample(ctx context.Context, id uuid.UUID) error {
+func (h *serverHandler) sample(ctx context.Context, srv sqlc.Server) error {
+	id := srv.ID
 	var out string
 	if err := h.withConn(ctx, id.String(), func(c *sshpool.Conn) (err error) {
 		out, err = run(ctx, c, sysstats.Script)
@@ -142,8 +150,10 @@ func (h *serverHandler) sample(ctx context.Context, id uuid.UUID) error {
 		SwapUsedBytes: st.Memory.SwapUsedBytes, SwapTotalBytes: st.Memory.SwapTotalBytes,
 		RxBytesPerSec: st.Network.RxBytesPerSec, TxBytesPerSec: st.Network.TxBytesPerSec,
 	}
+	disks := make([]sampleDisk, 0, len(st.Disks))
 	// Disks come largest first: / if it's there, else the largest.
 	for i, d := range st.Disks {
+		disks = append(disks, sampleDisk{Mount: d.Mount, Used: d.UsedBytes, Total: d.TotalBytes, Percent: d.UsedPercent})
 		if i == 0 || d.Mount == "/" {
 			p.DiskUsedBytes, p.DiskTotalBytes = d.UsedBytes, d.TotalBytes
 		}
@@ -151,7 +161,60 @@ func (h *serverHandler) sample(ctx context.Context, id uuid.UUID) error {
 			p.DiskMaxPercent, p.DiskMaxMount = d.UsedPercent, d.Mount
 		}
 	}
-	return h.q.InsertServerSample(context.WithoutCancel(ctx), p)
+	p.Disks, _ = json.Marshal(disks)
+	ctx = context.WithoutCancel(ctx)
+	if err := h.q.InsertServerSample(ctx, p); err != nil {
+		return err
+	}
+	if h.alerts != nil {
+		h.alerts.onSample(ctx, srv, metricSampleOf(sqlc.ServerSample(p)))
+	}
+	return nil
+}
+
+// sampleDisk is one filesystem in server_samples.disks.
+type sampleDisk struct {
+	Mount string `json:"mount"`
+	Used  int64  `json:"used"`
+	Total int64  `json:"total"`
+	// df's Use%: of what non-root users can use, so a bit above used/total.
+	Percent float64 `json:"pct"`
+}
+
+func pct(used, total int64) float64 {
+	if total <= 0 {
+		return 0
+	}
+	return 100 * float64(used) / float64(total)
+}
+
+// metricSampleOf reads a stored sample in the units alert rules use.
+func metricSampleOf(r sqlc.ServerSample) metricSample {
+	s := metricSample{
+		at: r.At, cpu: r.CpuPercent, iowait: r.IowaitPercent,
+		mem: pct(r.MemUsedBytes, r.MemTotalBytes), swap: -1,
+		rx: r.RxBytesPerSec, tx: r.TxBytesPerSec,
+	}
+	if r.Cores > 0 {
+		s.load = r.Load1 / float64(r.Cores)
+	}
+	if r.SwapTotalBytes > 0 {
+		s.swap = pct(r.SwapUsedBytes, r.SwapTotalBytes)
+	}
+	var disks []sampleDisk
+	_ = json.Unmarshal(r.Disks, &disks)
+	for _, d := range disks {
+		p := d.Percent
+		if p == 0 {
+			p = pct(d.Used, d.Total)
+		}
+		s.disks = append(s.disks, diskUse{mount: d.Mount, percent: p})
+	}
+	// Samples from before per-disk history only know the fullest one.
+	if len(s.disks) == 0 && r.DiskMaxMount != "" {
+		s.disks = append(s.disks, diskUse{mount: r.DiskMaxMount, percent: r.DiskMaxPercent})
+	}
+	return s
 }
 
 // ---- Response types ----

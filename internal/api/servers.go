@@ -275,6 +275,8 @@ type serverHandler struct {
 	privs privileges
 	jobs  *jobs.Runner
 	authz *authz
+	// Set once the uptime handler exists; nil = no alert rules.
+	alerts *alertEngine
 }
 
 // forget closes everything still connected to deleted servers.

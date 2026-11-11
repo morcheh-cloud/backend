@@ -36,6 +36,7 @@ type NotifyChannel struct {
 	IsDefault     bool                 `json:"is_default" doc:"Added to every new monitor in the workspace"`
 	AllowInternal bool                 `json:"allow_internal"`
 	Monitors      int32                `json:"monitors" doc:"How many monitors use it"`
+	Rules         int32                `json:"rules" doc:"How many alert rules use it"`
 	LastSentAt    *time.Time           `json:"last_sent_at,omitempty"`
 	LastError     string               `json:"last_error"`
 	LastErrorAt   *time.Time           `json:"last_error_at,omitempty"`
@@ -78,13 +79,13 @@ func (h *uptimeHandler) sealJSON(v any, empty bool) []byte {
 	return h.box.Seal(string(b))
 }
 
-func toNotifyChannel(c sqlc.NotificationChannel, s notify.ChannelSecrets, monitors int32) NotifyChannel {
+func toNotifyChannel(c sqlc.NotificationChannel, s notify.ChannelSecrets, monitors, rules int32) NotifyChannel {
 	var cfg notify.ChannelConfig
 	_ = json.Unmarshal(c.Config, &cfg)
 	return NotifyChannel{
 		ID: c.ID.String(), WorkspaceID: c.WorkspaceID.String(), Name: c.Name, Kind: c.Kind,
 		Config: cfg, Secrets: s.Names(), Enabled: c.Enabled, IsDefault: c.IsDefault,
-		AllowInternal: c.AllowInternal, Monitors: monitors, LastSentAt: c.LastSentAt,
+		AllowInternal: c.AllowInternal, Monitors: monitors, Rules: rules, LastSentAt: c.LastSentAt,
 		LastError: c.LastError, LastErrorAt: c.LastErrorAt, CreatedByName: c.CreatedByName,
 		UpdatedByName: c.UpdatedByName, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
@@ -95,11 +96,14 @@ func (h *uptimeHandler) channelOut(ctx context.Context, c sqlc.NotificationChann
 	if err != nil {
 		return nil, internalError(err)
 	}
-	var n int32
+	var n, rules int32
 	if rows, err := h.q.CountChannelMonitors(ctx, []uuid.UUID{c.ID}); err == nil && len(rows) > 0 {
 		n = rows[0].Monitors
 	}
-	return &NotifyChannelOutput{Body: toNotifyChannel(c, s, n)}, nil
+	if rows, err := h.q.CountChannelRules(ctx, []uuid.UUID{c.ID}); err == nil && len(rows) > 0 {
+		rules = rows[0].Rules
+	}
+	return &NotifyChannelOutput{Body: toNotifyChannel(c, s, n, rules)}, nil
 }
 
 func (h *uptimeHandler) getChannel(ctx context.Context, rawID string) (sqlc.NotificationChannel, error) {
@@ -344,6 +348,8 @@ type NotificationLogEntry struct {
 	Error       string    `json:"error"`
 	MonitorID   *string   `json:"monitor_id,omitempty" format:"uuid"`
 	MonitorName string    `json:"monitor_name"`
+	RuleID      *string   `json:"rule_id,omitempty" format:"uuid"`
+	RuleName    string    `json:"rule_name"`
 }
 
 func registerNotifications(api huma.API, h *uptimeHandler) {
@@ -375,11 +381,17 @@ func registerNotifications(api huma.API, h *uptimeHandler) {
 				counts[c.ChannelID] = c.Monitors
 			}
 		}
+		rules := map[uuid.UUID]int32{}
+		if cs, err := h.q.CountChannelRules(ctx, ids); err == nil {
+			for _, c := range cs {
+				rules[c.ChannelID] = c.Rules
+			}
+		}
 		out := &listOut{}
 		out.Body.Items = make([]NotifyChannel, 0, len(rows))
 		for _, r := range rows {
 			s, _ := h.channelSecrets(r)
-			out.Body.Items = append(out.Body.Items, toNotifyChannel(r, s, counts[r.ID]))
+			out.Body.Items = append(out.Body.Items, toNotifyChannel(r, s, counts[r.ID], rules[r.ID]))
 		}
 		return out, nil
 	})
@@ -468,6 +480,7 @@ func registerNotifications(api huma.API, h *uptimeHandler) {
 			out.Body.Items = append(out.Body.Items, NotificationLogEntry{
 				ID: r.ID, At: r.At, Title: r.Title, OK: r.Ok, Error: r.Error,
 				MonitorID: optionalIDString(r.MonitorID), MonitorName: r.MonitorName,
+				RuleID: optionalIDString(r.RuleID), RuleName: r.RuleName,
 			})
 		}
 		return out, nil
@@ -483,5 +496,17 @@ func (h *uptimeHandler) recordSend(ctx context.Context, channel uuid.UUID, monit
 	_ = h.q.RecordChannelSend(ctx, sqlc.RecordChannelSendParams{ID: channel, Ok: err == nil, Error: msg})
 	_ = h.q.LogNotification(ctx, sqlc.LogNotificationParams{
 		ChannelID: channel, MonitorID: monitor, Title: title, Ok: err == nil, Error: msg,
+	})
+}
+
+// recordRuleSend is recordSend for an alert rule's message.
+func (h *uptimeHandler) recordRuleSend(ctx context.Context, channel, rule uuid.UUID, title string, err error) {
+	msg := ""
+	if err != nil {
+		msg = clipText(err.Error(), 1000)
+	}
+	_ = h.q.RecordChannelSend(ctx, sqlc.RecordChannelSendParams{ID: channel, Ok: err == nil, Error: msg})
+	_ = h.q.LogNotification(ctx, sqlc.LogNotificationParams{
+		ChannelID: channel, RuleID: &rule, Title: title, Ok: err == nil, Error: msg,
 	})
 }

@@ -15,6 +15,7 @@ type Querier interface {
 	AcknowledgeMonitorIncident(ctx context.Context, arg AcknowledgeMonitorIncidentParams) (MonitorIncident, error)
 	// Runs still going that touch these servers.
 	ActiveSoftwareRunsOn(ctx context.Context, serverIds []uuid.UUID) ([]ActiveSoftwareRunsOnRow, error)
+	AddAlertRuleChannel(ctx context.Context, arg AddAlertRuleChannelParams) error
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
 	AddMonitorChannel(ctx context.Context, arg AddMonitorChannelParams) error
@@ -22,6 +23,9 @@ type Querier interface {
 	AddMonitorLocation(ctx context.Context, arg AddMonitorLocationParams) error
 	AddProxyChange(ctx context.Context, arg AddProxyChangeParams) error
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
+	AlertRuleChannelsToNotify(ctx context.Context, ruleID uuid.UUID) ([]NotificationChannel, error)
+	// The enabled rules of a server's workspace that cover it.
+	AlertRulesForServer(ctx context.Context, arg AlertRulesForServerParams) ([]AlertRule, error)
 	AnyBackupPlanEnabled(ctx context.Context, databaseID uuid.UUID) (bool, error)
 	// A backup and all it builds on, oldest first.
 	BackupChain(ctx context.Context, id uuid.UUID) ([]DatabaseBackup, error)
@@ -35,6 +39,7 @@ type Querier interface {
 	ClaimBackupPlan(ctx context.Context, arg ClaimBackupPlanParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
 	ClaimSchedule(ctx context.Context, arg ClaimScheduleParams) (int64, error)
+	ClearAlertRuleChannels(ctx context.Context, ruleID uuid.UUID) error
 	ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error
 	ClearMonitorChannels(ctx context.Context, monitorID uuid.UUID) error
 	CountActiveAdmins(ctx context.Context) (int32, error)
@@ -43,6 +48,7 @@ type Querier interface {
 	CountBackupChildren(ctx context.Context, ids []uuid.UUID) ([]CountBackupChildrenRow, error)
 	CountBackups(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountChannelMonitors(ctx context.Context, ids []uuid.UUID) ([]CountChannelMonitorsRow, error)
+	CountChannelRules(ctx context.Context, ids []uuid.UUID) ([]CountChannelRulesRow, error)
 	CountRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountScheduleRuns(ctx context.Context, arg CountScheduleRunsParams) (int64, error)
 	CountScriptRuns(ctx context.Context, arg CountScriptRunsParams) (int64, error)
@@ -56,6 +62,7 @@ type Querier interface {
 	CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error)
 	CountWorkspaces(ctx context.Context) (int32, error)
 	CreateAlertChannel(ctx context.Context, arg CreateAlertChannelParams) (AlertChannel, error)
+	CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams) (AlertRule, error)
 	CreateAnsibleRun(ctx context.Context, arg CreateAnsibleRunParams) (AnsibleRun, error)
 	CreateApp(ctx context.Context, arg CreateAppParams) (App, error)
 	CreateAppAccount(ctx context.Context, arg CreateAppAccountParams) (AppAccount, error)
@@ -107,6 +114,8 @@ type Querier interface {
 	DefaultChannels(ctx context.Context, workspaceID uuid.UUID) ([]uuid.UUID, error)
 	DelayMonitor(ctx context.Context, arg DelayMonitorParams) error
 	DeleteAlertChannel(ctx context.Context, arg DeleteAlertChannelParams) (int64, error)
+	DeleteAlertRule(ctx context.Context, id uuid.UUID) error
+	DeleteAlertStates(ctx context.Context, ruleID uuid.UUID) error
 	DeleteAnsibleRun(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteApp(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteAppAccountsExcept(ctx context.Context, arg DeleteAppAccountsExceptParams) error
@@ -180,6 +189,9 @@ type Querier interface {
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
 	GetAlertChannel(ctx context.Context, id uuid.UUID) (AlertChannel, error)
+	GetAlertRule(ctx context.Context, id uuid.UUID) (AlertRule, error)
+	GetAlertRuleWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetAlertState(ctx context.Context, arg GetAlertStateParams) (AlertState, error)
 	GetAnsibleRun(ctx context.Context, id uuid.UUID) (AnsibleRun, error)
 	GetAnsibleRunWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetApp(ctx context.Context, id uuid.UUID) (App, error)
@@ -249,6 +261,7 @@ type Querier interface {
 	GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error)
 	GetWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) (WorkspaceLogo, error)
 	GetWorkspaceLogoStamp(ctx context.Context, workspaceID uuid.UUID) (time.Time, error)
+	InsertAlertEvent(ctx context.Context, arg InsertAlertEventParams) error
 	InsertDatabaseEvent(ctx context.Context, arg InsertDatabaseEventParams) (DatabaseEvent, error)
 	InsertDatabaseSample(ctx context.Context, arg InsertDatabaseSampleParams) error
 	// ---- Checks and history ----
@@ -287,6 +300,11 @@ type Querier interface {
 	ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error)
 	ListActiveScheduleRuns(ctx context.Context, scheduleID *uuid.UUID) ([]ScheduleRun, error)
 	ListAlertChannels(ctx context.Context, workspaceID uuid.UUID) ([]AlertChannel, error)
+	ListAlertEvents(ctx context.Context, arg ListAlertEventsParams) ([]AlertEvent, error)
+	ListAlertRuleChannels(ctx context.Context, ids []uuid.UUID) ([]AlertRuleChannel, error)
+	ListAlertRules(ctx context.Context, arg ListAlertRulesParams) ([]AlertRule, error)
+	// Where the given rules stand on each server they've seen.
+	ListAlertStates(ctx context.Context, ids []uuid.UUID) ([]ListAlertStatesRow, error)
 	ListAllGroupMembers(ctx context.Context) ([]GroupMember, error)
 	ListAnsibleFolders(ctx context.Context, workspaceID uuid.UUID) ([]ListAnsibleFoldersRow, error)
 	// Newest first, without the heavy columns.
@@ -444,6 +462,7 @@ type Querier interface {
 	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
 	// ---- Incidents ----
 	OpenMonitorIncident(ctx context.Context, arg OpenMonitorIncidentParams) error
+	PruneAlertEvents(ctx context.Context, before time.Time) (int64, error)
 	// Rows of runs that left no backup, past the newest @keep of a plan.
 	PruneBackupRecords(ctx context.Context, arg PruneBackupRecordsParams) error
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
@@ -506,6 +525,10 @@ type Querier interface {
 	SaveTerminalRecording(ctx context.Context, arg SaveTerminalRecordingParams) error
 	ServerCheckSeries(ctx context.Context, arg ServerCheckSeriesParams) ([]ServerCheckSeriesRow, error)
 	ServerCheckSummary(ctx context.Context, arg ServerCheckSummaryParams) ([]ServerCheckSummaryRow, error)
+	// Each filesystem's use, bucketed (last value of the bucket).
+	ServerDiskSeries(ctx context.Context, arg ServerDiskSeriesParams) ([]ServerDiskSeriesRow, error)
+	// One server's resources, bucketed.
+	ServerMetricSeries(ctx context.Context, arg ServerMetricSeriesParams) ([]ServerMetricSeriesRow, error)
 	ServerOSFacets(ctx context.Context, arg ServerOSFacetsParams) ([]ServerOSFacetsRow, error)
 	ServerSampleSeries(ctx context.Context, arg ServerSampleSeriesParams) ([]ServerSampleSeriesRow, error)
 	// Averages and peaks over the range, and the root disk at its start and end
@@ -516,6 +539,7 @@ type Querier interface {
 	ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams) ([]ServerTagFacetsRow, error)
 	// Online servers whose last scan is older than the interval (or never ran).
 	ServersToScanSoftware(ctx context.Context, seconds float64) ([]uuid.UUID, error)
+	SetAlertRuleEnabled(ctx context.Context, arg SetAlertRuleEnabledParams) (AlertRule, error)
 	SetAnsibleRunJob(ctx context.Context, arg SetAnsibleRunJobParams) error
 	SetAppCategoryPosition(ctx context.Context, arg SetAppCategoryPositionParams) error
 	SetAppLogoKind(ctx context.Context, arg SetAppLogoKindParams) (App, error)
@@ -582,6 +606,7 @@ type Querier interface {
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	TouchUserLogin(ctx context.Context, id uuid.UUID) error
 	UpdateAlertChannel(ctx context.Context, arg UpdateAlertChannelParams) (AlertChannel, error)
+	UpdateAlertRule(ctx context.Context, arg UpdateAlertRuleParams) (AlertRule, error)
 	UpdateApp(ctx context.Context, arg UpdateAppParams) (App, error)
 	UpdateAppAccount(ctx context.Context, arg UpdateAppAccountParams) (AppAccount, error)
 	UpdateAppCategory(ctx context.Context, arg UpdateAppCategoryParams) (AppCategory, error)
@@ -608,6 +633,7 @@ type Querier interface {
 	UpdateStorage(ctx context.Context, arg UpdateStorageParams) (Storage, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
+	UpsertAlertState(ctx context.Context, arg UpsertAlertStateParams) error
 	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)
 	UserStatusCounts(ctx context.Context) ([]UserStatusCountsRow, error)
 	// A workspace's servers a scan can reach now.

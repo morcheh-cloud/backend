@@ -16,11 +16,11 @@ const insertServerSample = `-- name: InsertServerSample :exec
 INSERT INTO server_samples (
     server_id, at, cpu_percent, iowait_percent, cores, load1, mem_used_bytes, mem_total_bytes,
     swap_used_bytes, swap_total_bytes, disk_used_bytes, disk_total_bytes, disk_max_percent,
-    disk_max_mount, rx_bytes_per_sec, tx_bytes_per_sec
+    disk_max_mount, rx_bytes_per_sec, tx_bytes_per_sec, disks
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11, $12, $13,
-    $14, $15, $16
+    $14, $15, $16, $17
 )
 ON CONFLICT DO NOTHING
 `
@@ -42,6 +42,7 @@ type InsertServerSampleParams struct {
 	DiskMaxMount   string    `json:"disk_max_mount"`
 	RxBytesPerSec  float64   `json:"rx_bytes_per_sec"`
 	TxBytesPerSec  float64   `json:"tx_bytes_per_sec"`
+	Disks          []byte    `json:"disks"`
 }
 
 func (q *Queries) InsertServerSample(ctx context.Context, arg InsertServerSampleParams) error {
@@ -62,6 +63,7 @@ func (q *Queries) InsertServerSample(ctx context.Context, arg InsertServerSample
 		arg.DiskMaxMount,
 		arg.RxBytesPerSec,
 		arg.TxBytesPerSec,
+		arg.Disks,
 	)
 	return err
 }
@@ -89,7 +91,7 @@ func (q *Queries) InsertServerStatusChange(ctx context.Context, arg InsertServer
 }
 
 const latestServerSamples = `-- name: LatestServerSamples :many
-SELECT DISTINCT ON (server_id) server_id, at, cpu_percent, iowait_percent, cores, load1, mem_used_bytes, mem_total_bytes, swap_used_bytes, swap_total_bytes, disk_used_bytes, disk_total_bytes, disk_max_percent, disk_max_mount, rx_bytes_per_sec, tx_bytes_per_sec FROM server_samples
+SELECT DISTINCT ON (server_id) server_id, at, cpu_percent, iowait_percent, cores, load1, mem_used_bytes, mem_total_bytes, swap_used_bytes, swap_total_bytes, disk_used_bytes, disk_total_bytes, disk_max_percent, disk_max_mount, rx_bytes_per_sec, tx_bytes_per_sec, disks FROM server_samples
 WHERE server_id = ANY ($1::uuid[])
 ORDER BY server_id, at DESC
 `
@@ -120,6 +122,7 @@ func (q *Queries) LatestServerSamples(ctx context.Context, ids []uuid.UUID) ([]S
 			&i.DiskMaxMount,
 			&i.RxBytesPerSec,
 			&i.TxBytesPerSec,
+			&i.Disks,
 		); err != nil {
 			return nil, err
 		}
@@ -354,6 +357,157 @@ func (q *Queries) ServerCheckSummary(ctx context.Context, arg ServerCheckSummary
 			&i.LatencyAvg,
 			&i.LatencyMax,
 			&i.FirstAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const serverDiskSeries = `-- name: ServerDiskSeries :many
+SELECT date_bin(make_interval(secs => $1::float8), s.at, $2::timestamptz)::timestamptz AS t,
+       (d ->> 'mount')::text AS mount,
+       max((d ->> 'used')::bigint)::bigint AS used,
+       max((d ->> 'total')::bigint)::bigint AS total,
+       max(coalesce((d ->> 'pct')::float8, 0))::float8 AS percent
+FROM server_samples s, jsonb_array_elements(s.disks) d
+WHERE s.server_id = $3 AND s.at >= $4::timestamptz
+GROUP BY 1, 2
+ORDER BY 1, 2
+`
+
+type ServerDiskSeriesParams struct {
+	BucketSecs float64   `json:"bucket_secs"`
+	Origin     time.Time `json:"origin"`
+	ServerID   uuid.UUID `json:"server_id"`
+	Since      time.Time `json:"since"`
+}
+
+type ServerDiskSeriesRow struct {
+	T       time.Time `json:"t"`
+	Mount   string    `json:"mount"`
+	Used    int64     `json:"used"`
+	Total   int64     `json:"total"`
+	Percent float64   `json:"percent"`
+}
+
+// Each filesystem's use, bucketed (last value of the bucket).
+func (q *Queries) ServerDiskSeries(ctx context.Context, arg ServerDiskSeriesParams) ([]ServerDiskSeriesRow, error) {
+	rows, err := q.db.Query(ctx, serverDiskSeries,
+		arg.BucketSecs,
+		arg.Origin,
+		arg.ServerID,
+		arg.Since,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ServerDiskSeriesRow{}
+	for rows.Next() {
+		var i ServerDiskSeriesRow
+		if err := rows.Scan(
+			&i.T,
+			&i.Mount,
+			&i.Used,
+			&i.Total,
+			&i.Percent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const serverMetricSeries = `-- name: ServerMetricSeries :many
+SELECT date_bin(make_interval(secs => $1::float8), at, $2::timestamptz)::timestamptz AS t,
+       count(*)::bigint AS samples,
+       avg(cpu_percent)::float8 AS cpu_avg,
+       max(cpu_percent)::float8 AS cpu_max,
+       avg(iowait_percent)::float8 AS iowait_avg,
+       coalesce(avg(load1 / nullif(cores, 0)), 0)::float8 AS load_avg,
+       coalesce(max(load1 / nullif(cores, 0)), 0)::float8 AS load_max,
+       coalesce(avg(100.0 * mem_used_bytes / nullif(mem_total_bytes, 0)), 0)::float8 AS mem_avg,
+       coalesce(max(100.0 * mem_used_bytes / nullif(mem_total_bytes, 0)), 0)::float8 AS mem_max,
+       coalesce(avg(100.0 * swap_used_bytes / nullif(swap_total_bytes, 0)), 0)::float8 AS swap_avg,
+       coalesce(avg(100.0 * disk_used_bytes / nullif(disk_total_bytes, 0)), 0)::float8 AS disk_avg,
+       max(disk_max_percent)::float8 AS disk_max,
+       avg(rx_bytes_per_sec)::float8 AS rx_avg,
+       max(rx_bytes_per_sec)::float8 AS rx_max,
+       avg(tx_bytes_per_sec)::float8 AS tx_avg,
+       max(tx_bytes_per_sec)::float8 AS tx_max
+FROM server_samples
+WHERE server_id = $3 AND at >= $4::timestamptz
+GROUP BY 1
+ORDER BY 1
+`
+
+type ServerMetricSeriesParams struct {
+	BucketSecs float64   `json:"bucket_secs"`
+	Origin     time.Time `json:"origin"`
+	ServerID   uuid.UUID `json:"server_id"`
+	Since      time.Time `json:"since"`
+}
+
+type ServerMetricSeriesRow struct {
+	T         time.Time `json:"t"`
+	Samples   int64     `json:"samples"`
+	CpuAvg    float64   `json:"cpu_avg"`
+	CpuMax    float64   `json:"cpu_max"`
+	IowaitAvg float64   `json:"iowait_avg"`
+	LoadAvg   float64   `json:"load_avg"`
+	LoadMax   float64   `json:"load_max"`
+	MemAvg    float64   `json:"mem_avg"`
+	MemMax    float64   `json:"mem_max"`
+	SwapAvg   float64   `json:"swap_avg"`
+	DiskAvg   float64   `json:"disk_avg"`
+	DiskMax   float64   `json:"disk_max"`
+	RxAvg     float64   `json:"rx_avg"`
+	RxMax     float64   `json:"rx_max"`
+	TxAvg     float64   `json:"tx_avg"`
+	TxMax     float64   `json:"tx_max"`
+}
+
+// One server's resources, bucketed.
+func (q *Queries) ServerMetricSeries(ctx context.Context, arg ServerMetricSeriesParams) ([]ServerMetricSeriesRow, error) {
+	rows, err := q.db.Query(ctx, serverMetricSeries,
+		arg.BucketSecs,
+		arg.Origin,
+		arg.ServerID,
+		arg.Since,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ServerMetricSeriesRow{}
+	for rows.Next() {
+		var i ServerMetricSeriesRow
+		if err := rows.Scan(
+			&i.T,
+			&i.Samples,
+			&i.CpuAvg,
+			&i.CpuMax,
+			&i.IowaitAvg,
+			&i.LoadAvg,
+			&i.LoadMax,
+			&i.MemAvg,
+			&i.MemMax,
+			&i.SwapAvg,
+			&i.DiskAvg,
+			&i.DiskMax,
+			&i.RxAvg,
+			&i.RxMax,
+			&i.TxAvg,
+			&i.TxMax,
 		); err != nil {
 			return nil, err
 		}

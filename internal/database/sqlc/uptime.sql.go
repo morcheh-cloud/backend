@@ -1089,9 +1089,10 @@ func (q *Queries) ListNotificationChannels(ctx context.Context, arg ListNotifica
 }
 
 const listNotificationLog = `-- name: ListNotificationLog :many
-SELECT l.id, l.channel_id, l.monitor_id, l.at, l.title, l.ok, l.error, coalesce(m.name, '')::text AS monitor_name
+SELECT l.id, l.channel_id, l.monitor_id, l.at, l.title, l.ok, l.error, l.rule_id, coalesce(m.name, '')::text AS monitor_name, coalesce(r.name, '')::text AS rule_name
 FROM notification_log l
 LEFT JOIN monitors m ON m.id = l.monitor_id
+LEFT JOIN alert_rules r ON r.id = l.rule_id
 WHERE l.channel_id = $1
 ORDER BY l.at DESC
 LIMIT $2
@@ -1110,7 +1111,9 @@ type ListNotificationLogRow struct {
 	Title       string     `json:"title"`
 	Ok          bool       `json:"ok"`
 	Error       string     `json:"error"`
+	RuleID      *uuid.UUID `json:"rule_id"`
 	MonitorName string     `json:"monitor_name"`
+	RuleName    string     `json:"rule_name"`
 }
 
 func (q *Queries) ListNotificationLog(ctx context.Context, arg ListNotificationLogParams) ([]ListNotificationLogRow, error) {
@@ -1130,7 +1133,9 @@ func (q *Queries) ListNotificationLog(ctx context.Context, arg ListNotificationL
 			&i.Title,
 			&i.Ok,
 			&i.Error,
+			&i.RuleID,
 			&i.MonitorName,
+			&i.RuleName,
 		); err != nil {
 			return nil, err
 		}
@@ -1215,13 +1220,14 @@ func (q *Queries) ListWorkspaceIncidents(ctx context.Context, arg ListWorkspaceI
 }
 
 const logNotification = `-- name: LogNotification :exec
-INSERT INTO notification_log (channel_id, monitor_id, title, ok, error)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO notification_log (channel_id, monitor_id, rule_id, title, ok, error)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type LogNotificationParams struct {
 	ChannelID uuid.UUID  `json:"channel_id"`
 	MonitorID *uuid.UUID `json:"monitor_id"`
+	RuleID    *uuid.UUID `json:"rule_id"`
 	Title     string     `json:"title"`
 	Ok        bool       `json:"ok"`
 	Error     string     `json:"error"`
@@ -1231,6 +1237,7 @@ func (q *Queries) LogNotification(ctx context.Context, arg LogNotificationParams
 	_, err := q.db.Exec(ctx, logNotification,
 		arg.ChannelID,
 		arg.MonitorID,
+		arg.RuleID,
 		arg.Title,
 		arg.Ok,
 		arg.Error,

@@ -45,6 +45,8 @@ const (
 	kindMonitor
 	kindNotificationChannel
 	kindMonitorIncident
+	// A workspace level, on the workspace of the alert rule in {id}.
+	kindAlertRule
 )
 
 type policy struct {
@@ -79,6 +81,7 @@ func onNotificationChannel(l auth.Level) policy {
 func onMonitorIncident(l auth.Level) policy {
 	return policy{kindMonitorIncident, l}
 }
+func onAlertRule(l auth.Level) policy { return policy{kindAlertRule, l} }
 
 var (
 	public  = policy{kind: kindPublic}
@@ -205,6 +208,7 @@ var policies = map[string]policy{
 	"get-network-map": active,
 
 	"get-server-stats":    onServer(auth.Viewer),
+	"get-server-metrics":  onServer(auth.Viewer),
 	"stream-server-stats": onServer(auth.Viewer),
 
 	// Fail2ban.
@@ -578,4 +582,12 @@ var policies = map[string]policy{
 	"delete-notification-channel": onNotificationChannel(auth.Owner),
 	"test-notification-channel":   onNotificationChannel(auth.Owner),
 	"list-notification-log":       onNotificationChannel(auth.Viewer),
+	"list-alert-rules":            active,
+	"create-alert-rule":           active,
+	"preview-alert-rule":          active,
+	"list-alert-events":           active,
+	"get-alert-rule":              onAlertRule(auth.Viewer),
+	"update-alert-rule":           onAlertRule(auth.Engineer),
+	"set-alert-rule-enabled":      onAlertRule(auth.Engineer),
+	"delete-alert-rule":           onAlertRule(auth.Engineer),
 }

@@ -46,13 +46,14 @@ UPDATE notification_channels SET
 WHERE id = @id;
 
 -- name: LogNotification :exec
-INSERT INTO notification_log (channel_id, monitor_id, title, ok, error)
-VALUES (@channel_id, sqlc.narg('monitor_id'), @title, @ok, @error);
+INSERT INTO notification_log (channel_id, monitor_id, rule_id, title, ok, error)
+VALUES (@channel_id, sqlc.narg('monitor_id'), sqlc.narg('rule_id'), @title, @ok, @error);
 
 -- name: ListNotificationLog :many
-SELECT l.*, coalesce(m.name, '')::text AS monitor_name
+SELECT l.*, coalesce(m.name, '')::text AS monitor_name, coalesce(r.name, '')::text AS rule_name
 FROM notification_log l
 LEFT JOIN monitors m ON m.id = l.monitor_id
+LEFT JOIN alert_rules r ON r.id = l.rule_id
 WHERE l.channel_id = @channel_id
 ORDER BY l.at DESC
 LIMIT @lim;
