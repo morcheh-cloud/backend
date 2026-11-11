@@ -214,7 +214,7 @@ UPDATE terminal_recordings SET
 WHERE ended_at IS NULL
 `
 
-// At start-up: shells recorded by a previous run of Morcheh are gone.
+// At start-up: shells recorded by a previous run of Morche are gone.
 func (q *Queries) InterruptTerminalRecordings(ctx context.Context) (int64, error) {
 	result, err := q.db.Exec(ctx, interruptTerminalRecordings)
 	if err != nil {

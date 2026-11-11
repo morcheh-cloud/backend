@@ -71,7 +71,7 @@ func docTool(st Status) (string, error) {
 	}
 	p, err := exec.LookPath("ansible-doc")
 	if err != nil {
-		return "", errors.New("ansible-doc isn't installed on the Morcheh server (it comes with ansible-core)")
+		return "", errors.New("ansible-doc isn't installed on the Morche server (it comes with ansible-core)")
 	}
 	return p, nil
 }

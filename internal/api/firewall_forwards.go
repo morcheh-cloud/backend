@@ -15,7 +15,7 @@ import (
 
 const (
 	// ufw filters forwarded traffic after the rewrite, so each forward has a
-	// rule beside it. This note is how Morcheh knows which rules it may remove.
+	// rule beside it. This note is how Morche knows which rules it may remove.
 	fwForwardComment = "Port forward (added by Morcheh)"
 
 	// fwNatFlush stops the forwards until before.rules is loaded again. Other
@@ -74,7 +74,7 @@ func registerFirewallForwards(api huma.API, h *serverHandler, base string) {
 		Path:        base + "/forwards",
 		Summary:     "Forward a port",
 		Description: "Sends what arrives on a port to another port here or to another machine. IPv4 only. " +
-			"On ufw it also adds the rule that lets that traffic through. The port Morcheh uses for SSH can't be forwarded.",
+			"On ufw it also adds the rule that lets that traffic through. The port Morche uses for SSH can't be forwarded.",
 		Tags: tags,
 	}, func(ctx context.Context, in *struct {
 		ServerIDPath
@@ -120,7 +120,7 @@ func registerFirewallForwards(api huma.API, h *serverHandler, base string) {
 		Method:      http.MethodPost,
 		Path:        base + "/forwards/delete",
 		Summary:     "Delete port forwards",
-		Description: "All of them or none. The rules Morcheh added beside them go too.",
+		Description: "All of them or none. The rules Morche added beside them go too.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct {
 		ServerIDPath
@@ -182,7 +182,7 @@ func (st *fwState) forwardFrom(b FirewallForwardBody, replacing string) (firewal
 		return f, fieldProblem(err)
 	}
 	if st.o.SSHPort != 0 && f.Covers(st.o.SSHPort) && (f.Protocol == "tcp") {
-		return f, fieldError("body.port", "This is the port Morcheh reaches the server on: forwarding it would cut Morcheh off", f.Port)
+		return f, fieldError("body.port", "This is the port Morche reaches the server on: forwarding it would cut Morche off", f.Port)
 	}
 	for _, o := range st.o.Forwards {
 		if o.ID != replacing && f.Overlaps(o) {
@@ -206,7 +206,7 @@ func (st *fwState) planForwards(next []firewall.Forward, summary string) (fwPlan
 	}
 
 	// The rules beside the forwards: what's no longer needed goes, but only
-	// Morcheh's own, and what's missing is added unless a rule does it already.
+	// Morche's own, and what's missing is added unless a rule does it already.
 	var wanted []firewall.Input
 	for _, f := range next {
 		in := f.FilterInput(fwForwardComment)

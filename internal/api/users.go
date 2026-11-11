@@ -22,14 +22,14 @@ import (
 // ---- Types ----
 
 type UsersOverview struct {
-	LoginUser       string          `json:"login_user" doc:"The account Morcheh logs in as; it can't be deleted, locked, renamed or lose sudo here" example:"deploy"`
+	LoginUser       string          `json:"login_user" doc:"The account Morche logs in as; it can't be deleted, locked, renamed or lose sudo here" example:"deploy"`
 	Access          string          `json:"access" enum:"root,sudo,user" doc:"Changing accounts needs root or sudo"`
 	Tools           string          `json:"tools" enum:"shadow,busybox,none" doc:"shadow: useradd/usermod…; busybox: adduser/addgroup only (no renames, expiry or usermod changes)"`
 	Commands        []string        `json:"commands" doc:"Account tools found on the server" example:"[\"useradd\",\"chage\",\"visudo\"]"`
 	ShadowReadable  bool            `json:"shadow_readable" doc:"/etc/shadow could be read, so password and expiry states are known"`
 	SudoInstalled   bool            `json:"sudo_installed"`
 	SudoReadable    bool            `json:"sudo_readable" doc:"sudoers could be read; otherwise sudo rights are guessed from the sudo/wheel/admin groups"`
-	SudoIncludesDir bool            `json:"sudo_includes_dir" doc:"/etc/sudoers reads /etc/sudoers.d, where Morcheh writes its rules"`
+	SudoIncludesDir bool            `json:"sudo_includes_dir" doc:"/etc/sudoers reads /etc/sudoers.d, where Morche writes its rules"`
 	SudoGroup       string          `json:"sudo_group" doc:"A group (sudo, wheel or admin) whose members get sudo for every command; empty when none does" example:"sudo"`
 	LoginHistory    bool            `json:"login_history" doc:"The server keeps login records (lastlog or wtmp), so last_login means something"`
 	UIDMin          int             `json:"uid_min" doc:"First uid of a regular account (UID_MIN in login.defs)" example:"1000"`
@@ -196,7 +196,7 @@ func registerUsers(api huma.API, h *serverHandler) {
 		Method:      http.MethodDelete,
 		Path:        "/servers/{id}/users/{user}",
 		Summary:     "Remove an account",
-		Description: "userdel (or deluser), and its Morcheh sudo rule. The login user and root can't be removed.",
+		Description: "userdel (or deluser), and its Morche sudo rule. The login user and root can't be removed.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct {
 		UserPath
@@ -356,7 +356,7 @@ func registerUsers(api huma.API, h *serverHandler) {
 					"; give them another one first")
 			}
 			if g.Sudo && (slices.Contains(g.Members, o.LoginUser)) {
-				return "", huma.Error422UnprocessableEntity(o.LoginUser + " gets sudo through it, and Morcheh needs that to manage this server")
+				return "", huma.Error422UnprocessableEntity(o.LoginUser + " gets sudo through it, and Morche needs that to manage this server")
 			}
 			switch {
 			case o.has("groupdel"):
@@ -604,13 +604,13 @@ func loginShell(sh string) bool {
 	return base != "nologin" && base != "false"
 }
 
-// protect refuses changes that would lock Morcheh out or touch root.
+// protect refuses changes that would lock Morche out or touch root.
 func protect(o *UsersOverview, u *users.User, what string) error {
 	if u.UID == 0 {
 		return huma.Error422UnprocessableEntity("Can't " + what + " " + u.Name + ": it's root (uid 0)")
 	}
 	if u.Name == o.LoginUser {
-		return huma.Error422UnprocessableEntity("Can't " + what + " " + u.Name + ": Morcheh logs in to this server with it")
+		return huma.Error422UnprocessableEntity("Can't " + what + " " + u.Name + ": Morche logs in to this server with it")
 	}
 	return nil
 }
@@ -940,7 +940,7 @@ func updateUserScript(o *UsersOverview, u *users.User, b UserUpdateBody) (string
 			if !slices.Contains(groups, g) {
 				removeGroups = append(removeGroups, g)
 				if gr := o.group(g); gr != nil && gr.Sudo && u.Name == o.LoginUser {
-					return "", fieldError("body.groups", u.Name+" gets sudo through "+g+", and Morcheh needs that to manage this server", g)
+					return "", fieldError("body.groups", u.Name+" gets sudo through "+g+", and Morche needs that to manage this server", g)
 				}
 			}
 		}
@@ -1136,7 +1136,7 @@ func sudoScript(o *UsersOverview, u *users.User, name, level string, lenient boo
 	for _, e := range edits {
 		var exprs []string
 		for _, r := range e.ranges {
-			exprs = append(exprs, fmt.Sprintf("-e '%d,%ds/^/# (disabled by Morcheh) /'", r[0], r[1]))
+			exprs = append(exprs, fmt.Sprintf("-e '%d,%ds/^/# (disabled by Morche) /'", r[0], r[1]))
 		}
 		fmt.Fprintf(&s, "sed -i %s %s || { restore; exit 1; }\n", strings.Join(exprs, " "), q(e.file))
 	}
@@ -1145,7 +1145,7 @@ func sudoScript(o *UsersOverview, u *users.User, name, level string, lenient boo
 		// sudo skips names with a dot, so the temp file is ignored until
 		// it's checked and moved in place.
 		s.WriteString("t=$(mktemp /etc/sudoers.d/.morcheh.XXXXXX) || { restore; exit 1; }\n" +
-			"printf '%s\\n' " + q("# Added by Morcheh") + " " + q(rule) + " > \"$t\" && chmod 440 \"$t\" || { rm -f \"$t\"; restore; exit 1; }\n" +
+			"printf '%s\\n' " + q("# Added by Morche") + " " + q(rule) + " > \"$t\" && chmod 440 \"$t\" || { rm -f \"$t\"; restore; exit 1; }\n" +
 			"if ! out=$(visudo -cf \"$t\" 2>&1); then rm -f \"$t\"; restore; printf '%s\\n' \"$out\" >&2; exit 1; fi\n" +
 			"mv -f \"$t\" " + q(newFile) + " || { restore; exit 1; }\n")
 	}
@@ -1218,7 +1218,7 @@ func updateGroupScript(o *UsersOverview, g *users.Group, b GroupUpdateBody) (str
 			}
 		}
 		if g.Sudo && slices.Contains(g.Members, o.LoginUser) && !slices.Contains(members, o.LoginUser) {
-			return "", fieldError("body.members", o.LoginUser+" gets sudo through "+g.Name+", and Morcheh needs that to manage this server", nil)
+			return "", fieldError("body.members", o.LoginUser+" gets sudo through "+g.Name+", and Morche needs that to manage this server", nil)
 		}
 		changed := len(members) != len(g.Members) || slices.ContainsFunc(members, func(m string) bool { return !slices.Contains(g.Members, m) })
 		switch {

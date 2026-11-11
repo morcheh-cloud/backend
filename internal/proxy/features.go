@@ -32,7 +32,7 @@ func (a Auth) On() bool { return a.Mode != "" }
 type AuthUser struct {
 	Name     string `json:"name" maxLength:"64"`
 	Password string `json:"password,omitempty" maxLength:"200" doc:"New password; empty keeps the saved one. Never sent back"`
-	Hash     string `json:"hash,omitempty" maxLength:"200" doc:"Set by Morcheh; never sent back, ignored when sent"`
+	Hash     string `json:"hash,omitempty" maxLength:"200" doc:"Set by Morche; never sent back, ignored when sent"`
 }
 
 // ForwardAuth is a sign-in service asked about every request: a 2xx answer
@@ -436,7 +436,7 @@ func validatePath(h HostConfig, i int, p PathRule, add func(field, msg string, v
 		add(f+".match", "Choose prefix, exact or regex.", p.Match)
 	}
 	if p.MatchOf() != MatchRegex && strings.HasPrefix(p.Path+"/", "/__morcheh/") {
-		add(f+".path", "Paths under /__morcheh/ are kept for the pages Morcheh answers itself.", p.Path)
+		add(f+".path", "Paths under /__morcheh/ are kept for the pages Morche answers itself.", p.Path)
 	}
 	switch p.ActionOf() {
 	case ActionProxy:

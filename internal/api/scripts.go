@@ -407,7 +407,7 @@ func (h *scriptHandler) loadRun(ctx context.Context, rawID string, need auth.Lev
 }
 
 // syncRun ends a stored run whose job ended without it: canceled while
-// queued, or Morcheh restarted. It says whether it changed anything.
+// queued, or Morche restarted. It says whether it changed anything.
 func (h *scriptHandler) syncRun(ctx context.Context, id uuid.UUID, state string, job *uuid.UUID, created time.Time) bool {
 	if !jobs.Active(state) {
 		return false
@@ -419,7 +419,7 @@ func (h *scriptHandler) syncRun(ctx context.Context, id uuid.UUID, state string,
 		}
 		return true
 	}
-	const lost = "Morcheh restarted before it finished."
+	const lost = "Morche restarted before it finished."
 	if job == nil {
 		if time.Since(created) < time.Minute {
 			return false
@@ -1089,7 +1089,7 @@ func (h *scriptHandler) execute(ctx context.Context, t *jobs.Task, runID uuid.UU
 	case ctx.Err() != nil && t.Canceled():
 		state = jobs.Canceled
 	case ctx.Err() != nil:
-		state, msg = jobs.Interrupted, "Morcheh stopped before it finished."
+		state, msg = jobs.Interrupted, "Morche stopped before it finished."
 	case failed > 0:
 		state, msg = jobs.Failed, fmt.Sprintf("It failed on %d of %s.", failed, countServers(len(targets)))
 		if len(targets) == 1 {

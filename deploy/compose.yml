@@ -1,4 +1,4 @@
-# Morcheh in production: Postgres, Redis, the backend (with every tool it
+# Morche in production: Postgres, Redis, the backend (with every tool it
 # drives) and the panel. Needs the frontend repository next to this one
 # (../../frontend). Settings come from .env here (copy .env.example).
 #

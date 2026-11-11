@@ -16,14 +16,14 @@ import (
 )
 
 const (
-	// Dir holds everything Morcheh writes; HostsDir one file per host.
+	// Dir holds everything Morche writes; HostsDir one file per host.
 	Dir      = "/etc/nginx/morcheh"
 	HostsDir = Dir + "/hosts"
 	// StreamsDir holds one file per port forward; StreamConf is the stream
 	// block that loads them.
 	StreamsDir = Dir + "/streams"
 	StreamConf = Dir + "/stream.conf"
-	// ReleasedDir keeps, per hand-written file Morcheh took default_server
+	// ReleasedDir keeps, per hand-written file Morche took default_server
 	// from, its path (.path), the file before (.orig) and after (.now).
 	ReleasedDir = Dir + "/released"
 	// streamHook is the main-context include put where nginx loads modules
@@ -562,7 +562,7 @@ unwire_stream() {
 }
 `
 
-// certsList prints certbot's live folders and Morcheh's own, for parseCerts.
+// certsList prints certbot's live folders and Morche's own, for parseCerts.
 const certsList = `for d in /etc/letsencrypt/live/*/ ` + proxy.SelfDir + `/*/; do
   [ -f "$d/fullchain.pem" ] || continue
   echo "cert ${d%/}"
@@ -688,7 +688,7 @@ if running; then nginx -s reload || exit 4; else ` + serviceCmd(su.Init, "start"
 if running; then nginx -s reload || exit 4; else echo "nginx isn't running in the container."; exit 4; fi
 `
 	}
-	return head + install + streamFns + `echo "Adding Morcheh's sites folder to nginx…"
+	return head + install + streamFns + `echo "Adding Morche's sites folder to nginx…"
 ` + writeInclude() + `if ! out=$(nginx -t 2>&1); then printf '%s\n' "$out"; exit 3; fi
 st=$(stream_state)
 if [ "$st" = no_module ]; then
@@ -696,7 +696,7 @@ if [ "$st" = no_module ]; then
   st=$(stream_state)
 fi
 if [ "$st" = not_wired ]; then
-  echo "Adding Morcheh's port forwards folder to nginx…"
+  echo "Adding Morche's port forwards folder to nginx…"
   wire_stream
   if ! nginx -t >/dev/null 2>&1; then unwire_stream; echo "nginx refused its stream block, so port forwards won't be available."; fi
 elif [ "$st" = ready ]; then
@@ -749,7 +749,7 @@ give_back() {
       keep "$p" "$(basename "$k")"
       cat "$k.orig" > "$p"
     else
-      echo "$p changed after Morcheh took the default site from it, so default_server wasn't put back there."
+      echo "$p changed after Morche took the default site from it, so default_server wasn't put back there."
     fi
     rm -f "$k.path" "$k.orig" "$k.now"
   done

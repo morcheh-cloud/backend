@@ -79,7 +79,7 @@ pkg_refresh() {
     zypper) zypper -q -n refresh ;;
     apk) apk update -q ;;
     pacman) pacman -Sy --noconfirm ;;
-    *) echo "This server has no package manager Morcheh knows (apt, dnf, yum, zypper, apk, pacman)." >&2; return 1 ;;
+    *) echo "This server has no package manager Morche knows (apt, dnf, yum, zypper, apk, pacman)." >&2; return 1 ;;
   esac
 }
 pkg_install() {
@@ -91,7 +91,7 @@ pkg_install() {
     zypper) zypper -n -q install "$@" ;;
     apk) apk add -q "$@" ;;
     pacman) pacman -S --noconfirm --needed "$@" ;;
-    *) echo "This server has no package manager Morcheh knows." >&2; return 1 ;;
+    *) echo "This server has no package manager Morche knows." >&2; return 1 ;;
   esac
 }
 pkg_remove() {
@@ -245,7 +245,7 @@ func Env(values map[string]string) string {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	b.WriteString("# Written by Morcheh. Change the settings from the panel.\n")
+	b.WriteString("# Written by Morche. Change the settings from the panel.\n")
 	for _, n := range names {
 		fmt.Fprintf(&b, "%s='%s'\n", n, values[n])
 	}
@@ -469,7 +469,7 @@ func SystemUpgradeScript(opt SystemOptions) string {
 		b.WriteString("  zypper) zypper -n update ;;\n")
 		b.WriteString("  apk) apk upgrade ;;\n")
 		b.WriteString("  pacman) pacman -Su --noconfirm ;;\n")
-		b.WriteString("  *) echo 'No package manager Morcheh knows.' >&2; exit 1 ;;\n")
+		b.WriteString("  *) echo 'No package manager Morche knows.' >&2; exit 1 ;;\n")
 	}
 	b.WriteString("esac\n")
 	b.WriteString("if [ -f /var/run/reboot-required ]; then echo 'The server needs a restart to finish.'; fi\n")
@@ -481,7 +481,7 @@ func ComposeScript(id, args string) string {
 	return ComposeAt(Dir(id), Project(id), args)
 }
 
-// ComposeAt runs a compose command for any compose project: one Morcheh
+// ComposeAt runs a compose command for any compose project: one Morche
 // installed, or one found on the server (its folder from the labels).
 func ComposeAt(dir, project, args string) string {
 	var b strings.Builder
@@ -494,7 +494,7 @@ func ComposeAt(dir, project, args string) string {
 	return b.String()
 }
 
-// UpdateFoundScript pulls and restarts a compose project Morcheh didn't
+// UpdateFoundScript pulls and restarts a compose project Morche didn't
 // install, in its own folder. There's no going back for these.
 func UpdateFoundScript(dir, project string) string {
 	var b strings.Builder

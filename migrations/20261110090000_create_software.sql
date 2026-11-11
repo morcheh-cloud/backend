@@ -2,7 +2,7 @@
 
 -- Applications: a catalog of software installed on servers from the panel
 -- (packages like Docker or Git, and Docker Compose apps like Grafana).
--- Built-in recipes ship with Morcheh; these are a workspace's own.
+-- Built-in recipes ship with Morche; these are a workspace's own.
 CREATE TABLE software_recipes (
     id           uuid PRIMARY KEY DEFAULT uuidv7(),
     workspace_id uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,
@@ -17,7 +17,7 @@ CREATE TABLE software_recipes (
     UNIQUE (workspace_id, slug)
 );
 
--- What is on each server: installed by Morcheh, or found by a scan.
+-- What is on each server: installed by Morche, or found by a scan.
 CREATE TABLE software_installs (
     id              uuid PRIMARY KEY DEFAULT uuidv7(),
     workspace_id    uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,

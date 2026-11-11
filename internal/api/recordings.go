@@ -212,7 +212,7 @@ type TerminalRecording struct {
 	EndedAt     *time.Time `json:"ended_at,omitempty" doc:"Missing while the shell runs"`
 	Live        bool       `json:"live" doc:"The shell is still open"`
 	ExitCode    *int       `json:"exit_code,omitempty"`
-	Interrupted bool       `json:"interrupted" doc:"Morcheh restarted while the shell was open; the end is missing"`
+	Interrupted bool       `json:"interrupted" doc:"Morche restarted while the shell was open; the end is missing"`
 	DurationMs  int64      `json:"duration_ms"`
 	Size        int64      `json:"size" doc:"Output bytes recorded"`
 	Truncated   bool       `json:"truncated" doc:"It reached the size limit; later output wasn't kept"`

@@ -49,7 +49,7 @@ type Storage struct {
 	// SFTP trust on first use.
 	HostKeyFingerprint string              `json:"host_key_fingerprint"`
 	RootPath           string              `json:"root_path" doc:"Folder shown as the top; empty = the login folder (or every bucket)"`
-	ReadOnly           bool                `json:"read_only" doc:"Refuse every change through Morcheh"`
+	ReadOnly           bool                `json:"read_only" doc:"Refuse every change through Morche"`
 	Description        string              `json:"description"`
 	Favorite           bool                `json:"favorite"`
 	Status             string              `json:"status" enum:"unknown,online,unreachable,auth_failed,host_key_mismatch,error"`
@@ -526,7 +526,7 @@ func registerStorages(api huma.API, h *storageHandler) {
 		Method:        http.MethodDelete,
 		Path:          "/storages/{id}",
 		Summary:       "Remove a storage",
-		Description:   "Forgets the storage in Morcheh; nothing on the storage itself is touched.",
+		Description:   "Forgets the storage in Morche; nothing on the storage itself is touched.",
 		Tags:          tags,
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *StorageIDPath) (*struct{}, error) {

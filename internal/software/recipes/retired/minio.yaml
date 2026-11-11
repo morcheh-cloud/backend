@@ -30,7 +30,7 @@ links:
     port: CONSOLE_PORT
   - label: S3 API
     port: API_PORT
-notes: Add it to Morcheh under Storage (S3, MinIO preset) with the root user and password, or a key made in the console.
+notes: Add it to Morche under Storage (S3, MinIO preset) with the root user and password, or a key made in the console.
 compose: |
   services:
     minio:

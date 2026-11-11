@@ -13,7 +13,7 @@ import (
 )
 
 // Sign-in, maintenance and error pages, hardening, and the extra path
-// actions. Pages Morcheh answers itself live under internalPrefix, inside
+// actions. Pages Morche answers itself live under internalPrefix, inside
 // locations marked internal, so a visitor can't open them directly.
 
 const (

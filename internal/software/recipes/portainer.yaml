@@ -18,7 +18,7 @@ links:
     scheme: https
 notes: |
   Open it within 5 minutes of installing to create the admin user, or
-  Portainer locks itself (restart it from Morcheh to try again). It uses a
+  Portainer locks itself (restart it from Morche to try again). It uses a
   self-signed certificate: your browser will warn once.
 compose: |
   services:

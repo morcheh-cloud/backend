@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Event is one line from Morcheh's callback plugin.
+// Event is one line from Morche's callback plugin.
 type RunEvent struct {
 	E    string  `json:"e"`
 	T    float64 `json:"t"`

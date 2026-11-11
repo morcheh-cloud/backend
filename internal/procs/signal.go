@@ -25,7 +25,7 @@ type ProcessResult struct {
 }
 
 // guard is shell that refuses protected processes unless force is set:
-// PID 1, kernel threads, Morcheh's own connection (the script's ancestors)
+// PID 1, kernel threads, Morche's own connection (the script's ancestors)
 // and the names in Protected.
 func guard(force bool) string {
 	if force {
@@ -125,7 +125,7 @@ func ParseResults(out string, ts []ProcessTarget) []ProcessResult {
 		case "gone":
 			r.Gone = true
 		case "protected":
-			r.Error = "Protected: the system or Morcheh needs it. Send force to do it anyway"
+			r.Error = "Protected: the system or Morche needs it. Send force to do it anyway"
 		case "fail":
 			r.Error = failText(f)
 		case "alive":

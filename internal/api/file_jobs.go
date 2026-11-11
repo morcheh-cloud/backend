@@ -177,7 +177,7 @@ func registerFileJobs(api huma.API, h *serverHandler, tags []string) {
 		Method:      http.MethodPost,
 		Path:        "/servers/{id}/files/fetch",
 		Summary:     "Download a file from the web onto the server",
-		Description: "The server downloads it itself with curl (or wget), so it never passes through Morcheh or the browser. " +
+		Description: "The server downloads it itself with curl (or wget), so it never passes through Morche or the browser. " +
 			"Only http and https. It's written to a hidden .part file and renamed when complete. " +
 			"Runs as a background job (kind `fetch`, result FileEntry); 409 when the name is taken and overwrite isn't set.",
 		Tags:          tags,
@@ -383,7 +383,7 @@ func extractCmd(p, dest string) (cmd string, zip bool, err error) {
 		target := path.Join(dest, strings.TrimSuffix(path.Base(p), path.Ext(p)))
 		return "gzip -dc -- " + qp + " > " + terminal.ShellQuote(target), false, nil
 	}
-	return "", false, huma.Error422UnprocessableEntity("Not an archive Morcheh can unpack (tar, tar.gz, tar.bz2, tar.xz, zip, gz)")
+	return "", false, huma.Error422UnprocessableEntity("Not an archive Morche can unpack (tar, tar.gz, tar.bz2, tar.xz, zip, gz)")
 }
 
 func (h *serverHandler) runExtract(ctx context.Context, t *jobs.Task) (any, error) {

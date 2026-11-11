@@ -121,7 +121,7 @@ func readUntil(conn net.Conn, want string, limit int) (string, error) {
 
 func checkUDP(ctx context.Context, c MonitorConfig, env Env) CheckResult {
 	if env.Tunneled {
-		return down("UDP can only be checked from Morcheh itself")
+		return down("UDP can only be checked from Morche itself")
 	}
 	start := time.Now()
 	conn, err := dial(ctx, env, "udp", addr(c, 0))
@@ -226,7 +226,7 @@ func checkPing(ctx context.Context, c MonitorConfig, env Env) CheckResult {
 	}
 	run := env.Run
 	if run == nil {
-		// From Morcheh itself: refuse private addresses unless allowed.
+		// From Morche itself: refuse private addresses unless allowed.
 		if !env.AllowInternal {
 			ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 			if err != nil {

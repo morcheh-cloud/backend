@@ -122,7 +122,7 @@ func get(ctx context.Context, u *url.URL) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Morcheh icon fetcher")
+	req.Header.Set("User-Agent", "Morche icon fetcher")
 	return client.Do(req)
 }
 

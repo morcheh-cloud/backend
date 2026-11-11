@@ -26,7 +26,7 @@ type CommandLogEntry struct {
 	WorkspaceID string     `json:"workspace_id" format:"uuid"`
 	ServerID    *string    `json:"server_id,omitempty" format:"uuid" doc:"Missing when the server was deleted"`
 	ServerName  string     `json:"server_name"`
-	UserID      *string    `json:"user_id,omitempty" format:"uuid" doc:"Missing for Morcheh's own commands"`
+	UserID      *string    `json:"user_id,omitempty" format:"uuid" doc:"Missing for Morche's own commands"`
 	UserName    string     `json:"user_name"`
 	Mine        bool       `json:"mine"`
 	Kind        string     `json:"kind" enum:"terminal,change,read,job,schedule,automatic"`
@@ -108,7 +108,7 @@ type CommandLogSettings struct {
 	Enabled      bool       `json:"enabled"`
 	KeepDays     int        `json:"keep_days" doc:"Entries older than this are deleted"`
 	LogReads     bool       `json:"log_reads" doc:"Also keep commands run to show a page (lists, details, logs)"`
-	LogAutomatic bool       `json:"log_automatic" doc:"Also keep Morcheh's own upkeep (live stats, checks, monitors)"`
+	LogAutomatic bool       `json:"log_automatic" doc:"Also keep Morche's own upkeep (live stats, checks, monitors)"`
 	LogOutput    bool       `json:"log_output" doc:"Keep what commands print (typed in a terminal, changes, tasks, cron jobs)"`
 	UpdatedBy    string     `json:"updated_by_name,omitempty"`
 	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
@@ -155,7 +155,7 @@ type commandLogList struct {
 }
 
 type CommandLogFacet struct {
-	ID    *string `json:"id,omitempty" format:"uuid" doc:"Missing for Morcheh itself"`
+	ID    *string `json:"id,omitempty" format:"uuid" doc:"Missing for Morche itself"`
 	Name  string  `json:"name"`
 	Count int     `json:"count"`
 }
@@ -332,7 +332,7 @@ func registerCommandLog(api huma.API, h *serverHandler) {
 		Method:      http.MethodGet,
 		Path:        "/workspaces/{id}/command-log",
 		Summary:     "Commands run on a workspace's servers, newest first",
-		Description: "Every command Morcheh ran over SSH and every command line typed into its terminals (bash and zsh). " +
+		Description: "Every command Morche ran over SSH and every command line typed into its terminals (bash and zsh). " +
 			"A workspace Owner gets everyone's; anyone else only their own.",
 		Tags: tags,
 	}, func(ctx context.Context, in *struct {
@@ -460,7 +460,7 @@ func registerCommandLog(api huma.API, h *serverHandler) {
 				code = strconv.Itoa(*e.ExitCode)
 			}
 			_ = w.Write([]string{
-				e.StartedAt.UTC().Format(time.RFC3339), ended, e.ServerName, cmpOr(e.UserName, "Morcheh"),
+				e.StartedAt.UTC().Format(time.RFC3339), ended, e.ServerName, cmpOr(e.UserName, "Morche"),
 				e.Kind, e.Source, csvSafe(e.Command), csvSafe(e.Cwd), strconv.FormatBool(e.AsRoot), e.Status, code,
 				csvSafe(e.Error), strconv.Itoa(e.Repeats), e.ClientIP,
 			})

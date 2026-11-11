@@ -143,7 +143,7 @@ func (a *authz) alertNewAddress(u sqlc.User, ip, ua string) {
 	a.securityAlert("new_address", notify.Message{
 		Event: notify.EventSecurity,
 		Title: "Sign-in from a new address: " + u.Username,
-		Text: fmt.Sprintf("%s signed in to Morcheh from %s, an address they haven't used before. "+
+		Text: fmt.Sprintf("%s signed in to Morche from %s, an address they haven't used before. "+
 			"If it wasn't them, end that session and change the password.", name, ip),
 		Fields: signInFields(u.Username, ip, ua, at), At: at,
 		Data: map[string]any{"type": "sign_in_new_address", "user_id": u.ID.String(), "username": u.Username, "ip": ip},

@@ -85,7 +85,7 @@ UPDATE script_runs SET state = 'running', started_at = now() WHERE id = $1;
 UPDATE script_runs SET state = @state, error = @error, finished_at = now() WHERE id = @id;
 
 -- name: EndScriptRun :exec
--- A run whose job ended without it (canceled while queued, Morcheh restarted):
+-- A run whose job ended without it (canceled while queued, Morche restarted):
 -- the run and whatever on it hadn't finished.
 WITH run AS (
     UPDATE script_runs SET state = @state, error = @error, finished_at = coalesce(finished_at, now())
@@ -169,7 +169,7 @@ DELETE FROM script_runs WHERE id = $1 AND state NOT IN ('queued', 'running');
 -- name: InterruptScriptRuns :exec
 -- What the last process left running can't go on after a restart.
 WITH runs AS (
-    UPDATE script_runs SET state = 'interrupted', error = 'Morcheh restarted before it finished.', finished_at = now()
+    UPDATE script_runs SET state = 'interrupted', error = 'Morche restarted before it finished.', finished_at = now()
     WHERE state = 'running'
     RETURNING id
 )

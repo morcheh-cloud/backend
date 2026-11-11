@@ -28,11 +28,11 @@ const ansibleRunKind = "ansible-run"
 
 // ---- API shapes ----
 
-// AnsibleStatus says whether playbooks can run on this Morcheh.
+// AnsibleStatus says whether playbooks can run on this Morche.
 type AnsibleStatus struct {
 	Installed bool   `json:"installed"`
 	Version   string `json:"version" doc:"ansible-core version" example:"2.22.0"`
-	Sandbox   bool   `json:"sandbox" doc:"Playbooks run in a bubblewrap sandbox on the Morcheh host"`
+	Sandbox   bool   `json:"sandbox" doc:"Playbooks run in a bubblewrap sandbox on the Morche host"`
 	CanRun    bool   `json:"can_run" doc:"This person can start a run here (they still need Owner on every server)"`
 	Problem   string `json:"problem" doc:"Why they can't"`
 }
@@ -292,13 +292,13 @@ func (h *ansibleHandler) hostStatus() ansible.Status {
 }
 
 // noSandbox is why someone can't run a playbook on this host. Without a sandbox
-// a playbook's local tasks run as Morcheh itself, able to read its secrets.
+// a playbook's local tasks run as Morche itself, able to read its secrets.
 func noSandboxProblem(st ansible.Status, admin bool) string {
 	switch {
 	case st.Problem != "":
 		return st.Problem
 	case st.Sandbox == "" && !admin:
-		return "This Morcheh runs playbooks without a sandbox, so only a system admin can start them. Install bubblewrap on its host to allow Owners too."
+		return "This Morche runs playbooks without a sandbox, so only a system admin can start them. Install bubblewrap on its host to allow Owners too."
 	}
 	return ""
 }
@@ -439,7 +439,7 @@ func checkAnsibleOptions(o AnsibleOptions) error {
 			return fieldError("body.options.tags", "A tag is one word, not starting with - or @.", t)
 		}
 	}
-	// @file would read a file on the Morcheh host.
+	// @file would read a file on the Morche host.
 	if l := strings.TrimSpace(o.Limit); l != "" && (l[0] == '-' || strings.Contains(l, "@")) {
 		return fieldError("body.options.limit", "A limit can't start with - or contain @.", o.Limit)
 	}
@@ -449,7 +449,7 @@ func checkAnsibleOptions(o AnsibleOptions) error {
 // ---- Keeping stored runs honest ----
 
 // syncRun ends a stored run whose job ended without it: canceled while queued,
-// or Morcheh restarted. It says whether it changed anything.
+// or Morche restarted. It says whether it changed anything.
 func (h *ansibleHandler) syncRun(ctx context.Context, id uuid.UUID, state string, job *uuid.UUID, created time.Time) bool {
 	if !jobs.Active(state) || h.liveRun(id) != nil {
 		return false
@@ -461,7 +461,7 @@ func (h *ansibleHandler) syncRun(ctx context.Context, id uuid.UUID, state string
 		}
 		return true
 	}
-	const lost = "Morcheh restarted before it finished."
+	const lost = "Morche restarted before it finished."
 	if job == nil {
 		// Its job is being submitted right now.
 		if time.Since(created) < time.Minute {
@@ -780,7 +780,7 @@ func ansibleOutcome(ctx context.Context, t *jobs.Task, code int, err error, live
 		if t.Canceled() {
 			return jobs.Canceled, ""
 		}
-		return jobs.Interrupted, "Morcheh restarted before it finished."
+		return jobs.Interrupted, "Morche restarted before it finished."
 	}
 	if err != nil {
 		return jobs.Failed, err.Error()
@@ -902,7 +902,7 @@ func registerAnsible(api huma.API, h *ansibleHandler) {
 		OperationID: "get-ansible-status",
 		Method:      http.MethodGet,
 		Path:        "/ansible/status",
-		Summary:     "Can playbooks run on this Morcheh?",
+		Summary:     "Can playbooks run on this Morche?",
 		Tags:        tags,
 	}, func(ctx context.Context, _ *struct{}) (*struct{ Body AnsibleStatus }, error) {
 		st := h.hostStatus()
@@ -961,7 +961,7 @@ func registerAnsible(api huma.API, h *ansibleHandler) {
 		}
 		d, err := h.catalog.Doc(ctx, st, in.Name)
 		if errors.Is(err, ansible.ErrNoModule) {
-			return nil, huma.Error404NotFound("There's no module called " + in.Name + " on this Morcheh.")
+			return nil, huma.Error404NotFound("There's no module called " + in.Name + " on this Morche.")
 		}
 		if err != nil {
 			return nil, huma.Error503ServiceUnavailable(err.Error())

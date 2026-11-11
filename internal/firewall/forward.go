@@ -158,7 +158,7 @@ func splitBefore(before string) (block, rest string, err error) {
 	}
 	j := strings.Index(before, forwardEnd)
 	if j < i {
-		return "", "", errors.New("The Morcheh block in /etc/ufw/before.rules is damaged: fix it on the server first")
+		return "", "", errors.New("The Morche block in /etc/ufw/before.rules is damaged: fix it on the server first")
 	}
 	return before[i:j], before[:i] + strings.TrimPrefix(before[j+len(forwardEnd):], "\n"), nil
 }

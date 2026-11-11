@@ -68,7 +68,7 @@ type ProcessesReport struct {
 	SampleMillis int       `json:"sample_ms" doc:"How long CPU was measured over" example:"1003"`
 	Processes    []Process `json:"processes" doc:"Busiest first (CPU, then memory)"`
 	Access       string    `json:"access" enum:"root,sudo,user" doc:"How it was read: user = the login user can't act as root, so it can only signal its own processes"`
-	Login        string    `json:"login" doc:"The login user Morcheh connects as" example:"deploy"`
+	Login        string    `json:"login" doc:"The login user Morche connects as" example:"deploy"`
 	// Set by the API for Viewers: command lines often carry passwords.
 	CommandsHidden bool `json:"commands_hidden" doc:"Command lines are left out: they need Operator access"`
 }
@@ -97,12 +97,12 @@ type Process struct {
 	Session       string    `json:"session,omitempty" doc:"The login session it belongs to (logind)" example:"3"`
 	Container     string    `json:"container,omitempty" doc:"Name of the Docker/Podman container it runs in, else a short container id" example:"web-1"`
 	Runtime       string    `json:"runtime,omitempty" enum:"docker,podman,other"`
-	Morcheh       bool      `json:"morcheh" doc:"Part of Morcheh's own SSH connection: ending it closes open terminals and running tasks here"`
-	Protected     bool      `json:"protected" doc:"The system or Morcheh relies on it (init, sshd, journald, dbus…): signals need force"`
+	Morche        bool      `json:"morcheh" doc:"Part of Morche's own SSH connection: ending it closes open terminals and running tasks here"`
+	Protected     bool      `json:"protected" doc:"The system or Morche relies on it (init, sshd, journald, dbus…): signals need force"`
 }
 
 // Protected says whether stopping a process with this name would break the
-// server or cut Morcheh off.
+// server or cut Morche off.
 func Protected(pid int, name string) bool {
 	if pid == 1 {
 		return true
@@ -110,7 +110,7 @@ func Protected(pid int, name string) bool {
 	return slices.Contains(protectedNames, name)
 }
 
-// protectedNames are processes (by comm) the server or Morcheh relies on.
+// protectedNames are processes (by comm) the server or Morche relies on.
 var protectedNames = []string{
 	"sshd", "sshd-session", "systemd-journal", "systemd-logind", "systemd-udevd", "dbus-daemon", "dbus-broker",
 	"systemd-network", "systemd-resolve", "NetworkManager", "init", "containerd", "dockerd",
@@ -162,7 +162,7 @@ func Parse(out string, now time.Time) (ProcessesReport, error) {
 	cmds := commands(sec["cmd"])
 	names := containers(sec["containers"])
 
-	// Morcheh's own processes: the script and what it started are left out,
+	// Morche's own processes: the script and what it started are left out,
 	// the chain above it (sudo, the login shell, the connection's sshd) marked.
 	parent := map[int]int{}
 	for pid, st := range s2 {
@@ -193,7 +193,7 @@ func Parse(out string, now time.Time) (ProcessesReport, error) {
 			Memory: st.rss * page, Virtual: st.vsize, Swap: swaps[pid],
 			CPUTime:   round(float64(st.utime+st.stime)/tick, 2),
 			Kernel:    st.flags&0x00200000 != 0 || pid == 2 || st.ppid == 2,
-			Morcheh:   own[pid],
+			Morche:    own[pid],
 			StartedAt: r.BootedAt.Add(time.Duration(float64(st.start) / tick * float64(time.Second))),
 		}
 		if prev, ok := s1[pid]; ok && prev.start == st.start {
@@ -225,7 +225,7 @@ func Parse(out string, now time.Time) (ProcessesReport, error) {
 				p.Unit = "" // the container's own scope, not a service
 			}
 		}
-		p.Protected = Protected(pid, p.Name) || p.Morcheh
+		p.Protected = Protected(pid, p.Name) || p.Morche
 		r.Threads += p.Threads
 		r.Processes = append(r.Processes, p)
 	}

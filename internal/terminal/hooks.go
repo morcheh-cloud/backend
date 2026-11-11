@@ -17,7 +17,7 @@ import (
 // Shell integration: so the command log can list what is typed into a
 // terminal, bash and zsh are started with small hooks that report each
 // command line, where it ran and how it ended, as private escape sequences
-// (OSC 7766) in the output. Morcheh takes them out of the output before
+// (OSC 7766) in the output. Morche takes them out of the output before
 // anyone sees or records it. Nothing reads keystrokes, so a password typed
 // at a sudo prompt is never seen. Other shells start as before and their
 // commands aren't captured.

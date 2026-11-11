@@ -21,7 +21,7 @@ import (
 	"github.com/morcheh/backend/internal/technitium"
 )
 
-// dnsHandler connects Morcheh to any number of Technitium DNS servers. Zones
+// dnsHandler connects Morche to any number of Technitium DNS servers. Zones
 // and records live on those servers; only the connection is stored here.
 type dnsHandler struct {
 	q     *sqlc.Queries
@@ -603,7 +603,7 @@ func registerDNS(api huma.API, h *dnsHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-dns-server", Method: http.MethodDelete, Path: "/dns-servers/{id}",
 		Summary:     "Disconnect a DNS server",
-		Description: "Morcheh forgets the connection and its token. Nothing on the DNS server changes.",
+		Description: "Morche forgets the connection and its token. Nothing on the DNS server changes.",
 		Tags:        tags, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *struct{ DNSServerIDPath }) (*struct{}, error) {
 		if err := h.q.DeleteDNSServer(ctx, uuid.MustParse(in.ID)); err != nil {

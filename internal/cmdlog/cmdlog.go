@@ -1,4 +1,4 @@
-// Package cmdlog describes the command log: every command Morcheh runs on a
+// Package cmdlog describes the command log: every command Morche runs on a
 // server over SSH, and every command typed into one of its terminals. The
 // SSH pool reports commands to a Sink; who and what they are for travels in
 // the context as an Origin.
@@ -26,7 +26,7 @@ const (
 	Job Kind = "job"
 	// A scheduled task (cron job) running on its own.
 	Schedule Kind = "schedule"
-	// Morcheh's own upkeep: live stats, checks, scans, monitors.
+	// Morche's own upkeep: live stats, checks, scans, monitors.
 	Automatic Kind = "automatic"
 )
 
@@ -38,7 +38,7 @@ type Origin struct {
 	Kind Kind
 	// What it was for, in the panel's words: "Install packages", "Shell 2".
 	Source string
-	// The person; nil for Morcheh itself.
+	// The person; nil for Morche itself.
 	UserID *uuid.UUID
 	// Where the person was (their IP address), when known.
 	ClientIP string
@@ -53,7 +53,7 @@ func With(ctx context.Context, o Origin) context.Context {
 	return context.WithValue(ctx, originKey{}, o)
 }
 
-// Of returns the origin in ctx; without one a command is Morcheh's own.
+// Of returns the origin in ctx; without one a command is Morche's own.
 func Of(ctx context.Context) Origin {
 	if o, ok := ctx.Value(originKey{}).(Origin); ok {
 		return o
@@ -61,7 +61,7 @@ func Of(ctx context.Context) Origin {
 	return Origin{Kind: Automatic, Source: "Background"}
 }
 
-// Background marks ctx as Morcheh's own upkeep with a name for it.
+// Background marks ctx as Morche's own upkeep with a name for it.
 func Background(ctx context.Context, source string) context.Context {
 	return With(ctx, Origin{Kind: Automatic, Source: source})
 }
@@ -84,7 +84,7 @@ type Command struct {
 }
 
 // Result is how a command ended. Code is -1 when there was no exit status
-// (the connection dropped, Morcheh stopped it).
+// (the connection dropped, Morche stopped it).
 type Result struct {
 	Code  int
 	Error string

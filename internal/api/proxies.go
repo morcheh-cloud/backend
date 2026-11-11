@@ -25,7 +25,7 @@ import (
 
 // Reverse proxies: a proxy kind (nginx first) on one of the panel's servers,
 // reached over SSH like everything else. The database holds the panel's own
-// sites; every change renders all of them and replaces Morcheh's files on the
+// sites; every change renders all of them and replaces Morche's files on the
 // server in one go, then tests and reloads, putting the old files back if the
 // proxy refuses. Sites written by hand are read, never touched.
 
@@ -175,19 +175,19 @@ type ProxyInspection struct {
 	Sites        []proxy.Site         `json:"sites"`
 	Certificates []proxy.Certificate  `json:"certificates"`
 	Hosts        []ProxyHostState     `json:"hosts"`
-	Unknown      []string             `json:"unknown" doc:"Files in Morcheh's folder the panel doesn't know"`
+	Unknown      []string             `json:"unknown" doc:"Files in Morche's folder the panel doesn't know"`
 	HTTP3        bool                 `json:"http3" doc:"The proxy was built with HTTP/3 (QUIC)"`
 	Certbot      string               `json:"certbot,omitempty" doc:"certbot's version when it's installed (it renews certificates)"`
 	Streams      string               `json:"streams" enum:",ready,no_module,not_wired,taken" doc:"Port forwards: ready; no_module = the stream module is missing; not_wired = setup hasn't added the stream block; taken = nginx.conf has its own stream block. Empty when the kind has no streams"`
 	Geo          string               `json:"geo" enum:",ready,off" doc:"Country lookup for country rules: ready, off (not turned on yet). Empty when the kind can't"`
 	AuthRequest  bool                 `json:"auth_request" doc:"Signing in through another service (forward auth) works"`
 	Brotli       bool                 `json:"brotli" doc:"The Brotli module is loaded"`
-	WAF          bool                 `json:"waf" doc:"The web application firewall works: ModSecurity is loaded and Morcheh's rule set is written"`
+	WAF          bool                 `json:"waf" doc:"The web application firewall works: ModSecurity is loaded and Morche's rule set is written"`
 	ImageFilter  bool                 `json:"image_filter" doc:"The image filter module is loaded (resizing pictures)"`
 	StreamGeo    string               `json:"stream_geo" enum:",ready,off" doc:"Country rules for port forwards: ready, off (not turned on yet). Empty when the kind can't"`
 	CABundle     string               `json:"ca_bundle,omitempty" doc:"The system's CA file, used to check https upstreams"`
 	Container    *proxy.ContainerInfo `json:"container,omitempty" doc:"What the runtime says about the proxy's container (docker/podman only)"`
-	Released     []string             `json:"released_default" doc:"Hand-written files Morcheh took default_server from (ports 80 and 443) because one of its sites answers unknown names; they get it back when none does, or when the proxy is removed with its files"`
+	Released     []string             `json:"released_default" doc:"Hand-written files Morche took default_server from (ports 80 and 443) because one of its sites answers unknown names; they get it back when none does, or when the proxy is removed with its files"`
 }
 
 type ProxyChangeSummary struct {
@@ -404,7 +404,7 @@ func (h *proxyHandler) getProxy(ctx context.Context, rawID string) (sqlc.GetProx
 	}
 	d, ok := proxy.Get(r.Proxy.Kind)
 	if !ok {
-		return r, nil, huma.Error422UnprocessableEntity("This version of Morcheh can't manage " + r.Proxy.Kind)
+		return r, nil, huma.Error422UnprocessableEntity("This version of Morche can't manage " + r.Proxy.Kind)
 	}
 	return r, d, nil
 }
@@ -545,7 +545,7 @@ func render(d proxy.Driver, hosts []sqlc.ProxyHost, env proxy.Env) []proxy.File 
 }
 
 // takeoverOf says what happens to the hand-written default server: an
-// enabled catch-all site of Morcheh's takes it over, else it goes back.
+// enabled catch-all site of Morche's takes it over, else it goes back.
 func takeoverOf(hosts []sqlc.ProxyHost, in proxy.Inspection) proxy.Takeover {
 	hold := slices.ContainsFunc(hosts, func(x sqlc.ProxyHost) bool {
 		c := configOf(x)
@@ -558,7 +558,7 @@ func takeoverOf(hosts []sqlc.ProxyHost, in proxy.Inspection) proxy.Takeover {
 	return t
 }
 
-// applyFiles replaces Morcheh's files on the server and reloads.
+// applyFiles replaces Morche's files on the server and reloads.
 func applyFiles(ctx context.Context, sh *proxyShell, d proxy.Driver, files []proxy.File, t proxy.Takeover) error {
 	if err := sh.pushFiles(ctx, files); err != nil {
 		return err
@@ -752,7 +752,7 @@ func (h *proxyHandler) refresh(id uuid.UUID) {
 func actorName(ctx context.Context) (string, *uuid.UUID) {
 	p := principalOf(ctx)
 	if p == nil {
-		return "Morcheh", nil
+		return "Morche", nil
 	}
 	return displayName(p.User), p.ID()
 }
@@ -912,7 +912,7 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*Jo
 			what = proxyModuleNames[m]
 		}
 		return nil, huma.Error422UnprocessableEntity(what + " can't be added to " + d.Label() + " in the container " + box.Name +
-			": Morcheh doesn't change a container's image. Use an image that has it, then check the proxy again.")
+			": Morche doesn't change a container's image. Use an image that has it, then check the proxy again.")
 	}
 	err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
 		_, err := h.shell(ctx, r.Proxy, c)
@@ -949,7 +949,7 @@ func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*Jo
 }
 
 // runSetup installs the proxy when it's missing (the package manager can't be
-// stopped half way, so the job is locked then), wires in Morcheh's folder,
+// stopped half way, so the job is locked then), wires in Morche's folder,
 // starts it and writes the panel's sites. proxyGeoKind turns the country
 // lookup on instead; a module kind adds that module, then writes the sites
 // again so those using it start to.
@@ -970,7 +970,7 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) 
 			return err
 		}
 		if (geo || mod) && sh.box != nil {
-			return fmt.Errorf("Morcheh doesn't change a container's image: use one that has it")
+			return fmt.Errorf("Morche doesn't change a container's image: use one that has it")
 		}
 		facts, err := sh.hostRun(ctx, hostScript)
 		if err != nil {
@@ -980,7 +980,7 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) 
 		install := func(pkgs ...string) string {
 			s, err := packageScript(f.pm, "install", pkgs...)
 			if err != nil {
-				return "echo 'No package manager Morcheh knows here: install " + strings.Join(pkgs, " ") + " by hand, then set it up again.'; false"
+				return "echo 'No package manager Morche knows here: install " + strings.Join(pkgs, " ") + " by hand, then set it up again.'; false"
 			}
 			return s
 		}
@@ -1005,7 +1005,7 @@ func (h *proxyHandler) runSetup(ctx context.Context, t *jobs.Task, kind string) 
 		case err != nil:
 			return err
 		case res.timedOut:
-			return fmt.Errorf("It took longer than %d minutes, so Morcheh stopped waiting", int(packageTimeout.Minutes()))
+			return fmt.Errorf("It took longer than %d minutes, so Morche stopped waiting", int(packageTimeout.Minutes()))
 		case geo && res.code == proxy.ExitNotInstalled:
 			return fmt.Errorf("%s isn't installed on this server. Set it up first", d.Label())
 		case geo && res.code == proxy.ExitTestFailed:
@@ -1082,7 +1082,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-proxy-kinds", Method: http.MethodGet, Path: "/proxy-kinds",
-		Summary: "Proxy kinds Morcheh can manage", Tags: tags,
+		Summary: "Proxy kinds Morche can manage", Tags: tags,
 	}, func(ctx context.Context, _ *struct{}) (*struct {
 		Body struct {
 			Items []ProxyKind `json:"items"`
@@ -1177,7 +1177,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	}) (*struct{ Body Proxy }, error) {
 		d, ok := proxy.Get(in.Body.Kind)
 		if !ok {
-			return nil, fieldError("body.kind", "Morcheh can't manage this kind of proxy.", in.Body.Kind)
+			return nil, fieldError("body.kind", "Morche can't manage this kind of proxy.", in.Body.Kind)
 		}
 		sid := uuid.MustParse(in.Body.ServerID)
 		level, err := h.s.authz.serverLevel(ctx, principalOf(ctx).Access, sid)
@@ -1283,7 +1283,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-proxy", Method: http.MethodDelete, Path: base,
 		Summary:     "Stop managing a proxy",
-		Description: "With remove_files, first takes Morcheh's sites off the server and reloads (the proxy itself stays installed). Hand-written sites are left as they are, except that files Morcheh took default_server from get it back.",
+		Description: "With remove_files, first takes Morche's sites off the server and reloads (the proxy itself stays installed). Hand-written sites are left as they are, except that files Morche took default_server from get it back.",
 		Tags:        tags, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *struct {
 		ID          string `path:"id" format:"uuid"`
@@ -1330,7 +1330,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "setup-proxy", Method: http.MethodPost, Path: base + "/setup",
 		Summary: "Install (when missing) and wire up the proxy",
-		Description: "Installs the package if needed, adds Morcheh's include, starts the proxy and writes the panel's sites. " +
+		Description: "Installs the package if needed, adds Morche's include, starts the proxy and writes the panel's sites. " +
 			"Runs as a background job (kind `" + proxySetupKind + "`); 409 when one is already running.",
 		Tags: tags, DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *ProxyIDPath) (*JobOutput, error) {

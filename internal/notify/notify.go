@@ -75,7 +75,7 @@ type ChannelConfig struct {
 	Port     int      `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"Email: 587 for STARTTLS, 465 for TLS, 25 for none"`
 	Security string   `json:"security,omitempty" enum:"starttls,tls,none," doc:"Email: how the connection is encrypted"`
 	Username string   `json:"username,omitempty" maxLength:"255" doc:"Email: the SMTP login, blank for none"`
-	From     string   `json:"from,omitempty" maxLength:"255" doc:"Email: the sender, e.g. Morcheh <alerts@example.com>"`
+	From     string   `json:"from,omitempty" maxLength:"255" doc:"Email: the sender, e.g. Morche <alerts@example.com>"`
 	To       []string `json:"to,omitempty" maxItems:"50" doc:"Email: who gets it"`
 	// Telegram and Bale
 	ChatID string `json:"chat_id,omitempty" maxLength:"100" doc:"Telegram/Bale: the chat, group or channel id (or @channelname)"`
@@ -285,7 +285,7 @@ func Send(ctx context.Context, ch Channel, m Message) error {
 	case Slack:
 		return postJSON(ctx, ch, ch.Secrets.WebhookURL, slackBody(m), nil)
 	case Mattermost:
-		return postJSON(ctx, ch, ch.Secrets.WebhookURL, map[string]any{"text": markdown(m), "username": "Morcheh"}, nil)
+		return postJSON(ctx, ch, ch.Secrets.WebhookURL, map[string]any{"text": markdown(m), "username": "Morche"}, nil)
 	case Discord:
 		return postJSON(ctx, ch, ch.Secrets.WebhookURL, discordBody(m), nil)
 	case Teams:
@@ -383,7 +383,7 @@ func markdown(m Message) string {
 		b.WriteString("\n**" + f.Name + ":** " + f.Value)
 	}
 	if m.URL != "" {
-		b.WriteString("\n[Open in Morcheh](" + m.URL + ")")
+		b.WriteString("\n[Open in Morche](" + m.URL + ")")
 	}
 	return b.String()
 }
@@ -405,7 +405,7 @@ func telegramHTML(m Message) string {
 		}
 	}
 	if m.URL != "" {
-		b.WriteString("\n\n<a href=\"" + htmlEscape(m.URL) + "\">Open in Morcheh</a>")
+		b.WriteString("\n\n<a href=\"" + htmlEscape(m.URL) + "\">Open in Morche</a>")
 	}
 	return b.String()
 }
@@ -419,7 +419,7 @@ func slackBody(m Message) map[string]any {
 		text += "\n*" + f.Name + ":* " + f.Value
 	}
 	if m.URL != "" {
-		text += "\n<" + m.URL + "|Open in Morcheh>"
+		text += "\n<" + m.URL + "|Open in Morche>"
 	}
 	return map[string]any{"text": text}
 }
@@ -439,7 +439,7 @@ func discordBody(m Message) map[string]any {
 	if m.URL != "" {
 		embed["url"] = m.URL
 	}
-	return map[string]any{"username": "Morcheh", "embeds": []any{embed}}
+	return map[string]any{"username": "Morche", "embeds": []any{embed}}
 }
 
 func teamsBody(m Message) map[string]any {
@@ -461,7 +461,7 @@ func teamsBody(m Message) map[string]any {
 		"type":    "AdaptiveCard", "version": "1.4", "body": body,
 	}
 	if m.URL != "" {
-		card["actions"] = []any{map[string]any{"type": "Action.OpenUrl", "title": "Open in Morcheh", "url": m.URL}}
+		card["actions"] = []any{map[string]any{"type": "Action.OpenUrl", "title": "Open in Morche", "url": m.URL}}
 	}
 	return map[string]any{
 		"type":        "message",
@@ -546,7 +546,7 @@ func postJSON(ctx context.Context, ch Channel, target string, body any, headers 
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Morcheh")
+	req.Header.Set("User-Agent", "Morche")
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -648,7 +648,7 @@ func sendPushover(ctx context.Context, ch Channel, m Message) error {
 	form.Set("priority", fmt.Sprint(p))
 	if m.URL != "" {
 		form.Set("url", m.URL)
-		form.Set("url_title", "Open in Morcheh")
+		form.Set("url_title", "Open in Morche")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.pushover.net/1/messages.json", strings.NewReader(form.Encode()))
 	if err != nil {

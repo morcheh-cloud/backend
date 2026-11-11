@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Managers Morcheh knows.
+// Managers Morche knows.
 const (
 	APT    = "apt"
 	DNF    = "dnf"
@@ -79,7 +79,7 @@ type PackageCapabilities struct {
 
 // PackageAutoUpdates is whether the server installs updates by itself.
 type PackageAutoUpdates struct {
-	Supported bool   `json:"supported" doc:"Morcheh can turn them on or off on this server"`
+	Supported bool   `json:"supported" doc:"Morche can turn them on or off on this server"`
 	Enabled   bool   `json:"enabled"`
 	Tool      string `json:"tool,omitempty" example:"unattended-upgrades"`
 	Missing   string `json:"missing,omitempty" doc:"The package to install before they can be turned on" example:"unattended-upgrades"`
@@ -89,7 +89,7 @@ type PackageAutoUpdates struct {
 // Overview is a server's packages and updates.
 type PackagesOverview struct {
 	Manager             string              `json:"manager" enum:"apt,dnf,yum,zypper,apk,pacman,none"`
-	Access              string              `json:"access" enum:"root,sudo,user" doc:"How Morcheh acts on the server. Changing packages needs root or sudo"`
+	Access              string              `json:"access" enum:"root,sudo,user" doc:"How Morche acts on the server. Changing packages needs root or sudo"`
 	RefreshedAt         *time.Time          `json:"refreshed_at,omitempty" doc:"When the package lists were last downloaded; updates are only as fresh as these"`
 	RebootRequired      bool                `json:"reboot_required" doc:"An update (a new kernel, a core library) needs a restart to take effect"`
 	RebootPackages      []string            `json:"reboot_packages" doc:"Which packages asked for it, when the server says"`

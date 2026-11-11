@@ -299,7 +299,7 @@ func buildRedirectStats(d proxy.Driver, lines []string, since time.Time) ProxyRe
 func targetCheckScript(urls []string) string {
 	var b strings.Builder
 	b.WriteString("command -v curl >/dev/null 2>&1 || { echo '" + redirectCheckMark + " nocurl'; exit 0; }\n")
-	b.WriteString("check() { curl -sS -o /dev/null --max-time 8 -H 'User-Agent: Morcheh redirect check' -w '" +
+	b.WriteString("check() { curl -sS -o /dev/null --max-time 8 -H 'User-Agent: Morche redirect check' -w '" +
 		redirectCheckMark + " '\"$1\"' %{http_code} %{time_total}\\t%{redirect_url}\\t%{errormsg}\\n' -- \"$2\" 2>/dev/null || true; }\n")
 	for i, u := range urls {
 		fmt.Fprintf(&b, "check %d %s &\n", i, quoteAll([]string{u}))
@@ -353,7 +353,7 @@ func parseTargetChecks(out string, urls []string) []RedirectTargetCheck {
 func fetchScript(u string) string {
 	return "command -v curl >/dev/null 2>&1 || { echo '" + redirectCheckMark + " nocurl'; exit 0; }\n" +
 		"f=$(mktemp) e=$(mktemp)\ntrap 'rm -f \"$f\" \"$e\"' EXIT\n" +
-		"code=$(curl -sSL --compressed --max-redirs 5 --max-time 25 --max-filesize 52428800 -H 'User-Agent: Morcheh sitemap fetch' -o \"$f\" -w '%{http_code}' -- " +
+		"code=$(curl -sSL --compressed --max-redirs 5 --max-time 25 --max-filesize 52428800 -H 'User-Agent: Morche sitemap fetch' -o \"$f\" -w '%{http_code}' -- " +
 		quoteAll([]string{u}) + " 2>\"$e\")\n" +
 		"echo \"" + redirectCheckMark + " ${code:-0} $(head -c 300 \"$e\" | tr '\\n' ' ')\"\n" +
 		"if [ \"$(head -c 2 \"$f\" | od -An -tx1 | tr -d ' \\n')\" = 1f8b ]; then gzip -dc \"$f\" 2>/dev/null | head -c " +

@@ -128,7 +128,7 @@ WHERE server_id = @server_id AND origin = 'found' AND NOT (recipe_id = ANY(@pres
   AND status NOT IN ('installing', 'updating', 'removing');
 
 -- name: MarkMissingSoftware :exec
--- A scan no longer finds an app Morcheh installed.
+-- A scan no longer finds an app Morche installed.
 UPDATE software_installs SET status = 'missing', state = '', checked_at = now(), updated_at = now()
 WHERE server_id = @server_id AND origin = 'morcheh' AND NOT (recipe_id = ANY(@present::text[]))
   AND status = 'installed';
@@ -273,7 +273,7 @@ DELETE FROM software_runs WHERE id = $1 AND state NOT IN ('queued', 'running');
 
 -- name: InterruptSoftwareRuns :exec
 WITH runs AS (
-    UPDATE software_runs SET state = 'interrupted', error = 'Morcheh restarted before it finished.', finished_at = now()
+    UPDATE software_runs SET state = 'interrupted', error = 'Morche restarted before it finished.', finished_at = now()
     WHERE state = 'running'
     RETURNING id
 )
@@ -282,7 +282,7 @@ WHERE run_id IN (SELECT id FROM runs) AND state IN ('queued', 'running');
 
 -- name: ResetStuckSoftwareInstalls :exec
 -- Installs left mid-change by a restart.
-UPDATE software_installs SET status = 'failed', error = 'Morcheh restarted while this was changing.'
+UPDATE software_installs SET status = 'failed', error = 'Morche restarted while this was changing.'
 WHERE status IN ('installing', 'updating', 'removing');
 
 -- name: DeleteOldSoftwareRuns :exec

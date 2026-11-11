@@ -18,7 +18,7 @@ import (
 	"github.com/morcheh/backend/internal/sshprobe"
 )
 
-// SFTP over its own SSH connection (servers already in Morcheh have theirs
+// SFTP over its own SSH connection (servers already in Morche have theirs
 // in sshpool; NewSFTP wraps one of those).
 type sftpfs struct {
 	ssh *ssh.Client // nil when the connection belongs to someone else

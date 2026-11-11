@@ -1,5 +1,5 @@
 // Package firewall reads and writes the rules of the firewalls a server can
-// run (ufw, firewalld) and reads the ones Morcheh doesn't manage (plain
+// run (ufw, firewalld) and reads the ones Morche doesn't manage (plain
 // nftables, iptables). It only parses and builds text: running anything on a
 // server is the api package's job.
 package firewall
@@ -34,7 +34,7 @@ type FilterRule struct {
 	Raw          string `json:"raw" doc:"The rule as the tool writes it"`
 	Editable     bool   `json:"editable" doc:"Can be changed here, not only removed"`
 	Deletable    bool   `json:"deletable"`
-	ProtectsSSH  bool   `json:"protects_ssh" doc:"Lets SSH in for Morcheh or for everyone"`
+	ProtectsSSH  bool   `json:"protects_ssh" doc:"Lets SSH in for Morche or for everyone"`
 
 	kind       string // firewalld: service, port, rich, source-port, protocol
 	logAll     bool   // ufw: log-all

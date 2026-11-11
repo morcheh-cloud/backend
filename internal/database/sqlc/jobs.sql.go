@@ -169,7 +169,7 @@ func (q *Queries) GetJob(ctx context.Context, id uuid.UUID) (Job, error) {
 
 const interruptRunningJobs = `-- name: InterruptRunningJobs :execrows
 UPDATE jobs SET state = 'interrupted', finished_at = now(),
-    error = 'Morcheh restarted while this was running'
+    error = 'Morche restarted while this was running'
 WHERE state = 'running'
 `
 

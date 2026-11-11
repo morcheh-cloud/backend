@@ -10,7 +10,7 @@ requires: [docker]
 params:
   - name: BIND
     label: Listen on
-    help: 127.0.0.1 keeps it reachable only from the server itself (Morcheh reaches it over SSH). 0.0.0.0 opens it to the network.
+    help: 127.0.0.1 keeps it reachable only from the server itself (Morche reaches it over SSH). 0.0.0.0 opens it to the network.
     type: select
     options: ["127.0.0.1", "0.0.0.0"]
     default: "127.0.0.1"

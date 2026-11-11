@@ -172,7 +172,7 @@ type Querier interface {
 	DeleteWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) error
 	// Ends a mute now (one that hasn't started yet goes away).
 	EndAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error)
-	// A run whose job ended without it (canceled while queued, Morcheh restarted).
+	// A run whose job ended without it (canceled while queued, Morche restarted).
 	EndAnsibleRun(ctx context.Context, arg EndAnsibleRunParams) error
 	// Only a run still going: a run that finished keeps its outcome.
 	EndBackup(ctx context.Context, arg EndBackupParams) error
@@ -180,7 +180,7 @@ type Querier interface {
 	EndRestore(ctx context.Context, arg EndRestoreParams) error
 	// Ends a run that's still queued or running, keeping what it recorded.
 	EndScheduleRun(ctx context.Context, arg EndScheduleRunParams) error
-	// A run whose job ended without it (canceled while queued, Morcheh restarted):
+	// A run whose job ended without it (canceled while queued, Morche restarted):
 	// the run and whatever on it hadn't finished.
 	EndScriptRun(ctx context.Context, arg EndScriptRunParams) error
 	EndSoftwareRun(ctx context.Context, arg EndSoftwareRunParams) error
@@ -292,14 +292,14 @@ type Querier interface {
 	InsertServerStatusChange(ctx context.Context, arg InsertServerStatusChangeParams) error
 	InsertStorageCheck(ctx context.Context, arg InsertStorageCheckParams) error
 	InsertStorageUsage(ctx context.Context, arg InsertStorageUsageParams) (StorageUsage, error)
-	// At start-up: commands a previous run of Morcheh was waiting on.
+	// At start-up: commands a previous run of Morche was waiting on.
 	InterruptCommandLog(ctx context.Context) (int64, error)
 	// At startup: whatever was running died with the last process.
 	InterruptRunningJobs(ctx context.Context) (int64, error)
 	// What the last process left running can't go on after a restart.
 	InterruptScriptRuns(ctx context.Context) error
 	InterruptSoftwareRuns(ctx context.Context) error
-	// At start-up: shells recorded by a previous run of Morcheh are gone.
+	// At start-up: shells recorded by a previous run of Morche are gone.
 	InterruptTerminalRecordings(ctx context.Context) (int64, error)
 	// Removes the locations not listed ("morcheh" or a server id).
 	KeepMonitorLocations(ctx context.Context, arg KeepMonitorLocationsParams) error
@@ -387,7 +387,7 @@ type Querier interface {
 	ListMonitorEvents(ctx context.Context, arg ListMonitorEventsParams) ([]MonitorEvent, error)
 	ListMonitorIncidents(ctx context.Context, arg ListMonitorIncidentsParams) ([]MonitorIncident, error)
 	// ---- Locations ----
-	// A monitor's locations, Morcheh first, then the servers by name.
+	// A monitor's locations, Morche first, then the servers by name.
 	ListMonitorLocations(ctx context.Context, monitorID uuid.UUID) ([]ListMonitorLocationsRow, error)
 	ListMonitorLocationsFor(ctx context.Context, ids []uuid.UUID) ([]ListMonitorLocationsForRow, error)
 	// ---- Monitors ----
@@ -469,7 +469,7 @@ type Querier interface {
 	// Serializes first-run setup and last-admin checks for the transaction.
 	LockAuth(ctx context.Context) error
 	LogNotification(ctx context.Context, arg LogNotificationParams) error
-	// A scan no longer finds an app Morcheh installed.
+	// A scan no longer finds an app Morche installed.
 	MarkMissingSoftware(ctx context.Context, arg MarkMissingSoftwareParams) error
 	// Checks grouped into buckets of @step seconds.
 	MonitorBuckets(ctx context.Context, arg MonitorBucketsParams) ([]MonitorBucketsRow, error)

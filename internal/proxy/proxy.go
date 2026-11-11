@@ -1,4 +1,4 @@
-// Package proxy is the kind-neutral side of Morcheh's reverse proxies: the
+// Package proxy is the kind-neutral side of Morche's reverse proxies: the
 // model of a site (HostConfig), its validation, and the Driver interface each
 // proxy kind (nginx first) implements. A driver only builds shell scripts and
 // reads their output; the API runs them over SSH.
@@ -986,7 +986,7 @@ func validateCacheKey(c Cache, add func(field, msg string, v any)) {
 func checkCustom(s string) string {
 	for i, line := range strings.Split(s, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "MORCHEH_") || strings.Contains(line, "@@morcheh-") {
-			return fmt.Sprintf("Line %d starts with a word Morcheh keeps for itself (MORCHEH_ / @@morcheh-).", i+1)
+			return fmt.Sprintf("Line %d starts with a word Morche keeps for itself (MORCHEH_ / @@morcheh-).", i+1)
 		}
 	}
 	return checkAdvanced(s)
@@ -1327,8 +1327,8 @@ type Status struct {
 	StreamGeo string
 	// CABundle is the system's CA file, for checking https upstreams.
 	CABundle string
-	// Released are the hand-written files Morcheh took default_server from
-	// (see Takeover); they get it back when no site of Morcheh's answers
+	// Released are the hand-written files Morche took default_server from
+	// (see Takeover); they get it back when no site of Morche's answers
 	// unknown names any more.
 	Released []string
 }
@@ -1344,11 +1344,11 @@ type Site struct {
 	Root     string   `json:"root,omitempty"`
 	Redirect string   `json:"redirect,omitempty"`
 	Text     string   `json:"text,omitempty"`
-	Managed  bool     `json:"managed" doc:"Written by Morcheh"`
+	Managed  bool     `json:"managed" doc:"Written by Morche"`
 }
 
 // Certificate is one found on the server: certbot's live folders and the
-// ones Morcheh made or was given (/etc/ssl/morcheh).
+// ones Morche made or was given (/etc/ssl/morcheh).
 type Certificate struct {
 	Name        string     `json:"name"`
 	Certificate string     `json:"certificate"`
@@ -1361,7 +1361,7 @@ type Certificate struct {
 
 // Takeover is what an apply does with the hand-written default server
 // (the site answering names no other site has, or the bare IP). While one
-// of Morcheh's sites is a catch-all (Hold), it takes that role: the word
+// of Morche's sites is a catch-all (Hold), it takes that role: the word
 // default_server is taken off the web ports' listen lines in From, a copy of
 // each file is kept, and nothing else in them changes. Without one, every
 // file taken from before gets its copy back, unless it was edited since.
@@ -1374,7 +1374,7 @@ type Takeover struct {
 var webPortRe = regexp.MustCompile(`^(?:\S*:)?(?:80|443)(?:\s|$)`)
 
 // DefaultHolders are the files of hand-written sites that are the default
-// server on port 80 or 443: what a catch-all site of Morcheh's takes over.
+// server on port 80 or 443: what a catch-all site of Morche's takes over.
 func DefaultHolders(sites []Site) []string {
 	var files []string
 	for _, s := range sites {
@@ -1463,7 +1463,7 @@ type Driver interface {
 	// KeptPagesScript counts a site's kept answers and lists the newest
 	// limit of them, for ParseKeptPages.
 	KeptPagesScript(hostID string, limit int) string
-	// RemoveScript takes everything Morcheh wrote off the server and gives
+	// RemoveScript takes everything Morche wrote off the server and gives
 	// the default server back to the hand-written files it was taken from.
 	RemoveScript() string
 	// ActionScript is test, reload, start, stop or restart.

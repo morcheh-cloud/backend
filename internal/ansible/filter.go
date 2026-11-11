@@ -8,7 +8,7 @@ import (
 )
 
 // Filter cleans what a run prints before it is stored or shown: passwords
-// Morcheh put in the inventory come out as ****, so someone who may read a
+// Morche put in the inventory come out as ****, so someone who may read a
 // run's log doesn't get a login they couldn't see otherwise (a playbook that
 // prints hostvars, a high verbosity), and the text is always valid UTF-8
 // without NUL, which PostgreSQL refuses. Chunks can split a password or a

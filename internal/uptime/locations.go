@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// Morcheh names the location that is Morcheh itself (no server in between).
-const Morcheh = "morcheh"
+// Morche names the location that is Morche itself (no server in between).
+const Morche = "morcheh"
 
 // Unknown is a location's status when it couldn't check at all (its server
 // was unreachable): it doesn't vote.

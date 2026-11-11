@@ -18,7 +18,7 @@ params:
     default: security
   - name: REBOOT
     label: Reboot when an update needs it
-    help: Otherwise Morcheh shows "Reboot needed" and you choose when.
+    help: Otherwise Morche shows "Reboot needed" and you choose when.
     type: bool
     default: "false"
   - name: REBOOT_TIME
@@ -43,7 +43,7 @@ install: |
       pkg_install unattended-upgrades
       printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' > /etc/apt/apt.conf.d/20auto-upgrades
       {
-        echo '// Written by Morcheh (Automatic security updates).'
+        echo '// Written by Morche (Automatic security updates).'
         if [ "$UPDATES" = all ]; then
           echo 'Unattended-Upgrade::Allowed-Origins:: "${distro_id}:${distro_codename}-updates";'
         fi

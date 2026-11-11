@@ -427,7 +427,7 @@ func (h *softwareHandler) syncRun(ctx context.Context, id uuid.UUID, state strin
 		}
 		return true
 	}
-	const lost = "Morcheh restarted before it finished."
+	const lost = "Morche restarted before it finished."
 	if job == nil {
 		if time.Since(created) < time.Minute {
 			return false
@@ -714,7 +714,7 @@ func registerSoftware(api huma.API, h *softwareHandler) {
 		Method:      http.MethodPost,
 		Path:        "/software-installs/{id}/reveal",
 		Summary:     "Show the secret values an application was installed with",
-		Description: "Passwords Morcheh made or was given at install time. Owner of the server.",
+		Description: "Passwords Morche made or was given at install time. Owner of the server.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *installPath) (*struct {
 		Body struct {
@@ -763,7 +763,7 @@ func registerSoftware(api huma.API, h *softwareHandler) {
 			return huma.Error422UnprocessableEntity("Only Docker apps can do this. Use the server's Services tab for the rest.")
 		}
 		if r.Project == "" {
-			return huma.Error422UnprocessableEntity("Morcheh doesn't know this app's compose project.")
+			return huma.Error422UnprocessableEntity("Morche doesn't know this app's compose project.")
 		}
 		return nil
 	}
@@ -874,7 +874,7 @@ func registerSoftware(api huma.API, h *softwareHandler) {
 			return err
 		}
 		if r.Origin != "morcheh" {
-			return huma.Error422UnprocessableEntity("Only apps installed from Morcheh can be edited here.")
+			return huma.Error422UnprocessableEntity("Only apps installed from Morche can be edited here.")
 		}
 		return nil
 	}
@@ -1348,7 +1348,7 @@ func (h *softwareHandler) preflightOne(ctx context.Context, r software.Recipe, l
 		case row.Status == "installing" || row.Status == "updating" || row.Status == "removing":
 			p.Problems = append(p.Problems, "It is being changed right now by another run.")
 		case row.Origin == "found" && r.Kind == software.KindDocker:
-			p.Warnings = append(p.Warnings, "It already runs here in containers Morcheh didn't start. Installing it again starts a second copy.")
+			p.Warnings = append(p.Warnings, "It already runs here in containers Morche didn't start. Installing it again starts a second copy.")
 		case row.Status == "installed":
 			p.Warnings = append(p.Warnings, "It's already installed. Installing again keeps its data and applies the values you give now.")
 		}

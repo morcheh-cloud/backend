@@ -14,7 +14,7 @@ import (
 
 // DNSRecord is one record, flat whatever its type. Value is the address,
 // target or text; MX and SRV add Priority, SRV adds Weight and Port, and CAA
-// has Flags and Tag with Value as its value. Types Morcheh can't edit carry
+// has Flags and Tag with Value as its value. Types Morche can't edit carry
 // their data as text in Value, with Editable false.
 type DNSRecord struct {
 	Name     string `json:"name" doc:"Full name, like www.example.com"`
@@ -103,7 +103,7 @@ func rdataInt(d map[string]any, key string) *int {
 	return &n
 }
 
-// rdataText shows a type Morcheh has no form for: "key: value" pairs in a
+// rdataText shows a type Morche has no form for: "key: value" pairs in a
 // stable order.
 // A field the server also sends readable ("refresh" next to "refreshString":
 // "15m") shows the readable one, once; base64 copies are left out.

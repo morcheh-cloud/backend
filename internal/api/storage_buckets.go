@@ -32,7 +32,7 @@ type BucketLifecycleRule struct {
 	DeleteMarkers    bool   `json:"delete_markers" doc:"Remove delete markers with no versions left behind them"`
 	TransitionDays   int    `json:"transition_days" minimum:"0" maximum:"36500" doc:"Move objects to transition_class after this many days (0 = never)"`
 	TransitionClass  string `json:"transition_class" maxLength:"64" doc:"Storage class to move to (GLACIER, STANDARD_IA…)"`
-	Advanced         bool   `json:"advanced" readOnly:"true" doc:"Has parts Morcheh doesn't show (tag or size filters, dates…); they're kept when saved"`
+	Advanced         bool   `json:"advanced" readOnly:"true" doc:"Has parts Morche doesn't show (tag or size filters, dates…); they're kept when saved"`
 }
 
 type BucketCORSRule struct {
@@ -51,7 +51,7 @@ type BucketDetails struct {
 	// with others, deleted or renamed.
 	Fixed      bool   `json:"fixed" doc:"The storage is set to this one bucket"`
 	Versioning string `json:"versioning" enum:"off,enabled,suspended"`
-	Access     string `json:"access" enum:"private,download,public,custom" doc:"Who can read without a key: nobody, anyone with a file's link, or anyone (and list it); custom = a policy Morcheh doesn't recognise"`
+	Access     string `json:"access" enum:"private,download,public,custom" doc:"Who can read without a key: nobody, anyone with a file's link, or anyone (and list it); custom = a policy Morche doesn't recognise"`
 	// Anonymous users may write or delete: always worth a warning.
 	PublicWrite   bool                  `json:"public_write" doc:"The policy lets anyone write or delete"`
 	Policy        string                `json:"policy" doc:"The raw bucket policy (JSON); empty = none"`
@@ -116,7 +116,7 @@ func anonymous(raw json.RawMessage) bool {
 }
 
 // splitPolicy parses a policy into its anonymous Allow statements and the
-// rest. ok is false when it isn't JSON Morcheh can read.
+// rest. ok is false when it isn't JSON Morche can read.
 func splitPolicy(policy string) (anon []policyStatement, others []json.RawMessage, ok bool) {
 	if strings.TrimSpace(policy) == "" {
 		return nil, nil, true
@@ -189,7 +189,7 @@ func classify(bucket, policy string) (access string, publicWrite bool) {
 func withAccess(bucket, policy, access string) (string, error) {
 	_, others, ok := splitPolicy(policy)
 	if !ok {
-		return "", huma.Error422UnprocessableEntity("The bucket's policy isn't JSON Morcheh can read: edit it as a custom policy instead")
+		return "", huma.Error422UnprocessableEntity("The bucket's policy isn't JSON Morche can read: edit it as a custom policy instead")
 	}
 	stmt := func(actions []string, resource string) json.RawMessage {
 		b, _ := json.Marshal(map[string]any{

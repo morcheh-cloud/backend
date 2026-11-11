@@ -23,14 +23,14 @@ import (
 // the file is checked.
 const (
 	PgCustom     = "pg_custom"    // pg_dump -Fc: compressed already
-	PgAll        = "pg_all"       // pg_dumpall, gzipped by Morcheh
-	MySQLSQL     = "mysql_sql"    // mysqldump --databases, gzipped by Morcheh
-	MySQLDB      = "mysql_db"     // mysqldump of one database, gzipped by Morcheh
-	MySQLBinlog  = "mysql_binlog" // mysqlbinlog's text, gzipped by Morcheh
+	PgAll        = "pg_all"       // pg_dumpall, gzipped by Morche
+	MySQLSQL     = "mysql_sql"    // mysqldump --databases, gzipped by Morche
+	MySQLDB      = "mysql_db"     // mysqldump of one database, gzipped by Morche
+	MySQLBinlog  = "mysql_binlog" // mysqlbinlog's text, gzipped by Morche
 	MongoArchive = "mongo_arch"   // mongodump --archive --gzip
-	RedisRDB     = "redis_rdb"    // RDB snapshot, gzipped by Morcheh
-	MSSQLBak     = "mssql_bak"    // BACKUP DATABASE, gzipped by Morcheh
-	MSSQLDiff    = "mssql_diff"   // BACKUP DATABASE ... WITH DIFFERENTIAL, gzipped by Morcheh
+	RedisRDB     = "redis_rdb"    // RDB snapshot, gzipped by Morche
+	MSSQLBak     = "mssql_bak"    // BACKUP DATABASE, gzipped by Morche
+	MSSQLDiff    = "mssql_diff"   // BACKUP DATABASE ... WITH DIFFERENTIAL, gzipped by Morche
 	mssqlDataDir = "/var/opt/mssql/data"
 )
 
@@ -41,7 +41,7 @@ const (
 	BrokenMark   = "MORCHEH_CHAIN_BROKEN"
 )
 
-// Gzipped says Morcheh compressed the file itself, so it's the one to undo that
+// Gzipped says Morche compressed the file itself, so it's the one to undo that
 // on the way back.
 func Gzipped(format string) bool {
 	switch format {
@@ -108,7 +108,7 @@ type Spec struct {
 	// File extension, without the dot.
 	Ext    string
 	Format string
-	// Morcheh should gzip the output while storing it.
+	// Morche should gzip the output while storing it.
 	Gzip bool
 	// The chain's position is in the file's first lines (see PositionIn).
 	HeadPosition bool
@@ -457,7 +457,7 @@ func mssql(t Target) (Spec, error) {
 		return Spec{}, errors.New("SQL Server backups are one database at a time.")
 	}
 	if !t.Local {
-		return Spec{}, errors.New("SQL Server writes its backup on its own disk, so Morcheh has to reach the machine or container it runs on.")
+		return Spec{}, errors.New("SQL Server writes its backup on its own disk, so Morche has to reach the machine or container it runs on.")
 	}
 	if !idPattern.MatchString(t.ID) {
 		return Spec{}, errors.New("a backup needs an id")
@@ -493,7 +493,7 @@ func mssql(t Target) (Spec, error) {
 }
 
 // Restore explains how to bring a backup back by hand: for what the panel
-// can't do, or when it has to happen somewhere Morcheh doesn't reach.
+// can't do, or when it has to happen somewhere Morche doesn't reach.
 func Restore(format, target, file string) string {
 	q := quote(file)
 	name := target

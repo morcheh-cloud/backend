@@ -153,7 +153,7 @@ func (h *proxyHandler) runCertificate(ctx context.Context, t *jobs.Task) (any, e
 		install := func(pkgs ...string) string {
 			s, err := packageScript(f.pm, "install", pkgs...)
 			if err != nil {
-				return "echo 'No package manager Morcheh knows here.'; false"
+				return "echo 'No package manager Morche knows here.'; false"
 			}
 			return s
 		}
@@ -204,7 +204,7 @@ func (h *proxyHandler) runCertificate(ctx context.Context, t *jobs.Task) (any, e
 		case err != nil:
 			return err
 		case res.timedOut:
-			return fmt.Errorf("It took longer than %d minutes, so Morcheh stopped waiting", int(packageTimeout.Minutes()))
+			return fmt.Errorf("It took longer than %d minutes, so Morche stopped waiting", int(packageTimeout.Minutes()))
 		case res.code == proxy.ExitNotInstalled:
 			return fmt.Errorf("%s isn't installed on this server. Set it up first", d.Label())
 		case res.code == proxy.ExitTestFailed:

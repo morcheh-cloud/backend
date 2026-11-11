@@ -869,7 +869,7 @@ type ListMonitorLocationsRow struct {
 }
 
 // ---- Locations ----
-// A monitor's locations, Morcheh first, then the servers by name.
+// A monitor's locations, Morche first, then the servers by name.
 func (q *Queries) ListMonitorLocations(ctx context.Context, monitorID uuid.UUID) ([]ListMonitorLocationsRow, error) {
 	rows, err := q.db.Query(ctx, listMonitorLocations, monitorID)
 	if err != nil {

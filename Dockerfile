@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Morcheh backend: the API server plus every tool the panel drives from this
+# Morche backend: the API server plus every tool the panel drives from this
 # machine. Build: docker build -t morcheh-backend .
 #
 #   ssh, sshpass ........ Ansible runs (key and password logins)

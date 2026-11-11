@@ -1,5 +1,5 @@
 -- +goose Up
--- Authoritative DNS servers (Technitium) Morcheh talks to through their API.
+-- Authoritative DNS servers (Technitium) Morche talks to through their API.
 -- Zones and records live on those servers; only the connection is kept here.
 CREATE TABLE dns_servers (
     id              uuid PRIMARY KEY DEFAULT uuidv7(),

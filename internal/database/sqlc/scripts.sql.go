@@ -242,7 +242,7 @@ type EndScriptRunParams struct {
 	ID    uuid.UUID `json:"id"`
 }
 
-// A run whose job ended without it (canceled while queued, Morcheh restarted):
+// A run whose job ended without it (canceled while queued, Morche restarted):
 // the run and whatever on it hadn't finished.
 func (q *Queries) EndScriptRun(ctx context.Context, arg EndScriptRunParams) error {
 	_, err := q.db.Exec(ctx, endScriptRun, arg.State, arg.Error, arg.ID)
@@ -369,7 +369,7 @@ func (q *Queries) GetScriptWorkspace(ctx context.Context, id uuid.UUID) (uuid.UU
 
 const interruptScriptRuns = `-- name: InterruptScriptRuns :exec
 WITH runs AS (
-    UPDATE script_runs SET state = 'interrupted', error = 'Morcheh restarted before it finished.', finished_at = now()
+    UPDATE script_runs SET state = 'interrupted', error = 'Morche restarted before it finished.', finished_at = now()
     WHERE state = 'running'
     RETURNING id
 )

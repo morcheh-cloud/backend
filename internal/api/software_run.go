@@ -244,7 +244,7 @@ func (h *softwareHandler) plan(ctx context.Context, b startSoftwareRunBody, ws u
 					}
 				case "uninstall":
 					if docker && found {
-						return p, fieldError("body.recipes", fmt.Sprintf("Morcheh didn't install %s on %s, so it doesn't remove it. Stop or remove it on the server.", row.Name, s.Name), id)
+						return p, fieldError("body.recipes", fmt.Sprintf("Morche didn't install %s on %s, so it doesn't remove it. Stop or remove it on the server.", row.Name, s.Name), id)
 					}
 				case "rollback":
 					if !docker || found || !row.CanRollback {
@@ -259,12 +259,12 @@ func (h *softwareHandler) plan(ctx context.Context, b startSoftwareRunBody, ws u
 		case "update":
 			p.nothing = "Nothing to update: the chosen applications are up to date or not on these servers."
 			if len(skipped) > 0 {
-				p.nothing = "Nothing Morcheh can update: " + strings.Join(skipped, ", ") + " (Morcheh doesn't know their compose folder or recipe)."
+				p.nothing = "Nothing Morche can update: " + strings.Join(skipped, ", ") + " (Morche doesn't know their compose folder or recipe)."
 			}
 		case "uninstall":
 			p.nothing = "None of the chosen applications is on these servers."
 		case "rollback":
-			p.nothing = "Nothing to roll back: only Docker apps installed from Morcheh go back, after an update."
+			p.nothing = "Nothing to roll back: only Docker apps installed from Morche go back, after an update."
 		}
 		if len(p.steps) > 0 {
 			main = p.steps[0].recipe
@@ -595,7 +595,7 @@ func (h *softwareHandler) execute(ctx context.Context, t *jobs.Task, runID uuid.
 	case ctx.Err() != nil && t.Canceled():
 		state = jobs.Canceled
 	case ctx.Err() != nil:
-		state, msg = jobs.Interrupted, "Morcheh stopped before it finished."
+		state, msg = jobs.Interrupted, "Morche stopped before it finished."
 	case failed > 0:
 		state = jobs.Failed
 		if len(lanes) == 1 {
@@ -671,7 +671,7 @@ func (h *softwareHandler) runStep(ctx context.Context, t *jobs.Task, run sqlc.So
 		var err error
 		row, err = h.q.GetSoftwareInstallByRecipe(ctx, sqlc.GetSoftwareInstallByRecipeParams{ServerID: sid, RecipeID: tg.RecipeID})
 		if err != nil {
-			return finish(sqlc.FinishSoftwareTargetParams{State: jobs.Failed, Error: "Morcheh no longer has a record of it on this server."})
+			return finish(sqlc.FinishSoftwareTargetParams{State: jobs.Failed, Error: "Morche no longer has a record of it on this server."})
 		}
 		var ok bool
 		if r, ok = software.Find(list, tg.RecipeID); !ok {

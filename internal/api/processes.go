@@ -26,7 +26,7 @@ type SignalProcessesInput struct {
 	Body struct {
 		Signal  string                `json:"signal" enum:"TERM,KILL,HUP,INT,QUIT,STOP,CONT,USR1,USR2" doc:"TERM asks it to stop, KILL ends it at once, HUP often reloads its configuration, STOP/CONT pause and resume it"`
 		Targets []procs.ProcessTarget `json:"targets" minItems:"1" maxItems:"200"`
-		Force   bool                  `json:"force,omitempty" doc:"Also signal protected processes (PID 1, sshd, journald, Morcheh's own connection…)"`
+		Force   bool                  `json:"force,omitempty" doc:"Also signal protected processes (PID 1, sshd, journald, Morche's own connection…)"`
 	}
 }
 

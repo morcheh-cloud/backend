@@ -20,7 +20,7 @@ const (
 	CertUpload     = "upload"      // a certificate and key the user already has
 )
 
-// SelfDir holds the certificates Morcheh made or was given, one folder each
+// SelfDir holds the certificates Morche made or was given, one folder each
 // (fullchain.pem + privkey.pem). certbot's own stay in /etc/letsencrypt/live.
 const SelfDir = "/etc/ssl/morcheh"
 

@@ -52,7 +52,7 @@ type Config struct {
 	// How often each online server is scanned for installed applications and
 	// updates (0 = never on its own).
 	SoftwareCheckInterval time.Duration `env:"SOFTWARE_CHECK_INTERVAL" envDefault:"6h"`
-	// How often Morcheh looks for cron jobs that are due. 0 = they never run
+	// How often Morche looks for cron jobs that are due. 0 = they never run
 	// on time (Run now still works).
 	ScheduleTick time.Duration `env:"SCHEDULE_TICK" envDefault:"15s"`
 	// If set, the first-run form asks for it, so a stranger who reaches a fresh

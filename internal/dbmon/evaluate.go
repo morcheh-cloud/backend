@@ -51,7 +51,7 @@ func lim(w, c float64) *DatabaseLimit { return &DatabaseLimit{Warn: w, Crit: c} 
 
 // Checks lists every check with its default limits.
 var Checks = []DatabaseCheckInfo{
-	{ID: "reachable", Area: "availability", Title: "Reachable", About: "Morcheh can connect and sign in."},
+	{ID: "reachable", Area: "availability", Title: "Reachable", About: "Morche can connect and sign in."},
 	{ID: "latency", Area: "availability", Title: "Response time", About: "Round trip of a trivial query.", Unit: "ms", Limit: lim(500, 2000)},
 	{ID: "database_state", Area: "availability", Title: "Database states", About: "SQL Server: every database is ONLINE."},
 	{ID: "disk", Area: "capacity", Title: "Disk", About: "Share of the data disk in use.", Unit: "ratio", Limit: lim(0.85, 0.95)},
@@ -93,12 +93,12 @@ type EvalInput struct {
 	Snapshot *DatabaseSnapshot // nil when the look failed
 	Status   string            // Status* from Classify
 	Message  string
-	// Public: Morcheh reached it straight over the internet.
+	// Public: Morche reached it straight over the internet.
 	Public bool
 	// Direct: no panel server stands in front of it, so nothing reads its
 	// disk unless the engine says.
 	Direct bool
-	// Morcheh's own backups.
+	// Morche's own backups.
 	LastBackup      *time.Time
 	BackupPlanned   bool
 	LastRestoreTest *time.Time
@@ -182,7 +182,7 @@ func unreachableAction(status string) string {
 	case StatusBlocked:
 		return "The address is private or internal. A system admin can allow internal addresses for this database."
 	}
-	return "Check that the database is running, that its port is open to Morcheh, and the server it runs on."
+	return "Check that the database is running, that its port is open to Morche, and the server it runs on."
 }
 
 func (e *evaluator) availability(s *DatabaseSnapshot) {
@@ -405,7 +405,7 @@ func (e *evaluator) replication(s *DatabaseSnapshot) {
 
 func (e *evaluator) backup(s *DatabaseSnapshot) {
 	last := e.in.LastBackup
-	source := "Morcheh"
+	source := "Morche"
 	if e.in.Engine == MSSQL {
 		// The oldest last full backup of any user database, as msdb records it.
 		var oldest *time.Time
@@ -439,7 +439,7 @@ func (e *evaluator) backup(s *DatabaseSnapshot) {
 	case e.in.BackupPlanned:
 		e.add("backup_age", LevelUnknown, "The plan hasn't produced a backup yet.", "", nil)
 	default:
-		e.add("backup_age", LevelUnknown, "No backup known.", "Set up a backup plan in Morcheh to have this checked.", nil)
+		e.add("backup_age", LevelUnknown, "No backup known.", "Set up a backup plan in Morche to have this checked.", nil)
 	}
 rest:
 	switch {
@@ -469,10 +469,10 @@ func (e *evaluator) security(s *DatabaseSnapshot) {
 	sec := s.Security
 	switch {
 	case sec.Encrypted != nil && !*sec.Encrypted && e.in.Public:
-		e.add("tls", LevelCritical, "Morcheh's connection over the internet isn't encrypted.",
+		e.add("tls", LevelCritical, "Morche's connection over the internet isn't encrypted.",
 			"Turn on TLS on the database and set the connection to Require or Verify.", nil)
 	case sec.Encrypted != nil && !*sec.Encrypted:
-		e.add("tls", LevelWarning, "Morcheh's connection isn't encrypted.", "Turn on TLS on the database.", nil)
+		e.add("tls", LevelWarning, "Morche's connection isn't encrypted.", "Turn on TLS on the database.", nil)
 	case sec.PlainClients != nil && *sec.PlainClients > 0:
 		e.add("tls", LevelWarning, fmt.Sprintf("%d connections from the network without TLS", *sec.PlainClients),
 			"Make the database require TLS, or the apps use it.", f64(float64(*sec.PlainClients)))

@@ -38,7 +38,7 @@ var errChainBroken = errors.New("the chain can't be continued")
 
 // ---- Runs ----
 
-// syncRun ends a stored run whose job ended without it (Morcheh stopped
+// syncRun ends a stored run whose job ended without it (Morche stopped
 // halfway) and says whether it did.
 func (h *backupHandler) syncRun(ctx context.Context, b sqlc.DatabaseBackup) bool {
 	if !jobs.Active(b.State) {
@@ -167,7 +167,7 @@ func (h *backupHandler) start(ctx context.Context, p sqlc.DatabaseBackupPlan, by
 		}
 	}
 
-	// uuid.Nil stands for Morcheh's own machine, so its runs queue together.
+	// uuid.Nil stands for Morche's own machine, so its runs queue together.
 	refs := []uuid.UUID{place.server.ID}
 	names := make([]string, len(place.storages))
 	for i, s := range place.storages {
@@ -558,7 +558,7 @@ func (s *sink) Write(p []byte) (int, error) {
 
 // dumpScript is a script and how to run it. With data, the script reads it on
 // stdin (a restore); without, its stdout is the backup. No server = on the
-// machine Morcheh runs on.
+// machine Morche runs on.
 type dumpScript struct {
 	server    uuid.UUID
 	container string
@@ -568,13 +568,13 @@ type dumpScript struct {
 	data      io.Reader
 }
 
-// dumpMarks are what a script said on stderr for Morcheh.
+// dumpMarks are what a script said on stderr for Morche.
 type dumpMarks struct {
 	position string
 	broken   bool
 }
 
-// readMarks takes Morcheh's lines out of what a script printed.
+// readMarks takes Morche's lines out of what a script printed.
 func readMarks(s string) (dumpMarks, string) {
 	var m dumpMarks
 	var rest []string
@@ -987,7 +987,7 @@ func (c *countingReader) Read(p []byte) (int, error) {
 // ---- Scheduler ----
 
 // startBackupScheduler runs plans when they're due. A run missed while
-// Morcheh was down happens once, when it's back.
+// Morche was down happens once, when it's back.
 func startBackupScheduler(h *backupHandler, every time.Duration) {
 	if every <= 0 {
 		return

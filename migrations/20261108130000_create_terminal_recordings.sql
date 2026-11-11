@@ -26,7 +26,7 @@ CREATE TABLE terminal_recordings (
     started_at  timestamptz NOT NULL DEFAULT now(),
     ended_at    timestamptz,
     exit_code   int,
-    -- Morcheh stopped before the shell ended; the data is a gzip without its end.
+    -- Morche stopped before the shell ended; the data is a gzip without its end.
     interrupted boolean NOT NULL DEFAULT false,
     duration_ms bigint NOT NULL DEFAULT 0,
     -- Output bytes before compression.

@@ -21,7 +21,7 @@ import (
 	"github.com/morcheh/backend/internal/storage"
 )
 
-// Schedules are cron jobs Morcheh runs itself (the panel calls them "Cron
+// Schedules are cron jobs Morche runs itself (the panel calls them "Cron
 // jobs"; "cron" in this package is a server's crontab). An action says what
 // one does: sync copies files from a server or storage to servers and
 // storages (job kind schedule-sync); every other action runs as schedule-run
@@ -486,7 +486,7 @@ func (h *scheduleHandler) live(ctx context.Context, r *ScheduleRun) {
 }
 
 // syncRun ends a stored run whose job ended without it: canceled while
-// queued, or Morcheh restarted. It says whether it changed anything.
+// queued, or Morche restarted. It says whether it changed anything.
 func (h *scheduleHandler) syncRun(ctx context.Context, r sqlc.ScheduleRun) bool {
 	if !jobs.Active(r.State) {
 		return false
@@ -498,7 +498,7 @@ func (h *scheduleHandler) syncRun(ctx context.Context, r sqlc.ScheduleRun) bool 
 		}
 		return true
 	}
-	const lost = "Morcheh restarted before it finished."
+	const lost = "Morche restarted before it finished."
 	if r.JobID == nil {
 		if time.Since(r.CreatedAt) < time.Minute {
 			return false
@@ -750,7 +750,7 @@ func (h *scheduleHandler) runJob(ctx context.Context, t *jobs.Task) (any, error)
 			if err == nil {
 				err = h.st.with(ctx, d.transferEnd(), func(dst place) error {
 					if dst.readOnly {
-						return errors.New(dst.name + " is read-only in Morcheh.")
+						return errors.New(dst.name + " is read-only in Morche.")
 					}
 					var prog storage.Progress
 					prog.OnBytes = t.Add
@@ -821,7 +821,7 @@ func (h *scheduleHandler) endRun(ctx context.Context, t *jobs.Task, runID uuid.U
 	case ctx.Err() != nil && t.Canceled():
 		state = jobs.Canceled
 	case ctx.Err() != nil:
-		state, msg = jobs.Interrupted, "Morcheh stopped before it finished."
+		state, msg = jobs.Interrupted, "Morche stopped before it finished."
 	case failMsg != "":
 		state, msg = jobs.Failed, failMsg
 	case bad > 0 && ok == 0 && !anyPartial(results):
@@ -894,7 +894,7 @@ func scheduleLoc(tz string) *time.Location {
 // ---- The clock ----
 
 // startScheduler fires schedules that are due, checking every `every`. A
-// run missed while Morcheh was down happens once when it's back.
+// run missed while Morche was down happens once when it's back.
 func startScheduler(h *scheduleHandler, every time.Duration) {
 	if every <= 0 {
 		return

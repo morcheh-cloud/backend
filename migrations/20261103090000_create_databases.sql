@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Databases Morcheh watches. mode=server reaches host:port from a panel server
+-- Databases Morche watches. mode=server reaches host:port from a panel server
 -- over SSH; mode=direct dials it from the backend. The password is AES-GCM
 -- sealed by the API (internal/secrets) and never leaves it.
 CREATE TABLE databases (

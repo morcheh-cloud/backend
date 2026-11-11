@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	title   = "Morcheh API"
+	title   = "Morche API"
 	version = "0.1.0"
 )
 

@@ -327,7 +327,7 @@ func (d Driver) ParseWAFEvents(out string) []proxy.WAFEvent {
 }
 
 // refusing says a matched rule stops the request when the engine is on:
-// the anomaly-score totals, and Morcheh's own unreadable-body rule.
+// the anomaly-score totals, and Morche's own unreadable-body rule.
 func refusing(id string) bool {
 	return strings.HasPrefix(id, "949") || strings.HasPrefix(id, "959") || id == "200002"
 }

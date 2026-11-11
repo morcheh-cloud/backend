@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Cron jobs Morcheh runs itself (not crontab on a server), per workspace. The
+-- Cron jobs Morche runs itself (not crontab on a server), per workspace. The
 -- first action is a file sync from one server or storage to one or more
 -- servers and storages.
 CREATE TABLE schedules (

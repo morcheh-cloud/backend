@@ -46,7 +46,7 @@ func httpClient(c MonitorConfig, env Env) *http.Client {
 }
 
 func setHeaders(req *http.Request, c MonitorConfig, s MonitorSecrets) {
-	req.Header.Set("User-Agent", "Morcheh-Uptime/1.0")
+	req.Header.Set("User-Agent", "Morche-Uptime/1.0")
 	for k, v := range c.Headers {
 		if k = strings.TrimSpace(k); k != "" {
 			req.Header.Set(k, v)

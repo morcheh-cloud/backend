@@ -165,8 +165,8 @@ func (h *uptimeHandler) sendable(c sqlc.NotificationChannel) (notify.Channel, er
 func testMessage(name string) notify.Message {
 	return notify.Message{
 		Event: notify.EventTest,
-		Title: "Test from Morcheh",
-		Text:  "If you can read this, " + name + " works: alerts from Morcheh will arrive here.",
+		Title: "Test from Morche",
+		Text:  "If you can read this, " + name + " works: alerts from Morche will arrive here.",
 		At:    time.Now(),
 	}
 }

@@ -241,7 +241,7 @@ func registerPackages(api huma.API, h *serverHandler) {
 		Path:        base + "/actions",
 		Summary:     "Install, upgrade or remove packages",
 		Description: "Checked at once, then runs as a background job (kind `package-action`); it can't be canceled once the package manager is running. " +
-			"Waits for another package manager on the server to finish first. 409 when Morcheh is already changing packages there.",
+			"Waits for another package manager on the server to finish first. 409 when Morche is already changing packages there.",
 		Tags:          tags,
 		DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *struct {
@@ -469,7 +469,7 @@ func checkNames(names []string) ([]string, error) {
 	return out, nil
 }
 
-// packageJobRunning refuses while Morcheh is changing packages on the
+// packageJobRunning refuses while Morche is changing packages on the
 // server already (here or from fail2ban).
 func (h *serverHandler) packageJobRunning(ctx context.Context, id string) error {
 	refs := placeRefs(id)
@@ -483,7 +483,7 @@ func (h *serverHandler) packageJobRunning(ctx context.Context, id string) error 
 	}
 	busy := []string{packageActionKind, packageRefreshKind, f2bInstallKind, f2bRemoveKind}
 	if slices.ContainsFunc(list, func(j sqlc.Job) bool { return slices.Contains(busy, j.Kind) }) {
-		return huma.Error409Conflict("Morcheh is already changing packages on this server: wait for that to finish")
+		return huma.Error409Conflict("Morche is already changing packages on this server: wait for that to finish")
 	}
 	if packagesClaimed(id) {
 		return huma.Error409Conflict("A cron job is upgrading packages on this server: wait for it to finish")
@@ -505,7 +505,7 @@ func (h *serverHandler) submitPackageJob(ctx context.Context, id, kind string, p
 		}
 		pm := parseHost(facts).pm
 		if pm == "" {
-			return huma.Error422UnprocessableEntity("This server has no package manager Morcheh knows (apt, dnf, yum, zypper, apk or pacman)")
+			return huma.Error422UnprocessableEntity("This server has no package manager Morche knows (apt, dnf, yum, zypper, apk or pacman)")
 		}
 		if pm == "apt-get" {
 			pm = packages.APT
@@ -615,7 +615,7 @@ func (h *serverHandler) runPackageJob(ctx context.Context, t *jobs.Task) (any, e
 		case ctx.Err() != nil:
 			return ctx.Err()
 		case res.timedOut:
-			return fmt.Errorf("It took longer than %d minutes, so Morcheh stopped waiting", int(timeout.Minutes()))
+			return fmt.Errorf("It took longer than %d minutes, so Morche stopped waiting", int(timeout.Minutes()))
 		case res.code != 0:
 			return fmt.Errorf("The package manager failed (exit %d): %s", res.code, last)
 		}

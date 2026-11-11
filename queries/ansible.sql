@@ -105,7 +105,7 @@ UPDATE ansible_runs SET
 WHERE id = @id;
 
 -- name: EndAnsibleRun :exec
--- A run whose job ended without it (canceled while queued, Morcheh restarted).
+-- A run whose job ended without it (canceled while queued, Morche restarted).
 UPDATE ansible_runs SET state = @state, error = @error, finished_at = coalesce(finished_at, now())
 WHERE id = @id AND state IN ('queued', 'running');
 

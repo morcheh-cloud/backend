@@ -1,7 +1,7 @@
 -- +goose Up
 
--- Ansible playbooks kept in Morcheh, per workspace. Runs execute
--- ansible-playbook on the Morcheh host against the workspace's servers.
+-- Ansible playbooks kept in Morche, per workspace. Runs execute
+-- ansible-playbook on the Morche host against the workspace's servers.
 CREATE TABLE ansible_playbooks (
     id           uuid PRIMARY KEY DEFAULT uuidv7(),
     workspace_id uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,
@@ -42,7 +42,7 @@ CREATE TABLE ansible_runs (
     -- What ansible-playbook printed (ANSI colors kept), capped.
     output        text NOT NULL DEFAULT '',
     output_truncated boolean NOT NULL DEFAULT false,
-    -- Plays, tasks and each host's result from Morcheh's callback plugin.
+    -- Plays, tasks and each host's result from Morche's callback plugin.
     plays         jsonb NOT NULL DEFAULT '[]',
     -- Per host: ok, changed, failed, unreachable, skipped, rescued, ignored.
     recap         jsonb NOT NULL DEFAULT '{}',

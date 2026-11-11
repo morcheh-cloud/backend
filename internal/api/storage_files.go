@@ -91,7 +91,7 @@ type sameStorageParams struct {
 
 type StorageTransferResult struct {
 	Files int   `json:"files" doc:"Files copied"`
-	Bytes int64 `json:"bytes" doc:"Bytes streamed through Morcheh (0 when the storage copied by itself)"`
+	Bytes int64 `json:"bytes" doc:"Bytes streamed through Morche (0 when the storage copied by itself)"`
 }
 
 const (
@@ -153,7 +153,7 @@ func storageProblem(p string, err error) error {
 
 func writable(row sqlc.Storage) error {
 	if row.ReadOnly {
-		return huma.Error403Forbidden("This storage is read-only in Morcheh. Turn that off in its settings to make changes.")
+		return huma.Error403Forbidden("This storage is read-only in Morche. Turn that off in its settings to make changes.")
 	}
 	return nil
 }
@@ -740,7 +740,7 @@ func registerStorageFiles(api huma.API, h *storageHandler) {
 		Method:      http.MethodPost,
 		Path:        "/storages/transfer",
 		Summary:     "Copy or move files between storages and servers",
-		Description: "Each end is a storage or a server (over SFTP). Files stream through Morcheh; two places on one storage copy on the storage itself when it can. " +
+		Description: "Each end is a storage or a server (over SFTP). Files stream through Morche; two places on one storage copy on the storage itself when it can. " +
 			"Server paths are absolute or relative to the login user's home. A name already in the destination is 409 unless overwrite is set. " +
 			"The request is checked at once, then the copy runs as a background job (kind `transfer`, result StorageTransferResult); follow it on /jobs/stream.",
 		Tags:          tags,
@@ -1047,7 +1047,7 @@ func (h *storageHandler) plan(ctx context.Context, b StorageTransferBody, fn fun
 		}
 		return h.with(ctx, b.Destination.StorageTransferEnd, func(dst place) error {
 			if dst.readOnly {
-				return huma.Error403Forbidden(dst.name + " is read-only in Morcheh")
+				return huma.Error403Forbidden(dst.name + " is read-only in Morche")
 			}
 			dest, err := dst.resolve(b.Destination.Path)
 			if err != nil {

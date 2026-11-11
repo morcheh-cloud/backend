@@ -59,7 +59,7 @@ func registerNetwork(api huma.API, h *serverHandler) {
 		Summary:     "Network map of every server",
 		Description: "Each server's interfaces, addresses and default routes (ip over SSH), the subnets they share, " +
 			"and whether each server reaches every other one: a TCP connect to its SSH port and a ping, " +
-			"on their shared LAN/VPN addresses and on the address Morcheh uses. " +
+			"on their shared LAN/VPN addresses and on the address Morche uses. " +
 			"Returns the last scan unless `refresh` is set or there is none; a scan takes a few seconds.",
 		Tags: []string{"Network"},
 	}, func(ctx context.Context, in *NetworkMapInput) (*struct{ Body NetworkMap }, error) {

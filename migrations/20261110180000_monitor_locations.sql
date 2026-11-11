@@ -1,5 +1,5 @@
 -- +goose Up
--- Where a monitor is checked from: Morcheh itself (server_id NULL) and/or
+-- Where a monitor is checked from: Morche itself (server_id NULL) and/or
 -- panel servers over SSH. Each round checks every location; the monitor's
 -- rule turns their answers into one status. The row keeps the location's
 -- own latest answer.

@@ -149,14 +149,14 @@ type MonitorLocation struct {
 
 func locKey(server *uuid.UUID) string {
 	if server == nil {
-		return uptime.Morcheh
+		return uptime.Morche
 	}
 	return server.String()
 }
 
 func locName(server *uuid.UUID, name string) string {
 	if server == nil {
-		return "Morcheh"
+		return "Morche"
 	}
 	return cmpOr(name, "A removed server")
 }
@@ -182,7 +182,7 @@ type MonitorBody struct {
 	Tags            []string              `json:"tags,omitempty" maxItems:"20"`
 	Config          uptime.MonitorConfig  `json:"config"`
 	Secrets         uptime.MonitorSecrets `json:"secrets" doc:"A blank secret keeps the saved one"`
-	Locations       []string              `json:"locations,omitempty" maxItems:"20" doc:"Where to check from: morcheh and/or server ids (over SSH). docker, systemd and command take one server. Left out: Morcheh on create, unchanged on update"`
+	Locations       []string              `json:"locations,omitempty" maxItems:"20" doc:"Where to check from: morcheh and/or server ids (over SSH). docker, systemd and command take one server. Left out: Morche on create, unchanged on update"`
 	Rule            *LocationRule         `json:"rule,omitempty" doc:"With several locations: when they make it down or degraded. Left out: majority down, any degraded on create, unchanged on update"`
 	ServerID        *string               `json:"server_id,omitempty" format:"uuid" doc:"The server it belongs to, shown on that server's page"`
 	IntervalSeconds int32                 `json:"interval_seconds,omitempty" minimum:"10" maximum:"86400" default:"60"`
@@ -191,7 +191,7 @@ type MonitorBody struct {
 	Retries         int32                 `json:"retries" minimum:"0" maximum:"20" default:"1" doc:"Failures in a row before it counts as down"`
 	ResendEvery     int32                 `json:"resend_every,omitempty" minimum:"0" maximum:"10000" doc:"While down, remind every this many checks; 0 = never"`
 	NotifyDegraded  *bool                 `json:"notify_degraded,omitempty" doc:"Also alert when it turns slow or degraded (default false)"`
-	AllowInternal   bool                  `json:"allow_internal,omitempty" doc:"Check a private or loopback address from Morcheh. System admins only."`
+	AllowInternal   bool                  `json:"allow_internal,omitempty" doc:"Check a private or loopback address from Morche. System admins only."`
 	Paused          bool                  `json:"paused,omitempty" doc:"Create it paused (ignored on update)"`
 	ChannelIDs      []string              `json:"channel_ids,omitempty" doc:"Where alerts go; left out on create = the workspace's default channels, on update = unchanged"`
 	ResetPushToken  bool                  `json:"reset_push_token,omitempty" doc:"push: make a new heartbeat address (the old one stops working)"`
@@ -393,7 +393,7 @@ type monitorPlan struct {
 	channels []uuid.UUID
 	setCh    bool
 	secrets  uptime.MonitorSecrets
-	// hadMorcheh: the saved monitor was checked from Morcheh.
+	// hadMorcheh: the saved monitor was checked from Morche.
 	hadMorcheh bool
 }
 
@@ -427,7 +427,7 @@ func (h *uptimeHandler) planLocations(ctx context.Context, p *principal, kind st
 				raw = append(raw, locKey(l.ServerID))
 			}
 		} else if !uptime.OnServer(kind) {
-			raw = []string{uptime.Morcheh}
+			raw = []string{uptime.Morche}
 		}
 	}
 	had := func(id uuid.UUID) (planLoc, bool) {
@@ -440,9 +440,9 @@ func (h *uptimeHandler) planLocations(ctx context.Context, p *principal, kind st
 	}
 	for _, r := range raw {
 		r = strings.TrimSpace(r)
-		if r == uptime.Morcheh {
+		if r == uptime.Morche {
 			if !hasMorcheh(pl.locs) {
-				pl.locs = append(pl.locs, planLoc{key: r, name: "Morcheh"})
+				pl.locs = append(pl.locs, planLoc{key: r, name: "Morche"})
 			}
 			continue
 		}
@@ -499,7 +499,7 @@ func (h *uptimeHandler) setLocations(ctx context.Context, monitor uuid.UUID, loc
 	return nil
 }
 
-// planLoc is a place to check from: server nil = Morcheh.
+// planLoc is a place to check from: server nil = Morche.
 type planLoc struct {
 	key    string
 	server *uuid.UUID

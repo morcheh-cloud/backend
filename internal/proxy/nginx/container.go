@@ -22,7 +22,7 @@ M certs
 `
 }
 
-// rotateScript rotates the container's Morcheh logs like logrotate does on
+// rotateScript rotates the container's Morche logs like logrotate does on
 // a server (name.1, then name.N.gz, 14 kept) and has nginx reopen them.
 func rotateScript(c proxy.Container) string {
 	return `#!/bin/sh

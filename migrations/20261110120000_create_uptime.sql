@@ -25,7 +25,7 @@ CREATE TABLE notification_channels (
     UNIQUE (workspace_id, name)
 );
 
--- What Morcheh watches. config is the kind's own settings (URL and
+-- What Morche watches. config is the kind's own settings (URL and
 -- assertions, host and port…); secrets_enc the sealed secret ones.
 CREATE TABLE monitors (
     id               uuid PRIMARY KEY DEFAULT uuidv7(),
@@ -36,7 +36,7 @@ CREATE TABLE monitors (
     secrets_enc      bytea,
     description      text NOT NULL DEFAULT '',
     tags             text[] NOT NULL DEFAULT '{}',
-    -- Checked from a panel server over SSH instead of from Morcheh itself.
+    -- Checked from a panel server over SSH instead of from Morche itself.
     via_server_id    uuid REFERENCES servers (id) ON DELETE SET NULL,
     -- The resource it watches, for links ("Monitor this").
     server_id        uuid REFERENCES servers (id) ON DELETE SET NULL,

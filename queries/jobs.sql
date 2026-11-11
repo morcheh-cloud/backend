@@ -44,7 +44,7 @@ WHERE id = $1 AND state = 'queued';
 -- name: InterruptRunningJobs :execrows
 -- At startup: whatever was running died with the last process.
 UPDATE jobs SET state = 'interrupted', finished_at = now(),
-    error = 'Morcheh restarted while this was running'
+    error = 'Morche restarted while this was running'
 WHERE state = 'running';
 
 -- name: DeleteJob :execrows

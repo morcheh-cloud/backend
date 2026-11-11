@@ -296,7 +296,7 @@ echo "pm $PM"
 echo "@@ out"
 case "$PM" in
 ` + cmd + `
-*) echo "This server has no package manager Morcheh knows." ;;
+*) echo "This server has no package manager Morche knows." ;;
 esac 2>&1
 echo "@@ installed"
 case "$PM" in
@@ -542,7 +542,7 @@ dnf)
     systemctl disable --now "$unit" >&2
   fi
   ;;
-*) echo "Automatic updates can't be set from Morcheh with $PM." >&2; exit 3 ;;
+*) echo "Automatic updates can't be set from Morche with $PM." >&2; exit 3 ;;
 esac
 `
 }

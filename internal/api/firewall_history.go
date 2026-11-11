@@ -30,7 +30,7 @@ const (
 	fwSnapshotBytes = 64 << 10
 )
 
-// FirewallChange is one change made through Morcheh.
+// FirewallChange is one change made through Morche.
 type FirewallChange struct {
 	ID         string    `json:"id" format:"uuid"`
 	Summary    string    `json:"summary" example:"Allow port 443/tcp"`
@@ -99,8 +99,8 @@ func registerFirewallHistory(api huma.API, h *serverHandler, base string) {
 		OperationID: "firewall-history",
 		Method:      http.MethodGet,
 		Path:        base + "/history",
-		Summary:     "Changes made through Morcheh",
-		Description: "Read from Morcheh's database, so it works while the server is down. Changes made on the server by hand aren't here.",
+		Summary:     "Changes made through Morche",
+		Description: "Read from Morche's database, so it works while the server is down. Changes made on the server by hand aren't here.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *ServerIDPath) (*struct{ Body FirewallHistory }, error) {
 		rows, err := h.q.ListFirewallChanges(ctx, uuid.MustParse(in.ID))
@@ -293,7 +293,7 @@ func (h *serverHandler) settleFirewallChanges(ctx context.Context, id, status st
 func restoreProblem(row sqlc.FirewallChange, st *fwState) string {
 	switch {
 	case row.Snapshot == nil:
-		return "Morcheh couldn't save a copy of the firewall before this change, so it can't go back to it."
+		return "Morche couldn't save a copy of the firewall before this change, so it can't go back to it."
 	case row.Backend != st.o.Backend:
 		return "This change was made on " + row.Backend + ", and the server now uses " + st.o.Backend + "."
 	}
@@ -338,7 +338,7 @@ func previewFirewallChange(row sqlc.FirewallChange, st *fwState) (FirewallChange
 }
 
 // planRestore puts the saved configuration back. Under applyScript's net, like
-// any other change: if it fails, or cuts Morcheh off, the firewall goes back to
+// any other change: if it fails, or cuts Morche off, the firewall goes back to
 // how it is now.
 func (st *fwState) planRestore(row sqlc.FirewallChange) (fwPlan, error) {
 	if msg := restoreProblem(row, st); msg != "" {

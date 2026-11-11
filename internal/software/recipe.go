@@ -1,4 +1,4 @@
-// Package software is Morcheh's application catalog: recipes that install,
+// Package software is Morche's application catalog: recipes that install,
 // update and remove software on a server over SSH (system packages like
 // Docker or Git, and Docker Compose apps like Grafana), the shell scripts
 // that do it, what a scan of a server says is there, and a registry client
@@ -144,7 +144,7 @@ func init() {
 	sort.Slice(builtins, func(i, j int) bool { return builtins[i].Name < builtins[j].Name })
 }
 
-// Builtins are the recipes that ship with Morcheh.
+// Builtins are the recipes that ship with Morche.
 func Builtins() []Recipe { return slices.Clone(builtins) }
 
 // IsBuiltin says whether id is taken by a built-in recipe.
@@ -268,7 +268,7 @@ func (r Recipe) Check() error {
 			return bad("install", "Write the install script.")
 		}
 		if strings.TrimSpace(r.VersionCommand) == "" {
-			return bad("version", "Write a command that prints the version, so Morcheh can tell it's installed.")
+			return bad("version", "Write a command that prints the version, so Morche can tell it's installed.")
 		}
 	default:
 		return bad("kind", "Pick package, docker or script.")

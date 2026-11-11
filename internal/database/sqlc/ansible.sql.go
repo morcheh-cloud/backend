@@ -183,7 +183,7 @@ type EndAnsibleRunParams struct {
 	ID    uuid.UUID `json:"id"`
 }
 
-// A run whose job ended without it (canceled while queued, Morcheh restarted).
+// A run whose job ended without it (canceled while queued, Morche restarted).
 func (q *Queries) EndAnsibleRun(ctx context.Context, arg EndAnsibleRunParams) error {
 	_, err := q.db.Exec(ctx, endAnsibleRun, arg.State, arg.Error, arg.ID)
 	return err

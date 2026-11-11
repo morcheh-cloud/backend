@@ -1,10 +1,10 @@
-# Morcheh — Backend
+# Morche — Backend
 
-API for Morcheh (SSH-based server management and monitoring). Development setup and commands are in `CLAUDE.md` (`make up`, `make run`).
+API for Morche (SSH-based server management and monitoring). Development setup and commands are in `CLAUDE.md` (`make up`, `make run`).
 
 ## Running with Docker
 
-The `Dockerfile` builds the server together with every tool it drives from its own machine: ssh/sshpass and Ansible (with bubblewrap) for playbooks, and the database clients for backups that run on the Morcheh server (`pg_dump` 18, `mariadb-dump`/`mariadb-binlog`, `mongodump`, `redis-cli`). Migrations are applied on start (`MIGRATE_ON_START=false` to skip).
+The `Dockerfile` builds the server together with every tool it drives from its own machine: ssh/sshpass and Ansible (with bubblewrap) for playbooks, and the database clients for backups that run on the Morche server (`pg_dump` 18, `mariadb-dump`/`mariadb-binlog`, `mongodump`, `redis-cli`). Migrations are applied on start (`MIGRATE_ON_START=false` to skip).
 
 The whole stack (Postgres, Redis, backend, panel) is in `deploy/`. It expects the frontend repository next to this one (`../frontend`):
 

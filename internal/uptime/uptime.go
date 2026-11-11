@@ -141,7 +141,7 @@ func (s MonitorSecrets) Merge(saved MonitorSecrets) MonitorSecrets {
 	return s
 }
 
-// Dialer opens a network connection: guarded and direct from Morcheh, or
+// Dialer opens a network connection: guarded and direct from Morche, or
 // through a server over SSH.
 type Dialer func(ctx context.Context, network, addr string) (net.Conn, error)
 
@@ -260,7 +260,7 @@ func Validate(kind string, c MonitorConfig, via bool) *FieldError {
 		}
 	case UDP:
 		if via {
-			return &FieldError{"locations", "UDP can only be checked from Morcheh itself"}
+			return &FieldError{"locations", "UDP can only be checked from Morche itself"}
 		}
 		if e := needHost(); e != nil {
 			return e

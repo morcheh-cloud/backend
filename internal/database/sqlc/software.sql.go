@@ -680,7 +680,7 @@ func (q *Queries) GetSoftwareRun(ctx context.Context, id uuid.UUID) (SoftwareRun
 
 const interruptSoftwareRuns = `-- name: InterruptSoftwareRuns :exec
 WITH runs AS (
-    UPDATE software_runs SET state = 'interrupted', error = 'Morcheh restarted before it finished.', finished_at = now()
+    UPDATE software_runs SET state = 'interrupted', error = 'Morche restarted before it finished.', finished_at = now()
     WHERE state = 'running'
     RETURNING id
 )
@@ -1100,14 +1100,14 @@ type MarkMissingSoftwareParams struct {
 	Present  []string  `json:"present"`
 }
 
-// A scan no longer finds an app Morcheh installed.
+// A scan no longer finds an app Morche installed.
 func (q *Queries) MarkMissingSoftware(ctx context.Context, arg MarkMissingSoftwareParams) error {
 	_, err := q.db.Exec(ctx, markMissingSoftware, arg.ServerID, arg.Present)
 	return err
 }
 
 const resetStuckSoftwareInstalls = `-- name: ResetStuckSoftwareInstalls :exec
-UPDATE software_installs SET status = 'failed', error = 'Morcheh restarted while this was changing.'
+UPDATE software_installs SET status = 'failed', error = 'Morche restarted while this was changing.'
 WHERE status IN ('installing', 'updating', 'removing')
 `
 

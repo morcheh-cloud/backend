@@ -279,7 +279,7 @@ func fromLifecycle(r lifecycle.Rule) LifecycleRule {
 }
 
 // toLifecycle writes rule's fields over base (the stored rule with the same
-// ID, or a blank one), so whatever Morcheh doesn't show survives.
+// ID, or a blank one), so whatever Morche doesn't show survives.
 func toLifecycle(base lifecycle.Rule, rule LifecycleRule) lifecycle.Rule {
 	r := base
 	r.ID = rule.ID

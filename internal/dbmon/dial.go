@@ -82,12 +82,12 @@ func RefuseUnreachable(_, address string, _ syscall.RawConn) error {
 		return err
 	}
 	if Unreachable(ap.Addr()) {
-		return fmt.Errorf("%s can't be reached from Morcheh (link-local or cloud metadata address)", ap.Addr())
+		return fmt.Errorf("%s can't be reached from Morche (link-local or cloud metadata address)", ap.Addr())
 	}
 	return nil
 }
 
-// DirectDialer reaches a database over the network from Morcheh itself. The
+// DirectDialer reaches a database over the network from Morche itself. The
 // check runs on the address actually dialed (after DNS), so a name that
 // resolves somewhere internal is refused too, even if it changes later.
 func DirectDialer(allowInternal bool) Dialer {

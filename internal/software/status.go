@@ -50,7 +50,7 @@ type Found struct {
 	RecipeID string
 	Name     string
 	Kind     string
-	// "morcheh" when Morcheh installed it (a Docker app in AppsDir), else
+	// "morcheh" when Morche installed it (a Docker app in AppsDir), else
 	// "found".
 	Origin          string
 	Version         string
@@ -422,7 +422,7 @@ func splitDigests(s string) []string {
 	return out
 }
 
-// foundContainers are containers Morcheh didn't start whose image is one of
+// foundContainers are containers Morche didn't start whose image is one of
 // a recipe's, grouped by compose project (or by container).
 func foundContainers(lines []string, recipes []Recipe, have []Found) []Found {
 	byRepo := map[string]Recipe{}

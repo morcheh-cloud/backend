@@ -26,8 +26,8 @@ import (
 )
 
 // Database backups: a plan says what to dump, from where, to which Storages and
-// when. The dump runs on a server, never inside Morcheh (on the database's own
-// server, or the one the plan names for a direct database); Morcheh streams
+// when. The dump runs on a server, never inside Morche (on the database's own
+// server, or the one the plan names for a direct database); Morche streams
 // what it prints to every Storage at once, gzipping and hashing on the way.
 // A plan over several databases makes one backup per database. MySQL/MariaDB
 // (binary log) and SQL Server (differential) can take incrementals that build
@@ -46,7 +46,7 @@ const (
 	backupMaxStorages = 10
 )
 
-const backupLost = "Morcheh restarted before it finished."
+const backupLost = "Morche restarted before it finished."
 
 // BackupPlanBody is what a person sets on a plan.
 type BackupPlanBody struct {
@@ -63,7 +63,7 @@ type BackupPlanBody struct {
 	GFSDaily       int32    `json:"gfs_daily" minimum:"0" maximum:"1000" doc:"For retention=gfs: the newest backup of this many days"`
 	GFSWeekly      int32    `json:"gfs_weekly" minimum:"0" maximum:"1000" doc:"… of this many weeks"`
 	GFSMonthly     int32    `json:"gfs_monthly" minimum:"0" maximum:"1000" doc:"… of this many months"`
-	RunnerServerID *string  `json:"runner_server_id,omitempty" format:"uuid" doc:"For a direct database: the server that runs the dump; empty = the machine Morcheh runs on. Ignored otherwise"`
+	RunnerServerID *string  `json:"runner_server_id,omitempty" format:"uuid" doc:"For a direct database: the server that runs the dump; empty = the machine Morche runs on. Ignored otherwise"`
 	Username       string   `json:"username,omitempty" maxLength:"255" doc:"A login just for backups; empty = the database's own"`
 	Password       string   `json:"password,omitempty" maxLength:"1024" doc:"Blank keeps the saved one"`
 	Cron           string   `json:"cron,omitempty" maxLength:"128" doc:"When it runs; empty = only when started by hand" example:"0 3 * * *"`
@@ -105,7 +105,7 @@ type BackupPlan struct {
 	GFSWeekly      int32               `json:"gfs_weekly"`
 	GFSMonthly     int32               `json:"gfs_monthly"`
 	RunnerServerID *string             `json:"runner_server_id" format:"uuid" nullable:"true"`
-	RunnerName     string              `json:"runner_name" doc:"The server the dump runs on (\"This Morcheh server\" for Morcheh's own machine)"`
+	RunnerName     string              `json:"runner_name" doc:"The server the dump runs on (\"This Morche server\" for Morche's own machine)"`
 	Username       string              `json:"username"`
 	HasPassword    bool                `json:"has_password"`
 	Cron           string              `json:"cron"`
@@ -152,7 +152,7 @@ type Backup struct {
 	VerifyError    string       `json:"verify_error" doc:"What that check found wrong; empty = it passed"`
 	JobID          *string      `json:"job_id" format:"uuid" nullable:"true"`
 	CreatedByName  string       `json:"created_by_name"`
-	Restorable     bool         `json:"restorable" doc:"Morcheh can restore it from the panel"`
+	Restorable     bool         `json:"restorable" doc:"Morche can restore it from the panel"`
 	RestoreProblem string       `json:"restore_problem" doc:"Why it can't be restored from the panel; empty when it can"`
 	Restore        string       `json:"restore" doc:"The commands that bring it back by hand, for copying"`
 	CreatedAt      time.Time    `json:"created_at"`
@@ -183,7 +183,7 @@ type BackupOptions struct {
 	Selections     []string          `json:"selections" doc:"Which ways of choosing databases work here"`
 	SelectionNote  string            `json:"selection_note" doc:"Why some don't"`
 	Incremental    BackupIncremental `json:"incremental"`
-	Local          LocalTools        `json:"local" doc:"Whether the machine Morcheh runs on can run its backups and restores"`
+	Local          LocalTools        `json:"local" doc:"Whether the machine Morche runs on can run its backups and restores"`
 }
 
 // toBackups adds each backup's copies and how many incrementals build on it.
@@ -348,7 +348,7 @@ func (h *backupHandler) ready(ctx context.Context, d sqlc.Database, p sqlc.Datab
 		out.storages = append(out.storages, s)
 		switch {
 		case s.ReadOnly:
-			note(fmt.Errorf("%s is read-only in Morcheh, so nothing can be written to it.", s.Name))
+			note(fmt.Errorf("%s is read-only in Morche, so nothing can be written to it.", s.Name))
 		case acc != nil && acc.StorageLevel(d.WorkspaceID, s.ID) < auth.Engineer:
 			note(fmt.Errorf("%s no longer has %s access to %s.", who, auth.Engineer, s.Name))
 		}
@@ -386,7 +386,7 @@ func (h *backupHandler) ready(ctx context.Context, d sqlc.Database, p sqlc.Datab
 }
 
 // backupServer is the server a plan's dump runs on; nil for a direct
-// database = the machine Morcheh runs on.
+// database = the machine Morche runs on.
 func backupServer(d sqlc.Database, p sqlc.DatabaseBackupPlan) *uuid.UUID {
 	if d.Mode == "direct" {
 		return p.RunnerServerID
@@ -518,7 +518,7 @@ func (h *backupHandler) check(ctx context.Context, d sqlc.Database, b BackupPlan
 			return out, internalError(err)
 		}
 		if s.ReadOnly {
-			return out, fieldError(loc, s.Name+" is read-only in Morcheh, so nothing can be written to it.", raw)
+			return out, fieldError(loc, s.Name+" is read-only in Morche, so nothing can be written to it.", raw)
 		}
 		if acc.StorageLevel(d.WorkspaceID, s.ID) < auth.Engineer {
 			return out, fieldError(loc, fmt.Sprintf("You need %s access to %s.", auth.Engineer, s.Name), raw)
@@ -559,7 +559,7 @@ func (h *backupHandler) check(ctx context.Context, d sqlc.Database, b BackupPlan
 	}
 
 	if d.Mode == "direct" {
-		// None = the machine Morcheh runs on.
+		// None = the machine Morche runs on.
 		runner := parseOptionalID(b.RunnerServerID)
 		if runner == nil {
 			if lt := localTools(d); !lt.Supported {
@@ -1245,7 +1245,7 @@ func registerDatabaseBackups(api huma.API, h *backupHandler) {
 				case err != nil:
 					return nil, internalError(err)
 				case row.ReadOnly:
-					return nil, huma.Error409Conflict(row.Name + " is read-only in Morcheh, so the file can't be deleted.")
+					return nil, huma.Error409Conflict(row.Name + " is read-only in Morche, so the file can't be deleted.")
 				case acc.StorageLevel(row.WorkspaceID, row.ID) < auth.Engineer:
 					return nil, huma.Error403Forbidden(fmt.Sprintf("You need %s access to %s.", auth.Engineer, row.Name))
 				}

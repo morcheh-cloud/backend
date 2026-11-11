@@ -40,7 +40,7 @@ type Service struct {
 	CanStop     bool       `json:"can_stop"`
 	CanReload   bool       `json:"can_reload" doc:"It reloads its configuration without a restart"`
 	NeedReload  bool       `json:"need_reload" doc:"Its unit file changed on disk since systemd read it (daemon-reload)"`
-	Protected   bool       `json:"protected" doc:"Morcheh reaches the server through it (sshd) or the system needs it to run; stopping it asks for force"`
+	Protected   bool       `json:"protected" doc:"Morche reaches the server through it (sshd) or the system needs it to run; stopping it asks for force"`
 }
 
 // Properties ListProps asks `systemctl show` for.
@@ -200,7 +200,7 @@ func Time(v string) *time.Time {
 	return nil
 }
 
-// The ones Morcheh logs in through, or that the system can't run without.
+// The ones Morche logs in through, or that the system can't run without.
 var protected = []string{
 	"ssh.service", "sshd.service", "ssh.socket", "sshd.socket", "dropbear.service",
 	"dbus.service", "dbus-broker.service", "systemd-journald.service", "systemd-logind.service",

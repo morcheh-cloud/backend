@@ -407,7 +407,7 @@ func (h *proxyHandler) registerDetect(api huma.API, tags []string) {
 	}) (*struct{ Body ProxyDetection }, error) {
 		d, ok := proxy.Get(in.Kind)
 		if !ok {
-			return nil, fieldError("query.kind", "Morcheh can't manage this kind of proxy.", in.Kind)
+			return nil, fieldError("query.kind", "Morche can't manage this kind of proxy.", in.Kind)
 		}
 		sid := uuid.MustParse(in.ID)
 		var found proxy.Detection

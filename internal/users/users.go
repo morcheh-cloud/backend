@@ -66,7 +66,7 @@ type Rule struct {
 	Full       bool     `json:"full" doc:"Grants every command"`
 	NoPassword bool     `json:"nopasswd"`
 	Active     bool     `json:"active" doc:"false for files sudo skips (a . or ~ in the name)"`
-	Managed    bool     `json:"managed" doc:"Written by Morcheh (sudoers.d/morcheh-*)"`
+	Managed    bool     `json:"managed" doc:"Written by Morche (sudoers.d/morcheh-*)"`
 }
 
 type Session struct {

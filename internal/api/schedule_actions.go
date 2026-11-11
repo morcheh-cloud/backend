@@ -276,7 +276,7 @@ func (k *scheduleChecker) end(loc string, e ScheduleEnd, need auth.Level, dest, 
 			return e, internalError(err)
 		}
 		if dest && s.ReadOnly {
-			return e, fieldError(loc+".storage_id", s.Name+" is read-only in Morcheh, so nothing can be written to it.", *e.StorageID)
+			return e, fieldError(loc+".storage_id", s.Name+" is read-only in Morche, so nothing can be written to it.", *e.StorageID)
 		}
 		level = acc.StorageLevel(k.ws, s.ID)
 		id := s.ID.String()
@@ -555,7 +555,7 @@ func (k *scheduleChecker) service(b ScheduleBody) error {
 		need = auth.Engineer
 	}
 	if t.Action == "stop" && !t.Force && services.Protected(serviceName(unit)) {
-		return fieldError("body.task.service.force", serviceName(unit)+" is protected: Morcheh or the system needs it. Tick Force to stop it anyway.", false)
+		return fieldError("body.task.service.force", serviceName(unit)+" is protected: Morche or the system needs it. Tick Force to stop it anyway.", false)
 	}
 	ids, err := k.servers("body.task.service.server_ids", t.ServerIDs, need)
 	if err != nil {
@@ -805,7 +805,7 @@ func (r *taskRun) ended(ctx context.Context, state, msg string, execErr error) (
 	case ctx.Err() != nil && r.t.Canceled():
 		state = jobs.Canceled
 	case ctx.Err() != nil:
-		state, msg = jobs.Interrupted, "Morcheh stopped before it finished."
+		state, msg = jobs.Interrupted, "Morche stopped before it finished."
 	case state == jobs.Succeeded:
 		msg = ""
 	case jobs.Active(state) || state == "":
@@ -1149,7 +1149,7 @@ func (r *taskRun) archive(ctx context.Context) (any, error) {
 			if err == nil {
 				err = r.h.st.with(ctx, d.transferEnd(), func(dp place) error {
 					if dp.readOnly {
-						return errors.New(dp.name + " is read-only in Morcheh.")
+						return errors.New(dp.name + " is read-only in Morche.")
 					}
 					r.t.Update(func(p *jobs.Progress) { p.Done, p.Total = 0, fe.Size })
 					var prog storage.Progress

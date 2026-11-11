@@ -14,7 +14,7 @@ import (
 // read (offline, login failed…); others are still probed for reaching it.
 type Node struct {
 	ID   string
-	Host string // the address Morcheh connects to
+	Host string // the address Morche connects to
 	Port int
 	Scan *HostNet
 }
@@ -173,7 +173,7 @@ type Target struct {
 	To      string // server ID
 	Address string
 	Port    int
-	Via     string // lan, vpn, host (the address Morcheh uses), address
+	Via     string // lan, vpn, host (the address Morche uses), address
 	Subnet  string // the shared network's ID, for lan/vpn
 }
 
@@ -183,7 +183,7 @@ var safeAddr = regexp.MustCompile(`^[A-Za-z0-9._:\-]+$`)
 
 // Targets lists, for each scanned server, the addresses of every other server
 // worth trying: its addresses in networks they share first (the LAN path),
-// then the address Morcheh itself connects to.
+// then the address Morche itself connects to.
 func Targets(nodes []Node, networks []Subnet) map[string][]Target {
 	out := map[string][]Target{}
 	for _, from := range nodes {
@@ -220,7 +220,7 @@ func Targets(nodes []Node, networks []Subnet) map[string][]Target {
 			if !isLoopback(to.Host) {
 				push(Target{To: to.ID, Address: to.Host, Port: to.Port, Via: "host"})
 			}
-			// Nothing shared and Morcheh reaches it on localhost (a container
+			// Nothing shared and Morche reaches it on localhost (a container
 			// or a tunnel): try the server's own routable addresses.
 			if len(list) == 0 && to.Scan != nil {
 				for _, i := range to.Scan.Interfaces {
@@ -260,7 +260,7 @@ func ProbeInput(targets []Target) string {
 type ReachProbe struct {
 	Address string   `json:"address" example:"10.0.0.13"`
 	Port    int      `json:"port" example:"22"`
-	Via     string   `json:"via" enum:"lan,vpn,host,address" doc:"Why this address was tried: a shared LAN or VPN, the address Morcheh uses, or one of the server's own"`
+	Via     string   `json:"via" enum:"lan,vpn,host,address" doc:"Why this address was tried: a shared LAN or VPN, the address Morche uses, or one of the server's own"`
 	Subnet  string   `json:"subnet" doc:"The shared network's ID, for lan and vpn"`
 	TCP     string   `json:"tcp" enum:"open,refused,timeout,unreachable,dns,failed,unavailable" doc:"refused still means the host answered"`
 	Ping    string   `json:"ping" enum:"ok,lost,unavailable"`

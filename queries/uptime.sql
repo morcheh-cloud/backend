@@ -194,7 +194,7 @@ WHERE mc.monitor_id = $1 AND c.enabled;
 -- ---- Locations ----
 
 -- name: ListMonitorLocations :many
--- A monitor's locations, Morcheh first, then the servers by name.
+-- A monitor's locations, Morche first, then the servers by name.
 SELECT l.*, coalesce(s.name, '')::text AS server_name
 FROM monitor_locations l
 LEFT JOIN servers s ON s.id = l.server_id

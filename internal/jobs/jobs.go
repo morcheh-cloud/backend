@@ -398,7 +398,7 @@ func (r *Runner) call(ctx context.Context, e *entry) (result any, err error) {
 	}()
 	h := r.handlers[e.job.Kind]
 	if h == nil {
-		return nil, fmt.Errorf("this version of Morcheh can't run %q jobs", e.job.Kind)
+		return nil, fmt.Errorf("this version of Morche can't run %q jobs", e.job.Kind)
 	}
 	return h(cmdlog.With(ctx, origin(e.job)), &Task{ID: e.job.ID, Kind: e.job.Kind, Params: e.job.Params, r: r, e: e})
 }
@@ -422,7 +422,7 @@ func (r *Runner) finish(e *entry, result any, err error) {
 	case e.canceled:
 		state = Canceled
 	case r.base.Err() != nil:
-		state, msg = Interrupted, "Morcheh stopped while this was running"
+		state, msg = Interrupted, "Morche stopped while this was running"
 	default:
 		state, msg = Failed, err.Error()
 	}
@@ -546,7 +546,7 @@ func (t *Task) Decode(v any) error { return json.Unmarshal(t.Params, v) }
 // CreatedBy is who started it; nil when nobody did.
 func (t *Task) CreatedBy() *uuid.UUID { return t.e.job.CreatedBy }
 
-// Canceled says the user asked it to stop, as opposed to Morcheh shutting down.
+// Canceled says the user asked it to stop, as opposed to Morche shutting down.
 func (t *Task) Canceled() bool {
 	t.r.mu.Lock()
 	defer t.r.mu.Unlock()

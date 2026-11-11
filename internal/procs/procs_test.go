@@ -86,7 +86,7 @@ func TestScriptsLocally(t *testing.T) {
 	if me == nil {
 		t.Fatal("this test's process isn't listed")
 	}
-	if !me.Morcheh || me.Memory == 0 || me.User == "" || me.Threads == 0 || me.StartedAt.IsZero() {
+	if !me.Morche || me.Memory == 0 || me.User == "" || me.Threads == 0 || me.StartedAt.IsZero() {
 		t.Errorf("wrong self: %+v", *me)
 	}
 	if r.Cores < 1 || r.MemoryTotal == 0 || r.SampleMillis < 900 {

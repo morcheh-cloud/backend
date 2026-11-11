@@ -34,7 +34,7 @@ type ServicesOverview struct {
 type ServiceDetails struct {
 	services.Details
 	Init         string `json:"init" enum:"systemd,openrc"`
-	Override     string `json:"override" doc:"Where Morcheh writes overrides: <unit>.d/override.conf in /etc/systemd/system" example:"/etc/systemd/system/nginx.service.d/override.conf"`
+	Override     string `json:"override" doc:"Where Morche writes overrides: <unit>.d/override.conf in /etc/systemd/system" example:"/etc/systemd/system/nginx.service.d/override.conf"`
 	Revision     string `json:"revision" doc:"Of the override file as it is now (empty file when there is none); send it back when saving"`
 	FileRevision string `json:"file_revision" doc:"Of the unit file, for editing a custom unit"`
 }
@@ -216,7 +216,7 @@ func registerServices(api huma.API, h *serverHandler) {
 		err := h.withService(ctx, &in.ServicePath, true, func(sh *rootShell, init, unit string) error {
 			b := in.Body
 			if services.Protected(unit) && !b.Force && slices.Contains([]string{"stop", "disable", "mask", "kill"}, b.Action) {
-				return huma.Error422UnprocessableEntity(unit + " is protected: Morcheh or the system needs it. Send force to " + b.Action + " it anyway")
+				return huma.Error422UnprocessableEntity(unit + " is protected: Morche or the system needs it. Send force to " + b.Action + " it anyway")
 			}
 			script, err := actionScript(init, unit, b)
 			if err != nil {
@@ -375,7 +375,7 @@ func registerServices(api huma.API, h *serverHandler) {
 				return huma.Error422UnprocessableEntity(unit + " comes from a package; disable or mask it instead")
 			}
 			if cur.Protected {
-				return huma.Error422UnprocessableEntity(unit + " is protected: Morcheh or the system needs it")
+				return huma.Error422UnprocessableEntity(unit + " is protected: Morche or the system needs it")
 			}
 			u := q(unit)
 			return runChange(ctx, sh, "systemctl disable --now "+u+" 2>/dev/null\nrm -f "+q(cur.Path)+"\nrm -rf "+

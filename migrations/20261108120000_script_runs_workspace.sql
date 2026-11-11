@@ -10,7 +10,7 @@ DELETE FROM script_runs WHERE workspace_id IS NULL;
 ALTER TABLE script_runs ALTER COLUMN workspace_id SET NOT NULL;
 CREATE INDEX script_runs_workspace_idx ON script_runs (workspace_id, id DESC);
 
--- Why a whole run couldn't go on (it was deleted, Morcheh restarted…).
+-- Why a whole run couldn't go on (it was deleted, Morche restarted…).
 ALTER TABLE script_runs ADD COLUMN error text NOT NULL DEFAULT '';
 
 -- +goose Down

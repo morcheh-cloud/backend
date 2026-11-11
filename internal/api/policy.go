@@ -557,7 +557,7 @@ var policies = map[string]policy{
 	"stream-ansible-run":      onAnsibleRun(auth.Operator),
 	"cancel-ansible-run":      onAnsibleRun(auth.Engineer),
 	"delete-ansible-run":      onAnsibleRun(auth.Engineer),
-	// Cron jobs (Morcheh's own schedules). Saving one also needs Operator on
+	// Cron jobs (Morche's own schedules). Saving one also needs Operator on
 	// the source and Engineer on every destination, checked in the handler.
 	"list-schedules":       onWorkspace(auth.Viewer),
 	"preview-schedule":     active,

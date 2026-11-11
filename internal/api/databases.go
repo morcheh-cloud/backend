@@ -31,7 +31,7 @@ type Database struct {
 	WorkspaceID string  `json:"workspace_id" format:"uuid"`
 	Name        string  `json:"name" example:"Shop primary"`
 	Engine      string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb"`
-	Mode        string  `json:"mode" enum:"server,direct" doc:"server: reached through one of your servers over SSH; direct: Morcheh connects itself"`
+	Mode        string  `json:"mode" enum:"server,direct" doc:"server: reached through one of your servers over SSH; direct: Morche connects itself"`
 	ServerID    *string `json:"server_id" format:"uuid" nullable:"true" doc:"The server it's reached through; null when direct, or when that server was removed"`
 	Host        string  `json:"host" doc:"As the server sees it (mode server), or its public address"`
 	Port        int32   `json:"port"`
@@ -119,7 +119,7 @@ type DatabaseIDPath struct {
 // DatabaseSettings is how to reach a database.
 type DatabaseSettings struct {
 	Engine   string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb"`
-	Mode     string  `json:"mode" enum:"server,direct" doc:"server: through one of your servers over SSH (the database may run on it, in Docker on it, or behind it); direct: Morcheh connects to a public address itself"`
+	Mode     string  `json:"mode" enum:"server,direct" doc:"server: through one of your servers over SSH (the database may run on it, in Docker on it, or behind it); direct: Morche connects to a public address itself"`
 	ServerID *string `json:"server_id,omitempty" format:"uuid" doc:"mode server: the server it's reached through"`
 	Host     string  `json:"host,omitempty" maxLength:"255" doc:"mode server: as that server sees it (empty = 127.0.0.1, or the container's own address when a container is set). direct: public IP or domain"`
 	Port     int32   `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"0 or left out = the engine's default"`
@@ -681,7 +681,7 @@ func toDatabaseEvent(e sqlc.DatabaseEvent) DatabaseEvent {
 
 const outboundTTL = 10 * time.Minute
 
-// outboundIP is the address databases see Morcheh connect from, for their
+// outboundIP is the address databases see Morche connect from, for their
 // firewalls' allow lists.
 func (h *databaseHandler) outboundIP(ctx context.Context) (string, error) {
 	h.mu.Lock()
@@ -824,7 +824,7 @@ func registerDatabases(api huma.API, h *databaseHandler) {
 		OperationID: "get-database-outbound-ip",
 		Method:      http.MethodGet,
 		Path:        "/databases/outbound-ip",
-		Summary:     "Morcheh's outbound address",
+		Summary:     "Morche's outbound address",
 		Description: "The public address direct connections come from, to allow in the database's firewall. Asked from api.ipify.org (or ifconfig.me) and cached for 10 minutes.",
 		Tags:        tags,
 	}, func(ctx context.Context, _ *struct{}) (*struct{ Body DatabaseOutboundIP }, error) {
@@ -874,7 +874,7 @@ func registerDatabases(api huma.API, h *databaseHandler) {
 		Method:        http.MethodDelete,
 		Path:          "/databases/{id}",
 		Summary:       "Remove a database",
-		Description:   "Forgets it in Morcheh with its history and events; nothing on the database itself is touched.",
+		Description:   "Forgets it in Morche with its history and events; nothing on the database itself is touched.",
 		Tags:          tags,
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *DatabaseIDPath) (*struct{}, error) {

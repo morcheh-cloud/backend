@@ -1,11 +1,11 @@
-// Package ansible runs ansible-playbook on the Morcheh host against servers
-// Morcheh manages. Each run gets a private temporary folder holding the
+// Package ansible runs ansible-playbook on the Morche host against servers
+// Morche manages. Each run gets a private temporary folder holding the
 // playbook, an inventory built from the chosen servers (with their
-// credentials), a known_hosts file of the keys Morcheh already trusts and a
+// credentials), a known_hosts file of the keys Morche already trusts and a
 // callback plugin that reports plays, tasks and results as JSON lines. When
 // bubblewrap is available the process runs in a sandbox that sees only the
 // system's programs and that folder, so a playbook's local tasks (lookups,
-// delegate_to: localhost) can't read Morcheh's own files or processes.
+// delegate_to: localhost) can't read Morche's own files or processes.
 package ansible
 
 import (
@@ -43,7 +43,7 @@ type Config struct {
 	Timeout  time.Duration
 }
 
-// Status is what the Morcheh host offers.
+// Status is what the Morche host offers.
 type Status struct {
 	Installed bool
 	Version   string // ansible-core version
@@ -64,7 +64,7 @@ func Detect(ctx context.Context, c Config) Status {
 	var st Status
 	path, err := exec.LookPath(c.Playbook)
 	if err != nil {
-		st.Problem = "ansible-playbook isn't installed on the Morcheh server (install ansible-core, or set ANSIBLE_PLAYBOOK)"
+		st.Problem = "ansible-playbook isn't installed on the Morche server (install ansible-core, or set ANSIBLE_PLAYBOOK)"
 		return st
 	}
 	// The real file: the sandbox binds the folders it lives in.
@@ -293,8 +293,8 @@ func prepare(dir string, s Spec) error {
 	return writeInventory(dir, s.Hosts)
 }
 
-// config is the run's ansible.cfg: only the hosts Morcheh trusts, with the
-// keys it already knows, and nothing from the Morcheh host's own ssh setup.
+// config is the run's ansible.cfg: only the hosts Morche trusts, with the
+// keys it already knows, and nothing from the Morche host's own ssh setup.
 func config(dir string) string {
 	known := filepath.Join(dir, "known_hosts")
 	return `[defaults]
@@ -315,7 +315,7 @@ pipelining = True
 }
 
 // environ is the whole environment ansible-playbook gets: nothing of
-// Morcheh's own (its database URL, secrets key).
+// Morche's own (its database URL, secrets key).
 func environ(dir, playbook string) []string {
 	path := "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 	path = filepath.Dir(playbook) + ":" + path
@@ -335,7 +335,7 @@ func environ(dir, playbook string) []string {
 }
 
 // CleanStale removes the folders of runs that never got to clean up after
-// themselves (Morcheh was killed): they hold decrypted credentials.
+// themselves (Morche was killed): they hold decrypted credentials.
 func CleanStale(olderThan time.Duration) {
 	dirs, _ := filepath.Glob(filepath.Join(os.TempDir(), "morcheh-ansible-*"))
 	for _, d := range dirs {

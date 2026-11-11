@@ -88,7 +88,7 @@ esac
 `
 }
 
-// HostDir is the folder on the server holding what Morcheh keeps there for
+// HostDir is the folder on the server holding what Morche keeps there for
 // this container (certbot's hooks, log rotation).
 func (c Container) HostDir() string { return "/etc/morcheh/proxy/" + c.Runtime + "-" + c.Name }
 
@@ -182,7 +182,7 @@ type ContainerInfo struct {
 	Compose     string             `json:"compose,omitempty" doc:"The Compose project it belongs to"`
 	Service     string             `json:"service,omitempty" doc:"Its Compose service"`
 	ComposeDir  string             `json:"compose_dir,omitempty" doc:"The Compose project's folder on the server"`
-	Managed     string             `json:"managed,omitempty" doc:"The image is a proxy manager that writes nginx's config itself (Nginx Proxy Manager, nginx-proxy, SWAG): Morcheh doesn't take it over"`
+	Managed     string             `json:"managed,omitempty" doc:"The image is a proxy manager that writes nginx's config itself (Nginx Proxy Manager, nginx-proxy, SWAG): Morche doesn't take it over"`
 }
 
 // HostNetwork: it shares the server's network (no publishing needed).
@@ -237,7 +237,7 @@ func ManagerOf(image string) string {
 }
 
 // rawInspect is the part of `docker inspect` (and podman's, which follows it)
-// Morcheh reads.
+// Morche reads.
 type rawInspect struct {
 	ID    string `json:"Id"`
 	Name  string `json:"Name"`

@@ -1,5 +1,5 @@
 -- +goose Up
--- A reverse proxy Morcheh manages on one of the panel's servers, over SSH.
+-- A reverse proxy Morche manages on one of the panel's servers, over SSH.
 -- kind picks the driver (nginx first; Caddy, Traefik… later).
 CREATE TABLE proxies (
     id              uuid PRIMARY KEY DEFAULT uuidv7(),

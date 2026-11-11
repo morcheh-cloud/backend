@@ -751,7 +751,7 @@ func f2bInstallScript(f hostFacts, p f2bPackageParams) (string, error) {
 			"  l=''; for f in /var/log/auth.log /var/log/secure /var/log/messages; do [ -f \"$f\" ] && { l=$f; break; }; done\n" +
 			"  if [ -n \"$l\" ]; then printf '[sshd]\\nenabled = true\\nlogpath = %s\\n' \"$l\" > " + f2bJailLocal + "\n" +
 			"  elif [ -d /run/systemd/system ]; then printf '[sshd]\\nenabled = true\\nbackend = systemd\\n' > " + f2bJailLocal + "\n" +
-			"  else echo 'Morcheh: no SSH log on this server (no syslog or journal), so the sshd jail stays off.'; fi\n" +
+			"  else echo 'Morche: no SSH log on this server (no syslog or journal), so the sshd jail stays off.'; fi\n" +
 			"fi\n"
 	}
 	code := " || exit " + strconv.Itoa(f2bStartFailed) + "\n"
@@ -858,7 +858,7 @@ func (h *serverHandler) runF2bPackage(phase string, build func(hostFacts, f2bPac
 			case ctx.Err() != nil:
 				return ctx.Err()
 			case res.timedOut:
-				return fmt.Errorf("It took longer than %d minutes, so Morcheh stopped waiting", int(packageTimeout.Minutes()))
+				return fmt.Errorf("It took longer than %d minutes, so Morche stopped waiting", int(packageTimeout.Minutes()))
 			case res.code == f2bStartFailed:
 				return fmt.Errorf("Fail2ban was installed but didn't start: %s", last)
 			case res.code != 0:

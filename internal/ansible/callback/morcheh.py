@@ -1,5 +1,5 @@
-# Morcheh's Ansible callback: writes one JSON object per line to the file
-# descriptor in MORCHEH_EVENTS_FD, so Morcheh can show plays, tasks and each
+# Morche's Ansible callback: writes one JSON object per line to the file
+# descriptor in MORCHEH_EVENTS_FD, so Morche can show plays, tasks and each
 # host's result without parsing the human output (which still goes to stdout
 # through the default callback).
 #
@@ -10,7 +10,7 @@ from __future__ import annotations
 DOCUMENTATION = """
     name: morcheh
     type: notification
-    short_description: Structured events for Morcheh
+    short_description: Structured events for Morche
     description: Writes plays, tasks and host results as JSON lines.
 """
 
@@ -39,7 +39,7 @@ def trim(v, depth=0):
         return "…"
     if isinstance(v, str):
         v = v.replace("\x00", "")  # PostgreSQL refuses it
-        return v if len(v) <= STR_CAP else v[:STR_CAP] + "\n… (cut by Morcheh)"
+        return v if len(v) <= STR_CAP else v[:STR_CAP] + "\n… (cut by Morche)"
     if isinstance(v, (bool, int, float)) or v is None:
         return v
     if isinstance(v, dict):
@@ -81,7 +81,7 @@ class CallbackModule(CallbackBase):
         fields["t"] = time.time()
         try:
             self._out.write(json.dumps(fields, default=str, ensure_ascii=False) + "\n")
-        except Exception:  # Morcheh went away; the run goes on regardless.
+        except Exception:  # Morche went away; the run goes on regardless.
             self._out = None
 
     # ---- Plays and tasks ----

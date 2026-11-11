@@ -36,7 +36,7 @@ ON CONFLICT (id) DO UPDATE SET
     as_root = excluded.as_root;
 
 -- name: InterruptCommandLog :execrows
--- At start-up: commands a previous run of Morcheh was waiting on.
+-- At start-up: commands a previous run of Morche was waiting on.
 UPDATE command_log SET ended_at = last_at, interrupted = true
 WHERE ended_at IS NULL;
 

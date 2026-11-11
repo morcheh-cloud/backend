@@ -134,7 +134,7 @@ func (h *backupHandler) deleteWithDependents(ctx context.Context, b sqlc.Databas
 }
 
 // removeBackup deletes every stored copy of one backup, then its row. A
-// file already gone, or a storage removed from Morcheh, is fine.
+// file already gone, or a storage removed from Morche, is fine.
 func (h *backupHandler) removeBackup(ctx context.Context, b sqlc.DatabaseBackup) error {
 	stored, err := h.storedCopies(ctx, b.ID)
 	if err != nil {

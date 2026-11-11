@@ -34,7 +34,7 @@ func TestPlanMove(t *testing.T) {
 		risky            bool
 	}{
 		{"to the top", r[3].ID, r[0].ID, "ufw insert 1 allow", false},
-		{"to the end", r[0].ID, "", "ufw allow", true}, // the deny now wins for Morcheh
+		{"to the end", r[0].ID, "", "ufw allow", true}, // the deny now wins for Morche
 		{"up one", r[1].ID, r[0].ID, "ufw insert 1 allow", false},
 		{"down one", r[1].ID, r[3].ID, "ufw insert 3 allow", false},
 		{"above itself", r[1].ID, r[1].ID, "", false},

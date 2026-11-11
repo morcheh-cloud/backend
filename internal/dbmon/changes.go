@@ -14,7 +14,7 @@ type DatabaseBaseline struct {
 	Users     []string          `json:"users"`
 	Admins    []string          `json:"admins"`
 	Addresses map[string]string `json:"addresses" doc:"Client address → when last seen (RFC 3339)"`
-	FirstSeen map[string]string `json:"first_seen" doc:"Client address → when it first showed up; absent = before Morcheh compared"`
+	FirstSeen map[string]string `json:"first_seen" doc:"Client address → when it first showed up; absent = before Morche compared"`
 	Settings  map[string]string `json:"settings"`
 }
 

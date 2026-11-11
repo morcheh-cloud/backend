@@ -1,7 +1,7 @@
 // Package dbmon watches databases: it connects to PostgreSQL, MySQL/MariaDB,
 // SQL Server, Redis and MongoDB with read-only monitoring queries, turns what
 // each engine reports into one shape (a snapshot), and judges that snapshot
-// against limits (checks). It knows nothing about HTTP or Morcheh's own
+// against limits (checks). It knows nothing about HTTP or Morche's own
 // tables; the API decides how a database is reached (directly or through a
 // server over SSH) by passing a dialer.
 package dbmon
@@ -221,7 +221,7 @@ type DatabaseActivity struct {
 	TxSeconds *float64 `json:"tx_seconds" nullable:"true" doc:"How long its transaction has been open"`
 	Wait      string   `json:"wait,omitempty" example:"Lock:transactionid"`
 	BlockedBy []string `json:"blocked_by" doc:"Who it waits for"`
-	Ours      bool     `json:"ours,omitempty" doc:"Morcheh's own monitoring connection"`
+	Ours      bool     `json:"ours,omitempty" doc:"Morche's own monitoring connection"`
 }
 
 type DatabaseQuery struct {

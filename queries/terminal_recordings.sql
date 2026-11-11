@@ -37,7 +37,7 @@ UPDATE terminal_recordings SET
 WHERE id = @id;
 
 -- name: InterruptTerminalRecordings :execrows
--- At start-up: shells recorded by a previous run of Morcheh are gone.
+-- At start-up: shells recorded by a previous run of Morche are gone.
 UPDATE terminal_recordings SET
     ended_at = started_at + duration_ms * interval '1 millisecond',
     interrupted = true

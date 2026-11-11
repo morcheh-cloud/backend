@@ -16,7 +16,7 @@ import (
 )
 
 // Session is an SSH session whose command goes into the command log. Every
-// command Morcheh runs on a server goes through one: open them with
+// command Morche runs on a server goes through one: open them with
 // Conn.Session, never Client.NewSession.
 type Session struct {
 	*ssh.Session
@@ -131,7 +131,7 @@ func (s *Session) Close() error {
 	return s.Session.Close()
 }
 
-var errStopped = errors.New("stopped by Morcheh")
+var errStopped = errors.New("stopped by Morche")
 
 func (s *Session) begin(cmd string) {
 	sink := s.conn.pool.Log

@@ -187,7 +187,7 @@ UPDATE command_log SET ended_at = last_at, interrupted = true
 WHERE ended_at IS NULL
 `
 
-// At start-up: commands a previous run of Morcheh was waiting on.
+// At start-up: commands a previous run of Morche was waiting on.
 func (q *Queries) InterruptCommandLog(ctx context.Context) (int64, error) {
 	result, err := q.db.Exec(ctx, interruptCommandLog)
 	if err != nil {

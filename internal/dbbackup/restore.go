@@ -9,7 +9,7 @@ import (
 	"github.com/morcheh/backend/internal/dbmon"
 )
 
-// A restore script reads the backup on stdin, plain (Morcheh undoes its own
+// A restore script reads the backup on stdin, plain (Morche undoes its own
 // gzip), so it needs nothing on the server beyond the database's client tools.
 // It must keep its other commands off stdin.
 
@@ -31,7 +31,7 @@ func Restorable(format, target string) string {
 	case RedisRDB:
 		return "Redis has to be stopped and its data file replaced, so this is done on the server."
 	}
-	return "Morcheh doesn't know how to restore this file."
+	return "Morche doesn't know how to restore this file."
 }
 
 // RestoreInto says why a backup of source can't go into a database called dest.
@@ -185,7 +185,7 @@ func mongoRestore(t Target, o RestoreOptions) string {
 
 func mssqlRestore(t Target, o RestoreOptions) (string, error) {
 	if !t.Local {
-		return "", errors.New("SQL Server reads a backup from its own disk, so Morcheh has to reach the machine or container it runs on.")
+		return "", errors.New("SQL Server reads a backup from its own disk, so Morche has to reach the machine or container it runs on.")
 	}
 	if !idPattern.MatchString(t.ID) {
 		return "", errors.New("a restore needs an id")

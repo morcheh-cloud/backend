@@ -17,14 +17,14 @@ import (
 	"github.com/morcheh/backend/internal/jobs"
 )
 
-// LocalRunnerName is how the machine Morcheh runs on is shown as a runner.
-const LocalRunnerName = "This Morcheh server"
+// LocalRunnerName is how the machine Morche runs on is shown as a runner.
+const LocalRunnerName = "This Morche server"
 
 // localRunner is the value of runner_server_id that asks for this machine
 // explicitly (an empty one means the plan's choice on a restore).
 const localRunner = "local"
 
-// runsLocally says whether a script runs on Morcheh's own machine: a direct
+// runsLocally says whether a script runs on Morche's own machine: a direct
 // database's backup without a server chosen to run it.
 func (s dumpScript) runsLocally() bool { return s.server == uuid.Nil }
 
@@ -83,7 +83,7 @@ func (h *backupHandler) runLocal(ctx context.Context, t *jobs.Task, s dumpScript
 }
 
 // localEnv is what a local script sees: enough to find the tools, nothing of
-// Morcheh's own settings (its database URL, the secrets key).
+// Morche's own settings (its database URL, the secrets key).
 func localEnv() []string {
 	env := []string{"LANG=C.UTF-8", "LC_ALL=C.UTF-8"}
 	for _, k := range []string{"PATH", "HOME", "TMPDIR", "TZ", "USER"} {
@@ -97,7 +97,7 @@ func localEnv() []string {
 // LocalTools says which client tools this machine lacks for an engine, so
 // the plan form can say so before the first run.
 type LocalTools struct {
-	Supported bool     `json:"supported" doc:"Whether this kind of database can be backed up from the Morcheh server at all"`
+	Supported bool     `json:"supported" doc:"Whether this kind of database can be backed up from the Morche server at all"`
 	Missing   []string `json:"missing" doc:"Tools a backup or restore needs that aren't installed here"`
 	Note      string   `json:"note" doc:"Why not, when it can't"`
 }

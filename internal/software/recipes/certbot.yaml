@@ -10,4 +10,4 @@ packages:
 version: certbot --version 2>&1 | awk '/^certbot /{print $2; exit}'
 notes: |
   Get a certificate with certbot certonly --standalone -d example.com
-  (port 80 must be free), or use Reverse proxy › HTTPS in Morcheh.
+  (port 80 must be free), or use Reverse proxy › HTTPS in Morche.

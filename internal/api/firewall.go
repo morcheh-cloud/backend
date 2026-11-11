@@ -34,14 +34,14 @@ type FirewallDefaults struct {
 }
 
 type FirewallCapabilities struct {
-	Manage    bool `json:"manage" doc:"Morcheh can change this firewall"`
+	Manage    bool `json:"manage" doc:"Morche can change this firewall"`
 	Comments  bool `json:"comments"`
 	Outbound  bool `json:"outbound"`
 	Routed    bool `json:"routed"`
 	Interface bool `json:"interface"`
 	Zones     bool `json:"zones"`
 	Reorder   bool `json:"reorder" doc:"The order of the rules matters and can be changed"`
-	Forwards  bool `json:"forwards" doc:"Morcheh can change port forwards"`
+	Forwards  bool `json:"forwards" doc:"Morche can change port forwards"`
 	// firewalld's forward ports have no source or interface of their own.
 	ForwardFrom bool `json:"forward_from" doc:"A forward can be limited to a source and an interface"`
 }
@@ -65,8 +65,8 @@ type FirewallOverview struct {
 	DefaultZone    string                `json:"default_zone,omitempty" doc:"firewalld"`
 	Rules          []firewall.FilterRule `json:"rules" doc:"In the order the firewall applies them"`
 	Forwards       []firewall.Forward    `json:"forwards" doc:"Ports sent on to another port or machine"`
-	SSHPort        int                   `json:"ssh_port" doc:"The port Morcheh reaches this server on; 0 if unknown" example:"22"`
-	MorchehIP      string                `json:"morcheh_ip" doc:"The address this server sees Morcheh's connection from"`
+	SSHPort        int                   `json:"ssh_port" doc:"The port Morche reaches this server on; 0 if unknown" example:"22"`
+	MorchehIP      string                `json:"morcheh_ip" doc:"The address this server sees Morche's connection from"`
 	YourIP         string                `json:"your_ip" doc:"The address of the person asking, when it isn't a loopback one"`
 	Capabilities   FirewallCapabilities  `json:"capabilities"`
 	Pending        *FirewallPending      `json:"pending,omitempty" doc:"A change waiting to be kept; while it's here, other changes are refused"`
@@ -155,7 +155,7 @@ const (
 	fwCmdTimeout  = 60 * time.Second
 	fwExitPrepare = 74 // nothing was changed
 	fwExitRefused = 75 // the tool said no; already rolled back
-	fwSSHComment  = "SSH access (added by Morcheh)"
+	fwSSHComment  = "SSH access (added by Morche)"
 )
 
 func registerFirewall(api huma.API, h *serverHandler) {
@@ -168,7 +168,7 @@ func registerFirewall(api huma.API, h *serverHandler) {
 		Path:        base,
 		Summary:     "The firewall on a server",
 		Description: "Which firewall is in charge (ufw, firewalld, or plain nftables/iptables, which are read-only here), whether it's on, " +
-			"its defaults and rules in one shape, the SSH port Morcheh depends on, and any change waiting to be kept.",
+			"its defaults and rules in one shape, the SSH port Morche depends on, and any change waiting to be kept.",
 		Tags: tags,
 	}, func(ctx context.Context, in *ServerIDPath) (*FirewallOutput, error) {
 		out := &FirewallOutput{}
@@ -226,7 +226,7 @@ func registerFirewall(api huma.API, h *serverHandler) {
 		Method:      http.MethodPost,
 		Path:        base + "/enable",
 		Summary:     "Turn the firewall on",
-		Description: "Allows the SSH port Morcheh uses first, whatever the body says. Answers with `pending`: keep it within the time shown or the server undoes it.",
+		Description: "Allows the SSH port Morche uses first, whatever the body says. Answers with `pending`: keep it within the time shown or the server undoes it.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct {
 		ServerIDPath
@@ -484,7 +484,7 @@ func parseFirewall(s map[string]string, access, conn string) *fwState {
 		o.Warnings = append(o.Warnings, "ufw and firewalld are both running. They overwrite each other's rules: turn one of them off.")
 	}
 	if o.Backend != customName && firewall.CustomRules(custom) {
-		o.Warnings = append(o.Warnings, "This server also has "+customName+" rules Morcheh doesn't manage. They apply as well as the ones listed here.")
+		o.Warnings = append(o.Warnings, "This server also has "+customName+" rules Morche doesn't manage. They apply as well as the ones listed here.")
 	}
 	if access == "user" {
 		o.Warnings = append(o.Warnings, "Reading and changing the firewall needs root: log in as root, or allow sudo for this user.")
@@ -679,7 +679,7 @@ exit 0
 // of applyScript, each as a line of POSIX sh starting with `r`.
 type fwPlan struct {
 	cmds    []string
-	risky   bool // could lock Morcheh out: it stands only until someone keeps it
+	risky   bool // could lock Morche out: it stands only until someone keeps it
 	summary string
 }
 
@@ -688,7 +688,7 @@ func (st *fwState) needsManaged() error {
 		return huma.Error422UnprocessableEntity("There's no firewall here yet: install one from this server's Firewall page")
 	}
 	if !st.o.Capabilities.Manage {
-		return huma.Error422UnprocessableEntity("Morcheh only shows " + st.o.Backend + " rules. It can change ufw and firewalld.")
+		return huma.Error422UnprocessableEntity("Morche only shows " + st.o.Backend + " rules. It can change ufw and firewalld.")
 	}
 	return nil
 }
@@ -931,7 +931,7 @@ func describeExisting(r firewall.FilterRule) string {
 	return describeRule(firewall.Input{Action: r.Action, Protocol: r.Protocol, Port: r.Port, Service: r.Service, From: r.From})
 }
 
-// sshCommands builds the lines that open the port Morcheh uses. A firewall
+// sshCommands builds the lines that open the port Morche uses. A firewall
 // turned on without it would end the session that turned it on.
 func (st *fwState) sshCommands() []string {
 	port := st.o.SSHPort
@@ -1100,7 +1100,7 @@ func (st *fwState) toolNow() string {
 // ---- Applying a change ----
 
 // Every change runs on the server under a net that needs nothing from
-// Morcheh: the configuration is saved, a detached timer will put it back, and
+// Morche: the configuration is saved, a detached timer will put it back, and
 // only a later step disarms the timer. So a change that cuts the connection
 // undoes itself even though nobody can reach the server to do it. The timer
 // checks a token, so an older timer can't fire on a newer change.
@@ -1198,7 +1198,7 @@ func (h *serverHandler) fwApply(ctx context.Context, id string, sh *rootShell, s
 	if err != nil {
 		return err
 	}
-	lost := huma.Error502BadGateway(fmt.Sprintf("The connection dropped during the change. If it cut Morcheh off, the server undoes it within %d seconds.", fwWindow))
+	lost := huma.Error502BadGateway(fmt.Sprintf("The connection dropped during the change. If it cut Morche off, the server undoes it within %d seconds.", fwWindow))
 	res, err := sh.exec(ctx, script, fwCmdTimeout, 64<<10)
 	switch {
 	case err != nil, res.timedOut:
@@ -1213,7 +1213,7 @@ func (h *serverHandler) fwApply(ctx context.Context, id string, sh *rootShell, s
 		if _, err := sh.run(ctx, fwUndoScript); err != nil {
 			return lost
 		}
-		return huma.Error422UnprocessableEntity("That change would have cut Morcheh off from this server, so it was undone.")
+		return huma.Error422UnprocessableEntity("That change would have cut Morche off from this server, so it was undone.")
 	}
 	if !p.risky {
 		if _, err := sh.run(ctx, fwKeepScript); err != nil {

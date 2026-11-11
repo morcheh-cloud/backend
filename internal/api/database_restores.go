@@ -33,7 +33,7 @@ type RestoreBody struct {
 	Confirm        string `json:"confirm,omitempty" maxLength:"128" doc:"For replace: the target's name typed again"`
 	SafetyBackup   bool   `json:"safety_backup,omitempty" doc:"For replace: back the target up first, to the same storage"`
 	StorageID      string `json:"storage_id,omitempty" maxLength:"36" doc:"Which storage to read it from; empty = the first that holds all of it"`
-	RunnerServerID string `json:"runner_server_id,omitempty" maxLength:"36" doc:"For a direct database: the server the restore runs on, or \"local\" for the machine Morcheh runs on; empty = the plan's (Morcheh's machine when there's no plan)"`
+	RunnerServerID string `json:"runner_server_id,omitempty" maxLength:"36" doc:"For a direct database: the server the restore runs on, or \"local\" for the machine Morche runs on; empty = the plan's (Morche's machine when there's no plan)"`
 	Username       string `json:"username,omitempty" maxLength:"256" doc:"A login for this restore only; empty = the database's saved one"`
 	Password       string `json:"password,omitempty" maxLength:"1024"`
 }
@@ -234,10 +234,10 @@ func registerDatabaseRestores(api huma.API, h *backupHandler, tags []string) {
 			return nil, fieldError("body.target_name", why, nil)
 		}
 		if slices.Contains(systemDatabases[d.Engine], name) {
-			return nil, fieldError("body.target_name", name+" is a system database; Morcheh won't restore over it.", nil)
+			return nil, fieldError("body.target_name", name+" is a system database; Morche won't restore over it.", nil)
 		}
 		if d.Engine == dbmon.MSSQL && !backupTarget(d, "", "", name, "").Local {
-			return nil, huma.Error422UnprocessableEntity("SQL Server reads a backup from its own disk, so it can only be restored when Morcheh reaches it through the server it runs on.")
+			return nil, huma.Error422UnprocessableEntity("SQL Server reads a backup from its own disk, so it can only be restored when Morche reaches it through the server it runs on.")
 		}
 		acc := principalOf(ctx).Access
 
@@ -270,13 +270,13 @@ func registerDatabaseRestores(api huma.API, h *backupHandler, tags []string) {
 		if safety {
 			switch {
 			case src.ReadOnly:
-				return nil, fieldError("body.safety_backup", src.Name+" is read-only in Morcheh, so the backup before can't be written to it. Turn it off, or restore from another storage.", nil)
+				return nil, fieldError("body.safety_backup", src.Name+" is read-only in Morche, so the backup before can't be written to it. Turn it off, or restore from another storage.", nil)
 			case acc.StorageLevel(src.WorkspaceID, src.ID) < auth.Engineer:
 				return nil, fieldError("body.safety_backup", fmt.Sprintf("The backup before needs %s access to %s.", auth.Engineer, src.Name), nil)
 			}
 		}
 
-		// Where it runs: nil for a direct database = the machine Morcheh
+		// Where it runs: nil for a direct database = the machine Morche
 		// runs on.
 		var serverID *uuid.UUID
 		switch {
@@ -349,7 +349,7 @@ func registerDatabaseRestores(api huma.API, h *backupHandler, tags []string) {
 		if body.Mode == "new" {
 			verb = "Restore as new"
 		}
-		// uuid.Nil stands for Morcheh's own machine.
+		// uuid.Nil stands for Morche's own machine.
 		refs := []uuid.UUID{src.ID, runnerOf(serverID)}
 		out, err := submit(ctx, h.runner, jobs.Spec{
 			Kind:   restoreKind,
@@ -451,7 +451,7 @@ func (h *backupHandler) runRestore(ctx context.Context, t *jobs.Task) (any, erro
 	if err != nil {
 		return fail(err)
 	}
-	// Only a direct database runs on Morcheh's own machine; for the others
+	// Only a direct database runs on Morche's own machine; for the others
 	// no server means it was removed.
 	if r.RunnerServerID == nil && d.Mode != "direct" {
 		return fail(errors.New("The server it runs on was removed."))
@@ -540,7 +540,7 @@ func (h *backupHandler) runRestore(ctx context.Context, t *jobs.Task) (any, erro
 }
 
 // loadFile streams one backup file from the storage into the restore script,
-// unzipping Morcheh's own gzip on the way.
+// unzipping Morche's own gzip on the way.
 func (h *backupHandler) loadFile(ctx context.Context, t *jobs.Task, s dumpScript, src sqlc.Storage, b sqlc.DatabaseBackup) error {
 	return h.st.withFS(ctx, src.ID.String(), func(_ sqlc.Storage, f storage.FS) error {
 		file, err := f.Open(ctx, b.Path)
@@ -614,7 +614,7 @@ func (h *backupHandler) safetyBackup(ctx context.Context, t *jobs.Task, r sqlc.D
 	return b.ID, nil
 }
 
-// runnerOf is the server a restore runs on; uuid.Nil = Morcheh's own machine.
+// runnerOf is the server a restore runs on; uuid.Nil = Morche's own machine.
 func runnerOf(id *uuid.UUID) uuid.UUID {
 	if id == nil {
 		return uuid.Nil

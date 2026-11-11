@@ -153,9 +153,9 @@ func emailHTML(m Message) string {
 		b.WriteString(`</table>`)
 	}
 	if m.URL != "" {
-		fmt.Fprintf(&b, `<p style="margin-top:20px"><a href="%s" style="background:#3e63dd;color:#fff;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px">Open in Morcheh</a></p>`, htmlEscape(m.URL))
+		fmt.Fprintf(&b, `<p style="margin-top:20px"><a href="%s" style="background:#3e63dd;color:#fff;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px">Open in Morche</a></p>`, htmlEscape(m.URL))
 	}
-	b.WriteString(`<p style="font-size:12px;color:#8b8d98;margin-top:24px">Sent by Morcheh</p></div>`)
+	b.WriteString(`<p style="font-size:12px;color:#8b8d98;margin-top:24px">Sent by Morche</p></div>`)
 	return b.String()
 }
 
@@ -196,7 +196,7 @@ func sendWebhook(ctx context.Context, ch Channel, m Message) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Morcheh")
+	req.Header.Set("User-Agent", "Morche")
 	req.Header.Set("X-Morcheh-Event", m.Event)
 	if key := ch.Secrets.SigningKey; key != "" {
 		ts := strconv.FormatInt(m.At.Unix(), 10)

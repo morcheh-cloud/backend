@@ -181,7 +181,7 @@ func (h *uptimeHandler) saveLocations(ctx context.Context, m sqlc.Monitor, locs 
 	}
 }
 
-// locationsLine says how each location answered: "Morcheh: up · vm1: down".
+// locationsLine says how each location answered: "Morche: up · vm1: down".
 func locationsLine(locs []uptime.LocationResult) string {
 	parts := make([]string, len(locs))
 	for i, l := range locs {
@@ -194,7 +194,7 @@ func locationsLine(locs []uptime.LocationResult) string {
 	return strings.Join(parts, " · ")
 }
 
-// runCheck runs one check, from Morcheh or through a server over SSH.
+// runCheck runs one check, from Morche or through a server over SSH.
 func (h *uptimeHandler) runCheck(ctx context.Context, kind string, c uptime.MonitorConfig, s uptime.MonitorSecrets, via *uuid.UUID, allowInternal bool, timeout time.Duration) uptime.CheckResult {
 	env := uptime.Env{AllowInternal: allowInternal, Timeout: timeout}
 	if via != nil {

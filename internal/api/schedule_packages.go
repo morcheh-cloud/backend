@@ -148,7 +148,7 @@ func (u *pkgUpgrade) one(ctx context.Context, i int) bool {
 		return fail(err)
 	}
 	if !claimPackages(id) {
-		return fail(errors.New("Morcheh is already changing packages on this server."))
+		return fail(errors.New("Morche is already changing packages on this server."))
 	}
 	var (
 		skip, note string
@@ -257,7 +257,7 @@ func (u *pkgUpgrade) step(ctx context.Context, sh *rootShell, name, phase, scrip
 	case ctx.Err() != nil:
 		return asked, ctx.Err()
 	case res.timedOut:
-		return asked, fmt.Errorf("%s took longer than %d minutes, so Morcheh stopped waiting.", phase, int(timeout.Minutes()))
+		return asked, fmt.Errorf("%s took longer than %d minutes, so Morche stopped waiting.", phase, int(timeout.Minutes()))
 	case res.code != 0:
 		return asked, fmt.Errorf("The package manager failed (exit %d): %s", res.code, last)
 	}
