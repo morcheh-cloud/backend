@@ -83,7 +83,7 @@ type Schedule struct {
 	WorkspaceID  string            `json:"workspace_id" format:"uuid"`
 	Name         string            `json:"name"`
 	Description  string            `json:"description"`
-	Action       string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup,software-update"`
+	Action       string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup,software-update,package-upgrade"`
 	Cron         string            `json:"cron" example:"0 3 * * *"`
 	Timezone     string            `json:"timezone" example:"Asia/Tehran"`
 	Enabled      bool              `json:"enabled"`
@@ -109,7 +109,7 @@ type ScheduleBody struct {
 	Cron         string          `json:"cron" minLength:"1" maxLength:"200" doc:"Five fields (minute hour day month weekday), or @hourly, @daily, @weekly, @monthly, @every 2h" example:"0 3 * * *"`
 	Timezone     string          `json:"timezone,omitempty" maxLength:"64" doc:"IANA zone the times are read in; default UTC" example:"Asia/Tehran"`
 	Enabled      *bool           `json:"enabled,omitempty" doc:"Default true"`
-	Action       string          `json:"action,omitempty" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup,software-update" default:"sync" doc:"What it does. sync and archive use source and destinations, fetch only destinations (server folders); the rest use task"`
+	Action       string          `json:"action,omitempty" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup,software-update,package-upgrade" default:"sync" doc:"What it does. sync and archive use source and destinations, fetch only destinations (server folders); the rest use task"`
 	Source       *ScheduleEnd    `json:"source,omitempty"`
 	Destinations []ScheduleEnd   `json:"destinations,omitempty" maxItems:"20"`
 	Options      ScheduleOptions `json:"options,omitempty"`
@@ -159,7 +159,7 @@ type ScheduleRun struct {
 	DryRun        bool              `json:"dry_run" doc:"A test run: counted, nothing changed"`
 	State         string            `json:"state" enum:"queued,running,succeeded,partial,failed,canceled,interrupted,skipped"`
 	Error         string            `json:"error"`
-	Action        string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup,software-update"`
+	Action        string            `json:"action" enum:"sync,script,ansible,service,reboot,fetch,archive,verify-backup,software-update,package-upgrade"`
 	Source        *ScheduleEndView  `json:"source,omitempty"`
 	Options       ScheduleOptions   `json:"options"`
 	Results       []ScheduleRunDest `json:"results" doc:"One row per destination, server or backup checked"`
@@ -417,6 +417,8 @@ func (h *scheduleHandler) check(ctx context.Context, ws uuid.UUID, b ScheduleBod
 		err = k.verify(b)
 	case "software-update":
 		err = k.software(b)
+	case "package-upgrade":
+		err = k.packages(b)
 	default:
 		err = fieldError("body.action", "Unknown action.", b.Action)
 	}
@@ -558,7 +560,7 @@ func (h *scheduleHandler) start(ctx context.Context, s sqlc.Schedule, by *princi
 		return sqlc.ScheduleRun{}, nil, err
 	}
 	dests := sched.Destinations
-	if s.Action == "service" || s.Action == "reboot" {
+	if s.Action == "service" || s.Action == "reboot" || s.Action == "package-upgrade" {
 		dests = refViews(sched.Refs, "server")
 	}
 	plan, _ := json.Marshal(schedulePlan{

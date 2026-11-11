@@ -485,6 +485,9 @@ func (h *serverHandler) packageJobRunning(ctx context.Context, id string) error 
 	if slices.ContainsFunc(list, func(j sqlc.Job) bool { return slices.Contains(busy, j.Kind) }) {
 		return huma.Error409Conflict("Morcheh is already changing packages on this server: wait for that to finish")
 	}
+	if packagesClaimed(id) {
+		return huma.Error409Conflict("A cron job is upgrading packages on this server: wait for it to finish")
+	}
 	return nil
 }
 

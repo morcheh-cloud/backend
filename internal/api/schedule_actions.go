@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -20,6 +21,7 @@ import (
 	"github.com/morcheh/backend/internal/auth"
 	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/jobs"
+	"github.com/morcheh/backend/internal/packages"
 	"github.com/morcheh/backend/internal/services"
 	"github.com/morcheh/backend/internal/sshpool"
 	"github.com/morcheh/backend/internal/storage"
@@ -42,6 +44,21 @@ type ScheduleTask struct {
 	Fetch    *ScheduleFetch    `json:"fetch,omitempty" doc:"action fetch: what to download into the destination folders"`
 	Verify   *ScheduleVerify   `json:"verify,omitempty" doc:"action verify-backup"`
 	Software *ScheduleSoftware `json:"software,omitempty" doc:"action software-update"`
+	Packages *SchedulePackages `json:"packages,omitempty" doc:"action package-upgrade"`
+}
+
+// SchedulePackages upgrades the system packages on servers, as Upgrade all
+// on a server's Packages page does, then optionally cleans up and restarts.
+type SchedulePackages struct {
+	ServerIDs      []string `json:"server_ids" minItems:"1" maxItems:"200" format:"uuid"`
+	Mode           string   `json:"mode,omitempty" enum:"all,security,full" default:"all" doc:"all = a normal upgrade; security = only security updates (apt, dnf, yum; other servers are skipped); full = apt full-upgrade (new dependencies and removals; a normal upgrade on other managers)"`
+	Autoremove     bool     `json:"autoremove,omitempty" doc:"Then remove packages nothing needs any more"`
+	Clean          bool     `json:"clean,omitempty" doc:"Then empty the package cache"`
+	Reboot         string   `json:"reboot,omitempty" enum:"never,if-required" default:"never" doc:"if-required = restart a server that says it needs one, and wait until it's back. Restarts go one server at a time"`
+	SkipIfLoggedIn bool     `json:"skip_if_logged_in,omitempty" doc:"Don't restart a server someone is logged in to"`
+	Message        string   `json:"message,omitempty" maxLength:"200" doc:"Shown to logged-in users before a restart (wall)"`
+	Parallel       int      `json:"parallel,omitempty" minimum:"0" maximum:"10" doc:"Servers upgraded at a time; default 1"`
+	KeepGoing      bool     `json:"keep_going,omitempty" doc:"Carry on with the other servers after one fails"`
 }
 
 // ScheduleSoftware updates applications on servers, as the Updates tab of
@@ -143,6 +160,8 @@ func taskRefs(action string, t ScheduleTask) []ScheduleRef {
 		add("database", t.Verify.DatabaseID)
 	case action == "software-update" && t.Software != nil:
 		add("server", t.Software.ServerIDs...)
+	case action == "package-upgrade" && t.Packages != nil:
+		add("server", t.Packages.ServerIDs...)
 	}
 	return refs
 }
@@ -562,6 +581,29 @@ func (k *scheduleChecker) reboot(b ScheduleBody) error {
 	return nil
 }
 
+func (k *scheduleChecker) packages(b ScheduleBody) error {
+	t := b.Task.Packages
+	if t == nil {
+		return fieldError("body.task.packages.server_ids", "Choose at least one server.", nil)
+	}
+	// Changing packages needs Engineer, as on the Packages page.
+	ids, err := k.servers("body.task.packages.server_ids", t.ServerIDs, auth.Engineer)
+	if err != nil {
+		return err
+	}
+	out := *t
+	out.ServerIDs = ids
+	out.Mode = cmpOr(t.Mode, packages.ModeAll)
+	out.Reboot = cmpOr(t.Reboot, "never")
+	out.Message = strings.Join(strings.Fields(t.Message), " ")
+	if out.Reboot == "never" {
+		out.SkipIfLoggedIn, out.Message = false, ""
+	}
+	out.Parallel = max(out.Parallel, 1)
+	k.c.task.Packages = &out
+	return nil
+}
+
 func (k *scheduleChecker) verify(b ScheduleBody) error {
 	t := b.Task.Verify
 	if t == nil {
@@ -615,6 +657,7 @@ type taskRun struct {
 	results []ScheduleRunDest
 	files   int
 	bytes   int64
+	mu      sync.Mutex // guards results when servers run side by side
 }
 
 func (h *scheduleHandler) runTask(ctx context.Context, t *jobs.Task) (any, error) {
@@ -671,6 +714,8 @@ func (h *scheduleHandler) runTask(ctx context.Context, t *jobs.Task) (any, error
 		return r.verify(ctx)
 	case "software-update":
 		return r.software(ctx)
+	case "package-upgrade":
+		return r.packages(ctx)
 	}
 	return fail(fmt.Errorf("Unknown action %q.", r.plan.Action))
 }
@@ -694,6 +739,8 @@ func (r *taskRun) rows(ends []ScheduleEndView) {
 }
 
 func (r *taskRun) begin(i int, phase string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	now := time.Now()
 	r.results[i].State, r.results[i].StartedAt = "running", &now
 	r.save()
@@ -705,6 +752,8 @@ func (r *taskRun) begin(i int, phase string) {
 
 // end records how row i went; note says what happened when it worked.
 func (r *taskRun) end(ctx context.Context, i int, err error, note string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	row := &r.results[i]
 	now := time.Now()
 	row.FinishedAt = &now
@@ -726,6 +775,8 @@ func (r *taskRun) end(ctx context.Context, i int, err error, note string) {
 }
 
 func (r *taskRun) skip(i int, note string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	now := time.Now()
 	r.results[i].State, r.results[i].Note, r.results[i].FinishedAt = "skipped", note, &now
 	r.t.Logf("%s: skipped, %s", r.results[i].Name, strings.ToLower(note[:1])+note[1:])
