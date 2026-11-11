@@ -283,6 +283,13 @@ var policies = map[string]policy{
 	"delete-service":        onServer(auth.Engineer),
 	"reload-services":       onServer(auth.Engineer),
 
+	// Processes. Viewers get the list without command lines (they can carry
+	// passwords); details need Operator (environment only for Engineers).
+	"list-processes":   onServer(auth.Viewer),
+	"get-process":      onServer(auth.Operator),
+	"signal-processes": onServer(auth.Engineer),
+	"renice-processes": onServer(auth.Engineer),
+
 	// Notes on a server: anyone who sees it reads them, Operators write.
 	"list-server-notes":  onServer(auth.Viewer),
 	"create-server-note": onServer(auth.Operator),
