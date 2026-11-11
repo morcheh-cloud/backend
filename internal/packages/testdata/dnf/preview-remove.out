@@ -1,0 +1,13 @@
+@@ meta
+pm dnf
+@@ out
+Package Arch   Version    Repository      Size
+Removing:
+ less   x86_64 685-1.fc42 updates    413.4 KiB
+
+Transaction Summary:
+ Removing:           1 package
+
+After this operation, 413 KiB will be freed (install 0 B, remove 413 KiB).
+Operation aborted by the user.
+@@ installed

@@ -1,0 +1,285 @@
+@@ meta
+pm zypper
+tz +0000
+@@ reboot-pkgs
+@@ installed
+openSUSE-release-appliance-docker	15.6-lp156.417.4.1	x86_64	79	System/Fhs	ii	openSUSE Leap 15.6	1777056514
+cracklib-dict-small	2.9.11-150600.1.90	x86_64	259081	System/Libraries	ii	Small dictionary for cracklib, a password checking library	1777056514
+libsemanage-conf	3.5-150600.1.48	x86_64	2321	System/Libraries	ii	Configuration for the SELinux policy management library	1777056514
+boost-license1_66_0	1.66.0-150200.12.7.1	noarch	1338	Development/Libraries/C and C++	ii	Boost License	1777056514
+crypto-policies	20230920.570ea89-150600.3.16.1	noarch	122433	Productivity/Networking/Security	ii	System-wide crypto policies	1777056514
+libldap-data	2.4.46-150600.25.3.1	noarch	6593	Productivity/Networking/LDAP/Clients	ii	Configuration file for system-wide defaults for all uses of libldap	1777056514
+libssh-config	0.9.8-150600.11.12.1	x86_64	159	Productivity/Networking/SSH	ii	SSH library configuration files	1777056514
+libtirpc-netconfig	1.3.4-150300.3.23.1	x86_64	1962	System/Base	ii	Netconfig configuration file for TI-RPC Library	1777056514
+file-magic	5.32-7.14.1	noarch	5916442	Productivity/File utilities	ii	Database for libmagic to help identify files	1777056514
+system-user-root	20190513-3.3.1	noarch	186	System/Fhs	ii	System user and group root	1777056514
+filesystem	15.0-11.8.1	x86_64	535	System/Fhs	ii	Basic Directory Layout	1777056514
+glibc	2.38-150600.14.46.1	x86_64	6854586	System/Libraries	ii	Standard Shared Libraries (from the GNU C Library)	1777056514
+libuuid1	2.39.3-150600.4.21.1	x86_64	30848	System/Libraries	ii	Library to generate UUIDs	1777056514
+libsmartcols1	2.39.3-150600.4.21.1	x86_64	256144	System/Libraries	ii	Column-based text sort engine	1777056514
+libsasl2-3	2.1.28-150600.7.14.1	x86_64	117448	System/Libraries	ii	Simple Authentication and Security Layer (SASL) library	1777056514
+libnghttp2-14	1.40.0-150600.25.5.1	x86_64	167124	System/Libraries	ii	Shared library for nghttp2	1777056514
+liblzma5	5.4.1-150600.3.3.1	x86_64	288832	System/Libraries	ii	Lempel?Ziv?Markov chain algorithm compression library	1777056514
+libfa1	1.14.1-150600.3.3.1	x86_64	84024	System/Shells	ii	Finite automaton library for Augeas	1777056514
+libcom_err2	1.47.0-150600.4.6.2	x86_64	40928	System/Filesystems	ii	E2fsprogs error reporting library	1777056514
+libblkid1	2.39.3-150600.4.21.1	x86_64	371728	System/Libraries	ii	Filesystem detection library	1777056514
+libfdisk1	2.39.3-150600.4.21.1	x86_64	497440	System/Libraries	ii	Filesystem detection library	1777056514
+libz1	1.2.13-150500.4.6.1	x86_64	114781	Unspecified	ii	Library implementing the DEFLATE compression algorithm	1777056514
+libxml2-2	2.10.3-150500.5.38.1	x86_64	1692676	Unspecified	ii	A Library to Manipulate XML Files	1777056514
+libunistring2	0.9.10-1.1	x86_64	1581296	System/Libraries	ii	GNU Unicode string library	1777056514
+update-alternatives	1.19.0.4-150000.4.7.1	x86_64	71334	System/Management	ii	Maintain symbolic links determining default commands	1777056514
+libsqlite3-0	3.51.3-150000.3.39.1	x86_64	1479400	System/Libraries	ii	Shared libraries for the Embeddable SQL Database Engine	1777056514
+libpcre1	8.45-150000.20.13.1	x86_64	938521	System/Libraries	ii	A library for Perl-compatible regular expressions	1777056514
+liblua5_3-5	5.3.6-3.6.1	x86_64	237296	System/Libraries	ii	The Lua integration library	1777056514
+libkeyutils1	1.6.3-5.6.1	x86_64	45242	System/Kernel	ii	Key utilities library	1777056514
+libjitterentropy3	3.4.1-150000.1.12.1	x86_64	47775	System/Libraries	ii	Jitter entropy generator shared library	1777056515
+libgmp10	6.1.2-4.9.1	x86_64	711445	System/Libraries	ii	Shared library for the GNU MP Library	1777056515
+libgcc_s1	15.2.0+git10201-150000.1.9.1	x86_64	178992	System/Base	ii	C compiler runtime library	1777056515
+libmagic1	5.32-7.14.1	x86_64	138472	System/Libraries	ii	Library for heuristic file type identification	1777056515
+libidn2-0	2.2.0-3.6.1	x86_64	117152	Unspecified	ii	Support for Internationalized Domain Names (IDN)	1777056515
+libstdc++6	15.2.0+git10201-150000.1.9.1	x86_64	2493704	System/Libraries	ii	The standard C++ shared library	1777056515
+libpsl5	0.20.1-150000.3.3.1	x86_64	73004	System/Libraries	ii	C library for the Publix Suffix List	1777056515
+libncurses6	6.1-150000.5.33.1	x86_64	1120048	System/Libraries	ii	Terminal control library	1777056515
+terminfo-base	6.1-150000.5.33.1	x86_64	1180453	System/Base	ii	A terminal descriptions database	1777056515
+ncurses-utils	6.1-150000.5.33.1	x86_64	228744	System/Base	ii	Tools using the new curses libraries	1777056515
+libverto1	0.2.6-3.20	x86_64	21820	Development/Libraries/C and C++	ii	Runtime libraries for libverto	1777056515
+libpopt0	1.16-3.22	x86_64	124686	System/Libraries	ii	A C library for parsing command line parameters	1777056515
+libnpth0	1.5-2.11	x86_64	76479	System/Libraries	ii	New GNU Portable Threads library	1777056515
+libattr1	2.4.47-2.19	x86_64	46233	System/Libraries	ii	A dynamic library for filesystem extended attribute support	1777056515
+fillup	1.42-2.18	x86_64	41439	System/Base	ii	Tool for Merging Config Files	1777056515
+libcap-ng0	0.7.9-4.37	x86_64	49486	System/Libraries	ii	An alternate Linux/POSIX capabilities library	1777056515
+libcrypt1	4.4.15-150300.4.7.1	x86_64	265249	System/Libraries	ii	Extended crypt library for DES, MD5, Blowfish and others	1777056515
+perl-base	5.26.1-150300.17.20.1	x86_64	4300357	Development/Languages/Perl	ii	The Perl interpreter	1777056515
+libbrotlicommon1	1.0.7-150200.3.5.1	x86_64	133320	System/Libraries	ii	Common Library for Brotli Compression	1777056515
+libboost_system1_66_0	1.66.0-150200.12.7.1	x86_64	18720	System/Libraries	ii	Boost.System runtime library	1777056515
+libbrotlidec1	1.0.7-150200.3.5.1	x86_64	47016	System/Libraries	ii	Library for Brotli Decompression	1777056515
+libboost_thread1_66_0	1.66.0-150200.12.7.1	x86_64	175568	System/Libraries	ii	Boost.Thread runtime libraries	1777056515
+libzstd1	1.5.5-150600.1.3	x86_64	799904	System/Libraries	ii	Zstd compression library	1777056515
+libsepol2	3.5-150600.1.49	x86_64	735584	System/Libraries	ii	SELinux binary policy manipulation library	1777056515
+libpcre2-8-0	10.42-150600.1.26	x86_64	964906	System/Libraries	ii	A library for Perl-compatible regular expressions	1777056515
+libgpg-error0	1.47-150600.1.3	x86_64	1130218	Development/Libraries/C and C++	ii	Library That Defines Common Error Values for All GnuPG Components	1777056515
+kubic-locale-archive	2.38-150600.18.3	noarch	3077583	System/Libraries	ii	Minimal locale archive for very small systems	1777056515
+libsigc-2_0-0	2.12.1-150600.1.2	x86_64	129863	System/Libraries	ii	Typesafe Signal Framework for C++	1777056515
+libksba8	1.6.4-150600.1.2	x86_64	403911	Development/Libraries/C and C++	ii	A X.509 Library	1777056515
+libbz2-1	1.0.8-150400.1.122	x86_64	120168	System/Libraries	ii	The bzip2 runtime library	1777056515
+libeconf0	0.5.2-150400.3.6.1	x86_64	44652	Development/Libraries/C and C++	ii	Enhanced config file parser ala systemd	1777056516
+libcap2	2.63-150400.3.6.1	x86_64	59937	System/Libraries	ii	Library for Capabilities (linux-privs) Support	1777056516
+libaudit1	3.0.6-150400.4.16.1	x86_64	113384	System/Libraries	ii	Library for interfacing with the kernel audit subsystem	1777056516
+libelf1	0.185-150400.5.8.3	x86_64	100952	System/Libraries	ii	Library to read and write ELF files	1777056516
+libyaml-cpp0_6	0.6.3-150400.4.3.1	x86_64	498853	Development/Libraries/C and C++	ii	YAML parser and emitter in C++	1777056516
+libreadline7	7.0-150400.27.6.1	x86_64	396155	System/Libraries	ii	The Readline Library	1777056516
+libdw1	0.185-150400.5.8.3	x86_64	635464	System/Libraries	ii	Library to access DWARF debugging information	1777056516
+bash	4.4-150400.27.6.1	x86_64	1114818	System/Shells	ii	The GNU Bourne-Again Shell	1777056516
+bash-sh	4.4-150400.27.6.1	x86_64	0	System/Shells	ii	Handle behaviour of /bin/sh	1777056516
+cpio	2.13-150400.3.6.1	x86_64	299632	Productivity/Archiving/Backup	ii	A Backup and Archiving Utility	1777056516
+libaugeas0	1.14.1-150600.3.3.1	x86_64	333888	System/Shells	ii	A library for changing configuration files	1777056516
+libopenssl3	3.1.4-150600.5.50.1	x86_64	6698817	Unspecified	ii	Secure Sockets and Transport Layer Security	1777056516
+libselinux1	3.5-150600.3.3.1	x86_64	171314	System/Libraries	ii	SELinux runtime library	1777056516
+libglib-2_0-0	2.78.6-150600.4.35.1	x86_64	2018969	System/Libraries	ii	General-Purpose Utility Library	1777056516
+libgcrypt20	1.10.3-150600.3.9.1	x86_64	2179485	System/Libraries	ii	The GNU Crypto Library	1777056516
+libudev1	254.27-150600.4.62.1	x86_64	287082	Unspecified	ii	Dynamic library to access udev device information	1777056516
+login_defs	4.17.2-150600.17.18.1	noarch	17288	System/Base	ii	The login.defs configuration file	1777056516
+libldap-2_4-2	2.4.46-150600.25.3.1	x86_64	394848	Productivity/Networking/LDAP/Clients	ii	OpenLDAP Client Libraries	1777056516
+libmount1	2.39.3-150600.4.21.1	x86_64	445088	System/Libraries	ii	Device mount library	1777056516
+krb5	1.20.1-150600.11.14.1	x86_64	2047995	Unspecified	ii	MIT Kerberos5 implementation	1777056516
+libssh4	0.9.8-150600.11.12.1	x86_64	481476	System/Libraries	ii	SSH library	1777056516
+libcurl4	8.14.1-150600.4.40.1	x86_64	906720	Unspecified	ii	Library for transferring data from URLs	1777056516
+libacl1	2.2.52-4.3.1	x86_64	35424	System/Libraries	ii	A dynamic library for accessing POSIX Access Control Lists	1777056516
+libassuan0	2.5.5-150000.4.7.1	x86_64	169941	Development/Libraries/C and C++	ii	IPC library used by GnuPG version 2	1777056516
+libzio1	1.06-2.20	x86_64	41084	System/Libraries	ii	A Library for Accessing Compressed Text Files	1777056517
+info	6.5-4.17	x86_64	324284	Productivity/Publishing/Texinfo	ii	A Stand-Alone Terminal-Based Info Browser	1777056517
+libcrack2	2.9.11-150600.1.90	x86_64	38896	System/Libraries	ii	Library to crack passwords using dictionaries	1777056517
+cracklib	2.9.11-150600.1.90	x86_64	180623	Development/Libraries/C and C++	ii	Library to crack passwords using dictionaries	1777056517
+libzck1	1.1.16-150600.9.3	x86_64	81262	System/Libraries	ii	Zchunk library	1777056517
+libsemanage2	3.5-150600.1.48	x86_64	274584	System/Libraries	ii	SELinux policy management library	1777056517
+sed	4.9-150600.1.4	x86_64	322003	System/Base	ii	A Stream-Oriented Non-Interactive Text Editor	1777056517
+findutils	4.8.0-150300.3.3.2	x86_64	632509	Productivity/File utilities	ii	The GNU versions of find utilities (find and xargs)	1777056517
+libtirpc3	1.3.4-150300.3.23.1	x86_64	224420	System/Libraries	ii	Transport Independent RPC Library	1777056517
+patterns-base-fips	20200505-lp156.17.3.1	x86_64	50	Metapackages	ii	FIPS 140-3 specific packages	1777056517
+libusb-1_0-0	1.0.24-150400.3.3.1	x86_64	157497	System/Libraries	ii	USB Library	1777056517
+coreutils	8.32-150400.9.9.1	x86_64	6520615	System/Base	ii	GNU Core Utilities	1777056517
+pinentry	1.1.0-4.3.1	x86_64	241350	Productivity/Other	ii	Collection of Simple PIN or Passphrase Entry Dialogs	1777056517
+grep	3.1-150000.4.6.1	x86_64	894546	Productivity/Text/Utilities	ii	Print lines matching a pattern	1777056517
+gawk	4.2.1-150000.3.3.1	x86_64	3268508	Productivity/Text/Utilities	ii	GNU awk	1777056517
+diffutils	3.6-4.3.1	x86_64	435223	Productivity/Text/Utilities	ii	GNU diff Utilities	1777056517
+libnsl2	1.2.0-2.44	x86_64	135250	System/Libraries	ii	Network Support Library (NIS/NIS+)	1777056517
+gpg2	2.4.4-150600.3.15.1	x86_64	8733422	Productivity/Networking/Security	ii	File encryption, decryption, signature creation and verification utility	1777056517
+permissions	20240826-150600.10.18.2	x86_64	107343	Productivity/Security	ii	SUSE Linux Default Permissions	1777056518
+libgpgme11	1.23.0-150600.3.5.1	x86_64	372958	System/Libraries	ii	Programmatic library interface to GnuPG	1777056518
+openSUSE-release	15.6-lp156.417.4.1	x86_64	233568	System/Fhs	ii	openSUSE Leap 15.6	1777056518
+rpm-config-SUSE	1-150400.14.3.1	noarch	40277	System/Packages	ii	SUSE specific RPM configuration files	1777056518
+rpm-ndb	4.14.3-150400.59.16.1	x86_64	3150908	System/Packages	ii	The RPM Package Manager, ndb only version	1777056518
+pam	1.3.0-150000.6.86.1	x86_64	1632792	System/Libraries	ii	A Security Tool that Provides Authentication for Applications	1777056518
+libsolv-tools-base	0.7.34-150600.8.19.2	x86_64	757438	System/Management	ii	Utilities used by libzypp to manage .solv files	1777056518
+libsubid5	4.17.2-150600.17.18.1	x86_64	191032	System/Base	ii	A library to manage subordinate uid and gid ranges	1777056518
+libzypp	17.37.18-150600.3.82.1	x86_64	11103437	System/Packages	ii	Library for package, patch, pattern and product management	1777056518
+shadow	4.17.2-150600.17.18.1	x86_64	3932825	System/Base	ii	Utilities to Manage User and Group Accounts	1777056518
+zypper	1.14.94-150600.10.52.1	x86_64	8277486	System/Packages	ii	Command line software manager using libzypp	1777056519
+sysuser-shadow	3.2-150400.3.5.3	noarch	2388	System/Packages	ii	Tool to execute sysusers.d with shadow utilities	1777056519
+system-group-hardware	20170617-150400.24.2.1	noarch	358	System/Fhs	ii	Hardware related system groups	1777056519
+libutempter0	1.1.6-3.42	x86_64	47764	Development/Libraries/C and C++	ii	Shared library of utempter	1777056519
+util-linux	2.39.3-150600.4.21.1	x86_64	6699940	System/Base	ii	A collection of basic system utilities (core part)	1777056519
+aaa_base	84.87+git20180409.04c9dae-150300.10.28.2	x86_64	277689	System/Fhs	ii	openSUSE Base Package	1777056519
+liblz4-1	1.9.4-150600.1.4	x86_64	145384	System/Libraries	ii	Hash-based predictive Lempel-Ziv compressor	1777056520
+openssl	3.1.4-150600.2.1	noarch	246	Productivity/Networking/Security	ii	Secure Sockets and Transport Layer Security	1777056520
+curl	8.14.1-150600.4.40.1	x86_64	567396	Unspecified	ii	A Tool for Transferring Data from URLs	1777056520
+timezone	2025b-150600.91.6.2	x86_64	1312057	System/Base	ii	Time Zone Descriptions	1777056520
+libsystemd0	254.27-150600.4.62.1	x86_64	1076330	Unspecified	ii	Component library for systemd	1777056520
+openssl-3	3.1.4-150600.5.50.1	x86_64	2705658	Unspecified	ii	Secure Sockets and Transport Layer Security	1777056520
+libffi7	3.2.1.git259-10.8	x86_64	40572	System/Libraries	ii	Foreign Function Interface Library	1777056520
+openSUSE-build-key	1.0-lp156.8.2	noarch	26236	System/Packages	ii	The public gpg keys for rpm package signature verification	1777056520
+libtasn1-6	4.13-150000.4.14.1	x86_64	76320	System/Libraries	ii	ASN.1 parsing library	1777056520
+libtasn1	4.13-150000.4.14.1	x86_64	122557	Productivity/Networking/Security	ii	ASN.1 parsing library	1777056520
+netcfg	11.6-150000.3.6.1	noarch	893541	System/Base	ii	Network Configuration Files in /etc	1777056520
+libprocps8	3.3.17-150000.7.42.1	x86_64	80920	System/Libraries	ii	The procps library	1777056520
+procps	3.3.17-150000.7.42.1	x86_64	680248	System/Monitoring	ii	The ps utilities for /proc	1777056520
+libp11-kit0	0.23.22-150500.8.3.1	x86_64	1811021	System/Libraries	ii	Library to work with PKCS#11 modules	1777056520
+p11-kit	0.23.22-150500.8.3.1	x86_64	276806	Development/Libraries/C and C++	ii	Library to work with PKCS#11 modules	1777056520
+p11-kit-tools	0.23.22-150500.8.3.1	x86_64	261922	Development/Libraries/C and C++	ii	Library to work with PKCS#11 modules -- Tools	1777056520
+ca-certificates	2+git20240416.98ae794-150300.4.3.3	noarch	27693	Productivity/Networking/Security	ii	Utilities for system wide CA certificate installation	1777056520
+ca-certificates-mozilla	2.84-150200.44.1	noarch	613506	Productivity/Networking/Security	ii	CA certificates for OpenSSL	1777056520
+file	5.32-7.14.1	x86_64	83261	Productivity/File utilities	ii	A Tool to Determine File Types	1794384967
+libsepol1	3.1-150400.1.70	x86_64	709896	System/Libraries	ii	SELinux binary policy manipulation library	1794384967
+busybox	1.37.0-150500.10.17.1	x86_64	1267240	Unspecified	ii	Minimalist variant of UNIX utilities linked in a single executable	1794384967
+busybox-which	1.37.0-150500.7.11.1	noarch	0	Unspecified	ii	Busybox applets replacing which	1794384967
+less	643-150600.3.3.1	x86_64	364373	Productivity/Text/Utilities	ii	Text File Browser and Pager Similar to more	1794384967
+@@ auto
+bash
+bash-sh
+boost-license1_66_0
+busybox
+busybox-which
+coreutils
+cpio
+cracklib
+crypto-policies
+diffutils
+file
+file-magic
+fillup
+findutils
+gawk
+gpg2
+grep
+info
+krb5
+libacl1
+libassuan0
+libattr1
+libaudit1
+libaugeas0
+libblkid1
+libboost_system1_66_0
+libboost_thread1_66_0
+libbrotlicommon1
+libbrotlidec1
+libbz2-1
+libcap-ng0
+libcap2
+libcom_err2
+libcrack2
+libcrypt1
+libcurl4
+libdw1
+libeconf0
+libelf1
+libfa1
+libfdisk1
+libffi7
+libgcc_s1
+libgcrypt20
+libglib-2_0-0
+libgmp10
+libgpg-error0
+libgpgme11
+libidn2-0
+libjitterentropy3
+libkeyutils1
+libksba8
+libldap-2_4-2
+libldap-data
+liblua5_3-5
+liblz4-1
+liblzma5
+libmagic1
+libmount1
+libncurses6
+libnghttp2-14
+libnpth0
+libnsl2
+libopenssl3
+libp11-kit0
+libpcre1
+libpcre2-8-0
+libpopt0
+libprocps8
+libpsl5
+libreadline7
+libsasl2-3
+libselinux1
+libsemanage-conf
+libsemanage2
+libsepol1
+libsepol2
+libsigc-2_0-0
+libsmartcols1
+libsolv-tools-base
+libsqlite3-0
+libssh-config
+libssh4
+libstdc++6
+libsubid5
+libsystemd0
+libtasn1
+libtasn1-6
+libtirpc-netconfig
+libtirpc3
+libudev1
+libunistring2
+libusb-1_0-0
+libutempter0
+libuuid1
+libverto1
+libxml2-2
+libyaml-cpp0_6
+libz1
+libzck1
+libzio1
+libzstd1
+libzypp
+login_defs
+ncurses-utils
+openssl
+openssl-3
+p11-kit
+p11-kit-tools
+pam
+pattern:fips
+perl-base
+permissions
+pinentry
+rpm-config-SUSE
+sed
+system-group-hardware
+system-user-root
+sysuser-shadow
+terminfo-base
+update-alternatives
+util-linux
+@@ held
+
+There are no package locks defined.
+
+@@ upgradable
+Warning: Repository 'Update repository of openSUSE Backports' metadata expired since 2026-07-10 11:19:15 UTC.
+Warning: Repository 'Main Update Repository' metadata expired since 2026-10-13 22:33:04 UTC.
+
+
+@@ autoremove
+Warning: Repository 'Update repository of openSUSE Backports' metadata expired since 2026-07-10 11:19:15 UTC.
+Warning: Repository 'Main Update Repository' metadata expired since 2026-10-13 22:33:04 UTC.
+
+
+@@ meta
+lists 1794384903.4953989450
+cache 0

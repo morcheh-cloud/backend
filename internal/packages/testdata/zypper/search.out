@@ -1,0 +1,11 @@
+@@ meta
+pm zypper
+@@ zypper
+Warning: Repository 'Update repository of openSUSE Backports' metadata expired since 2026-07-10 11:19:15 UTC.
+Warning: Repository 'Main Update Repository' metadata expired since 2026-10-13 22:33:04 UTC.
+
+
+
+S  | Name | Summary                                           | Type
+---+------+---------------------------------------------------+--------
+   | htop | An Interactive text-mode Process Viewer for Linux | package

@@ -1,0 +1,29 @@
+@@ meta
+pm dnf
+@@ rpm
+package htop is not installed
+@@ files
+package htop is not installed
+@@ depends
+@@ rdepends
+@@ remote
+Available packages
+Name           : htop
+Epoch          : 0
+Version        : 3.4.1
+Release        : 1.fc42
+Architecture   : x86_64
+Download size  : 200.1 KiB
+Installed size : 456.4 KiB
+Source         : htop-3.4.1-1.fc42.src.rpm
+Repository     : updates
+Summary        : Interactive process viewer
+URL            : https://htop.dev/
+License        : GPL-2.0-or-later
+Description    : htop is an interactive text-mode process viewer for Linux, similar to
+               : top(1).
+Vendor         : Fedora Project
+@@ versions
+Available packages
+htop.x86_64 3.3.0-7.fc42 fedora
+htop.x86_64 3.4.1-1.fc42 updates

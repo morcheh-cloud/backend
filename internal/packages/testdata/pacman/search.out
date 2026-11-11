@@ -1,0 +1,9 @@
+@@ meta
+pm pacman
+@@ pacman
+extra/bashtop 0.9.25-2
+    Linux resource monitor
+extra/evisum 0.6.4-1
+    GUI top/htop-like process viewer using EFL
+extra/htop 3.5.3-1
+    Interactive process viewer

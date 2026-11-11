@@ -1,0 +1,91 @@
+@@ meta
+pm apt
+@@ status
+Package: less
+Status: install ok installed
+Priority: important
+Section: text
+Installed-Size: 309
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Architecture: amd64
+Multi-Arch: foreign
+Version: 590-2ubuntu2.1
+Depends: libc6 (>= 2.34), libtinfo6 (>= 6)
+Description: pager program similar to more
+ This package provides "less", a file pager (that is, a memory-efficient
+ utility for displaying text one screenful at a time). Less has many
+ more features than the basic pager "more". As part of the GNU project,
+ it is widely regarded as the standard pager on UNIX-derived systems.
+ .
+ Also provided are "lessecho", a simple utility for ensuring arguments
+ with spaces are correctly quoted; "lesskey", a tool for modifying the
+ standard (vi-like) keybindings; and "lesspipe", a filter for specific
+ types of input, such as .doc or .txt.gz files.
+Homepage: http://www.greenwoodsoftware.com/less/
+Original-Maintainer: Milan Kupcevic <milan@debian.org>
+@@ show
+Package: less
+Priority: important
+Section: text
+Installed-Size: 309
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Architecture: amd64
+Version: 590-2ubuntu2.1
+Depends: libc6 (>= 2.34), libtinfo6 (>= 6)
+Filename: pool/main/l/less/less_590-2ubuntu2.1_amd64.deb
+Size: 141544
+MD5sum: 4fa22ce1c9a77178c0122a368a61e031
+SHA1: 2afdd29124150a9862324d7d31201186478677c8
+SHA256: f26481c7f5e492e7536f9e75a9aa237f4772b637cdc933f356bc567e180b8a39
+SHA512: 81dcdc9d33759d3841859b953dc298b5f8ea97bc1e62a33446d9118970d802f94db54c8bec0fac7517b8fe38964e63fc7545f766cb101eba374d7dabd941f113
+Homepage: http://www.greenwoodsoftware.com/less/
+Description: pager program similar to more
+Description-md5: a2c2d2eff1fb9762b71faf7540cf8dce
+Multi-Arch: foreign
+Original-Maintainer: Milan Kupcevic <milan@debian.org>
+Origin: Ubuntu
+Bugs: https://bugs.launchpad.net/ubuntu/+filebug
+Task: minimal
+
+@@ policy
+less:
+  Installed: 590-2ubuntu2.1
+  Candidate: 590-2ubuntu2.1
+  Version table:
+ *** 590-2ubuntu2.1 500
+        500 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages
+        500 http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages
+        100 /var/lib/dpkg/status
+     590-2ubuntu2 500
+        500 http://archive.ubuntu.com/ubuntu noble/main amd64 Packages
+@@ rdepends
+less
+Reverse Depends:
+@@ files
+/.
+/usr
+/usr/bin
+/usr/bin/less
+/usr/bin/lessecho
+/usr/bin/lesskey
+/usr/bin/lesspipe
+/usr/lib
+/usr/lib/mime
+/usr/lib/mime/packages
+/usr/lib/mime/packages/less
+/usr/share
+/usr/share/doc
+/usr/share/doc/less
+/usr/share/doc/less/LESSOPEN
+/usr/share/doc/less/NEWS.gz
+/usr/share/doc/less/README.Debian
+/usr/share/doc/less/changelog.Debian.gz
+/usr/share/doc/less/copyright
+/usr/share/man
+/usr/share/man/man1
+/usr/share/man/man1/less.1.gz
+/usr/share/man/man1/lessecho.1.gz
+/usr/share/man/man1/lesskey.1.gz
+/usr/share/man/man1/lesspipe.1.gz
+/usr/bin/lessfile
+/usr/share/man/man1/lessfile.1.gz

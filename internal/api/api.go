@@ -103,6 +103,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerFirewall(api, servers)
 	registerUsers(api, servers)
 	registerServices(api, servers)
+	registerPackages(api, servers)
 	registerPower(api, servers)
 	registerServerNotes(api, servers)
 	proxies := newProxyHandler(servers)

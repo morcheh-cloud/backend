@@ -1,0 +1,38 @@
+@@ meta
+pm apt
+@@ status
+@@ show
+Package: htop
+Architecture: amd64
+Version: 3.3.0-4build1
+Priority: optional
+Section: utils
+Origin: Ubuntu
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Original-Maintainer: Daniel Lange <DLange@debian.org>
+Bugs: https://bugs.launchpad.net/ubuntu/+filebug
+Installed-Size: 424
+Depends: libc6 (>= 2.38), libncursesw6 (>= 6), libnl-3-200 (>= 3.2.7), libnl-genl-3-200 (>= 3.2.7), libtinfo6 (>= 6)
+Suggests: lm-sensors, lsof, strace
+Filename: pool/main/h/htop/htop_3.3.0-4build1_amd64.deb
+Size: 170528
+MD5sum: 78586619a6b67a87d729b6374995da86
+SHA1: 0dc603ec018f2614bb8b35264dbfb0fc78374f1e
+SHA256: ee0e9cffc789788164214bac9b6e285a5127c07be1815129875c6c538ba849c6
+SHA512: 200f1902f737672d753b86a799208b8bcc57e37eb8732004d616946845687de1d91382c1d5592505977c9d073844bd126e08ee95e922b1b1e407172d6f39ee74
+Homepage: https://htop.dev/
+Description: interactive processes viewer
+Description-md5: 8eb5aa19b3c92a975dc78e2165f6688d
+Task: cloud-image, cloud-image, server, ubuntu-server-raspi, lubuntu-desktop, ubuntu-mate-core, ubuntu-mate-desktop, ubuntu-budgie-desktop-minimal, ubuntu-budgie-desktop, ubuntu-budgie-desktop-raspi
+
+@@ policy
+htop:
+  Installed: (none)
+  Candidate: 3.3.0-4build1
+  Version table:
+     3.3.0-4build1 500
+        500 http://archive.ubuntu.com/ubuntu noble/main amd64 Packages
+@@ rdepends
+htop
+Reverse Depends:
+@@ files

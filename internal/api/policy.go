@@ -223,6 +223,17 @@ var policies = map[string]policy{
 	"save-fail2ban-filter":     onServer(auth.Engineer),
 	"test-fail2ban-filter":     onServer(auth.Engineer),
 
+	// System packages.
+	"get-packages":          onServer(auth.Viewer),
+	"get-package":           onServer(auth.Viewer),
+	"search-packages":       onServer(auth.Viewer),
+	"package-history":       onServer(auth.Viewer),
+	"refresh-package-lists": onServer(auth.Operator),
+	"preview-packages":      onServer(auth.Engineer),
+	"run-package-action":    onServer(auth.Engineer),
+	"mark-packages":         onServer(auth.Engineer),
+	"set-auto-updates":      onServer(auth.Engineer),
+
 	// The firewall on a server.
 	"get-firewall":             onServer(auth.Viewer),
 	"firewall-raw":             onServer(auth.Operator),

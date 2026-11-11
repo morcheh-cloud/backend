@@ -1,0 +1,8 @@
+@@ meta
+pm apk
+@@ out
+World updated, but the following packages are not removed due to:
+  busybox: alpine-baselayout
+
+OK: 8230 KiB in 16 packages
+@@ installed

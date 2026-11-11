@@ -1,0 +1,56 @@
+@@ meta
+pm apk
+@@ apkinfo
+busybox-1.37.0-r30 description:
+Size optimized toolbox of many common UNIX utilities
+
+busybox-1.37.0-r30 webpage:
+https://busybox.net/
+
+busybox-1.37.0-r30 installed size:
+794 KiB
+
+busybox-1.37.0-r30 depends on:
+so:libc.musl-x86_64.so.1
+
+busybox-1.37.0-r30 provides:
+cmd:busybox=1.37.0-r30
+
+busybox-1.37.0-r30 is required by:
+busybox-binsh-1.37.0-r30
+
+busybox-1.37.0-r30 contains:
+bin/busybox
+etc/securetty
+etc/busybox-paths.d/busybox
+etc/logrotate.d/acpid
+etc/network/if-up.d/dad
+etc/udhcpc/udhcpc.conf
+usr/share/udhcpc/default.script
+
+busybox-1.37.0-r30 triggers:
+/bin
+/usr/bin
+/sbin
+/usr/sbin
+/lib/modules/*
+/usr/lib/modules/*
+
+busybox-1.37.0-r30 has auto-install rule:
+
+busybox-1.37.0-r30 affects auto-installation of:
+ssl_client-1.37.0-r30
+
+busybox-1.37.0-r30 replaces:
+busybox-initscripts
+
+busybox-1.37.0-r30 license:
+GPL-2.0-only
+
+@@ apklist
+busybox-1.37.0-r30 x86_64 {busybox} (GPL-2.0-only) [installed]
+@@ policy
+busybox policy:
+  1.37.0-r30:
+    lib/apk/db/installed
+    https://dl-cdn.alpinelinux.org/alpine/v3.23/main

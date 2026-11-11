@@ -561,3 +561,8 @@ func PreflightScript(r Recipe, ports []int) string {
 	b.WriteString("exit 0\n")
 	return b.String()
 }
+
+// Lib is the shell library every software script starts with: PM is the
+// server's package manager, and pkg_wait, pkg_refresh, pkg_install,
+// pkg_remove, pkg_upgrade and need_root work on any of them.
+func Lib() string { return lib }

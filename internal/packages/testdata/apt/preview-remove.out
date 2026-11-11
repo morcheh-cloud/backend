@@ -1,0 +1,11 @@
+@@ meta
+pm apt
+@@ out
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be REMOVED:
+  less
+0 upgraded, 0 newly installed, 1 to remove and 4 not upgraded.
+Remv less [590-2ubuntu2.1]
+@@ installed

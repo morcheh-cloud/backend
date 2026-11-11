@@ -1,0 +1,20 @@
+@@ meta
+pm apt
+@@ out
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following additional packages will be installed:
+  libnl-3-200 libnl-genl-3-200
+Suggested packages:
+  lm-sensors lsof strace
+The following NEW packages will be installed:
+  htop libnl-3-200 libnl-genl-3-200
+0 upgraded, 3 newly installed, 0 to remove and 4 not upgraded.
+Inst libnl-3-200 (3.7.0-0.3build1.1 Ubuntu:24.04/noble-updates [amd64])
+Inst libnl-genl-3-200 (3.7.0-0.3build1.1 Ubuntu:24.04/noble-updates [amd64])
+Inst htop (3.3.0-4build1 Ubuntu:24.04/noble [amd64])
+Conf libnl-3-200 (3.7.0-0.3build1.1 Ubuntu:24.04/noble-updates [amd64])
+Conf libnl-genl-3-200 (3.7.0-0.3build1.1 Ubuntu:24.04/noble-updates [amd64])
+Conf htop (3.3.0-4build1 Ubuntu:24.04/noble [amd64])
+@@ installed

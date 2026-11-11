@@ -1,0 +1,45 @@
+@@ meta
+pm zypper
+@@ rpm
+package htop is not installed
+@@ files
+package htop is not installed
+@@ depends
+@@ rdepends
+@@ remote
+Warning: Repository 'Update repository of openSUSE Backports' metadata expired since 2026-07-10 11:19:15 UTC.
+Warning: Repository 'Main Update Repository' metadata expired since 2026-10-13 22:33:04 UTC.
+
+
+
+
+Information for package htop:
+-----------------------------
+Repository     : Update repository of openSUSE Backports
+Name           : htop
+Version        : 3.4.1-bp156.2.6.1
+Arch           : x86_64
+Vendor         : openSUSE
+Installed Size : 445.8 KiB
+Installed      : No
+Status         : not installed
+Source package : htop-3.4.1-bp156.2.6.1.src
+Upstream URL   : https://htop.dev
+Summary        : An Interactive text-mode Process Viewer for Linux
+Description    : 
+    htop is an interactive text-mode process viewer for Linux. It aims to be a
+    better 'top' and requires ncurses.
+
+@@ zversions
+Warning: Repository 'Update repository of openSUSE Backports' metadata expired since 2026-07-10 11:19:15 UTC.
+Warning: Repository 'Main Update Repository' metadata expired since 2026-10-13 22:33:04 UTC.
+
+
+
+S  | Name | Type    | Version           | Arch   | Repository
+---+------+---------+-------------------+--------+----------------------------------------
+   | htop | package | 3.4.1-bp156.2.6.1 | x86_64 | Update repository of openSUSE Backports
+   | htop | package | 3.4.0-bp156.2.3.1 | x86_64 | Update repository of openSUSE Backports
+   | htop | package | 3.3.0-bp156.1.1   | x86_64 | Main Repository
+   | htop | package | 3.4.1-bp156.2.6.1 | i586   | Update repository of openSUSE Backports
+   | htop | package | 3.4.0-bp156.2.3.1 | i586   | Update repository of openSUSE Backports

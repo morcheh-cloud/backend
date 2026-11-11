@@ -1,0 +1,30 @@
+@@ meta
+pm apk
+@@ apkinfo
+htop-3.4.1-r2 description:
+Interactive process viewer
+
+htop-3.4.1-r2 webpage:
+https://htop.dev/
+
+htop-3.4.1-r2 installed size:
+285 KiB
+
+htop-3.4.1-r2 depends on:
+so:libc.musl-x86_64.so.1
+so:libncursesw.so.6
+
+htop-3.4.1-r2 provides:
+cmd:htop=3.4.1-r2
+
+htop-3.4.1-r2 has auto-install rule:
+
+htop-3.4.1-r2 license:
+GPL-2.0-or-later
+
+@@ apklist
+htop-3.4.1-r2 x86_64 {htop} (GPL-2.0-or-later)
+@@ policy
+htop policy:
+  3.4.1-r2:
+    https://dl-cdn.alpinelinux.org/alpine/v3.23/main

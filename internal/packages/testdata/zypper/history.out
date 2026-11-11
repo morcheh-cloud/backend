@@ -1,0 +1,15 @@
+@@ meta
+pm zypper
+tz +0000
+@@ zypp
+2026-11-11 08:16:07|command|root@6097d76eada2|'zypper' '-n' 'in' 'less'|
+2026-11-11 08:16:07|install|file|5.32-7.14.1|x86_64||repo-oss|10426a981b8e076f6e3a88d8699405c5c95590930a64876e53b14eab2756af10d0540df6f725a18d5b48a4631dd58003418089f669ef5f35a34e7d1f2f24a5ad|
+2026-11-11 08:16:07|install|libsepol1|3.1-150400.1.70|x86_64||repo-oss|50120827b37a88aeee8285f39efb0b3bfd56f589000570eafb070ab9db83e6f790256836b9d8b2e82f7ead8a23acf2b611ee3d044d396395ca794f40cc6ab40e|
+2026-11-11 08:16:07|install|busybox|1.37.0-150500.10.17.1|x86_64||repo-sle-update|a70ad478cc365f56d751d482a562872a3cb22d20430cba378a47c9a26d42b479|
+2026-11-11 08:16:07|install|busybox-which|1.37.0-150500.7.11.1|noarch||repo-sle-update|216f5960428aa9becb43b3ef2b393acc56ec6936ef409e56313b868a22dc178d|
+2026-11-11 08:16:07|install|less|643-150600.3.3.1|x86_64|root@6097d76eada2|repo-sle-update|b1a37a1fd79ad087fff8ec5119ab227c46a4550e90d53c7c67ad014c172368dd|
+2026-11-11 08:16:07|patch  |openSUSE-SLE-15.6-2024-2060|1|noarch|repo-sle-update|important|security|not-needed|applied|
+2026-11-11 08:16:07|patch  |openSUSE-SLE-15.6-2025-1867|1|noarch|repo-sle-update|important|recommended|not-needed|applied|
+2026-11-11 08:16:07|patch  |openSUSE-SLE-15.6-2025-3271|1|noarch|repo-sle-update|moderate|security|not-needed|applied|
+2026-11-11 08:16:07|patch  |openSUSE-SLE-15.6-2026-236|1|noarch|repo-sle-update|important|security|not-needed|applied|
+2026-11-11 08:16:07|patch  |openSUSE-SLE-15.6-2026-758|1|noarch|repo-sle-update|important|security|not-needed|applied|

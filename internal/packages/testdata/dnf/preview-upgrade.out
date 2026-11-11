@@ -1,0 +1,50 @@
+@@ meta
+pm dnf
+@@ out
+Updating and loading repositories:
+Repositories loaded.
+Package                                        Arch   Version          Repository                            Size
+Upgrading:
+ dnf5                                          x86_64 5.2.18.0-3.fc42  updates                            2.8 MiB
+   replacing dnf5                              x86_64 5.2.18.0-2.fc42  4d50ae1e19014c5b9629dfcf8915b996   2.8 MiB
+ dnf5-plugins                                  x86_64 5.2.18.0-3.fc42  updates                            1.3 MiB
+   replacing dnf5-plugins                      x86_64 5.2.18.0-2.fc42  4d50ae1e19014c5b9629dfcf8915b996   1.3 MiB
+ elfutils-default-yama-scope                   noarch 0.195-1.fc42     updates                            1.8 KiB
+   replacing elfutils-default-yama-scope       noarch 0.194-1.fc42     4d50ae1e19014c5b9629dfcf8915b996   1.8 KiB
+ elfutils-libelf                               x86_64 0.195-1.fc42     updates                            1.2 MiB
+   replacing elfutils-libelf                   x86_64 0.194-1.fc42     4d50ae1e19014c5b9629dfcf8915b996   1.1 MiB
+ elfutils-libs                                 x86_64 0.195-1.fc42     updates                          687.5 KiB
+   replacing elfutils-libs                     x86_64 0.194-1.fc42     4d50ae1e19014c5b9629dfcf8915b996 687.4 KiB
+ fedora-release-common                         noarch 42-31            updates                           20.2 KiB
+   replacing fedora-release-common             noarch 42-30            4d50ae1e19014c5b9629dfcf8915b996  20.2 KiB
+ fedora-release-container                      noarch 42-31            updates                            0.0   B
+   replacing fedora-release-container          noarch 42-30            4d50ae1e19014c5b9629dfcf8915b996   0.0   B
+ fedora-release-identity-container             noarch 42-31            updates                            1.4 KiB
+   replacing fedora-release-identity-container noarch 42-30            4d50ae1e19014c5b9629dfcf8915b996   1.4 KiB
+ krb5-libs                                     x86_64 1.21.3-7.fc42    updates                            2.3 MiB
+   replacing krb5-libs                         x86_64 1.21.3-6.fc42    4d50ae1e19014c5b9629dfcf8915b996   2.3 MiB
+ libdnf5                                       x86_64 5.2.18.0-3.fc42  updates                            3.8 MiB
+   replacing libdnf5                           x86_64 5.2.18.0-2.fc42  4d50ae1e19014c5b9629dfcf8915b996   3.8 MiB
+ libdnf5-cli                                   x86_64 5.2.18.0-3.fc42  updates                          920.8 KiB
+   replacing libdnf5-cli                       x86_64 5.2.18.0-2.fc42  4d50ae1e19014c5b9629dfcf8915b996 920.8 KiB
+ libsolv                                       x86_64 0.7.37-2.fc42    updates                          979.9 KiB
+   replacing libsolv                           x86_64 0.7.36-2.fc42    4d50ae1e19014c5b9629dfcf8915b996 979.6 KiB
+ openssl-libs                                  x86_64 1:3.2.6-4.fc42   updates                            7.8 MiB
+   replacing openssl-libs                      x86_64 1:3.2.6-3.fc42   4d50ae1e19014c5b9629dfcf8915b996   7.8 MiB
+ rpm-sequoia                                   x86_64 1.10.2-2.fc42    updates                            2.4 MiB
+   replacing rpm-sequoia                       x86_64 1.10.1-1.fc42    4d50ae1e19014c5b9629dfcf8915b996   2.4 MiB
+ tzdata                                        noarch 2026b-1.fc42     updates                            1.6 MiB
+   replacing tzdata                            noarch 2025c-1.fc42     4d50ae1e19014c5b9629dfcf8915b996   1.6 MiB
+ vim-data                                      noarch 2:9.2.390-1.fc42 updates                           10.2 KiB
+   replacing vim-data                          noarch 2:9.2.280-1.fc42 4d50ae1e19014c5b9629dfcf8915b996  10.2 KiB
+ vim-minimal                                   x86_64 2:9.2.390-1.fc42 updates                            1.7 MiB
+   replacing vim-minimal                       x86_64 2:9.2.280-1.fc42 4d50ae1e19014c5b9629dfcf8915b996   1.7 MiB
+
+Transaction Summary:
+ Upgrading:         17 packages
+ Replacing:         17 packages
+
+Total size of inbound packages is 9 MiB. Need to download 9 MiB.
+After this operation, 69 KiB extra will be used (install 28 MiB, remove 27 MiB).
+Operation aborted by the user.
+@@ installed

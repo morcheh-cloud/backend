@@ -1,0 +1,87 @@
+@@ meta
+pm zypper
+@@ rpm
+Name        : less
+Version     : 643
+Release     : 150600.3.3.1
+Architecture: x86_64
+Install Date: Wed Nov 11 08:16:07 2026
+Group       : Productivity/Text/Utilities
+Size        : 364373
+License     : BSD-2-Clause OR GPL-3.0-or-later
+Signature   : RSA/SHA256, Wed Jun 12 09:37:57 2024, Key ID 70af9e8139db7c82
+Source RPM  : less-643-150600.3.3.1.src.rpm
+Build Date  : Wed Jun 12 09:37:43 2024
+Build Host  : h03-ch2a
+Relocations : (not relocatable)
+Packager    : https://www.suse.com/
+Vendor      : SUSE LLC <https://www.suse.com/>
+URL         : https://www.greenwoodsoftware.com/less/
+Summary     : Text File Browser and Pager Similar to more
+Description :
+less is a text file browser and pager similar to more. It allows
+backward as well as forward movement within a file. Also, less does not
+have to read the entire input file before starting. It is possible to
+start an editor at any time from within less.
+Distribution: SUSE Linux Enterprise 15
+@@ files
+/etc/lesskey
+/etc/lesskey.bin
+/usr/bin/less
+/usr/bin/lessclose.sh
+/usr/bin/lessecho
+/usr/bin/lesskey
+/usr/bin/lessopen.sh
+/usr/share/doc/packages/less
+/usr/share/doc/packages/less/NEWS
+/usr/share/doc/packages/less/README.SUSE
+/usr/share/licenses/less
+/usr/share/licenses/less/COPYING
+/usr/share/licenses/less/LICENSE
+/usr/share/man/man1/less.1.gz
+/usr/share/man/man1/lessecho.1.gz
+/usr/share/man/man1/lesskey.1.gz
+@@ depends
+bash
+bash-sh
+busybox-which
+file
+glibc
+libncurses6
+@@ rdepends
+@@ remote
+Warning: Repository 'Update repository of openSUSE Backports' metadata expired since 2026-07-10 11:19:15 UTC.
+Warning: Repository 'Main Update Repository' metadata expired since 2026-10-13 22:33:04 UTC.
+
+
+
+
+Information for package less:
+-----------------------------
+Repository     : Update repository with updates from SUSE Linux Enterprise 15
+Name           : less
+Version        : 643-150600.3.3.1
+Arch           : x86_64
+Vendor         : SUSE LLC <https://www.suse.com/>
+Installed Size : 355.8 KiB
+Installed      : Yes
+Status         : up-to-date
+Source package : less-643-150600.3.3.1.src
+Upstream URL   : https://www.greenwoodsoftware.com/less/
+Summary        : Text File Browser and Pager Similar to more
+Description    : 
+    less is a text file browser and pager similar to more. It allows
+    backward as well as forward movement within a file. Also, less does not
+    have to read the entire input file before starting. It is possible to
+    start an editor at any time from within less.
+
+@@ zversions
+Warning: Repository 'Update repository of openSUSE Backports' metadata expired since 2026-07-10 11:19:15 UTC.
+Warning: Repository 'Main Update Repository' metadata expired since 2026-10-13 22:33:04 UTC.
+
+
+
+S  | Name | Type    | Version          | Arch   | Repository
+---+------+---------+------------------+--------+-------------------------------------------------------------
+i+ | less | package | 643-150600.3.3.1 | x86_64 | Update repository with updates from SUSE Linux Enterprise 15
+v  | less | package | 643-150600.1.37  | x86_64 | Main Repository

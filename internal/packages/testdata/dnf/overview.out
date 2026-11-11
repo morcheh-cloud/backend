@@ -1,0 +1,269 @@
+@@ meta
+pm dnf
+tz +0000
+@@ reboot-pkgs
+@@ installed
+libgcc	15.2.1-7.fc42	x86_64	272988	Unspecified	ii	GCC version 15 shared support library	1777189645
+publicsuffix-list-dafsa	20260116-1.fc42	noarch	72062	Unspecified	ii	Cross-vendor public domain suffix database in DAFSA form	1777189645
+libssh-config	0.11.4-1.fc42	noarch	277	Unspecified	ii	Configuration files for libssh	1777189645
+fedora-release-identity-container	42-30	noarch	1481	Unspecified	ii	Package providing the identity for Fedora Container Base Image	1777189645
+fedora-gpg-keys	42-1	noarch	131254	Unspecified	ii	Fedora RPM keys	1777189645
+fedora-repos	42-1	noarch	4971	Unspecified	ii	Fedora package repositories	1777189645
+fedora-release-common	42-30	noarch	20680	Unspecified	ii	Fedora release files	1777189645
+fedora-release-container	42-30	noarch	0	Unspecified	ii	Base package for Fedora container specific default configurations	1777189645
+setup	2.15.0-13.fc42	noarch	738161	Unspecified	ii	A set of system configuration and setup files	1777189645
+filesystem	3.18-47.fc42	x86_64	112	Unspecified	ii	The basic directory layout for a Linux system	1777189645
+basesystem	11-22.fc42	noarch	0	Unspecified	ii	The skeleton package which defines a simple Fedora system	1777189645
+pcre2-syntax	10.46-1.fc42	noarch	281891	Unspecified	ii	Documentation for PCRE2 regular expressions	1777189645
+gnulib-l10n	20241231-1.fc42	noarch	670762	Unspecified	ii	Localizations for Gnulib	1777189645
+coreutils-common	9.6-8.fc42	x86_64	11657549	Unspecified	ii	coreutils common optional components	1777189646
+ncurses-base	6.5-5.20250125.fc42	noarch	334656	Unspecified	ii	Descriptions of common terminals	1777189646
+bash	5.2.37-1.fc42	x86_64	8547020	Unspecified	ii	The GNU Bourne Again shell	1777189646
+ncurses-libs	6.5-5.20250125.fc42	x86_64	969007	Unspecified	ii	Ncurses libraries	1777189646
+zlib-ng-compat	2.2.5-2.fc42	x86_64	140920	Unspecified	ii	Zlib implementation provided by zlib-ng	1777189646
+xz-libs	1:5.8.1-4.fc42	x86_64	223045	Unspecified	ii	Libraries for decoding LZMA compression	1777189646
+libstdc++	15.2.1-7.fc42	x86_64	2969173	Unspecified	ii	GNU Standard C++ Library	1777189646
+bzip2-libs	1.0.8-20.fc42	x86_64	86612	Unspecified	ii	Libraries for applications using bzip2	1777189646
+libzstd	1.5.7-1.fc42	x86_64	827222	Unspecified	ii	Zstd shared library	1777189646
+gmp	1:6.3.0-4.fc42	x86_64	830744	Unspecified	ii	GNU arbitrary precision library	1777189646
+libxcrypt	4.5.2-1.fc42	x86_64	292181	Unspecified	ii	Extended crypt library for descrypt, md5crypt, bcrypt, and others	1777189646
+fmt	11.1.4-1.fc42	x86_64	270205	Unspecified	ii	Small, safe and fast formatting library for C++	1777189646
+libxml2	2.12.10-1.fc42	x86_64	1776364	Unspecified	ii	Library providing XML and HTML support	1777189646
+popt	1.19-8.fc42	x86_64	135954	Unspecified	ii	C library for parsing command line parameters	1777189646
+json-c	0.18-2.fc42	x86_64	88786	Unspecified	ii	JSON implementation in C	1777189646
+libeconf	0.7.6-2.fc42	x86_64	66118	Unspecified	ii	Enhanced config file parser library	1777189646
+pcre2	10.46-1.fc42	x86_64	714466	Unspecified	ii	Perl-compatible regular expression library	1777189646
+libuuid	2.40.4-10.fc42	x86_64	38221	Unspecified	ii	Universally unique ID library	1777189646
+gdbm-libs	1:1.23-9.fc42	x86_64	132994	Unspecified	ii	Libraries files for gdbm	1777189646
+libffi	3.4.6-5.fc42	x86_64	84275	Unspecified	ii	A portable foreign function interface library	1777189646
+libtasn1	4.20.0-1.fc42	x86_64	180523	Unspecified	ii	The ASN.1 library used in GNUTLS	1777189646
+p11-kit	0.26.2-1.fc42	x86_64	2614386	Unspecified	ii	Library for loading and sharing PKCS#11 modules	1777189646
+libunistring	1.1-9.fc42	x86_64	1808725	Unspecified	ii	GNU Unicode string library	1777189646
+libidn2	2.3.8-1.fc42	x86_64	569884	Unspecified	ii	Library to support IDNA2008 internationalized domain names	1777189646
+crypto-policies	20251125-1.git3839d0e.fc42	noarch	146536	Unspecified	ii	System-wide crypto policies	1777189646
+libblkid	2.40.4-10.fc42	x86_64	268682	Unspecified	ii	Block device ID library	1777189646
+grep	3.11-10.fc42	x86_64	1042106	Unspecified	ii	Pattern matching utilities	1777189646
+elfutils-libelf	0.194-1.fc42	x86_64	1173092	Unspecified	ii	Library to read and write ELF files	1777189646
+sqlite-libs	3.47.2-5.fc42	x86_64	1584886	Unspecified	ii	Shared library for the sqlite3 embeddable SQL database engine.	1777189646
+lz4-libs	1.10.0-2.fc42	x86_64	161141	Unspecified	ii	Libaries for lz4	1777189646
+libattr	2.5.2-5.fc42	x86_64	27781	Unspecified	ii	Dynamic library for extended attribute support	1777189646
+libacl	2.3.2-3.fc42	x86_64	39250	Unspecified	ii	Dynamic library for access control list support	1777189646
+readline	8.2-13.fc42	x86_64	496653	Unspecified	ii	A library for editing typed command lines	1777189646
+libsepol	3.8-1.fc42	x86_64	845875	Unspecified	ii	SELinux binary policy manipulation library	1777189646
+libselinux	3.8-3.fc42	x86_64	197701	Unspecified	ii	SELinux library and simple utilities	1777189646
+libmount	2.40.4-10.fc42	x86_64	364818	Unspecified	ii	Device mounting library	1777189646
+sed	4.9-4.fc42	x86_64	877899	Unspecified	ii	A GNU stream text editor	1777189646
+lua-libs	5.4.8-4.fc42	x86_64	288638	Unspecified	ii	Libraries for lua	1777189646
+libsmartcols	2.40.4-10.fc42	x86_64	180626	Unspecified	ii	Formatting library for ls-like programs	1777189646
+libcom_err	1.47.2-3.fc42	x86_64	68721	Unspecified	ii	Common error description library	1777189646
+findutils	1:4.10.0-5.fc42	x86_64	1955391	Unspecified	ii	The GNU versions of find utilities (find and xargs)	1777189646
+gdbm	1:1.23-9.fc42	x86_64	471343	Unspecified	ii	A GNU set of database routines which use extensible hashing	1777189646
+libpsl	0.21.5-5.fc42	x86_64	78272	Unspecified	ii	C library for the Publix Suffix List	1777189646
+cyrus-sasl-lib	2.1.28-30.fc42	x86_64	2409568	Unspecified	ii	Shared libraries needed by applications which use Cyrus SASL	1777189646
+mpfr	4.2.2-1.fc42	x86_64	848691	Unspecified	ii	C library for multiple-precision floating-point computations	1777189646
+nettle	3.10.1-1.fc42	x86_64	809504	Unspecified	ii	A low-level cryptographic library	1777189646
+file-libs	5.46-3.fc42	x86_64	12431131	Unspecified	ii	Libraries for applications using libmagic	1777189646
+libgomp	15.2.1-7.fc42	x86_64	554533	Unspecified	ii	GCC OpenMP v4.5 shared support library	1777189646
+libtool-ltdl	2.5.4-4.fc42	x86_64	71809	Unspecified	ii	Runtime libraries for GNU Libtool Dynamic Module Loader	1777189646
+keyutils-libs	1.6.3-5.fc42	x86_64	59675	Unspecified	ii	Key utilities library	1777189646
+libverto	0.3.2-10.fc42	x86_64	25997	Unspecified	ii	Main loop abstraction library	1777189646
+libyaml	0.2.5-16.fc42	x86_64	137883	Unspecified	ii	YAML 1.1 parser and emitter written in C	1777189646
+libcap-ng	0.9.3-1.fc42	x86_64	70703	Unspecified	ii	Alternate posix capabilities library	1777189646
+audit-libs	4.1.4-1.fc42	x86_64	387900	Unspecified	ii	Dynamic library for libaudit	1777189646
+pam-libs	1.7.0-7.fc42	x86_64	129759	Unspecified	ii	Shared libraries of the PAM package	1777189646
+libcap	2.73-3.fc42	x86_64	212052	Unspecified	ii	Library for getting and setting POSIX.1e capabilities	1777189646
+systemd-libs	257.13-1.fc42	x86_64	2345606	Unspecified	ii	systemd libraries	1777189646
+sdbus-cpp	1.5.0-4.fc42	x86_64	319926	Unspecified	ii	High-level C++ D-Bus library	1777189646
+systemd-standalone-sysusers	257.13-1.fc42	x86_64	283951	Unspecified	ii	Standalone systemd-sysusers binary for use on systems without systemd	1777189646
+libsemanage	3.8.1-2.fc42	x86_64	311699	Unspecified	ii	SELinux binary policy manipulation library	1777189646
+shadow-utils	2:4.17.4-1.fc42	x86_64	4172014	Unspecified	ii	Utilities for managing accounts and shadow password files	1777189646
+alternatives	1.33-3.fc42	x86_64	63720	Unspecified	ii	A tool to maintain symbolic links determining default commands	1777189646
+p11-kit-trust	0.26.2-1.fc42	x86_64	477697	Unspecified	ii	System trust module from p11-kit	1777189646
+openssl-libs	1:3.2.6-3.fc42	x86_64	8197770	Unspecified	ii	A general purpose cryptography library with TLS implementation	1777189646
+coreutils	9.6-8.fc42	x86_64	5673345	Unspecified	ii	A set of basic GNU tools commonly used in shell scripts	1777189646
+ca-certificates	2025.2.80_v9.0.304-1.1.fc42	noarch	2801108	Unspecified	ii	The Mozilla CA root certificate bundle	1777189646
+krb5-libs	1.21.3-6.fc42	x86_64	2393695	Unspecified	ii	The non-admin shared libraries used by Kerberos 5	1777189648
+libtirpc	1.3.7-1.fc42	x86_64	205174	Unspecified	ii	Transport Independent RPC Library	1777189648
+zchunk-libs	1.5.1-2.fc42	x86_64	99373	Unspecified	ii	Zchunk library	1777189648
+libnsl2	2.0.1-3.fc42	x86_64	59254	Unspecified	ii	Public client interface library for NIS(YP) and NIS+	1777189648
+libssh	0.11.4-1.fc42	x86_64	585557	Unspecified	ii	A library implementing the SSH protocol	1777189648
+gzip	1.13-3.fc42	x86_64	402282	Unspecified	ii	GNU data compression program	1777189648
+cracklib	2.9.11-7.fc42	x86_64	248184	Unspecified	ii	A password-checking library	1777189648
+libpwquality	1.4.5-12.fc42	x86_64	419082	Unspecified	ii	A library for password generation and password quality checking	1777189648
+pam	1.7.0-7.fc42	x86_64	1729171	Unspecified	ii	An extensible library which provides authentication for applications	1777189648
+authselect-libs	1.5.1-1.fc42	x86_64	844806	Unspecified	ii	Utility library used by the authselect tool	1777189648
+rpm-sequoia	1.10.1-1.fc42	x86_64	2482195	Unspecified	ii	Implementation of the RPM PGP interface using Sequoia	1777189648
+rpm-libs	4.20.1-1.fc42	x86_64	739152	Unspecified	ii	Libraries for manipulating RPM packages	1777189648
+libsolv	0.7.36-2.fc42	x86_64	1003138	Unspecified	ii	Package dependency solver	1777189648
+libarchive	3.8.1-1.fc42	x86_64	978101	Unspecified	ii	A library for handling streaming archive formats	1777189648
+libevent	2.1.12-15.fc42	x86_64	924738	Unspecified	ii	Abstract asynchronous event notification library	1777189648
+openldap	2.6.13-1.fc42	x86_64	673887	Unspecified	ii	LDAP support libraries	1777189648
+gnutls	3.8.11-3.fc42	x86_64	3824279	Unspecified	ii	A TLS protocol implementation	1777189648
+glib2	2.84.4-1.fc42	x86_64	15394448	Unspecified	ii	A library of handy utility functions	1777189648
+libmodulemd	2.15.2-1.fc42	x86_64	734918	Unspecified	ii	Module metadata manipulation library	1777189648
+libnghttp2	1.64.0-3.fc42	x86_64	174468	Unspecified	ii	A library implementing the HTTP/2 protocol	1777189648
+libbrotli	1.2.0-1.fc42	x86_64	886146	Unspecified	ii	Library for brotli lossless compression algorithm	1777189648
+libcurl	8.11.1-8.fc42	x86_64	854094	Unspecified	ii	A library for getting files from web servers	1777189648
+librepo	1.20.0-1.fc42	x86_64	255001	Unspecified	ii	Repodata downloading library	1777189648
+libdnf5	5.2.18.0-2.fc42	x86_64	4014959	Unspecified	ii	Package management library	1777189648
+libdnf5-cli	5.2.18.0-2.fc42	x86_64	942926	Unspecified	ii	Library for working with a terminal in a command-line package manager	1777189648
+dnf5	5.2.18.0-2.fc42	x86_64	2928942	Unspecified	ii	Command-line package manager	1777189648
+curl	8.11.1-8.fc42	x86_64	461458	Unspecified	ii	A utility for getting files from remote servers (FTP, HTTP, and others)	1777189648
+elfutils-default-yama-scope	0.194-1.fc42	noarch	1810	Unspecified	ii	Default yama attach scope sysctl setting	1777189648
+elfutils-libs	0.194-1.fc42	x86_64	703941	Unspecified	ii	Libraries to handle compiled objects	1777189648
+rpm-build-libs	4.20.1-1.fc42	x86_64	211536	Unspecified	ii	Libraries for building RPM packages	1777189648
+vim-data	2:9.2.280-1.fc42	noarch	10444	Unspecified	ii	Shared data for Vi and Vim	1777189648
+vim-minimal	2:9.2.280-1.fc42	x86_64	1813466	Unspecified	ii	A minimal version of the VIM editor	1777189648
+dnf5-plugins	5.2.18.0-2.fc42	x86_64	1411366	Unspecified	ii	Plugins for dnf5	1777189648
+rpm	4.20.1-1.fc42	x86_64	3202511	Unspecified	ii	The RPM package management system	1777189648
+sudo	1.9.17-2.p1.fc42	x86_64	5289444	Unspecified	ii	Allows restricted root access for specified users	1777189648
+authselect	1.5.1-1.fc42	x86_64	157544	Unspecified	ii	Configures authentication and identity sources from supported profiles	1777189648
+util-linux-core	2.40.4-10.fc42	x86_64	1472684	Unspecified	ii	The most essential utilities from the util-linux suite	1777189648
+gawk	5.3.1-1.fc42	x86_64	1760846	Unspecified	ii	The GNU version of the AWK text processing utility	1777189648
+tar	2:1.35-5.fc42	x86_64	3097140	Unspecified	ii	GNU file archiving program	1777189648
+zstd	1.5.7-1.fc42	x86_64	1789449	Unspecified	ii	Zstd compression library	1777189648
+xz	1:5.8.1-4.fc42	x86_64	1374229	Unspecified	ii	LZMA compression utilities	1777189648
+bzip2	1.0.8-20.fc42	x86_64	101717	Unspecified	ii	File compression utility	1777189648
+tzdata	2025c-1.fc42	noarch	1701202	Unspecified	ii	Timezone data	1777189648
+rootfiles	8.1-38.fc42	noarch	817	Unspecified	ii	The basic required files for the root user's directory	1777189648
+less	685-1.fc42	x86_64	423302	Unspecified	ii	A text file browser similar to more, but better	1794385232
+glibc-common	2.41-18.fc42	x86_64	1062326	Unspecified	ii	Common binaries and locale data for glibc	1794385244
+glibc-minimal-langpack	2.41-18.fc42	x86_64	0	Unspecified	ii	Minimal language packs for glibc.	1794385244
+glibc	2.41-18.fc42	x86_64	6964621	Unspecified	ii	The GNU libc libraries	1794385244
+@@ auto
+alternatives
+audit-libs
+authselect
+authselect-libs
+bzip2-libs
+ca-certificates
+coreutils-common
+cracklib
+crypto-policies
+curl
+cyrus-sasl-lib
+elfutils-default-yama-scope
+elfutils-libelf
+elfutils-libs
+fedora-gpg-keys
+fedora-release-common
+fedora-release-identity-container
+fedora-repos
+file-libs
+findutils
+fmt
+gdbm
+gdbm-libs
+glib2
+glibc
+glibc-common
+gmp
+gnulib-l10n
+gnutls
+grep
+json-c
+keyutils-libs
+krb5-libs
+libacl
+libarchive
+libattr
+libblkid
+libbrotli
+libcap
+libcap-ng
+libcom_err
+libcurl
+libdnf5
+libdnf5-cli
+libeconf
+libevent
+libffi
+libgcc
+libgomp
+libidn2
+libmodulemd
+libmount
+libnghttp2
+libnsl2
+libpsl
+libpwquality
+librepo
+libselinux
+libsemanage
+libsepol
+libsmartcols
+libsolv
+libssh
+libssh-config
+libstdc++
+libtasn1
+libtirpc
+libtool-ltdl
+libunistring
+libuuid
+libverto
+libxcrypt
+libxml2
+libyaml
+libzstd
+lua-libs
+lz4-libs
+mpfr
+ncurses-base
+ncurses-libs
+nettle
+openldap
+openssl-libs
+p11-kit
+p11-kit-trust
+pam
+pam-libs
+pcre2
+pcre2-syntax
+popt
+publicsuffix-list-dafsa
+readline
+rpm-build-libs
+rpm-libs
+rpm-sequoia
+sdbus-cpp
+sed
+setup
+sqlite-libs
+systemd-libs
+vim-data
+xz-libs
+zchunk-libs
+zlib-ng-compat
+@@ held
+@@ upgradable
+dnf5.x86_64                              5.2.18.0-3.fc42  updates
+dnf5-plugins.x86_64                      5.2.18.0-3.fc42  updates
+elfutils-default-yama-scope.noarch       0.195-1.fc42     updates
+elfutils-libelf.x86_64                   0.195-1.fc42     updates
+elfutils-libs.x86_64                     0.195-1.fc42     updates
+fedora-release-common.noarch             42-31            updates
+fedora-release-container.noarch          42-31            updates
+fedora-release-identity-container.noarch 42-31            updates
+krb5-libs.x86_64                         1.21.3-7.fc42    updates
+libdnf5.x86_64                           5.2.18.0-3.fc42  updates
+libdnf5-cli.x86_64                       5.2.18.0-3.fc42  updates
+libsolv.x86_64                           0.7.37-2.fc42    updates
+openssl-libs.x86_64                      1:3.2.6-4.fc42   updates
+rpm-sequoia.x86_64                       1.10.2-2.fc42    updates
+tzdata.noarch                            2026b-1.fc42     updates
+vim-data.noarch                          2:9.2.390-1.fc42 updates
+vim-minimal.x86_64                       2:9.2.390-1.fc42 updates
+@@ security
+Name                   Type     Severity                              Package              Issued
+FEDORA-2026-11d7d4d8f3 security Moderate     vim-data-2:9.2.390-1.fc42.noarch 2026-05-07 01:26:58
+FEDORA-2026-11d7d4d8f3 security Moderate  vim-minimal-2:9.2.390-1.fc42.x86_64 2026-05-07 01:26:58
+FEDORA-2026-6c99aaa6d3 security Important      krb5-libs-1.21.3-7.fc42.x86_64 2026-05-14 04:02:29
+FEDORA-2026-7af660d639 security Moderate   openssl-libs-1:3.2.6-4.fc42.x86_64 2026-05-08 01:24:13
+FEDORA-2026-8df732be8a security Important    rpm-sequoia-1.10.2-2.fc42.x86_64 2026-05-27 01:11:26
+@@ autoremove
+@@ meta
+versionlock 1
+reboot 1
+lists 1794385271.3505688150
+cache 0

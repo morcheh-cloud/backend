@@ -1,0 +1,205 @@
+@@ meta
+pm apt
+tz +0000
+@@ reboot-pkgs
+@@ installed
+apt	2.8.3	amd64	4108	admin	ii 	commandline package manager
+base-files	13ubuntu10.5	amd64	426	admin	ii 	Debian base system miscellaneous files
+base-passwd	3.6.3build1	amd64	254	admin	ii 	Debian base system master password and group files
+bash	5.2.21-2ubuntu4	amd64	1900	shells	ii 	GNU Bourne Again SHell
+bsdutils	1:2.39.3-9ubuntu6.6	amd64	289	utils	ii 	basic utilities from 4.4BSD-Lite
+coreutils	9.4-3ubuntu6.3	amd64	6944	utils	ii 	GNU core utilities
+dash	0.5.12-6ubuntu5	amd64	187	shells	ii 	POSIX-compliant shell
+debconf	1.5.86ubuntu1	all	493	admin	ii 	Debian configuration management system
+debianutils	5.17build1	amd64	224	utils	ii 	Miscellaneous utilities specific to Debian
+diffutils	1:3.10-1ubuntu0.1	amd64	452	utils	ii 	File comparison utilities
+dpkg	1.22.6ubuntu6.6	amd64	6238	admin	ii 	Debian package management system
+e2fsprogs	1.47.0-2.4~exp1ubuntu4.1	amd64	1504	admin	ii 	ext2/ext3/ext4 file system utilities
+findutils	4.9.0-5build1	amd64	552	utils	ii 	utilities for finding files--find, xargs
+gcc-14-base	14.2.0-4ubuntu2~24.04.1	amd64	113	libs	ii 	GCC, the GNU Compiler Collection (base package)
+gpgv	2.4.4-2ubuntu17.6	amd64	337	utils	ii 	GNU privacy guard - signature verification tool
+grep	3.11-4build1	amd64	344	utils	ii 	GNU grep, egrep and fgrep
+gzip	1.12-1ubuntu3.2	amd64	244	utils	ii 	GNU compression utilities
+hostname	3.23+nmu2ubuntu2	amd64	46	admin	ii 	utility to set/show the host name or domain name
+init-system-helpers	1.66ubuntu1	all	130	admin	ii 	helper tools for all init systems
+less	590-2ubuntu2.1	amd64	309	text	ii 	pager program similar to more
+libacl1	2.3.2-1build1.1	amd64	74	libs	ii 	access control list - shared library
+libapt-pkg6.0t64	2.8.3	amd64	3249	libs	ii 	package management runtime library
+libassuan0	2.5.6-1build1	amd64	100	libs	ii 	IPC library for the GnuPG components
+libattr1	1:2.5.2-1ubuntu0.1	amd64	61	libs	ii 	extended attribute handling - shared library
+libaudit-common	1:3.1.2-2.1ubuntu0.1	all	18	libs	ii 	Dynamic library for security auditing - common files
+libaudit1	1:3.1.2-2.1ubuntu0.1	amd64	152	libs	ii 	Dynamic library for security auditing
+libblkid1	2.39.3-9ubuntu6.6	amd64	290	libs	ii 	block device ID library
+libbz2-1.0	1.0.8-5.1ubuntu0.1	amd64	95	libs	ii 	high-quality block-sorting file compressor library - runtime
+libc-bin	2.39-0ubuntu8.9	amd64	2184	libs	ii 	GNU C Library: Binaries
+libc6	2.39-0ubuntu8.9	amd64	13432	libs	ii 	GNU C Library: Shared libraries
+libcap-ng0	0.8.4-2build2	amd64	60	libs	ii 	alternate POSIX capabilities library
+libcap2	1:2.66-5ubuntu2.4	amd64	98	libs	ii 	POSIX 1003.1e capabilities (library)
+libcom-err2	1.47.0-2.4~exp1ubuntu4.1	amd64	57	libs	ii 	common error description library
+libcrypt1	1:4.4.36-4build1	amd64	226	libs	ii 	libcrypt shared library
+libdb5.3t64	5.3.28+dfsg2-7	amd64	1761	libs	ii 	Berkeley v5.3 Database Libraries [runtime]
+libdebconfclient0	0.271ubuntu3	amd64	38	libs	ii 	Debian Configuration Management System (C-implementation library)
+libext2fs2t64	1.47.0-2.4~exp1ubuntu4.1	amd64	538	libs	ii 	ext2/ext3/ext4 file system libraries
+libffi8	3.4.6-1build1	amd64	72	libs	ii 	Foreign Function Interface library runtime
+libgcc-s1	14.2.0-4ubuntu2~24.04.1	amd64	197	libs	ii 	GCC support library
+libgcrypt20	1.10.3-2ubuntu0.2	amd64	1400	libs	ii 	LGPL Crypto library - runtime library
+libgmp10	2:6.3.0+dfsg-2ubuntu6.1	amd64	543	libs	ii 	Multiprecision arithmetic library
+libgnutls30t64	3.8.3-1.1ubuntu3.6	amd64	2360	libs	ii 	GNU TLS library - main runtime library
+libgpg-error0	1.47-3build2.1	amd64	185	libs	ii 	GnuPG development runtime library
+libhogweed6t64	3.9.1-2.2build1.1	amd64	337	libs	ii 	low level cryptographic library (public-key cryptos)
+libidn2-0	2.3.7-2build1.1	amd64	224	libs	ii 	Internationalized domain names (IDNA2008/TR46) library
+liblz4-1	1.9.4-1build1.1	amd64	155	libs	ii 	Fast LZ compression algorithm library - runtime
+liblzma5	5.6.1+really5.4.5-1ubuntu0.4	amd64	379	libs	ii 	XZ-format compression library
+libmd0	1.1.0-2build1.1	amd64	79	libs	ii 	message digest functions from BSD systems - shared library
+libmount1	2.39.3-9ubuntu6.6	amd64	368	libs	ii 	device mounting library
+libncursesw6	6.4+20240113-1ubuntu2.2	amd64	422	libs	ii 	shared libraries for terminal handling (wide character support)
+libnettle8t64	3.9.1-2.2build1.1	amd64	424	libs	ii 	low level cryptographic library (symmetric and one-way cryptos)
+libnpth0t64	1.6-3.1build1	amd64	42	libs	ii 	replacement for GNU Pth using system threads
+libp11-kit0	0.25.3-4ubuntu2.2	amd64	1712	libs	ii 	library for loading and coordinating access to PKCS#11 modules - runtime
+libpam-modules	1.5.3-5ubuntu5.7	amd64	1155	admin	ii 	Pluggable Authentication Modules for PAM
+libpam-modules-bin	1.5.3-5ubuntu5.7	amd64	270	admin	ii 	Pluggable Authentication Modules for PAM - helper binaries
+libpam-runtime	1.5.3-5ubuntu5.7	all	276	admin	ii 	Runtime support for the PAM library
+libpam0g	1.5.3-5ubuntu5.7	amd64	209	libs	ii 	Pluggable Authentication Modules library
+libpcre2-8-0	10.42-4ubuntu2.1	amd64	635	libs	ii 	New Perl Compatible Regular Expression Library- 8 bit runtime files
+libproc2-0	2:4.0.4-4ubuntu3.3	amd64	235	libs	ii 	library for accessing process information from /proc
+libseccomp2	2.5.5-1ubuntu3.1	amd64	143	libs	ii 	high level interface to Linux seccomp filter
+libselinux1	3.5-2ubuntu2.1	amd64	200	libs	ii 	SELinux runtime shared libraries
+libsemanage-common	3.5-1build5	all	26	libs	ii 	Common files for SELinux policy management libraries
+libsemanage2	3.5-1build5	amd64	288	libs	ii 	SELinux policy management library
+libsepol2	3.5-2build1	amd64	751	libs	ii 	SELinux library for manipulating binary security policies
+libsmartcols1	2.39.3-9ubuntu6.6	amd64	172	libs	ii 	smart column output alignment library
+libss2	1.47.0-2.4~exp1ubuntu4.1	amd64	69	libs	ii 	command-line interface parsing library
+libssl3t64	3.0.13-0ubuntu3.16	amd64	6615	libs	ii 	Secure Sockets Layer toolkit - shared libraries
+libstdc++6	14.2.0-4ubuntu2~24.04.1	amd64	3110	libs	ii 	GNU Standard C++ Library v3
+libsystemd0	255.4-1ubuntu8.18	amd64	1028	libs	ii 	systemd utility library
+libtasn1-6	4.19.0-3ubuntu0.24.04.2	amd64	122	libs	ii 	Manage ASN.1 structures (runtime)
+libtinfo6	6.4+20240113-1ubuntu2.2	amd64	556	libs	ii 	shared low-level terminfo library for terminal handling
+libudev1	255.4-1ubuntu8.18	amd64	317	libs	ii 	libudev shared library
+libunistring5	1.1-2build1.1	amd64	1757	libs	ii 	Unicode string library for C
+libuuid1	2.39.3-9ubuntu6.6	amd64	85	libs	ii 	Universally Unique ID library
+libxxhash0	0.8.2-2build1	amd64	90	libs	ii 	shared library for xxhash
+libzstd1	1.5.5+dfsg2-2build1.1	amd64	761	libs	ii 	fast lossless compression algorithm
+login	1:4.13+dfsg1-4ubuntu3.2	amd64	884	admin	ii 	system login tools
+logsave	1.47.0-2.4~exp1ubuntu4.1	amd64	51	admin	ii 	save the output of a command in a log file
+mawk	1.3.4.20240123-1build1	amd64	273	interpreters	ii 	Pattern scanning and text processing language
+mount	2.39.3-9ubuntu6.6	amd64	349	admin	ii 	tools for mounting and manipulating filesystems
+ncurses-base	6.4+20240113-1ubuntu2.2	all	384	misc	ii 	basic terminal type definitions
+ncurses-bin	6.4+20240113-1ubuntu2.2	amd64	647	utils	ii 	terminal-related programs and man pages
+passwd	1:4.13+dfsg1-4ubuntu3.2	amd64	2419	admin	ii 	change and administer password and group data
+perl-base	5.38.2-3.2ubuntu0.6	amd64	7919	perl	ii 	minimal Perl system
+procps	2:4.0.4-4ubuntu3.3	amd64	1800	admin	ii 	/proc file system utilities
+sed	4.9-2ubuntu0.24.04.1	amd64	340	utils	ii 	GNU stream editor for filtering/transforming text
+sensible-utils	0.0.22	all	63	utils	ii 	Utilities for sensible alternative selection
+sysvinit-utils	3.08-6ubuntu3	amd64	107	admin	ii 	System-V-like utilities
+tar	1.35+dfsg-3ubuntu0.4	amd64	716	utils	ii 	GNU version of the tar archiving utility
+ubuntu-keyring	2023.11.28.1	all	29	misc	ii 	GnuPG keys of the Ubuntu archive
+unminimize	0.2.1	amd64	16	devel	ii 	Un-minimize your minimial images or setup
+util-linux	2.39.3-9ubuntu6.6	amd64	3439	utils	ii 	miscellaneous system utilities
+zlib1g	1:1.3.dfsg-3.1ubuntu2.3	amd64	163	libs	ii 	compression library - runtime
+@@ auto
+libdb5.3t64
+@@ dates
+libudev1:amd64.list	1792851113.0000000000
+libcrypt1:amd64.list	1792850864.0000000000
+util-linux.list	1792851114.0000000000
+libsemanage-common.list	1792850979.0000000000
+gcc-14-base:amd64.list	1792851111.0000000000
+libaudit-common.list	1792851116.0000000000
+libsystemd0:amd64.list	1792851113.0000000000
+libpam-modules:amd64.list	1792851119.0000000000
+sed.list	1792851114.0000000000
+libmd0:amd64.list	1792851116.0000000000
+libpam0g:amd64.list	1792851117.0000000000
+login.list	1792851114.0000000000
+libp11-kit0:amd64.list	1792851115.0000000000
+libtasn1-6:amd64.list	1792851115.0000000000
+libpcre2-8-0:amd64.list	1792851116.0000000000
+diffutils.list	1792851112.0000000000
+libxxhash0:amd64.list	1792851033.0000000000
+libapt-pkg6.0t64:amd64.list	1792851113.0000000000
+libacl1:amd64.list	1792851116.0000000000
+e2fsprogs.list	1792851116.0000000000
+libassuan0:amd64.list	1792850814.0000000000
+libunistring5:amd64.list	1792851115.0000000000
+libdb5.3t64:amd64.list	1792851118.0000000000
+libsemanage2:amd64.list	1792850983.0000000000
+hostname.list	1792850797.0000000000
+libhogweed6t64:amd64.list	1792851115.0000000000
+libselinux1:amd64.list	1792851116.0000000000
+libgnutls30t64:amd64.list	1792851115.0000000000
+ncurses-bin.list	1792851114.0000000000
+libpam-runtime.list	1792851116.0000000000
+gzip.list	1792851113.0000000000
+libnpth0t64:amd64.list	1792850936.0000000000
+libgcrypt20:amd64.list	1792851112.0000000000
+libaudit1:amd64.list	1792851116.0000000000
+libtinfo6:amd64.list	1792851117.0000000000
+findutils.list	1792850775.0000000000
+dpkg.list	1792851113.0000000000
+libext2fs2t64:amd64.list	1792851116.0000000000
+libnettle8t64:amd64.list	1792851115.0000000000
+libssl3t64:amd64.list	1792851117.0000000000
+mawk.list	1792851050.0000000000
+debianutils.list	1792850758.0000000000
+libseccomp2:amd64.list	1792851115.0000000000
+libidn2-0:amd64.list	1792851115.0000000000
+liblzma5:amd64.list	1792851113.0000000000
+sensible-utils.list	1792851083.0000000000
+perl-base.list	1792851114.0000000000
+apt.list	1792851115.0000000000
+bash.list	1792850736.0000000000
+debconf.list	1792850754.0000000000
+sysvinit-utils.list	1792851087.0000000000
+passwd.list	1792851117.0000000000
+ncurses-base.list	1792851114.0000000000
+base-passwd.list	1792850732.0000000000
+libss2:amd64.list	1792851117.0000000000
+mount.list	1792851116.0000000000
+libc6:amd64.list	1792851112.0000000000
+grep.list	1792850788.0000000000
+libstdc++6:amd64.list	1792851111.0000000000
+libdebconfclient0:amd64.list	1792850868.0000000000
+libcap2:amd64.list	1792851113.0000000000
+libgcc-s1:amd64.list	1792851111.0000000000
+libffi8:amd64.list	1792850876.0000000000
+logsave.list	1792851116.0000000000
+libpam-modules-bin.list	1792851119.0000000000
+libattr1:amd64.list	1792851116.0000000000
+libgmp10:amd64.list	1792851115.0000000000
+libgpg-error0:amd64.list	1792851112.0000000000
+libblkid1:amd64.list	1792851116.0000000000
+libc-bin.list	1792851114.0000000000
+tar.list	1792851113.0000000000
+procps.list	1792851117.0000000000
+dash.list	1792850749.0000000000
+init-system-helpers.list	1792850801.0000000000
+libsmartcols1:amd64.list	1792851117.0000000000
+libuuid1:amd64.list	1792851117.0000000000
+libsepol2:amd64.list	1792850987.0000000000
+libncursesw6:amd64.list	1792851117.0000000000
+liblz4-1:amd64.list	1792851112.0000000000
+libcap-ng0:amd64.list	1792850850.0000000000
+libcom-err2:amd64.list	1792851117.0000000000
+unminimize.list	1792851120.0000000000
+libzstd1:amd64.list	1792851113.0000000000
+coreutils.list	1792851112.0000000000
+libmount1:amd64.list	1792851116.0000000000
+zlib1g:amd64.list	1792851113.0000000000
+bsdutils.list	1792851112.0000000000
+ubuntu-keyring.list	1792851095.0000000000
+base-files.list	1792851112.0000000000
+libproc2-0:amd64.list	1792851117.0000000000
+libbz2-1.0:amd64.list	1792851112.0000000000
+gpgv.list	1792851114.0000000000
+less.list	1794384725.8063582550
+@@ upgradable
+Listing...
+apt/noble-updates,noble-security 2.8.4ubuntu0.1 amd64 [upgradable from: 2.8.3]
+libapt-pkg6.0t64/noble-updates,noble-security 2.8.4ubuntu0.1 amd64 [upgradable from: 2.8.3]
+libpcre2-8-0/noble-updates,noble-security 10.42-4ubuntu2.2 amd64 [upgradable from: 10.42-4ubuntu2.1]
+perl-base/noble-updates,noble-security 5.38.2-3.2ubuntu0.7 amd64 [upgradable from: 5.38.2-3.2ubuntu0.6]
+@@ autoremove
+@@ meta
+lists 1794361643.0000000000
+cache 0
+auto_value 0

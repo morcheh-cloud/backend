@@ -1,0 +1,8 @@
+@@ meta
+pm apk
+@@ out
+(1/3) Installing ncurses-terminfo-base (6.5_p20251123-r0)
+(2/3) Installing libncursesw (6.5_p20251123-r0)
+(3/3) Installing htop (3.4.1-r2)
+OK: 8949 KiB in 19 packages
+@@ installed

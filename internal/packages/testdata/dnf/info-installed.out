@@ -1,0 +1,88 @@
+@@ meta
+pm dnf
+@@ rpm
+Name        : less
+Version     : 685
+Release     : 1.fc42
+Architecture: x86_64
+Install Date: Wed Nov 11 08:20:32 2026
+Group       : Unspecified
+Size        : 423302
+License     : GPL-3.0-only and BSD-2-Clause
+Signature   : RSA/SHA256, Wed Oct 29 10:02:34 2025, Key ID c8ac4916105ef944
+Source RPM  : less-685-1.fc42.src.rpm
+Build Date  : Thu Oct 23 10:14:50 2025
+Build Host  : buildvm-x86-06.rdu3.fedoraproject.org
+Packager    : Fedora Project
+Vendor      : Fedora Project
+URL         : https://www.greenwoodsoftware.com/less/
+Bug URL     : https://bugz.fedoraproject.org/less
+Summary     : A text file browser similar to more, but better
+Description :
+The less utility is a text file browser that resembles more, but has
+more capabilities.  Less allows you to move backwards in the file as
+well as forwards.  Since less doesn't have to read the entire input file
+before it starts, less starts up more quickly than text editors (for
+example, vi).
+
+You should install less because it is a basic utility for viewing text
+files, and you'll use it frequently.
+@@ files
+/etc/profile.d/less.csh
+/etc/profile.d/less.sh
+/usr/bin/less
+/usr/bin/lessecho
+/usr/bin/lesskey
+/usr/bin/lesspipe.sh
+/usr/lib/.build-id
+/usr/lib/.build-id/6d
+/usr/lib/.build-id/6d/7f96dab49791bc6b8556009a6d92bf132b6cfd
+/usr/lib/.build-id/91
+/usr/lib/.build-id/91/d030f90d94d7126870accba5a15f9bce717619
+/usr/lib/.build-id/e3
+/usr/lib/.build-id/e3/7e687131d77ed1dc91e878ef8b394a4d6f433e
+/usr/share/doc/less
+/usr/share/doc/less/INSTALL
+/usr/share/doc/less/NEWS
+/usr/share/doc/less/README
+/usr/share/licenses/less
+/usr/share/licenses/less/COPYING
+/usr/share/licenses/less/LICENSE
+/usr/share/man/man1/less.1.gz
+/usr/share/man/man1/lessecho.1.gz
+/usr/share/man/man1/lesskey.1.gz
+/usr/share/man/man1/lesspipe.sh.1.gz
+@@ depends
+bash
+glibc
+ncurses-libs
+@@ rdepends
+@@ remote
+Installed packages
+Name            : less
+Epoch           : 0
+Version         : 685
+Release         : 1.fc42
+Architecture    : x86_64
+Installed size  : 413.4 KiB
+Source          : less-685-1.fc42.src.rpm
+From repository : updates
+Summary         : A text file browser similar to more, but better
+URL             : https://www.greenwoodsoftware.com/less/
+License         : GPL-3.0-only and BSD-2-Clause
+Description     : The less utility is a text file browser that resembles more, but has
+                : more capabilities.  Less allows you to move backwards in the file as
+                : well as forwards.  Since less doesn't have to read the entire input file
+                : before it starts, less starts up more quickly than text editors (for
+                : example, vi).
+                : 
+                : You should install less because it is a basic utility for viewing text
+                : files, and you'll use it frequently.
+Vendor          : Fedora Project
+@@ versions
+Installed packages
+less.x86_64 685-1.fc42 updates
+
+Available packages
+less.x86_64 668-2.fc42 fedora
+less.x86_64 685-1.fc42 updates

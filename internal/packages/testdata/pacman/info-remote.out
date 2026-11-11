@@ -1,0 +1,26 @@
+@@ meta
+pm pacman
+@@ local
+@@ sync
+Repository      : extra
+Name            : htop
+Version         : 3.5.3-1
+Description     : Interactive process viewer
+Architecture    : x86_64
+URL             : https://htop.dev/
+Licenses        : GPL
+Groups          : None
+Provides        : None
+Depends On      : libcap  libcap.so=2-64  libnl  ncurses  libncursesw.so=6-64
+Optional Deps   : lm_sensors: show cpu temperatures
+                  lsof: show files opened by a process
+                  strace: attach to a running process
+Conflicts With  : None
+Replaces        : None
+Download Size   : 180.00 KiB
+Installed Size  : 421.16 KiB
+Packager        : Christian Hesse <eworm@archlinux.org>
+Build Date      : Sun Aug 16 16:15:40 2026
+Validated By    : SHA-256 Sum  Signature
+
+@@ files

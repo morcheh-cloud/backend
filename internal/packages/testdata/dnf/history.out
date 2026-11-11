@@ -1,0 +1,304 @@
+@@ meta
+pm dnf
+tz +0000
+@@ dnfhist
+Transaction ID : 3
+Begin time     : 2026-11-11 08:20:44
+Begin rpmdb    : 01ee187f34518c83e97d3f7d0e0ea59ba65a2139465597775a6ac6262d2428fe
+End time       : 2026-11-11 08:20:44
+End rpmdb      : 06c2d07f38b9ea6050dc536c411fe7c80b096b0a8d44f3af8597ac7000189e46
+User           : 0 Super User <root>
+Status         : Ok
+Releasever     : 42
+Description    : dnf -y -q upgrade glibc
+Comment        : 
+Packages altered:
+  Action   Package                                      Reason     Repository
+  Upgrade  glibc-0:2.41-18.fc42.x86_64                  Dependency updates
+  Upgrade  glibc-common-0:2.41-18.fc42.x86_64           Dependency updates
+  Upgrade  glibc-minimal-langpack-0:2.41-18.fc42.x86_64 User       updates
+  Replaced glibc-0:2.41-16.fc42.x86_64                  Dependency @System
+  Replaced glibc-common-0:2.41-16.fc42.x86_64           Dependency @System
+  Replaced glibc-minimal-langpack-0:2.41-16.fc42.x86_64 User       @System
+
+Transaction ID : 2
+Begin time     : 2026-11-11 08:20:32
+Begin rpmdb    : 34fe34567e6797dd9f1721bb7d1e17021c21d4f68c8a1c47179e484e151a7a34
+End time       : 2026-11-11 08:20:32
+End rpmdb      : 01ee187f34518c83e97d3f7d0e0ea59ba65a2139465597775a6ac6262d2428fe
+User           : 0 Super User <root>
+Status         : Ok
+Releasever     : 42
+Description    : dnf -y -q install less
+Comment        : 
+Packages altered:
+  Action  Package                  Reason Repository
+  Install less-0:685-1.fc42.x86_64 User   updates
+
+Transaction ID : 1
+Begin time     : 2026-04-26 07:47:25
+Begin rpmdb    : e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+End time       : 2026-04-26 07:47:31
+End rpmdb      : 6db9a6b741941a53a56ae86460859214a8b7b148c4ca44a30f19286d5219e238
+User           : 0 Super User <root>
+Status         : Ok
+Releasever     : 42
+Description    : dnf5 --config /builddir/result/image/build/image-root/kiwi_dnf5.config -y --disable-plugin=priorities,versionlock --installroot /builddir/result/image/build/image-root --releasever=42 --setopt=install_weak_deps=False --exclude=*-firmware --exclude=dosfstools --exclude=e2fsprogs --exclude=fuse-libs --exclude=geolite2-city --exclude=geolite2-country --exclude=glibc-langpack-en --exclude=gnupg2-smime --exclude=grubby --exclude=kernel --exclude=langpacks-en --exclude=langpacks-en_GB --exclude=libss --exclude=pinentry --exclude=pinentry --exclude=shared-mime-info --exclude=sssd-client --exclude=trousers --exclude=xkeyboard-config install basesystem bash bzip2 coreutils dnf5 dnf5-plugins fedora-release-container filesystem gawk glibc-minimal-langpack gzip rootfiles rpm shadow-utils sudo systemd-standalone-sysusers tar tzdata util-linux-core vim-minimal xz zstd
+Comment        : 
+Packages altered:
+  Action  Package                                              Reason     Repository
+  Install basesystem-0:11-22.fc42.noarch                       User       3bdf7456c67a4502beefb5aad9475722
+  Install bash-0:5.2.37-1.fc42.x86_64                          User       3bdf7456c67a4502beefb5aad9475722
+  Install bzip2-0:1.0.8-20.fc42.x86_64                         User       3bdf7456c67a4502beefb5aad9475722
+  Install gzip-0:1.13-3.fc42.x86_64                            User       3bdf7456c67a4502beefb5aad9475722
+  Install rootfiles-0:8.1-38.fc42.noarch                       User       3bdf7456c67a4502beefb5aad9475722
+  Install rpm-0:4.20.1-1.fc42.x86_64                           User       3bdf7456c67a4502beefb5aad9475722
+  Install shadow-utils-2:4.17.4-1.fc42.x86_64                  User       3bdf7456c67a4502beefb5aad9475722
+  Install tar-2:1.35-5.fc42.x86_64                             User       3bdf7456c67a4502beefb5aad9475722
+  Install zstd-0:1.5.7-1.fc42.x86_64                           User       3bdf7456c67a4502beefb5aad9475722
+  Install coreutils-0:9.6-8.fc42.x86_64                        User       4d50ae1e19014c5b9629dfcf8915b996
+  Install dnf5-0:5.2.18.0-2.fc42.x86_64                        User       4d50ae1e19014c5b9629dfcf8915b996
+  Install dnf5-plugins-0:5.2.18.0-2.fc42.x86_64                User       4d50ae1e19014c5b9629dfcf8915b996
+  Install fedora-release-container-0:42-30.noarch              User       4d50ae1e19014c5b9629dfcf8915b996
+  Install filesystem-0:3.18-47.fc42.x86_64                     User       4d50ae1e19014c5b9629dfcf8915b996
+  Install gawk-0:5.3.1-1.fc42.x86_64                           User       3bdf7456c67a4502beefb5aad9475722
+  Install glibc-minimal-langpack-0:2.41-16.fc42.x86_64         User       4d50ae1e19014c5b9629dfcf8915b996
+  Install sudo-0:1.9.17-2.p1.fc42.x86_64                       User       4d50ae1e19014c5b9629dfcf8915b996
+  Install systemd-standalone-sysusers-0:257.13-1.fc42.x86_64   User       4d50ae1e19014c5b9629dfcf8915b996
+  Install tzdata-0:2025c-1.fc42.noarch                         User       4d50ae1e19014c5b9629dfcf8915b996
+  Install util-linux-core-0:2.40.4-10.fc42.x86_64              User       4d50ae1e19014c5b9629dfcf8915b996
+  Install vim-minimal-2:9.2.280-1.fc42.x86_64                  User       4d50ae1e19014c5b9629dfcf8915b996
+  Install xz-1:5.8.1-4.fc42.x86_64                             User       4d50ae1e19014c5b9629dfcf8915b996
+  Install setup-0:2.15.0-13.fc42.noarch                        Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install ncurses-libs-0:6.5-5.20250125.fc42.x86_64            Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install bzip2-libs-0:1.0.8-20.fc42.x86_64                    Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install popt-0:1.19-8.fc42.x86_64                            Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install rpm-libs-0:4.20.1-1.fc42.x86_64                      Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libacl-0:2.3.2-3.fc42.x86_64                         Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install lz4-libs-0:1.10.0-2.fc42.x86_64                      Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install coreutils-common-0:9.6-8.fc42.x86_64                 Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install gmp-1:6.3.0-4.fc42.x86_64                            Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libattr-0:2.5.2-5.fc42.x86_64                        Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libdnf5-0:5.2.18.0-2.fc42.x86_64                     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libdnf5-cli-0:5.2.18.0-2.fc42.x86_64                 Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install fmt-0:11.1.4-1.fc42.x86_64                           Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install sdbus-cpp-0:1.5.0-4.fc42.x86_64                      Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install json-c-0:0.18-2.fc42.x86_64                          Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install rpm-build-libs-0:4.20.1-1.fc42.x86_64                Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install fedora-release-common-0:42-30.noarch                 Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install mpfr-0:4.2.2-1.fc42.x86_64                           Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install readline-0:8.2-13.fc42.x86_64                        Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install glibc-common-0:2.41-16.fc42.x86_64                   Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install vim-data-2:9.2.280-1.fc42.noarch                     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install xz-libs-1:5.8.1-4.fc42.x86_64                        Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install grep-0:3.11-10.fc42.x86_64                           Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install ncurses-base-0:6.5-5.20250125.fc42.noarch            Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libzstd-0:1.5.7-1.fc42.x86_64                        Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install gnulib-l10n-0:20241231-1.fc42.noarch                 Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install librepo-0:1.20.0-1.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libxml2-0:2.12.10-1.fc42.x86_64                      Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install fedora-repos-0:42-1.noarch                           Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install zchunk-libs-0:1.5.1-2.fc42.x86_64                    Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install fedora-gpg-keys-0:42-1.noarch                        Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install glibc-0:2.41-16.fc42.x86_64                          Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libgcc-0:15.2.1-7.fc42.x86_64                        Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libstdc++-0:15.2.1-7.fc42.x86_64                     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install zlib-ng-compat-0:2.2.5-2.fc42.x86_64                 Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install openssl-libs-1:3.2.6-3.fc42.x86_64                   Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libselinux-0:3.8-3.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libsepol-0:3.8-1.fc42.x86_64                         Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install audit-libs-0:4.1.4-1.fc42.x86_64                     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libeconf-0:0.7.6-2.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libsemanage-0:3.8.1-2.fc42.x86_64                    Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libxcrypt-0:4.5.2-1.fc42.x86_64                      Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install pam-libs-0:1.7.0-7.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install systemd-libs-0:257.13-1.fc42.x86_64                  Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libcap-0:2.73-3.fc42.x86_64                          Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install lua-libs-0:5.4.8-4.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install rpm-sequoia-0:1.10.1-1.fc42.x86_64                   Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install sqlite-libs-0:3.47.2-5.fc42.x86_64                   Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install elfutils-libelf-0:0.194-1.fc42.x86_64                Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install elfutils-libs-0:0.194-1.fc42.x86_64                  Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install file-libs-0:5.46-3.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libgomp-0:15.2.1-7.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install curl-0:8.11.1-8.fc42.x86_64                          Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libarchive-0:3.8.1-1.fc42.x86_64                     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install pcre2-0:10.46-1.fc42.x86_64                          Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install pcre2-syntax-0:10.46-1.fc42.noarch                   Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libblkid-0:2.40.4-10.fc42.x86_64                     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libuuid-0:2.40.4-10.fc42.x86_64                      Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libmount-0:2.40.4-10.fc42.x86_64                     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libsmartcols-0:2.40.4-10.fc42.x86_64                 Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install openldap-0:2.6.13-1.fc42.x86_64                      Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install cyrus-sasl-lib-0:2.1.28-30.fc42.x86_64               Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libevent-0:2.1.12-15.fc42.x86_64                     Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libtool-ltdl-0:2.5.4-4.fc42.x86_64                   Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install gdbm-libs-1:1.23-9.fc42.x86_64                       Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install pam-0:1.7.0-7.fc42.x86_64                            Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install authselect-0:1.5.1-1.fc42.x86_64                     Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libnsl2-0:2.0.1-3.fc42.x86_64                        Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libpwquality-0:1.4.5-12.fc42.x86_64                  Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install authselect-libs-0:1.5.1-1.fc42.x86_64                Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install cracklib-0:2.9.11-7.fc42.x86_64                      Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install sed-0:4.9-4.fc42.x86_64                              Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libtirpc-0:1.3.7-1.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libcom_err-0:1.47.2-3.fc42.x86_64                    Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install gdbm-1:1.23-9.fc42.x86_64                            Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install ca-certificates-0:2025.2.80_v9.0.304-1.1.fc42.noarch Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install findutils-1:4.10.0-5.fc42.x86_64                     Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install crypto-policies-0:20251125-1.git3839d0e.fc42.noarch  Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install krb5-libs-0:1.21.3-6.fc42.x86_64                     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install keyutils-libs-0:1.6.3-5.fc42.x86_64                  Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libverto-0:0.3.2-10.fc42.x86_64                      Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install glib2-0:2.84.4-1.fc42.x86_64                         Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libffi-0:3.4.6-5.fc42.x86_64                         Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libmodulemd-0:2.15.2-1.fc42.x86_64                   Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libyaml-0:0.2.5-16.fc42.x86_64                       Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libsolv-0:0.7.36-2.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install gnutls-0:3.8.11-3.fc42.x86_64                        Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libidn2-0:2.3.8-1.fc42.x86_64                        Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libtasn1-0:4.20.0-1.fc42.x86_64                      Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libunistring-0:1.1-9.fc42.x86_64                     Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install nettle-0:3.10.1-1.fc42.x86_64                        Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install fedora-release-identity-container-0:42-30.noarch     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install elfutils-default-yama-scope-0:0.194-1.fc42.noarch    Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install p11-kit-0:0.26.2-1.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install p11-kit-trust-0:0.26.2-1.fc42.x86_64                 Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libcap-ng-0:0.9.3-1.fc42.x86_64                      Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install alternatives-0:1.33-3.fc42.x86_64                    Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libcurl-0:8.11.1-8.fc42.x86_64                       Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libssh-0:0.11.4-1.fc42.x86_64                        Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libnghttp2-0:1.64.0-3.fc42.x86_64                    Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libpsl-0:0.21.5-5.fc42.x86_64                        Dependency 3bdf7456c67a4502beefb5aad9475722
+  Install libssh-config-0:0.11.4-1.fc42.noarch                 Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install libbrotli-0:1.2.0-1.fc42.x86_64                      Dependency 4d50ae1e19014c5b9629dfcf8915b996
+  Install publicsuffix-list-dafsa-0:20260116-1.fc42.noarch     Dependency 4d50ae1e19014c5b9629dfcf8915b996
+
+@@ rpmlast
+1777189645	basesystem	11-22.fc42
+1777189645	fedora-gpg-keys	42-1
+1777189645	fedora-release-common	42-30
+1777189645	fedora-release-container	42-30
+1777189645	fedora-release-identity-container	42-30
+1777189645	fedora-repos	42-1
+1777189645	filesystem	3.18-47.fc42
+1777189645	gnulib-l10n	20241231-1.fc42
+1777189645	libgcc	15.2.1-7.fc42
+1777189645	libssh-config	0.11.4-1.fc42
+1777189645	pcre2-syntax	10.46-1.fc42
+1777189645	publicsuffix-list-dafsa	20260116-1.fc42
+1777189645	setup	2.15.0-13.fc42
+1777189646	alternatives	1.33-3.fc42
+1777189646	audit-libs	4.1.4-1.fc42
+1777189646	bash	5.2.37-1.fc42
+1777189646	bzip2-libs	1.0.8-20.fc42
+1777189646	ca-certificates	2025.2.80_v9.0.304-1.1.fc42
+1777189646	coreutils	9.6-8.fc42
+1777189646	coreutils-common	9.6-8.fc42
+1777189646	crypto-policies	20251125-1.git3839d0e.fc42
+1777189646	cyrus-sasl-lib	2.1.28-30.fc42
+1777189646	elfutils-libelf	0.194-1.fc42
+1777189646	file-libs	5.46-3.fc42
+1777189646	findutils	1:4.10.0-5.fc42
+1777189646	fmt	11.1.4-1.fc42
+1777189646	gdbm	1:1.23-9.fc42
+1777189646	gdbm-libs	1:1.23-9.fc42
+1777189646	gmp	1:6.3.0-4.fc42
+1777189646	grep	3.11-10.fc42
+1777189646	json-c	0.18-2.fc42
+1777189646	keyutils-libs	1.6.3-5.fc42
+1777189646	libacl	2.3.2-3.fc42
+1777189646	libattr	2.5.2-5.fc42
+1777189646	libblkid	2.40.4-10.fc42
+1777189646	libcap	2.73-3.fc42
+1777189646	libcap-ng	0.9.3-1.fc42
+1777189646	libcom_err	1.47.2-3.fc42
+1777189646	libeconf	0.7.6-2.fc42
+1777189646	libffi	3.4.6-5.fc42
+1777189646	libgomp	15.2.1-7.fc42
+1777189646	libidn2	2.3.8-1.fc42
+1777189646	libmount	2.40.4-10.fc42
+1777189646	libpsl	0.21.5-5.fc42
+1777189646	libselinux	3.8-3.fc42
+1777189646	libsemanage	3.8.1-2.fc42
+1777189646	libsepol	3.8-1.fc42
+1777189646	libsmartcols	2.40.4-10.fc42
+1777189646	libstdc++	15.2.1-7.fc42
+1777189646	libtasn1	4.20.0-1.fc42
+1777189646	libtool-ltdl	2.5.4-4.fc42
+1777189646	libunistring	1.1-9.fc42
+1777189646	libuuid	2.40.4-10.fc42
+1777189646	libverto	0.3.2-10.fc42
+1777189646	libxcrypt	4.5.2-1.fc42
+1777189646	libxml2	2.12.10-1.fc42
+1777189646	libyaml	0.2.5-16.fc42
+1777189646	libzstd	1.5.7-1.fc42
+1777189646	lua-libs	5.4.8-4.fc42
+1777189646	lz4-libs	1.10.0-2.fc42
+1777189646	mpfr	4.2.2-1.fc42
+1777189646	ncurses-base	6.5-5.20250125.fc42
+1777189646	ncurses-libs	6.5-5.20250125.fc42
+1777189646	nettle	3.10.1-1.fc42
+1777189646	openssl-libs	1:3.2.6-3.fc42
+1777189646	p11-kit	0.26.2-1.fc42
+1777189646	p11-kit-trust	0.26.2-1.fc42
+1777189646	pam-libs	1.7.0-7.fc42
+1777189646	pcre2	10.46-1.fc42
+1777189646	popt	1.19-8.fc42
+1777189646	readline	8.2-13.fc42
+1777189646	sdbus-cpp	1.5.0-4.fc42
+1777189646	sed	4.9-4.fc42
+1777189646	shadow-utils	2:4.17.4-1.fc42
+1777189646	sqlite-libs	3.47.2-5.fc42
+1777189646	systemd-libs	257.13-1.fc42
+1777189646	systemd-standalone-sysusers	257.13-1.fc42
+1777189646	xz-libs	1:5.8.1-4.fc42
+1777189646	zlib-ng-compat	2.2.5-2.fc42
+1777189648	authselect	1.5.1-1.fc42
+1777189648	authselect-libs	1.5.1-1.fc42
+1777189648	bzip2	1.0.8-20.fc42
+1777189648	cracklib	2.9.11-7.fc42
+1777189648	curl	8.11.1-8.fc42
+1777189648	dnf5	5.2.18.0-2.fc42
+1777189648	dnf5-plugins	5.2.18.0-2.fc42
+1777189648	elfutils-default-yama-scope	0.194-1.fc42
+1777189648	elfutils-libs	0.194-1.fc42
+1777189648	gawk	5.3.1-1.fc42
+1777189648	glib2	2.84.4-1.fc42
+1777189648	gnutls	3.8.11-3.fc42
+1777189648	gzip	1.13-3.fc42
+1777189648	krb5-libs	1.21.3-6.fc42
+1777189648	libarchive	3.8.1-1.fc42
+1777189648	libbrotli	1.2.0-1.fc42
+1777189648	libcurl	8.11.1-8.fc42
+1777189648	libdnf5	5.2.18.0-2.fc42
+1777189648	libdnf5-cli	5.2.18.0-2.fc42
+1777189648	libevent	2.1.12-15.fc42
+1777189648	libmodulemd	2.15.2-1.fc42
+1777189648	libnghttp2	1.64.0-3.fc42
+1777189648	libnsl2	2.0.1-3.fc42
+1777189648	libpwquality	1.4.5-12.fc42
+1777189648	librepo	1.20.0-1.fc42
+1777189648	libsolv	0.7.36-2.fc42
+1777189648	libssh	0.11.4-1.fc42
+1777189648	libtirpc	1.3.7-1.fc42
+1777189648	openldap	2.6.13-1.fc42
+1777189648	pam	1.7.0-7.fc42
+1777189648	rootfiles	8.1-38.fc42
+1777189648	rpm	4.20.1-1.fc42
+1777189648	rpm-build-libs	4.20.1-1.fc42
+1777189648	rpm-libs	4.20.1-1.fc42
+1777189648	rpm-sequoia	1.10.1-1.fc42
+1777189648	sudo	1.9.17-2.p1.fc42
+1777189648	tar	2:1.35-5.fc42
+1777189648	tzdata	2025c-1.fc42
+1777189648	util-linux-core	2.40.4-10.fc42
+1777189648	vim-data	2:9.2.280-1.fc42
+1777189648	vim-minimal	2:9.2.280-1.fc42
+1777189648	xz	1:5.8.1-4.fc42
+1777189648	zchunk-libs	1.5.1-2.fc42
+1777189648	zstd	1.5.7-1.fc42
+1794385232	less	685-1.fc42
+1794385244	glibc	2.41-18.fc42
+1794385244	glibc-common	2.41-18.fc42
+1794385244	glibc-minimal-langpack	2.41-18.fc42
