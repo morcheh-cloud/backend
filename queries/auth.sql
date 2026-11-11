@@ -92,6 +92,13 @@ DELETE FROM sessions WHERE user_id = @user_id AND id <> @keep;
 -- name: DeleteExpiredSessions :exec
 DELETE FROM sessions WHERE expires_at <= now();
 
+-- name: ListUserSessions :many
+SELECT * FROM sessions WHERE user_id = $1 AND expires_at > now()
+ORDER BY last_seen_at DESC;
+
+-- name: GetUserSession :one
+SELECT * FROM sessions WHERE id = @id AND user_id = @user_id AND expires_at > now();
+
 -- name: CountUserSessions :one
 SELECT count(*)::int FROM sessions WHERE user_id = $1 AND expires_at > now();
 
@@ -99,6 +106,20 @@ SELECT count(*)::int FROM sessions WHERE user_id = $1 AND expires_at > now();
 
 -- name: GetSettings :one
 SELECT * FROM app_settings WHERE id;
+
+-- name: SetSecuritySettings :one
+UPDATE app_settings SET
+    ip_allowlist_enabled = @ip_allowlist_enabled,
+    ip_allowlist = @ip_allowlist,
+    sign_in_channels = @sign_in_channels,
+    alert_new_address = @alert_new_address,
+    alert_failed_sign_ins = @alert_failed_sign_ins,
+    updated_at = now()
+WHERE id
+RETURNING *;
+
+-- name: SetAllowlistEnabled :one
+UPDATE app_settings SET ip_allowlist_enabled = @enabled, updated_at = now() WHERE id RETURNING *;
 
 -- name: SetRegistrationOpen :one
 UPDATE app_settings SET registration_open = @registration_open, updated_at = now() WHERE id RETURNING *;

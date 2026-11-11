@@ -532,14 +532,23 @@ func (q *Queries) GetSessionUser(ctx context.Context, id uuid.UUID) (GetSessionU
 
 const getSettings = `-- name: GetSettings :one
 
-SELECT id, registration_open, updated_at FROM app_settings WHERE id
+SELECT id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins FROM app_settings WHERE id
 `
 
 // ---- Settings ----
 func (q *Queries) GetSettings(ctx context.Context) (AppSetting, error) {
 	row := q.db.QueryRow(ctx, getSettings)
 	var i AppSetting
-	err := row.Scan(&i.ID, &i.RegistrationOpen, &i.UpdatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.RegistrationOpen,
+		&i.UpdatedAt,
+		&i.IpAllowlistEnabled,
+		&i.IpAllowlist,
+		&i.SignInChannels,
+		&i.AlertNewAddress,
+		&i.AlertFailedSignIns,
+	)
 	return i, err
 }
 
@@ -598,6 +607,32 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.LastLoginAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserSession = `-- name: GetUserSession :one
+SELECT id, user_id, token_hash, remember, user_agent, ip, expires_at, last_seen_at, created_at FROM sessions WHERE id = $1 AND user_id = $2 AND expires_at > now()
+`
+
+type GetUserSessionParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetUserSession(ctx context.Context, arg GetUserSessionParams) (Session, error) {
+	row := q.db.QueryRow(ctx, getUserSession, arg.ID, arg.UserID)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.Remember,
+		&i.UserAgent,
+		&i.Ip,
+		&i.ExpiresAt,
+		&i.LastSeenAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1003,6 +1038,41 @@ func (q *Queries) ListUserGrants(ctx context.Context, userID *uuid.UUID) ([]Acce
 	return items, nil
 }
 
+const listUserSessions = `-- name: ListUserSessions :many
+SELECT id, user_id, token_hash, remember, user_agent, ip, expires_at, last_seen_at, created_at FROM sessions WHERE user_id = $1 AND expires_at > now()
+ORDER BY last_seen_at DESC
+`
+
+func (q *Queries) ListUserSessions(ctx context.Context, userID uuid.UUID) ([]Session, error) {
+	rows, err := q.db.Query(ctx, listUserSessions, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.TokenHash,
+			&i.Remember,
+			&i.UserAgent,
+			&i.Ip,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT id, username, email, first_name, full_name, password_hash, role, status, must_change_password, last_login_at, created_at, updated_at FROM users
 WHERE ($1::text IS NULL OR status = $1::text)
@@ -1288,14 +1358,85 @@ func (q *Queries) PutWorkspaceLogo(ctx context.Context, arg PutWorkspaceLogoPara
 	return err
 }
 
+const setAllowlistEnabled = `-- name: SetAllowlistEnabled :one
+UPDATE app_settings SET ip_allowlist_enabled = $1, updated_at = now() WHERE id RETURNING id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins
+`
+
+func (q *Queries) SetAllowlistEnabled(ctx context.Context, enabled bool) (AppSetting, error) {
+	row := q.db.QueryRow(ctx, setAllowlistEnabled, enabled)
+	var i AppSetting
+	err := row.Scan(
+		&i.ID,
+		&i.RegistrationOpen,
+		&i.UpdatedAt,
+		&i.IpAllowlistEnabled,
+		&i.IpAllowlist,
+		&i.SignInChannels,
+		&i.AlertNewAddress,
+		&i.AlertFailedSignIns,
+	)
+	return i, err
+}
+
 const setRegistrationOpen = `-- name: SetRegistrationOpen :one
-UPDATE app_settings SET registration_open = $1, updated_at = now() WHERE id RETURNING id, registration_open, updated_at
+UPDATE app_settings SET registration_open = $1, updated_at = now() WHERE id RETURNING id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins
 `
 
 func (q *Queries) SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error) {
 	row := q.db.QueryRow(ctx, setRegistrationOpen, registrationOpen)
 	var i AppSetting
-	err := row.Scan(&i.ID, &i.RegistrationOpen, &i.UpdatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.RegistrationOpen,
+		&i.UpdatedAt,
+		&i.IpAllowlistEnabled,
+		&i.IpAllowlist,
+		&i.SignInChannels,
+		&i.AlertNewAddress,
+		&i.AlertFailedSignIns,
+	)
+	return i, err
+}
+
+const setSecuritySettings = `-- name: SetSecuritySettings :one
+UPDATE app_settings SET
+    ip_allowlist_enabled = $1,
+    ip_allowlist = $2,
+    sign_in_channels = $3,
+    alert_new_address = $4,
+    alert_failed_sign_ins = $5,
+    updated_at = now()
+WHERE id
+RETURNING id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins
+`
+
+type SetSecuritySettingsParams struct {
+	IpAllowlistEnabled bool        `json:"ip_allowlist_enabled"`
+	IpAllowlist        []byte      `json:"ip_allowlist"`
+	SignInChannels     []uuid.UUID `json:"sign_in_channels"`
+	AlertNewAddress    bool        `json:"alert_new_address"`
+	AlertFailedSignIns bool        `json:"alert_failed_sign_ins"`
+}
+
+func (q *Queries) SetSecuritySettings(ctx context.Context, arg SetSecuritySettingsParams) (AppSetting, error) {
+	row := q.db.QueryRow(ctx, setSecuritySettings,
+		arg.IpAllowlistEnabled,
+		arg.IpAllowlist,
+		arg.SignInChannels,
+		arg.AlertNewAddress,
+		arg.AlertFailedSignIns,
+	)
+	var i AppSetting
+	err := row.Scan(
+		&i.ID,
+		&i.RegistrationOpen,
+		&i.UpdatedAt,
+		&i.IpAllowlistEnabled,
+		&i.IpAllowlist,
+		&i.SignInChannels,
+		&i.AlertNewAddress,
+		&i.AlertFailedSignIns,
+	)
 	return i, err
 }
 

@@ -207,9 +207,14 @@ type AppSecretView struct {
 }
 
 type AppSetting struct {
-	ID               bool      `json:"id"`
-	RegistrationOpen bool      `json:"registration_open"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                 bool        `json:"id"`
+	RegistrationOpen   bool        `json:"registration_open"`
+	UpdatedAt          time.Time   `json:"updated_at"`
+	IpAllowlistEnabled bool        `json:"ip_allowlist_enabled"`
+	IpAllowlist        []byte      `json:"ip_allowlist"`
+	SignInChannels     []uuid.UUID `json:"sign_in_channels"`
+	AlertNewAddress    bool        `json:"alert_new_address"`
+	AlertFailedSignIns bool        `json:"alert_failed_sign_ins"`
 }
 
 type CommandLog struct {
@@ -851,6 +856,24 @@ type Session struct {
 	ExpiresAt  time.Time `json:"expires_at"`
 	LastSeenAt time.Time `json:"last_seen_at"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type SignIn struct {
+	ID         uuid.UUID  `json:"id"`
+	At         time.Time  `json:"at"`
+	UserID     *uuid.UUID `json:"user_id"`
+	Username   string     `json:"username"`
+	Ip         string     `json:"ip"`
+	Network    string     `json:"network"`
+	UserAgent  string     `json:"user_agent"`
+	Kind       string     `json:"kind"`
+	Reason     string     `json:"reason"`
+	NewAddress bool       `json:"new_address"`
+	SessionID  *uuid.UUID `json:"session_id"`
+	ByUserID   *uuid.UUID `json:"by_user_id"`
+	ByName     string     `json:"by_name"`
+	Answer     string     `json:"answer"`
+	AnsweredAt *time.Time `json:"answered_at"`
 }
 
 type SoftwareHost struct {

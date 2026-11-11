@@ -601,6 +601,9 @@ func registerAdmin(api huma.API, a *authz) {
 			return nil, internalError(err)
 		}
 		a.terms.KillOwner(u.ID.String())
+		a.logSignIn(ctx, a.q, byRow(principalOf(ctx), sqlc.RecordSignInParams{
+			UserID: &u.ID, Username: u.Username, Kind: "ended", Reason: "by_admin_everywhere",
+		}))
 		a.invalidate()
 		return nil, nil
 	})

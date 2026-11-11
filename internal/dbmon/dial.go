@@ -48,6 +48,45 @@ func Internal(a netip.Addr) bool {
 	return false
 }
 
+// Unreachable reports an address no storage or service ever lives on:
+// link-local (where cloud metadata answers), the other metadata endpoints,
+// unspecified and multicast. Unlike Internal, loopback and private networks
+// pass: an in-house MinIO or NAS is normal.
+func Unreachable(a netip.Addr) bool {
+	a = a.Unmap()
+	if nat64.Contains(a) {
+		// An IPv4 address behind NAT64 is judged as itself.
+		b := a.As16()
+		a = netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]})
+	}
+	if a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() ||
+		a.IsUnspecified() || a.IsMulticast() || a.IsInterfaceLocalMulticast() {
+		return true
+	}
+	for _, m := range metadata {
+		if a == m {
+			return true
+		}
+	}
+	return false
+}
+
+var nat64 = netip.MustParsePrefix("64:ff9b::/96")
+
+// RefuseUnreachable is a net.Dialer Control: it runs on the address actually
+// dialed (after DNS, on every redirect), so a name pointing at cloud metadata
+// is refused however it's spelled.
+func RefuseUnreachable(_, address string, _ syscall.RawConn) error {
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return err
+	}
+	if Unreachable(ap.Addr()) {
+		return fmt.Errorf("%s can't be reached from Morcheh (link-local or cloud metadata address)", ap.Addr())
+	}
+	return nil
+}
+
 // DirectDialer reaches a database over the network from Morcheh itself. The
 // check runs on the address actually dialed (after DNS), so a name that
 // resolves somewhere internal is refused too, even if it changes later.

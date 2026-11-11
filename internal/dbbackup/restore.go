@@ -137,14 +137,23 @@ func mysqlRestore(t Target, o RestoreOptions) string {
 	var b strings.Builder
 	mysqlPrelude(&b, t)
 	mysqlTool(&b, t, "client", "mariadb", "mysql")
+	// A file is only data: --binary-mode already turns off the client's own
+	// commands (\! system, source…) for piped input; sandbox mode, where the
+	// client has it, refuses them outright (MariaDB 10.5.25+, MySQL 8.0.40+).
+	b.WriteString(`case "$("$client_tool" --help 2>/dev/null)" in
+  *--sandbox*) safe=--sandbox ;;
+  *--system-command*) safe=--system-command=OFF ;;
+  *) safe= ;;
+esac
+`)
 	login := mysqlLogin(t)
 	ident := "`" + strings.ReplaceAll(t.Name, "`", "``") + "`"
 	if o.Format == MySQLBinlog || o.Format == MySQLSQL {
 		// These files say which database they're for.
-		b.WriteString("client " + login + " --binary-mode\n")
+		b.WriteString("client $safe " + login + " --binary-mode\n")
 		return b.String()
 	}
-	load := "client " + login + " --binary-mode -D " + quote(t.Name)
+	load := "client $safe " + login + " --binary-mode -D " + quote(t.Name)
 	switch {
 	case o.First && o.Replace:
 		// The database becomes what the file holds: tables the file doesn't

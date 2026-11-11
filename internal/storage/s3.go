@@ -44,6 +44,8 @@ func openS3(ctx context.Context, cfg Config) (FS, Info, error) {
 	if err != nil {
 		return nil, info, err
 	}
+	// Never cloud metadata or link-local (a proxy set in the environment still applies).
+	tr.DialContext = guardedDialer().DialContext
 	if cfg.InsecureTLS && tr.TLSClientConfig != nil {
 		tr.TLSClientConfig.InsecureSkipVerify = true
 	} else if cfg.InsecureTLS {

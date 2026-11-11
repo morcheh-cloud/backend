@@ -29,6 +29,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "allowlist" {
+		if err := allowlist(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "allowlist:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		slog.Error("server stopped", "error", err)
 		os.Exit(1)

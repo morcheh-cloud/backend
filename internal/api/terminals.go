@@ -189,6 +189,13 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 			token = c.Value
 		}
 		pol := onServer(auth.Engineer)
+		ctx = context.WithValue(ctx, clientKey{}, client{
+			ip: hostOf(r.RemoteAddr), userAgent: truncate(r.UserAgent(), 256),
+		})
+		if denial := h.authz.addressRefused(ctx, hostOf(r.RemoteAddr)); denial != nil {
+			fail(denial.status, denial.message)
+			return
+		}
 		p, denial := h.authz.authorize(ctx, token, pol, serverID, "")
 		if denial != nil {
 			fail(denial.status, denial.message)

@@ -38,6 +38,7 @@ func openWebDAV(_ context.Context, cfg Config) (FS, Info, error) {
 		u.Host = net.JoinHostPort(u.Hostname(), fmt.Sprint(cfg.Port))
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = guardedDialer().DialContext
 	if cfg.InsecureTLS {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // opt-in for self-signed servers
 	}

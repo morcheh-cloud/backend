@@ -142,26 +142,40 @@ func (a *authz) clearCookie() http.Cookie {
 
 // startSession opens a session. Without "remember" the cookie dies with the
 // browser, and the row after sessionTTL either way.
-func (a *authz) startSession(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, remember bool) (http.Cookie, error) {
+func (a *authz) startSession(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, remember bool) (http.Cookie, uuid.UUID, error) {
 	token, hash, err := auth.NewToken()
 	if err != nil {
-		return http.Cookie{}, err
+		return http.Cookie{}, uuid.Nil, err
 	}
 	ttl := sessionTTL
 	if remember {
 		ttl = rememberTTL
 	}
 	cl := clientOf(ctx)
-	if _, err := q.CreateSession(ctx, sqlc.CreateSessionParams{
+	s, err := q.CreateSession(ctx, sqlc.CreateSessionParams{
 		UserID: userID, TokenHash: hash, Remember: remember,
 		UserAgent: cl.userAgent, Ip: cl.ip, ExpiresAt: time.Now().Add(ttl),
-	}); err != nil {
-		return http.Cookie{}, err
+	})
+	if err != nil {
+		return http.Cookie{}, uuid.Nil, err
 	}
 	c := a.cookie(token)
 	if remember {
 		c.MaxAge = int(ttl.Seconds())
 	}
+	return c, s.ID, nil
+}
+
+// signedIn opens a session for u and logs the sign-in. newAddress was worked
+// out before the session existed.
+func (a *authz) signedIn(ctx context.Context, q *sqlc.Queries, u sqlc.User, remember, newAddress bool) (http.Cookie, error) {
+	c, id, err := a.startSession(ctx, q, u.ID, remember)
+	if err != nil {
+		return c, err
+	}
+	a.logSignIn(ctx, q, clientRow(ctx, sqlc.RecordSignInParams{
+		UserID: &u.ID, Username: u.Username, Kind: "signed_in", NewAddress: newAddress, SessionID: &id,
+	}))
 	return c, nil
 }
 
@@ -173,9 +187,11 @@ func sameToken(a, b string) bool {
 // ---- Endpoints ----
 
 type AuthState struct {
-	NeedsSetup         bool `json:"needs_setup" doc:"No user exists yet: show the first-run form."`
-	SetupTokenRequired bool `json:"setup_token_required"`
-	RegistrationOpen   bool `json:"registration_open"`
+	NeedsSetup         bool   `json:"needs_setup" doc:"No user exists yet: show the first-run form."`
+	SetupTokenRequired bool   `json:"setup_token_required"`
+	RegistrationOpen   bool   `json:"registration_open"`
+	Address            string `json:"address" doc:"The address the panel sees for this request."`
+	AddressAllowed     bool   `json:"address_allowed" doc:"False when the allowlist keeps this address out; nothing else is said then."`
 }
 
 type AuthStateOutput struct{ Body AuthState }
@@ -249,6 +265,15 @@ func registerAuth(api huma.API, a *authz) {
 		OperationID: "get-auth-state", Method: http.MethodGet, Path: "/auth/state",
 		Summary: "What the sign-in page should offer", Tags: tags,
 	}, func(ctx context.Context, _ *struct{}) (*AuthStateOutput, error) {
+		out := &AuthStateOutput{}
+		out.Body.Address = clientOf(ctx).ip
+		if d := a.addressRefused(ctx, out.Body.Address); d != nil {
+			if d.status != http.StatusForbidden {
+				return nil, huma.NewError(d.status, d.message)
+			}
+			return out, nil
+		}
+		out.Body.AddressAllowed = true
 		n, err := a.q.CountUsers(ctx)
 		if err != nil {
 			return nil, internalError(err)
@@ -257,7 +282,6 @@ func registerAuth(api huma.API, a *authz) {
 		if err != nil {
 			return nil, internalError(err)
 		}
-		out := &AuthStateOutput{}
 		out.Body.NeedsSetup = n == 0
 		out.Body.SetupTokenRequired = n == 0 && a.cfg.SetupToken != ""
 		out.Body.RegistrationOpen = st.RegistrationOpen && n > 0
@@ -314,7 +338,7 @@ func registerAuth(api huma.API, a *authz) {
 			if err != nil {
 				return userConflict(err)
 			}
-			if out.SetCookie, err = a.startSession(ctx, q, u.ID, false); err != nil {
+			if out.SetCookie, err = a.signedIn(ctx, q, u, false, false); err != nil {
 				return internalError(err)
 			}
 			out.Body = toPanelUser(u)
@@ -365,7 +389,7 @@ func registerAuth(api huma.API, a *authz) {
 			if err != nil {
 				return userConflict(err)
 			}
-			if out.SetCookie, err = a.startSession(ctx, q, u.ID, false); err != nil {
+			if out.SetCookie, err = a.signedIn(ctx, q, u, false, false); err != nil {
 				return internalError(err)
 			}
 			out.Body = toPanelUser(u)
@@ -382,32 +406,54 @@ func registerAuth(api huma.API, a *authz) {
 		Summary: "Sign in", Tags: tags,
 	}, func(ctx context.Context, in *AuthLoginInput) (*SignedInOutput, error) {
 		name := strings.ToLower(strings.TrimSpace(in.Body.Username))
-		ip := clientOf(ctx).ip
+		cl := clientOf(ctx)
+		ip := cl.ip
 		pair, byIP, byName := "login:pair:"+name+":"+ip, "login:ip:"+ip, "login:name:"+name
 		if a.over(ctx, pair, 5) || a.over(ctx, byIP, 30) || a.over(ctx, byName, 30) {
 			return nil, errTooMany()
 		}
+		failed := func(u *sqlc.User, reason string) {
+			row := sqlc.RecordSignInParams{Username: name, Kind: "failed", Reason: reason}
+			if u != nil {
+				row.UserID, row.Username = &u.ID, u.Username
+			}
+			a.logSignIn(ctx, a.q, clientRow(ctx, row))
+		}
 		// The same answer for an unknown name and a wrong password, after the
 		// same amount of work, so a guess can't tell which it was.
-		wrong := func() error {
+		wrong := func(u *sqlc.User) error {
+			n := map[string]int64{}
 			for _, k := range []string{pair, byIP, byName} {
-				a.hit(ctx, k, 15*time.Minute)
+				n[k] = a.hit(ctx, k, 15*time.Minute)
+			}
+			if u == nil {
+				failed(nil, "unknown_user")
+			} else {
+				failed(u, "wrong_password")
+				// Once per burst: when a counter reaches the point it locks.
+				switch {
+				case n[byName] == alertNameFailures:
+					a.alertFailures(*u, ip, cl.userAgent, n[byName], false)
+				case n[pair] == alertPairFailures:
+					a.alertFailures(*u, ip, cl.userAgent, n[pair], true)
+				}
 			}
 			return huma.Error401Unauthorized("Wrong username or password.")
 		}
 		u, err := a.q.GetUserByUsername(ctx, name)
 		if isNotFound(err) {
 			auth.BurnPassword(in.Body.Password)
-			return nil, wrong()
+			return nil, wrong(nil)
 		}
 		if err != nil {
 			return nil, internalError(err)
 		}
 		if !auth.VerifyPassword(u.PasswordHash, in.Body.Password) {
-			return nil, wrong()
+			return nil, wrong(&u)
 		}
 		// Only someone who knows the password learns the account is blocked.
 		if u.Status == "blocked" {
+			failed(&u, "blocked_account")
 			return nil, huma.Error403Forbidden("This account is blocked. Ask an admin.")
 		}
 		a.forget(ctx, pair)
@@ -417,9 +463,13 @@ func registerAuth(api huma.API, a *authz) {
 		if err := a.q.TouchUserLogin(ctx, u.ID); err != nil {
 			slog.Warn("touch login", "error", err)
 		}
+		newAddress := a.isNewAddress(ctx, u.ID, ip)
 		out := &SignedInOutput{Body: toPanelUser(u)}
-		if out.SetCookie, err = a.startSession(ctx, a.q, u.ID, in.Body.Remember); err != nil {
+		if out.SetCookie, err = a.signedIn(ctx, a.q, u, in.Body.Remember, newAddress); err != nil {
 			return nil, internalError(err)
+		}
+		if newAddress {
+			a.alertNewAddress(u, ip, cl.userAgent)
 		}
 		return out, nil
 	})
@@ -428,9 +478,13 @@ func registerAuth(api huma.API, a *authz) {
 		OperationID: "auth-logout", Method: http.MethodPost, Path: "/auth/logout",
 		Summary: "Sign out", Tags: tags,
 	}, func(ctx context.Context, _ *struct{}) (*SignedOutOutput, error) {
-		if err := a.q.DeleteSession(ctx, principalOf(ctx).SessionID); err != nil {
+		p := principalOf(ctx)
+		if err := a.q.DeleteSession(ctx, p.SessionID); err != nil {
 			return nil, internalError(err)
 		}
+		a.logSignIn(ctx, a.q, clientRow(ctx, sqlc.RecordSignInParams{
+			UserID: &p.User.ID, Username: p.User.Username, Kind: "signed_out", SessionID: &p.SessionID,
+		}))
 		a.invalidate()
 		return &SignedOutOutput{SetCookie: a.clearCookie()}, nil
 	})
@@ -445,6 +499,9 @@ func registerAuth(api huma.API, a *authz) {
 			return nil, internalError(err)
 		}
 		a.terms.KillOwner(p.User.ID.String())
+		a.logSignIn(ctx, a.q, clientRow(ctx, sqlc.RecordSignInParams{
+			UserID: &p.User.ID, Username: p.User.Username, Kind: "signed_out", Reason: "everywhere", SessionID: &p.SessionID,
+		}))
 		a.invalidate()
 		return &SignedOutOutput{SetCookie: a.clearCookie()}, nil
 	})
@@ -513,6 +570,9 @@ func registerAuth(api huma.API, a *authz) {
 			return nil, err
 		}
 		a.forget(ctx, key)
+		a.logSignIn(ctx, a.q, byRow(p, clientRow(ctx, sqlc.RecordSignInParams{
+			UserID: &p.User.ID, Username: p.User.Username, Kind: "ended", Reason: "password_changed",
+		})))
 		a.terms.KillOwner(p.User.ID.String())
 		a.invalidate()
 		return &MeOutput{Body: toPanelUser(u)}, nil

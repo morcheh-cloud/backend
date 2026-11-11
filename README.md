@@ -19,6 +19,23 @@ docker compose up -d --build
 - Keep a copy of `SECRETS_KEY`: every saved password and key is sealed with it.
 - Ansible's sandbox (bubblewrap) needs user namespaces, which Docker's default profiles refuse. Without the `security_opt` lines in `compose.yml` playbooks still run, but only system admins can start them.
 
+## Sign-in security
+
+The panel can be limited to known addresses (Settings › Security), and every sign-in is logged with its address. Before relying on either:
+
+- **Behind a reverse proxy, set `TRUST_PROXY=true`.** Otherwise the backend sees every visitor as the proxy's address: the allowlist can't tell people apart, and the sign-in log and new-address alerts show the same address for everyone. Leave it `false` when the backend is reached directly, or anyone could fake their address with an `X-Forwarded-For` header. Check it after the change: Settings › Security shows "Your address", which must be your real one.
+- **For alerts to be sent, a notification channel is needed.** New-address sign-ins and repeated wrong passwords go to the channels picked on Settings › Security; create one under Alerts › Channels first. Without one, only the "Was it you?" question inside the panel remains.
+
+### Locked out by the allowlist
+
+If a save or a changed address leaves nobody able to reach the panel, turn the list off from the backend's machine. It talks to the database directly; the list is kept, and it takes effect within a minute.
+
+```bash
+docker compose exec backend server allowlist show   # what's in it
+docker compose exec backend server allowlist off    # let every address in again
+go run ./cmd/server allowlist off                   # on a dev machine
+```
+
 ## Locked out of the admin account
 
 `reset-admin` sets a new password on an admin account, unblocks it and signs it out everywhere. It talks to the database directly, so it works when nobody can sign in to the panel. The server can stay running.

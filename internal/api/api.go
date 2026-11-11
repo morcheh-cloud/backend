@@ -52,6 +52,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 		MaxAge:           300,
 	}))
 	r.Use(originGuard(cfg.CORSOrigins))
+	r.Use(baseHeaders)
 
 	// Our handlers never return null arrays; keep them non-nullable in the
 	// spec so the generated client types them as plain arrays.
@@ -74,6 +75,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerHealth(api, db, rdb)
 	registerAuth(api, a)
 	registerAdmin(api, a)
+	registerSignIns(api, a)
 	registerWorkspaces(api, a)
 	registerWorkspaceLogos(api, a)
 	registerFolders(api, a)
@@ -140,6 +142,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 		panelURL = cfg.CORSOrigins[0]
 	}
 	up := newUptimeHandler(sqlc.New(db), box, a, servers, panelURL, cfg.MonitorHistory)
+	a.up = up
 	startUptimeMonitor(up)
 	registerMonitors(api, up)
 	registerNotifications(api, up)

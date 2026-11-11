@@ -107,6 +107,18 @@ var policies = map[string]policy{
 	"update-me":       active,
 	"get-my-access":   active,
 
+	// Sessions and the sign-in log.
+	"list-my-sessions":         active,
+	"end-my-session":           active,
+	"end-my-other-sessions":    active,
+	"list-sign-in-alerts":      active,
+	"answer-sign-in-alert":     active,
+	"list-sign-ins":            active,
+	"admin-list-user-sessions": admin,
+	"admin-end-user-session":   admin,
+	"admin-get-security":       admin,
+	"admin-update-security":    admin,
+
 	// Panel people and settings.
 	"admin-list-users":        admin,
 	"admin-get-user":          admin,

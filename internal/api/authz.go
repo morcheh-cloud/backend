@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -77,6 +78,13 @@ type authz struct {
 	mu       sync.Mutex
 	watchers map[*watcher]struct{}
 	dirty    chan struct{}
+
+	// allow is the address allowlist in force (nil until first read).
+	allow atomic.Pointer[allowlist]
+	// up sends security alerts through the notification channels. Set by build.
+	up *uptimeHandler
+	// pruned is when old sign-ins were last deleted (only the sweep touches it).
+	pruned time.Time
 }
 
 func newAuthz(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, runner *jobs.Runner, terms *terminal.Manager) *authz {
@@ -108,19 +116,36 @@ func (a *authz) middleware(api huma.API) func(huma.Context, func(huma.Context)) 
 		base := context.WithValue(ctx.Context(), clientKey{}, client{
 			ip: hostOf(ctx.RemoteAddr()), userAgent: truncate(ctx.Header("User-Agent"), 256),
 		})
-		pol, ok := policies[ctx.Operation().OperationID]
+		op := ctx.Operation().OperationID
+		pol, ok := policies[op]
 		if !ok {
-			slog.Error("operation has no access policy", "operation", ctx.Operation().OperationID)
+			slog.Error("operation has no access policy", "operation", op)
 			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "This action isn't available.")
-			return
-		}
-		if pol.kind == kindPublic {
-			next(huma.WithContext(ctx, base))
 			return
 		}
 		token := ""
 		if c, err := huma.ReadCookie(ctx, sessionCookie); err == nil {
 			token = c.Value
+		}
+		// Without a session there's nothing to reach, whatever the address:
+		// answer that first, so the address check never waits on the database.
+		if pol.kind != kindPublic && token == "" {
+			d := errUnauthenticated()
+			_ = huma.WriteErr(api, ctx, d.status, d.message)
+			return
+		}
+		if !allowlistExempt[op] {
+			if d := a.addressRefused(base, clientOf(base).ip); d != nil {
+				if op == "auth-login" && d.status == http.StatusForbidden {
+					a.noteRefusedSignIn(base)
+				}
+				writeAddressRefused(api, ctx, d)
+				return
+			}
+		}
+		if pol.kind == kindPublic {
+			next(huma.WithContext(ctx, base))
+			return
 		}
 		p, d := a.authorize(base, token, pol, ctx.Param("id"), ctx.Header(workspaceHeader))
 		if d != nil {
@@ -570,13 +595,14 @@ type watcher struct {
 	p      *principal
 	pol    policy
 	rawID  string
+	ip     string
 	cancel context.CancelFunc
 }
 
 // track makes ctx end as soon as this request isn't allowed any more.
 func (a *authz) track(ctx context.Context, p *principal, pol policy, rawID string) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(ctx)
-	w := &watcher{p: p, pol: pol, rawID: rawID, cancel: cancel}
+	w := &watcher{p: p, pol: pol, rawID: rawID, ip: clientOf(ctx).ip, cancel: cancel}
 	a.mu.Lock()
 	a.watchers[w] = struct{}{}
 	a.mu.Unlock()
@@ -619,6 +645,20 @@ func (a *authz) sweep(ctx context.Context) {
 	if err := a.q.DeleteExpiredSessions(ctx); err != nil {
 		slog.Warn("delete expired sessions", "error", err)
 	}
+	if time.Since(a.pruned) > time.Hour {
+		if err := a.q.DeleteOldSignIns(ctx, signInKeepDays); err != nil {
+			slog.Warn("delete old sign-ins", "error", err)
+		} else {
+			a.pruned = time.Now()
+		}
+	}
+	// Picks up a change made from the command line, and cuts off streams
+	// from an address that's no longer allowed.
+	allow, err := a.reloadAllowlist(ctx)
+	if err != nil {
+		slog.Warn("reload the allowlist", "error", err)
+		allow = a.allow.Load()
+	}
 
 	a.mu.Lock()
 	open := make([]*watcher, 0, len(a.watchers))
@@ -640,6 +680,10 @@ func (a *authz) sweep(ctx context.Context) {
 	}
 
 	for _, w := range open {
+		if allow != nil && !allow.allows(w.ip) {
+			w.cancel()
+			continue
+		}
 		row, err := a.q.GetSessionUser(ctx, w.p.SessionID)
 		if isNotFound(err) {
 			w.cancel()
@@ -749,17 +793,18 @@ func (a *authz) over(ctx context.Context, key string, limit int64) bool {
 	return n >= limit
 }
 
-// hit counts one attempt.
-func (a *authz) hit(ctx context.Context, key string, window time.Duration) {
+// hit counts one attempt and returns the count so far (0 if Redis is down).
+func (a *authz) hit(ctx context.Context, key string, window time.Duration) int64 {
 	key = "ratelimit:" + key
 	n, err := a.rdb.Client.Incr(ctx, key).Result()
 	if err != nil {
 		slog.Warn("rate limit", "error", err)
-		return
+		return 0
 	}
 	if n == 1 {
 		a.rdb.Client.Expire(ctx, key, window)
 	}
+	return n
 }
 
 func (a *authz) forget(ctx context.Context, key string) {
@@ -828,4 +873,17 @@ func hostOf(addr string) string {
 		return h
 	}
 	return addr
+}
+
+// baseHeaders go on every answer: the browser never guesses a type from the
+// bytes, and no address of the API (ids, paths in query strings) is sent on
+// to a site a file or page links to. Framing stays allowed, since the panel
+// shows file previews (sandboxed by their own CSP) in an iframe.
+func baseHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }

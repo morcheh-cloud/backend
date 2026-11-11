@@ -45,6 +45,9 @@ const (
 	EventDegraded = "degraded"
 	EventReminder = "reminder"
 	EventTest     = "test"
+	// EventSecurity is about the panel itself: a sign-in from a new address,
+	// an account under attack.
+	EventSecurity = "security"
 )
 
 // Field is one labelled fact under the text.
@@ -309,6 +312,8 @@ func emoji(event string) string {
 		return "🟠"
 	case EventReminder:
 		return "🔁"
+	case EventSecurity:
+		return "🔐"
 	}
 	return "🔔"
 }
@@ -320,7 +325,7 @@ func colour(event string) int {
 		return 0xe5484d
 	case EventUp:
 		return 0x30a46c
-	case EventDegraded:
+	case EventDegraded, EventSecurity:
 		return 0xf76b15
 	}
 	return 0x3e63dd
@@ -579,7 +584,7 @@ func priority(event string, set, low, normal, high int) int {
 		return set
 	}
 	switch event {
-	case EventDown, EventReminder:
+	case EventDown, EventReminder, EventSecurity:
 		return high
 	case EventUp, EventTest:
 		return normal
@@ -592,7 +597,7 @@ func sendNtfy(ctx context.Context, ch Channel, m Message) error {
 	if base == "" {
 		base = "https://ntfy.sh"
 	}
-	tag := map[string]string{EventDown: "red_circle", EventUp: "green_circle", EventDegraded: "orange_circle", EventReminder: "repeat"}[m.Event]
+	tag := map[string]string{EventDown: "red_circle", EventUp: "green_circle", EventDegraded: "orange_circle", EventReminder: "repeat", EventSecurity: "lock"}[m.Event]
 	body := map[string]any{
 		"topic":    strings.TrimSpace(ch.Config.Topic),
 		"title":    m.Title,

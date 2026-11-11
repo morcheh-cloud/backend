@@ -30,6 +30,7 @@ type Querier interface {
 	AlertRulesForDatabase(ctx context.Context, arg AlertRulesForDatabaseParams) ([]AlertRule, error)
 	// The enabled server rules of a server's workspace that cover it.
 	AlertRulesForServer(ctx context.Context, arg AlertRulesForServerParams) ([]AlertRule, error)
+	AnswerSignIn(ctx context.Context, arg AnswerSignInParams) (SignIn, error)
 	AnyBackupPlanEnabled(ctx context.Context, databaseID uuid.UUID) (bool, error)
 	// A backup and all it builds on, oldest first.
 	BackupChain(ctx context.Context, id uuid.UUID) ([]DatabaseBackup, error)
@@ -146,6 +147,7 @@ type Querier interface {
 	DeleteMonitor(ctx context.Context, id uuid.UUID) error
 	DeleteNotificationChannel(ctx context.Context, id uuid.UUID) error
 	DeleteOldScriptRuns(ctx context.Context) error
+	DeleteOldSignIns(ctx context.Context, days int32) error
 	DeleteOldSoftwareRuns(ctx context.Context) error
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeletePlaybook(ctx context.Context, id uuid.UUID) (int64, error)
@@ -259,6 +261,7 @@ type Querier interface {
 	GetSessionUser(ctx context.Context, id uuid.UUID) (GetSessionUserRow, error)
 	// ---- Settings ----
 	GetSettings(ctx context.Context) (AppSetting, error)
+	GetSignIn(ctx context.Context, id uuid.UUID) (SignIn, error)
 	GetSoftwareHost(ctx context.Context, serverID uuid.UUID) (SoftwareHost, error)
 	GetSoftwareInstall(ctx context.Context, id uuid.UUID) (GetSoftwareInstallRow, error)
 	GetSoftwareInstallByRecipe(ctx context.Context, arg GetSoftwareInstallByRecipeParams) (SoftwareInstall, error)
@@ -274,9 +277,11 @@ type Querier interface {
 	GetTerminalRecordingSettings(ctx context.Context, workspaceID uuid.UUID) (TerminalRecordingSetting, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
+	GetUserSession(ctx context.Context, arg GetUserSessionParams) (Session, error)
 	GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error)
 	GetWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) (WorkspaceLogo, error)
 	GetWorkspaceLogoStamp(ctx context.Context, workspaceID uuid.UUID) (time.Time, error)
+	HasSignedIn(ctx context.Context, userID *uuid.UUID) (bool, error)
 	InsertAlertEvent(ctx context.Context, arg InsertAlertEventParams) error
 	InsertDatabaseEvent(ctx context.Context, arg InsertDatabaseEventParams) (DatabaseEvent, error)
 	InsertDatabaseSample(ctx context.Context, arg InsertDatabaseSampleParams) error
@@ -298,6 +303,8 @@ type Querier interface {
 	InterruptTerminalRecordings(ctx context.Context) (int64, error)
 	// Removes the locations not listed ("morcheh" or a server id).
 	KeepMonitorLocations(ctx context.Context, arg KeepMonitorLocationsParams) error
+	// Has this person signed in from this network before (in what's kept)?
+	KnownNetwork(ctx context.Context, arg KnownNetworkParams) (bool, error)
 	// Each plan's newest finished run; of a run over several databases, the one
 	// that failed if any did.
 	LastBackups(ctx context.Context, planIds []uuid.UUID) ([]LastBackupsRow, error)
@@ -428,6 +435,8 @@ type Querier interface {
 	ListServersDueForCheck(ctx context.Context, before time.Time) ([]Server, error)
 	// Online servers that aren't known to be something other than Linux.
 	ListServersToSample(ctx context.Context) ([]Server, error)
+	// Newest first, paged by (at, id) from the last row of the previous page.
+	ListSignIns(ctx context.Context, arg ListSignInsParams) ([]ListSignInsRow, error)
 	ListSoftwareHosts(ctx context.Context, workspaceID uuid.UUID) ([]ListSoftwareHostsRow, error)
 	// Everything installed in a workspace, with the server's name.
 	ListSoftwareInstalls(ctx context.Context, workspaceID uuid.UUID) ([]ListSoftwareInstallsRow, error)
@@ -447,6 +456,7 @@ type Querier interface {
 	// Every grant that applies to a user, directly or through a group.
 	ListUserGrants(ctx context.Context, userID *uuid.UUID) ([]AccessGrant, error)
 	ListUserNames(ctx context.Context, ids []uuid.UUID) ([]ListUserNamesRow, error)
+	ListUserSessions(ctx context.Context, userID uuid.UUID) ([]Session, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	ListWorkspaceApps(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceAppsRow, error)
 	// Incidents of every monitor in scope, open ones first.
@@ -484,6 +494,8 @@ type Querier interface {
 	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
 	// ---- Incidents ----
 	OpenMonitorIncident(ctx context.Context, arg OpenMonitorIncidentParams) error
+	// New-address sign-ins nobody has answered yet, for the person's other devices.
+	PendingSignInAlerts(ctx context.Context, arg PendingSignInAlertsParams) ([]PendingSignInAlertsRow, error)
 	PruneAlertEvents(ctx context.Context, before time.Time) (int64, error)
 	PruneAlertMutes(ctx context.Context, before time.Time) (int64, error)
 	// Rows of runs that left no backup, past the newest @keep of a plan.
@@ -523,6 +535,8 @@ type Querier interface {
 	// got far enough to read them (detected = true).
 	RecordServerCheck(ctx context.Context, arg RecordServerCheckParams) (Server, error)
 	RecordServerCheckBucket(ctx context.Context, arg RecordServerCheckBucketParams) error
+	// ---- Sign-in log ----
+	RecordSignIn(ctx context.Context, arg RecordSignInParams) (SignIn, error)
 	// host_key is only stored when the check saw one (SFTP).
 	RecordStorageCheck(ctx context.Context, arg RecordStorageCheckParams) (Storage, error)
 	RemoveServerTags(ctx context.Context, arg RemoveServerTagsParams) (int64, error)
@@ -568,6 +582,7 @@ type Querier interface {
 	// Online servers whose last scan is older than the interval (or never ran).
 	ServersToScanSoftware(ctx context.Context, seconds float64) ([]uuid.UUID, error)
 	SetAlertRuleEnabled(ctx context.Context, arg SetAlertRuleEnabledParams) (AlertRule, error)
+	SetAllowlistEnabled(ctx context.Context, enabled bool) (AppSetting, error)
 	SetAnsibleRunJob(ctx context.Context, arg SetAnsibleRunJobParams) error
 	SetAppCategoryPosition(ctx context.Context, arg SetAppCategoryPositionParams) error
 	SetAppLogoKind(ctx context.Context, arg SetAppLogoKindParams) (App, error)
@@ -594,6 +609,7 @@ type Querier interface {
 	SetScheduleRunJob(ctx context.Context, arg SetScheduleRunJobParams) error
 	SetScheduleRunLink(ctx context.Context, arg SetScheduleRunLinkParams) error
 	SetScriptRunJob(ctx context.Context, arg SetScriptRunJobParams) error
+	SetSecuritySettings(ctx context.Context, arg SetSecuritySettingsParams) (AppSetting, error)
 	SetServerFavorite(ctx context.Context, arg SetServerFavoriteParams) (Server, error)
 	// Pinning isn't an edit: it keeps who changed it last and when.
 	SetServerNotePinned(ctx context.Context, arg SetServerNotePinnedParams) (ServerNote, error)
