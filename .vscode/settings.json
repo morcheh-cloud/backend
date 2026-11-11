@@ -1,3 +1,10 @@
 {
-	"cSpell.words": ["execrows", "healthcheck", "morcheh", "pgdata"]
+	"cSpell.words": [
+		"execrows",
+		"healthcheck",
+		"morcheh",
+		"pgdata",
+		"sqlc",
+		"timestamptz"
+	]
 }
