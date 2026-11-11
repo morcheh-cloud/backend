@@ -822,10 +822,11 @@ func journalScript(unit, args string) string {
 // instead of leaving it behind on the server.
 func followJournal(ctx context.Context, sh *rootShell, script string, send sse.Sender) error {
 	cmd, password := sh.command("( " + script + " ) & p=$!\ncat >/dev/null\nkill $p 2>/dev/null\n")
-	sess, err := sh.c.Client.NewSession()
+	sess, err := sh.c.Session(ctx)
 	if err != nil {
 		return err
 	}
+	sh.logAs(script).apply(sess)
 	defer sess.Close()
 	stdout, err := sess.StdoutPipe()
 	if err != nil {

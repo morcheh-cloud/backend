@@ -43,8 +43,9 @@ func newRecordings(q *sqlc.Queries, servers *serverHandler) *recordings {
 // liveRecording is one shell being recorded; it is the session's
 // terminal.Recorder.
 type liveRecording struct {
-	id    uuid.UUID
-	r     *recordings
+	id      uuid.UUID
+	started time.Time
+	r       *recordings
 	cast  *recording.Cast
 	sess  atomic.Pointer[terminal.Session]
 	ended chan int
@@ -92,7 +93,7 @@ func (r *recordings) begin(ctx context.Context, serverID string, p *principal, c
 		return nil, err
 	}
 	return &liveRecording{
-		id: id, r: r, cast: recording.New(cols, rows, "", started), ended: make(chan int, 1),
+		id: id, started: started, r: r, cast: recording.New(cols, rows, "", started), ended: make(chan int, 1),
 	}, nil
 }
 

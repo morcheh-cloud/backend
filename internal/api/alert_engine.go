@@ -15,10 +15,13 @@ import (
 	"github.com/morcheh/backend/internal/sshprobe"
 )
 
-// Alert rules on server metrics are checked here: against every resource
-// sample (cpu, memory, disk…) and, for "offline", every connection check. A
-// rule fires on a server once its condition has held for for_minutes, sends to
-// its channels, reminds every repeat_minutes, and resolves when it clears.
+// Alert rules are checked here: server metrics against every resource sample
+// (cpu, memory, disk, failed services…), "offline" against every connection
+// check, and the database ones against every database check. A rule fires on
+// a target (server or database) once its condition has held for for_minutes,
+// sends to its channels, reminds every repeat_minutes, and resolves when it
+// clears. While a mute covers it (alert_mutes), it's recorded but not sent;
+// what fired during a mute is sent when the mute ends, if it still holds.
 
 const (
 	metricCPU     = "cpu"
@@ -30,12 +33,25 @@ const (
 	metricNetRx   = "net_rx"
 	metricNetTx   = "net_tx"
 	metricOffline = "offline"
+	metricService = "service"
+	// Databases.
+	metricDBDown   = "db_down"
+	metricDBHealth = "db_health"
 )
+
+// databaseMetric says whether a rule watches databases (not servers).
+func databaseMetric(m string) bool { return m == metricDBDown || m == metricDBHealth }
+
+// stateMetric says whether a metric is a yes/no state, without a threshold.
+func stateMetric(m string) bool {
+	return m == metricOffline || m == metricService || databaseMetric(m)
+}
 
 var metricLabels = map[string]string{
 	metricCPU: "CPU", metricIOWait: "I/O wait", metricLoad: "Load per core",
 	metricMemory: "Memory", metricSwap: "Swap", metricDisk: "Disk",
 	metricNetRx: "Download", metricNetTx: "Upload", metricOffline: "Unreachable",
+	metricService: "Service", metricDBDown: "Database unreachable", metricDBHealth: "Database health",
 }
 
 // percentMetric says whether a metric's threshold is a percent (0–100).
@@ -62,10 +78,33 @@ func formatMetric(metric string, v float64) string {
 
 // ruleCondition is "above 90%", or "unreachable".
 func ruleCondition(r sqlc.AlertRule) string {
-	if r.Metric == metricOffline {
+	switch r.Metric {
+	case metricOffline, metricDBDown:
 		return "unreachable"
+	case metricDBHealth:
+		return "health critical"
+	case metricService:
+		if r.Unit != "" {
+			return r.Unit + " not running"
+		}
+		return "a service failed"
 	}
 	return r.Op + " " + formatMetric(r.Metric, r.Threshold)
+}
+
+// alertTarget is what a rule fires on: a server or a database.
+type alertTarget struct {
+	id          uuid.UUID
+	kind        string // server or database
+	name, where string // where = host, for messages
+}
+
+func serverTarget(s sqlc.Server) alertTarget {
+	return alertTarget{id: s.ID, kind: "server", name: s.Name, where: s.Host}
+}
+
+func databaseTarget(d sqlc.Database) alertTarget {
+	return alertTarget{id: d.ID, kind: "database", name: d.Name, where: d.Host}
 }
 
 // metricSample is what one resource sample says, in the units rules use.
@@ -78,6 +117,9 @@ type metricSample struct {
 	swap   float64 // -1 without swap
 	disks  []diskUse
 	rx, tx float64 // bytes per second
+	// services lists the failed services (unit = "": every failed one; else
+	// that unit when it isn't running). Nil when it can't be asked.
+	services func(ctx context.Context, unit string) ([]string, error)
 }
 
 type diskUse struct {
@@ -157,15 +199,38 @@ func (e *alertEngine) onSample(ctx context.Context, srv sqlc.Server, s metricSam
 		slog.Warn("alerts: rules for server", "server", srv.ID, "error", err)
 		return
 	}
+	t := serverTarget(srv)
+	// One question per unit, however many rules ask it.
+	type answer struct {
+		names []string
+		err   error
+	}
+	asked := map[string]answer{}
 	for _, r := range rules {
-		if r.Metric == metricOffline {
+		switch r.Metric {
+		case metricOffline:
+			continue
+		case metricService:
+			if s.services == nil {
+				continue
+			}
+			a, ok := asked[r.Unit]
+			if !ok {
+				a.names, a.err = s.services(ctx, r.Unit)
+				asked[r.Unit] = a
+			}
+			if a.err != nil {
+				continue
+			}
+			v := float64(len(a.names))
+			e.step(ctx, r, t, v > 0, v, strings.Join(a.names, ", "), s.at)
 			continue
 		}
 		v, detail, ok := s.value(r)
 		if !ok {
 			continue
 		}
-		e.step(ctx, r, srv, breached(r, v), v, detail, s.at)
+		e.step(ctx, r, t, breached(r, v), v, detail, s.at)
 	}
 }
 
@@ -185,8 +250,41 @@ func (e *alertEngine) onStatus(ctx context.Context, srv sqlc.Server, res sshprob
 	}
 	for _, r := range rules {
 		if r.Metric == metricOffline {
-			e.step(ctx, r, srv, down, v, detail, time.Now().UTC())
+			e.step(ctx, r, serverTarget(srv), down, v, detail, time.Now().UTC())
 		}
+	}
+}
+
+// onDatabase checks a database's rules against a finished check: status is
+// how it answered, health the worst check, problems the critical checks.
+func (e *alertEngine) onDatabase(ctx context.Context, d sqlc.Database, status, message, health string, problems []string) {
+	rules, err := e.q.AlertRulesForDatabase(ctx, sqlc.AlertRulesForDatabaseParams{
+		WorkspaceID: d.WorkspaceID, DatabaseID: d.ID,
+	})
+	if err != nil {
+		slog.Warn("alerts: rules for database", "database", d.ID, "error", err)
+		return
+	}
+	now := time.Now().UTC()
+	for _, r := range rules {
+		met, detail := false, ""
+		switch r.Metric {
+		case metricDBDown:
+			met = status != "online" && status != "unknown"
+			if met {
+				detail = cmpOr(message, strings.ReplaceAll(status, "_", " "))
+			}
+		case metricDBHealth:
+			met = health == "critical"
+			if met {
+				detail = strings.Join(problems, ", ")
+			}
+		}
+		v := 0.0
+		if met {
+			v = 1
+		}
+		e.step(ctx, r, databaseTarget(d), met, v, detail, now)
 	}
 }
 
@@ -202,22 +300,33 @@ func statusText(status string) string {
 	return "Check failed"
 }
 
-// step moves a rule's state on a server along by one reading.
-func (e *alertEngine) step(ctx context.Context, r sqlc.AlertRule, srv sqlc.Server, met bool, v float64, detail string, at time.Time) {
+// muted says whether a mute covers a rule on a target right now.
+func (e *alertEngine) muted(ctx context.Context, r sqlc.AlertRule, t alertTarget) bool {
+	rid, tid := r.ID, t.id
+	m, err := e.q.AlertMuted(ctx, sqlc.AlertMutedParams{WorkspaceID: r.WorkspaceID, RuleID: &rid, TargetID: &tid})
+	if err != nil {
+		slog.Warn("alerts: muted", "rule", r.ID, "error", err)
+		return false
+	}
+	return m
+}
+
+// step moves a rule's state on a target along by one reading.
+func (e *alertEngine) step(ctx context.Context, r sqlc.AlertRule, t alertTarget, met bool, v float64, detail string, at time.Time) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	st, err := e.q.GetAlertState(ctx, sqlc.GetAlertStateParams{RuleID: r.ID, ServerID: srv.ID})
+	st, err := e.q.GetAlertState(ctx, sqlc.GetAlertStateParams{RuleID: r.ID, TargetID: t.id})
 	found := err == nil
 	if err != nil && !isNotFound(err) {
-		slog.Warn("alerts: get state", "rule", r.ID, "server", srv.ID, "error", err)
+		slog.Warn("alerts: get state", "rule", r.ID, "target", t.id, "error", err)
 		return
 	}
 	if !met && (!found || (st.BreachSince == nil && st.FiringSince == nil)) {
 		return // nothing going on, nothing to write
 	}
 	next := sqlc.UpsertAlertStateParams{
-		RuleID: r.ID, ServerID: srv.ID, BreachSince: st.BreachSince, FiringSince: st.FiringSince,
-		LastSentAt: st.LastSentAt, Value: v, Detail: detail,
+		RuleID: r.ID, TargetID: t.id, TargetKind: t.kind, BreachSince: st.BreachSince,
+		FiringSince: st.FiringSince, LastSentAt: st.LastSentAt, Value: v, Detail: detail,
 	}
 	if met {
 		if next.BreachSince != nil && next.FiringSince == nil && at.Sub(st.UpdatedAt) > e.stale {
@@ -229,14 +338,25 @@ func (e *alertEngine) step(ctx context.Context, r sqlc.AlertRule, srv sqlc.Serve
 		switch {
 		case next.FiringSince == nil:
 			if at.Sub(*next.BreachSince) >= time.Duration(r.ForMinutes)*time.Minute {
-				next.FiringSince, next.LastSentAt = &at, &at
-				e.event(ctx, r, srv, "fired", v, detail, 0, at)
-				e.send(r, srv, "fired", v, detail, at.Sub(*next.BreachSince), at)
+				quiet := e.muted(ctx, r, t)
+				next.FiringSince = &at
+				e.event(ctx, r, t, "fired", v, detail, 0, quiet, at)
+				if !quiet {
+					next.LastSentAt = &at
+					e.send(r, t, "fired", v, detail, at.Sub(*next.BreachSince), at)
+				}
 			}
-		case r.RepeatMinutes > 0 && (next.LastSentAt == nil ||
-			at.Sub(*next.LastSentAt) >= time.Duration(r.RepeatMinutes)*time.Minute):
-			next.LastSentAt = &at
-			e.send(r, srv, "reminder", v, detail, at.Sub(*next.BreachSince), at)
+		case next.LastSentAt == nil:
+			// It fired during a mute: tell now that the mute is over.
+			if !e.muted(ctx, r, t) {
+				next.LastSentAt = &at
+				e.send(r, t, "fired", v, detail, at.Sub(*next.BreachSince), at)
+			}
+		case r.RepeatMinutes > 0 && at.Sub(*next.LastSentAt) >= time.Duration(r.RepeatMinutes)*time.Minute:
+			if !e.muted(ctx, r, t) {
+				next.LastSentAt = &at
+				e.send(r, t, "reminder", v, detail, at.Sub(*next.BreachSince), at)
+			}
 		}
 	} else {
 		if next.FiringSince != nil {
@@ -245,63 +365,97 @@ func (e *alertEngine) step(ctx context.Context, r sqlc.AlertRule, srv sqlc.Serve
 				since = *next.BreachSince
 			}
 			lasted := at.Sub(since)
-			e.event(ctx, r, srv, "resolved", v, detail, lasted, at)
-			if r.NotifyResolved {
-				e.send(r, srv, "resolved", v, detail, lasted, at)
+			// Nobody heard it fire (muted all along): nothing to take back.
+			quiet := next.LastSentAt == nil || e.muted(ctx, r, t)
+			e.event(ctx, r, t, "resolved", v, detail, lasted, quiet, at)
+			if r.NotifyResolved && !quiet {
+				e.send(r, t, "resolved", v, detail, lasted, at)
 			}
 		}
 		next.BreachSince, next.FiringSince, next.LastSentAt = nil, nil, nil
 	}
 	if err := e.q.UpsertAlertState(ctx, next); err != nil {
-		slog.Warn("alerts: save state", "rule", r.ID, "server", srv.ID, "error", err)
+		slog.Warn("alerts: save state", "rule", r.ID, "target", t.id, "error", err)
 	}
 }
 
-func (e *alertEngine) event(ctx context.Context, r sqlc.AlertRule, srv sqlc.Server, kind string, v float64, detail string, lasted time.Duration, at time.Time) {
-	rid, sid := r.ID, srv.ID
-	if err := e.q.InsertAlertEvent(ctx, sqlc.InsertAlertEventParams{
-		WorkspaceID: r.WorkspaceID, RuleID: &rid, ServerID: &sid, RuleName: r.Name, ServerName: srv.Name,
+func (e *alertEngine) event(ctx context.Context, r sqlc.AlertRule, t alertTarget, kind string, v float64, detail string, lasted time.Duration, muted bool, at time.Time) {
+	rid, tid := r.ID, t.id
+	p := sqlc.InsertAlertEventParams{
+		WorkspaceID: r.WorkspaceID, RuleID: &rid, RuleName: r.Name, ServerName: t.name,
 		Metric: r.Metric, Severity: r.Severity, Kind: kind, Value: v, Threshold: r.Threshold,
-		Detail: detail, LastedSecs: int64(lasted / time.Second), At: at,
-	}); err != nil {
-		slog.Warn("alerts: record event", "rule", r.ID, "server", srv.ID, "error", err)
+		Detail: detail, LastedSecs: int64(lasted / time.Second), Muted: muted, At: at,
+	}
+	if t.kind == "database" {
+		p.DatabaseID = &tid
+	} else {
+		p.ServerID = &tid
+	}
+	if err := e.q.InsertAlertEvent(ctx, p); err != nil {
+		slog.Warn("alerts: record event", "rule", r.ID, "target", t.id, "error", err)
 	}
 }
 
-// alertMessage builds what a rule sends: kind is fired, reminder or resolved.
-func (e *alertEngine) alertMessage(r sqlc.AlertRule, srv sqlc.Server, kind string, v float64, detail string, lasted time.Duration, at time.Time) notify.Message {
-	label := metricLabels[r.Metric]
-	what := label
+// alertText says what's wrong (or right again) in a sentence.
+func alertText(r sqlc.AlertRule, t alertTarget, kind string, v float64, detail string) string {
+	resolved := kind == "resolved"
+	switch r.Metric {
+	case metricOffline, metricDBDown:
+		if resolved {
+			return t.name + " can be reached again."
+		}
+		return t.name + " can't be reached: " + detail
+	case metricDBHealth:
+		if resolved {
+			return t.name + " is healthy again (no critical checks)."
+		}
+		return t.name + " has critical checks: " + detail
+	case metricService:
+		switch {
+		case resolved && r.Unit != "":
+			return r.Unit + " is running again."
+		case resolved:
+			return "No failed services left."
+		case r.Unit != "":
+			return r.Unit + " isn't running (" + detail + ")."
+		case v == 1:
+			return "A service failed: " + detail
+		}
+		return fmt.Sprintf("%g services failed: %s", v, detail)
+	}
+	what := metricLabels[r.Metric]
 	if r.Metric == metricDisk && detail != "" {
 		what = "Disk " + detail
 	}
-	var event, title, text string
+	if resolved {
+		return what + " is back to " + formatMetric(r.Metric, v) + "."
+	}
+	return fmt.Sprintf("%s is %s (%s).", what, formatMetric(r.Metric, v), ruleCondition(r))
+}
+
+// alertMessage builds what a rule sends: kind is fired, reminder or resolved.
+func (e *alertEngine) alertMessage(r sqlc.AlertRule, t alertTarget, kind string, v float64, detail string, lasted time.Duration, at time.Time) notify.Message {
+	var event, title string
 	switch kind {
 	case "resolved":
-		event, title = notify.EventUp, "Resolved: "+r.Name+" on "+srv.Name
-		if r.Metric == metricOffline {
-			text = srv.Name + " can be reached again."
-		} else {
-			text = what + " is back to " + formatMetric(r.Metric, v) + "."
-		}
+		event, title = notify.EventUp, "Resolved: "+r.Name+" on "+t.name
 	default:
 		event = notify.EventDegraded
 		if r.Severity == "critical" {
 			event = notify.EventDown
 		}
-		title = r.Name + " on " + srv.Name
+		title = r.Name + " on " + t.name
 		if kind == "reminder" {
 			event, title = notify.EventReminder, "Still firing: "+title
 		}
-		if r.Metric == metricOffline {
-			text = srv.Name + " can't be reached: " + detail
-		} else {
-			text = fmt.Sprintf("%s is %s (%s).", what, formatMetric(r.Metric, v), ruleCondition(r))
-		}
 	}
-	fields := []notify.Field{{Name: "Server", Value: srv.Name + " (" + srv.Host + ")"}}
-	if r.Metric != metricOffline {
-		fields = append(fields, notify.Field{Name: label, Value: formatMetric(r.Metric, v)},
+	noun := "Server"
+	if t.kind == "database" {
+		noun = "Database"
+	}
+	fields := []notify.Field{{Name: noun, Value: t.name + " (" + t.where + ")"}}
+	if !stateMetric(r.Metric) {
+		fields = append(fields, notify.Field{Name: metricLabels[r.Metric], Value: formatMetric(r.Metric, v)},
 			notify.Field{Name: "Alert when", Value: ruleCondition(r)})
 	}
 	if lasted > 0 {
@@ -314,24 +468,36 @@ func (e *alertEngine) alertMessage(r sqlc.AlertRule, srv sqlc.Server, kind strin
 	fields = append(fields, notify.Field{Name: "Severity", Value: strings.ToUpper(r.Severity[:1]) + r.Severity[1:]})
 	url := ""
 	if e.up.panelURL != "" {
-		url = e.up.panelURL + "/servers/" + srv.ID.String()
-		if r.Metric != metricOffline {
-			url += "/metrics"
+		switch {
+		case t.kind == "database":
+			url = e.up.panelURL + "/databases/" + t.id.String()
+		case r.Metric == metricService:
+			url = e.up.panelURL + "/servers/" + t.id.String() + "/services"
+		case r.Metric == metricOffline:
+			url = e.up.panelURL + "/servers/" + t.id.String()
+		default:
+			url = e.up.panelURL + "/servers/" + t.id.String() + "/metrics"
 		}
 	}
+	data := map[string]any{
+		"rule_id": r.ID.String(), "rule_name": r.Name, "target_kind": t.kind,
+		"metric": r.Metric, "severity": r.Severity, "state": kind,
+		"value": v, "threshold": r.Threshold, "op": r.Op, "detail": detail,
+	}
+	if t.kind == "database" {
+		data["database_id"], data["database_name"] = t.id.String(), t.name
+	} else {
+		data["server_id"], data["server_name"] = t.id.String(), t.name
+	}
 	return notify.Message{
-		Event: event, Title: title, Text: text, URL: url, Fields: fields, At: at,
-		Data: map[string]any{
-			"rule_id": r.ID.String(), "rule_name": r.Name, "server_id": srv.ID.String(),
-			"server_name": srv.Name, "metric": r.Metric, "severity": r.Severity, "state": kind,
-			"value": v, "threshold": r.Threshold, "op": r.Op, "detail": detail,
-		},
+		Event: event, Title: title, Text: alertText(r, t, kind, v, detail), URL: url, Fields: fields,
+		At: at, Data: data,
 	}
 }
 
 // send delivers to the rule's channels, in the background.
-func (e *alertEngine) send(r sqlc.AlertRule, srv sqlc.Server, kind string, v float64, detail string, lasted time.Duration, at time.Time) {
-	msg := e.alertMessage(r, srv, kind, v, detail, lasted, at)
+func (e *alertEngine) send(r sqlc.AlertRule, t alertTarget, kind string, v float64, detail string, lasted time.Duration, at time.Time) {
+	msg := e.alertMessage(r, t, kind, v, detail, lasted, at)
 	go func() {
 		ctx := context.Background()
 		chans, err := e.q.AlertRuleChannelsToNotify(ctx, r.ID)

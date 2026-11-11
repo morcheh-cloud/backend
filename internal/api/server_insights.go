@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/morcheh/backend/internal/sshpool"
 	"github.com/morcheh/backend/internal/sshprobe"
 	"github.com/morcheh/backend/internal/sysstats"
+	"github.com/morcheh/backend/internal/terminal"
 )
 
 // Insights for the Servers page: uptime and response time from every
@@ -83,6 +85,9 @@ func startServerSampler(h *serverHandler, every, keep time.Duration) {
 				}
 				if _, err := h.q.PruneAlertEvents(ctx, before); err != nil {
 					slog.Warn("prune alert events", "error", err)
+				}
+				if _, err := h.q.PruneAlertMutes(ctx, before); err != nil {
+					slog.Warn("prune alert mutes", "error", err)
 				}
 			}
 			if every <= 0 {
@@ -167,9 +172,48 @@ func (h *serverHandler) sample(ctx context.Context, srv sqlc.Server) error {
 		return err
 	}
 	if h.alerts != nil {
-		h.alerts.onSample(ctx, srv, metricSampleOf(sqlc.ServerSample(p)))
+		ms := metricSampleOf(sqlc.ServerSample(p))
+		ms.services = func(ctx context.Context, unit string) ([]string, error) {
+			return h.failedServices(ctx, id, unit)
+		}
+		h.alerts.onSample(ctx, srv, ms)
 	}
 	return nil
+}
+
+// failedServices lists a server's failed systemd services, or, with a unit,
+// that unit's state when it isn't running (empty when it is). Servers
+// without systemd give an error.
+func (h *serverHandler) failedServices(ctx context.Context, id uuid.UUID, unit string) ([]string, error) {
+	cmd := "command -v systemctl >/dev/null 2>&1 || exit 3; " +
+		"systemctl list-units --type=service --state=failed --no-legend --plain --no-pager 2>/dev/null | awk '{print $1}'"
+	if unit != "" {
+		cmd = "command -v systemctl >/dev/null 2>&1 || exit 3; systemctl is-active -- " +
+			terminal.ShellQuote(unit) + " 2>/dev/null; true"
+	}
+	var out string
+	if err := h.withConn(ctx, id.String(), func(c *sshpool.Conn) (err error) {
+		out, err = run(ctx, c, cmd)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		if unit != "" {
+			// is-active says active, reloading, activating… or inactive/failed.
+			if l == "inactive" || l == "failed" {
+				names = append(names, l)
+			}
+			continue
+		}
+		names = append(names, strings.TrimPrefix(l, "● "))
+	}
+	return names, nil
 }
 
 // sampleDisk is one filesystem in server_samples.disks.

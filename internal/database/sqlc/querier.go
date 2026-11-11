@@ -23,8 +23,12 @@ type Querier interface {
 	AddMonitorLocation(ctx context.Context, arg AddMonitorLocationParams) error
 	AddProxyChange(ctx context.Context, arg AddProxyChangeParams) error
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
+	// Whether a mute covers this rule on this target right now.
+	AlertMuted(ctx context.Context, arg AlertMutedParams) (bool, error)
 	AlertRuleChannelsToNotify(ctx context.Context, ruleID uuid.UUID) ([]NotificationChannel, error)
-	// The enabled rules of a server's workspace that cover it.
+	// The enabled database rules of a database's workspace that cover it.
+	AlertRulesForDatabase(ctx context.Context, arg AlertRulesForDatabaseParams) ([]AlertRule, error)
+	// The enabled server rules of a server's workspace that cover it.
 	AlertRulesForServer(ctx context.Context, arg AlertRulesForServerParams) ([]AlertRule, error)
 	AnyBackupPlanEnabled(ctx context.Context, databaseID uuid.UUID) (bool, error)
 	// A backup and all it builds on, oldest first.
@@ -42,6 +46,10 @@ type Querier interface {
 	ClearAlertRuleChannels(ctx context.Context, ruleID uuid.UUID) error
 	ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error
 	ClearMonitorChannels(ctx context.Context, monitorID uuid.UUID) error
+	// Who ran commands in the window, for the filter.
+	CommandLogPeople(ctx context.Context, arg CommandLogPeopleParams) ([]CommandLogPeopleRow, error)
+	// Which servers commands ran on in the window, for the filter.
+	CommandLogServers(ctx context.Context, arg CommandLogServersParams) ([]CommandLogServersRow, error)
 	CountActiveAdmins(ctx context.Context) (int32, error)
 	CountActiveRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountAnsibleRuns(ctx context.Context, arg CountAnsibleRunsParams) (int64, error)
@@ -62,6 +70,7 @@ type Querier interface {
 	CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error)
 	CountWorkspaces(ctx context.Context) (int32, error)
 	CreateAlertChannel(ctx context.Context, arg CreateAlertChannelParams) (AlertChannel, error)
+	CreateAlertMute(ctx context.Context, arg CreateAlertMuteParams) (AlertMute, error)
 	CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams) (AlertRule, error)
 	CreateAnsibleRun(ctx context.Context, arg CreateAnsibleRunParams) (AnsibleRun, error)
 	CreateApp(ctx context.Context, arg CreateAppParams) (App, error)
@@ -114,6 +123,7 @@ type Querier interface {
 	DefaultChannels(ctx context.Context, workspaceID uuid.UUID) ([]uuid.UUID, error)
 	DelayMonitor(ctx context.Context, arg DelayMonitorParams) error
 	DeleteAlertChannel(ctx context.Context, arg DeleteAlertChannelParams) (int64, error)
+	DeleteAlertMute(ctx context.Context, id uuid.UUID) error
 	DeleteAlertRule(ctx context.Context, id uuid.UUID) error
 	DeleteAlertStates(ctx context.Context, ruleID uuid.UUID) error
 	DeleteAnsibleRun(ctx context.Context, id uuid.UUID) (int64, error)
@@ -158,6 +168,8 @@ type Querier interface {
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
 	DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) error
+	// Ends a mute now (one that hasn't started yet goes away).
+	EndAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error)
 	// A run whose job ended without it (canceled while queued, Morcheh restarted).
 	EndAnsibleRun(ctx context.Context, arg EndAnsibleRunParams) error
 	// Only a run still going: a run that finished keeps its outcome.
@@ -189,6 +201,7 @@ type Querier interface {
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
 	GetAlertChannel(ctx context.Context, id uuid.UUID) (AlertChannel, error)
+	GetAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error)
 	GetAlertRule(ctx context.Context, id uuid.UUID) (AlertRule, error)
 	GetAlertRuleWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetAlertState(ctx context.Context, arg GetAlertStateParams) (AlertState, error)
@@ -203,6 +216,9 @@ type Querier interface {
 	GetBackupDatabase(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetBackupPlan(ctx context.Context, id uuid.UUID) (DatabaseBackupPlan, error)
 	GetBackupPlanDatabase(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetCommandLog(ctx context.Context, id uuid.UUID) (CommandLog, error)
+	GetCommandLogOutput(ctx context.Context, id uuid.UUID) (CommandLogOutput, error)
+	GetCommandLogSettings(ctx context.Context, workspaceID uuid.UUID) (CommandLogSetting, error)
 	GetDNSServer(ctx context.Context, id uuid.UUID) (DnsServer, error)
 	GetDNSServerWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
@@ -271,6 +287,8 @@ type Querier interface {
 	InsertServerStatusChange(ctx context.Context, arg InsertServerStatusChangeParams) error
 	InsertStorageCheck(ctx context.Context, arg InsertStorageCheckParams) error
 	InsertStorageUsage(ctx context.Context, arg InsertStorageUsageParams) (StorageUsage, error)
+	// At start-up: commands a previous run of Morcheh was waiting on.
+	InterruptCommandLog(ctx context.Context) (int64, error)
 	// At startup: whatever was running died with the last process.
 	InterruptRunningJobs(ctx context.Context) (int64, error)
 	// What the last process left running can't go on after a restart.
@@ -301,9 +319,11 @@ type Querier interface {
 	ListActiveScheduleRuns(ctx context.Context, scheduleID *uuid.UUID) ([]ScheduleRun, error)
 	ListAlertChannels(ctx context.Context, workspaceID uuid.UUID) ([]AlertChannel, error)
 	ListAlertEvents(ctx context.Context, arg ListAlertEventsParams) ([]AlertEvent, error)
+	// Mutes that are on now or start later.
+	ListAlertMutes(ctx context.Context, arg ListAlertMutesParams) ([]ListAlertMutesRow, error)
 	ListAlertRuleChannels(ctx context.Context, ids []uuid.UUID) ([]AlertRuleChannel, error)
 	ListAlertRules(ctx context.Context, arg ListAlertRulesParams) ([]AlertRule, error)
-	// Where the given rules stand on each server they've seen.
+	// Where the given rules stand on each server or database they've seen.
 	ListAlertStates(ctx context.Context, ids []uuid.UUID) ([]ListAlertStatesRow, error)
 	ListAllGroupMembers(ctx context.Context) ([]GroupMember, error)
 	ListAnsibleFolders(ctx context.Context, workspaceID uuid.UUID) ([]ListAnsibleFoldersRow, error)
@@ -327,6 +347,8 @@ type Querier interface {
 	// what the caller reaches.
 	ListBackupProblems(ctx context.Context, arg ListBackupProblemsParams) ([]ListBackupProblemsRow, error)
 	ListBackups(ctx context.Context, arg ListBackupsParams) ([]DatabaseBackup, error)
+	// Newest first, a page after the (before_at, before_id) cursor.
+	ListCommandLog(ctx context.Context, arg ListCommandLogParams) ([]CommandLog, error)
 	ListDNSServers(ctx context.Context, arg ListDNSServersParams) ([]DnsServer, error)
 	// Servers whose last check is older than @before (or that were never
 	// checked), the longest waiting first.
@@ -463,8 +485,11 @@ type Querier interface {
 	// ---- Incidents ----
 	OpenMonitorIncident(ctx context.Context, arg OpenMonitorIncidentParams) error
 	PruneAlertEvents(ctx context.Context, before time.Time) (int64, error)
+	PruneAlertMutes(ctx context.Context, before time.Time) (int64, error)
 	// Rows of runs that left no backup, past the newest @keep of a plan.
 	PruneBackupRecords(ctx context.Context, arg PruneBackupRecordsParams) error
+	// Past each workspace's keep_days (90 without settings).
+	PruneCommandLog(ctx context.Context) (int64, error)
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
 	PruneFirewallChanges(ctx context.Context, arg PruneFirewallChangesParams) error
@@ -511,6 +536,9 @@ type Querier interface {
 	// Puts back a host from a history snapshot, with its old id.
 	RestoreProxyHost(ctx context.Context, arg RestoreProxyHostParams) error
 	SaveAnsibleRunProgress(ctx context.Context, arg SaveAnsibleRunProgressParams) error
+	// Writes a row's whole state; called again as it ends or repeats.
+	SaveCommandLog(ctx context.Context, arg []SaveCommandLogParams) *SaveCommandLogBatchResults
+	SaveCommandLogOutput(ctx context.Context, arg []SaveCommandLogOutputParams) *SaveCommandLogOutputBatchResults
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
 	SaveMonitorLocation(ctx context.Context, arg SaveMonitorLocationParams) error
 	SaveMonitorState(ctx context.Context, arg SaveMonitorStateParams) (Monitor, error)
@@ -550,6 +578,7 @@ type Querier interface {
 	SetBackupPlanNext(ctx context.Context, arg SetBackupPlanNextParams) error
 	SetBackupPlanStorages(ctx context.Context, arg SetBackupPlanStoragesParams) error
 	SetBackupVerified(ctx context.Context, arg SetBackupVerifiedParams) error
+	SetCommandLogSettings(ctx context.Context, arg SetCommandLogSettingsParams) (CommandLogSetting, error)
 	SetDNSServerFavorite(ctx context.Context, arg SetDNSServerFavoriteParams) (DnsServer, error)
 	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
 	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)

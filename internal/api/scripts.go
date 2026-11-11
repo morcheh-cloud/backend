@@ -1245,10 +1245,11 @@ func execScript(ctx context.Context, sh *rootShell, script string, timeout time.
 	case privSudoPassword:
 		cmd, stdin = "sudo -S -p '' sh -s", sh.password+"\n"+script
 	}
-	sess, err := sh.c.Client.NewSession()
+	sess, err := sh.c.Session(ctx)
 	if err != nil {
 		return nil, false, err
 	}
+	sh.logAs(script).apply(sess)
 	defer sess.Close()
 	sess.Stdout, sess.Stderr = w, w
 	sess.Stdin = strings.NewReader(stdin)

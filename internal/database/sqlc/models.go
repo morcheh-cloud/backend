@@ -55,6 +55,22 @@ type AlertEvent struct {
 	Detail      string     `json:"detail"`
 	LastedSecs  int64      `json:"lasted_secs"`
 	At          time.Time  `json:"at"`
+	DatabaseID  *uuid.UUID `json:"database_id"`
+	Muted       bool       `json:"muted"`
+}
+
+type AlertMute struct {
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	RuleID        *uuid.UUID `json:"rule_id"`
+	TargetID      *uuid.UUID `json:"target_id"`
+	TargetKind    string     `json:"target_kind"`
+	TargetName    string     `json:"target_name"`
+	StartsAt      time.Time  `json:"starts_at"`
+	Until         time.Time  `json:"until"`
+	Note          string     `json:"note"`
+	CreatedByName string     `json:"created_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 type AlertRule struct {
@@ -77,6 +93,8 @@ type AlertRule struct {
 	UpdatedByName  string      `json:"updated_by_name"`
 	CreatedAt      time.Time   `json:"created_at"`
 	UpdatedAt      time.Time   `json:"updated_at"`
+	Unit           string      `json:"unit"`
+	DatabaseIds    []uuid.UUID `json:"database_ids"`
 }
 
 type AlertRuleChannel struct {
@@ -86,13 +104,14 @@ type AlertRuleChannel struct {
 
 type AlertState struct {
 	RuleID      uuid.UUID  `json:"rule_id"`
-	ServerID    uuid.UUID  `json:"server_id"`
+	TargetID    uuid.UUID  `json:"target_id"`
 	BreachSince *time.Time `json:"breach_since"`
 	FiringSince *time.Time `json:"firing_since"`
 	LastSentAt  *time.Time `json:"last_sent_at"`
 	Value       float64    `json:"value"`
 	Detail      string     `json:"detail"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+	TargetKind  string     `json:"target_kind"`
 }
 
 type AnsiblePlaybook struct {
@@ -191,6 +210,53 @@ type AppSetting struct {
 	ID               bool      `json:"id"`
 	RegistrationOpen bool      `json:"registration_open"`
 	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type CommandLog struct {
+	ID          uuid.UUID  `json:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	ServerID    *uuid.UUID `json:"server_id"`
+	ServerName  string     `json:"server_name"`
+	UserID      *uuid.UUID `json:"user_id"`
+	UserName    string     `json:"user_name"`
+	Kind        string     `json:"kind"`
+	Entry       string     `json:"entry"`
+	Source      string     `json:"source"`
+	Ref         string     `json:"ref"`
+	RecordingID *uuid.UUID `json:"recording_id"`
+	RecordingMs *int64     `json:"recording_ms"`
+	Command     string     `json:"command"`
+	Truncated   bool       `json:"truncated"`
+	Cwd         string     `json:"cwd"`
+	AsRoot      bool       `json:"as_root"`
+	StartedAt   time.Time  `json:"started_at"`
+	EndedAt     *time.Time `json:"ended_at"`
+	ExitCode    *int32     `json:"exit_code"`
+	Error       string     `json:"error"`
+	Note        string     `json:"note"`
+	Interrupted bool       `json:"interrupted"`
+	Repeats     int32      `json:"repeats"`
+	LastAt      time.Time  `json:"last_at"`
+	ClientIp    string     `json:"client_ip"`
+}
+
+type CommandLogOutput struct {
+	ID        uuid.UUID `json:"id"`
+	Output    string    `json:"output"`
+	Size      int64     `json:"size"`
+	Truncated bool      `json:"truncated"`
+	Note      string    `json:"note"`
+}
+
+type CommandLogSetting struct {
+	WorkspaceID   uuid.UUID `json:"workspace_id"`
+	Enabled       bool      `json:"enabled"`
+	KeepDays      int32     `json:"keep_days"`
+	LogReads      bool      `json:"log_reads"`
+	LogAutomatic  bool      `json:"log_automatic"`
+	UpdatedByName string    `json:"updated_by_name"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	LogOutput     bool      `json:"log_output"`
 }
 
 type Database struct {

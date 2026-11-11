@@ -77,9 +77,13 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerWorkspaces(api, a)
 	registerWorkspaceLogos(api, a)
 	registerFolders(api, a)
+	cmdLog := newCommandLog(sqlc.New(db))
+	pool := sshpool.New()
+	pool.Log = cmdLog
 	servers := &serverHandler{
 		db: db, q: sqlc.New(db), box: box,
-		pool:  sshpool.New(),
+		pool:  pool,
+		cmds:  cmdLog,
 		terms: terms,
 		jobs:  runner,
 		authz: a,
@@ -94,6 +98,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerServerMetrics(api, servers, cfg.ServerSampleInterval)
 	registerTerminals(api, r, servers, cfg.CORSOrigins)
 	registerRecordings(api, servers.recs)
+	registerCommandLog(api, servers)
 	registerFiles(api, servers)
 	registerDiskUsage(api, servers)
 	registerCron(api, servers)
@@ -139,7 +144,9 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerMonitors(api, up)
 	registerNotifications(api, up)
 	servers.alerts = newAlertEngine(sqlc.New(db), up, cfg.ServerSampleInterval)
-	registerAlertRules(api, &alertRuleHandler{q: sqlc.New(db), authz: a, engine: servers.alerts})
+	alertRules := &alertRuleHandler{q: sqlc.New(db), authz: a, engine: servers.alerts}
+	registerAlertRules(api, alertRules)
+	registerAlertMutes(api, alertRules)
 	apps := newAppHandler(sqlc.New(db), db, box, a)
 	registerApps(api, apps)
 	registerAppCategories(api, apps)

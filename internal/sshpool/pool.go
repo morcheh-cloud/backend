@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/morcheh/backend/internal/cmdlog"
 	"github.com/morcheh/backend/internal/sshprobe"
 )
 
@@ -55,6 +56,10 @@ type names struct {
 // Pool hands out connections by server id. A connection is reused while the
 // server's connection settings (summarised as version) stay the same.
 type Pool struct {
+	// Receives every command run through Conn.Session; nil logs nothing.
+	// Set it before the pool is used.
+	Log cmdlog.Sink
+
 	mu      sync.Mutex
 	conns   map[string]*Conn
 	dialing map[string]*dial

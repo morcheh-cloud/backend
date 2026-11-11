@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/google/uuid"
 
+	"github.com/morcheh/backend/internal/cmdlog"
 	"github.com/morcheh/backend/internal/sshpool"
 	"github.com/morcheh/backend/internal/sysstats"
 )
@@ -203,7 +204,7 @@ func (hub *statsHub) stream(ctx context.Context, id string, emit func(sysstats.S
 	c.Acquire() // keep the pool from closing it as idle
 	defer c.Release()
 
-	sess, err := c.Client.NewSession()
+	sess, err := c.Session(cmdlog.Background(ctx, "Live resources"))
 	if err != nil {
 		hub.h.pool.Drop(id) // a half-dead connection; redial next time
 		return err

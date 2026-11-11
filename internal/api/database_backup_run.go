@@ -641,13 +641,16 @@ func (h *backupHandler) runDump(ctx context.Context, t *jobs.Task, s dumpScript,
 // execDump waits for the command. When ctx ends it asks the command to stop,
 // then closes the session.
 func execDump(ctx context.Context, t *jobs.Task, c *sshpool.Conn, cmd string, stdin io.Reader, out io.Writer, secrets []string) (bool, dumpMarks, error) {
-	sess, err := c.Client.NewSession()
+	sess, err := c.Session(ctx)
 	if err != nil {
 		return false, dumpMarks{}, err
 	}
+	sess.Secrets = secrets
 	defer sess.Close()
 	var stderr tailWriter
 	sess.Stdout, sess.Stderr, sess.Stdin = out, &stderr, stdin
+	// The dump itself goes to stdout: only its messages are logged.
+	sess.NoStdout = out != nil
 	if out == nil {
 		sess.Stdout = &stderr
 	}

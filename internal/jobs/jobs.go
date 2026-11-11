@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/morcheh/backend/internal/cmdlog"
 	"github.com/morcheh/backend/internal/database/sqlc"
 )
 
@@ -399,7 +400,17 @@ func (r *Runner) call(ctx context.Context, e *entry) (result any, err error) {
 	if h == nil {
 		return nil, fmt.Errorf("this version of Morcheh can't run %q jobs", e.job.Kind)
 	}
-	return h(ctx, &Task{ID: e.job.ID, Kind: e.job.Kind, Params: e.job.Params, r: r, e: e})
+	return h(cmdlog.With(ctx, origin(e.job)), &Task{ID: e.job.ID, Kind: e.job.Kind, Params: e.job.Params, r: r, e: e})
+}
+
+// origin says, for the command log, that the job's commands are for whoever
+// started it; a scheduled task's are the schedule's.
+func origin(j sqlc.Job) cmdlog.Origin {
+	kind := cmdlog.Job
+	if strings.HasPrefix(j.Kind, "schedule-") {
+		kind = cmdlog.Schedule
+	}
+	return cmdlog.Origin{Kind: kind, Source: j.Title, UserID: j.CreatedBy, Ref: j.ID.String()}
 }
 
 func (r *Runner) finish(e *entry, result any, err error) {

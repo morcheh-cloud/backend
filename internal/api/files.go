@@ -1162,10 +1162,27 @@ func run(ctx context.Context, c *sshpool.Conn, cmd string) (string, error) {
 
 // runInput is run with text on stdin (empty for none) and its own timeout.
 func runInput(ctx context.Context, c *sshpool.Conn, cmd, stdin string, timeout time.Duration) (string, error) {
-	sess, err := c.Client.NewSession()
+	return runLogged(ctx, c, cmd, stdin, timeout, logAs{})
+}
+
+// logAs is how a command shows in the command log (see sshpool.Session).
+type logAs struct {
+	script  string
+	asRoot  bool
+	secrets []string
+}
+
+func (l logAs) apply(s *sshpool.Session) {
+	s.Script, s.AsRoot, s.Secrets = l.script, l.asRoot, l.secrets
+}
+
+// runLogged is runInput logging the command as l says.
+func runLogged(ctx context.Context, c *sshpool.Conn, cmd, stdin string, timeout time.Duration, l logAs) (string, error) {
+	sess, err := c.Session(ctx)
 	if err != nil {
 		return "", err
 	}
+	l.apply(sess)
 	defer sess.Close()
 	var stdout, stderr bytes.Buffer
 	sess.Stdout, sess.Stderr = &stdout, &stderr

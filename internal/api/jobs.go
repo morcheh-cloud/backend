@@ -392,10 +392,11 @@ func placeRefs(ids ...string) []uuid.UUID {
 // them all). When ctx ends the command's whole process group is killed, so
 // cancel stops tar, curl and the rest rather than leaving them running.
 func runStream(ctx context.Context, c *sshpool.Conn, cmd string, onOut func(string), onErr func(string) bool) error {
-	sess, err := c.Client.NewSession()
+	sess, err := c.Session(ctx)
 	if err != nil {
 		return err
 	}
+	sess.Script = cmd
 	defer sess.Close()
 	stdout, err := sess.StdoutPipe()
 	if err != nil {
@@ -460,7 +461,7 @@ func runStream(ctx context.Context, c *sshpool.Conn, cmd string, onOut func(stri
 		p := pid
 		mu.Unlock()
 		if p > 0 {
-			kctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			q := strconv.Itoa(p)
 			_, _ = run(kctx, c, "kill -TERM -- -"+q+" 2>/dev/null || kill -TERM "+q+" 2>/dev/null; true")
 			cancel()

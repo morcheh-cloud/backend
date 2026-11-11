@@ -427,6 +427,15 @@ func (h *databaseHandler) look(ctx context.Context, d sqlc.Database) sqlc.Databa
 	if err := h.q.InsertDatabaseSample(ctx, sample); err != nil {
 		slog.Warn("record database sample", "database", d.ID, "error", err)
 	}
+	if alerts := h.servers.alerts; alerts != nil {
+		var problems []string
+		for _, c := range checks {
+			if c.Level == "critical" && !c.Muted {
+				problems = append(problems, c.Title)
+			}
+		}
+		alerts.onDatabase(context.WithoutCancel(ctx), out, status, msg, out.Health, problems)
+	}
 	return out
 }
 

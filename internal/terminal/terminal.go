@@ -6,9 +6,11 @@ package terminal
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -63,6 +65,8 @@ type Session struct {
 	ssh   *ssh.Session
 	stdin io.WriteCloser
 	rec   Recorder
+	cmds  Commands
+	osc   *oscFilter
 
 	mu       sync.Mutex
 	number   int
@@ -107,6 +111,9 @@ type Options struct {
 	Owner string
 	// Recorder, if set, gets every byte of output and each resize.
 	Recorder Recorder
+	// Commands, if set, gets each command line typed into the shell (bash
+	// and zsh only, through hooks installed in the login user's home).
+	Commands Commands
 }
 
 // Recorder keeps a copy of a session: its output (never its input), its
@@ -134,10 +141,22 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 		return nil, ErrTooMany
 	}
 
-	sess, err := conn.Client.NewSession()
+	// The shell itself isn't a logged command; what is typed into it is.
+	ctx := context.Background()
+	var nonce string
+	if o.Commands != nil {
+		if err := InstallHooks(ctx, conn); err != nil {
+			slog.Info("terminal without command capture", "server", serverID, "error", err)
+		} else {
+			nonce = newNonce()
+		}
+	}
+	wrapped, err := conn.Session(ctx)
 	if err != nil {
 		return nil, err
 	}
+	wrapped.Quiet = true
+	sess := wrapped.Session
 	modes := ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 115200, ssh.TTY_OP_OSPEED: 115200}
 	if err := sess.RequestPty("xterm-256color", o.Rows, o.Cols, modes); err != nil {
 		sess.Close()
@@ -155,9 +174,12 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 		sess.Close()
 		return nil, err
 	}
-	if o.Cwd != "" {
+	switch {
+	case nonce != "":
+		err = sess.Start(startCommand(o.Cwd, nonce))
+	case o.Cwd != "":
 		err = sess.Start("cd -- " + ShellQuote(o.Cwd) + `; exec "${SHELL:-/bin/sh}" -l`)
-	} else {
+	default:
 		err = sess.Shell()
 	}
 	if err != nil {
@@ -167,7 +189,7 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 
 	s := &Session{
 		ID: uuid.NewString(), ServerID: serverID, Owner: o.Owner, Created: time.Now(),
-		m: m, conn: conn, ssh: sess, stdin: stdin, rec: o.Recorder,
+		m: m, conn: conn, ssh: sess, stdin: stdin, rec: o.Recorder, cmds: o.Commands,
 		cols: o.Cols, rows: o.Rows, subs: map[*Sub]struct{}{}, detached: time.Now(),
 	}
 	m.mu.Lock()
@@ -176,6 +198,9 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 	s.title = fmt.Sprintf("Shell %d", s.number)
 	m.sessions[s.ID] = s
 	m.mu.Unlock()
+	if nonce != "" {
+		s.osc = &oscFilter{nonce: nonce}
+	}
 
 	conn.Acquire()
 	go s.run(stdout)
@@ -195,13 +220,20 @@ func (s *Session) run(stdout io.Reader) {
 		n, err := stdout.Read(chunk)
 		if n > 0 {
 			data := bytes.Clone(chunk[:n])
-			s.mu.Lock()
-			s.buf = trim(append(s.buf, data...))
-			if s.rec != nil {
-				s.rec.Output(data)
+			var events []hookEvent
+			if s.osc != nil {
+				data, events = s.osc.feed(data)
 			}
-			s.broadcastLocked(Event{Data: data})
-			s.mu.Unlock()
+			s.report(data, events)
+			if len(data) > 0 {
+				s.mu.Lock()
+				s.buf = trim(append(s.buf, data...))
+				if s.rec != nil {
+					s.rec.Output(data)
+				}
+				s.broadcastLocked(Event{Data: data})
+				s.mu.Unlock()
+			}
 		}
 		if err != nil {
 			break
@@ -222,6 +254,9 @@ func (s *Session) run(stdout io.Reader) {
 	if s.rec != nil {
 		s.rec.Ended(code)
 	}
+	if s.cmds != nil {
+		s.cmds.Closed(code, time.Now())
+	}
 
 	s.m.mu.Lock()
 	delete(s.m.sessions, s.ID)
@@ -235,6 +270,34 @@ func (s *Session) run(stdout io.Reader) {
 	}
 	s.subs = nil
 	s.mu.Unlock()
+}
+
+// report hands the hooks' events to Commands.
+// report hands the hooks' events and the output around them to cmds, in
+// the order they came.
+func (s *Session) report(data []byte, events []hookEvent) {
+	if s.cmds == nil {
+		return
+	}
+	now := time.Now()
+	prev := 0
+	for _, ev := range events {
+		if ev.at > prev && ev.at <= len(data) {
+			s.cmds.Output(data[prev:ev.at])
+			prev = ev.at
+		}
+		switch ev.kind {
+		case 'r':
+			s.cmds.Ready(ev.shell, ev.uid)
+		case 's':
+			s.cmds.Started(ev.cmd, ev.cwd, now)
+		case 'e':
+			s.cmds.Finished(ev.code, now)
+		}
+	}
+	if prev < len(data) {
+		s.cmds.Output(data[prev:])
+	}
 }
 
 // trim keeps the scrollback bounded, cutting at a line start so replay

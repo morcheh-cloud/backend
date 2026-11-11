@@ -70,3 +70,11 @@ func parseIDs(raw []string) []uuid.UUID {
 	}
 	return ids
 }
+
+func idStrings(ids []uuid.UUID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.String()
+	}
+	return out
+}

@@ -63,6 +63,9 @@ var checkedInside = []string{
 	"get-software-run", "cancel-software-run", "delete-software-run",
 	// Only the caller's own, unless they are an Owner.
 	"list-workspace-recordings", "get-recording", "get-recording-cast", "delete-recording",
+	"list-workspace-command-log", "workspace-command-log-facets", "export-workspace-command-log", "get-command-log",
+	// Checked on what the mute covers (server, database or workspace).
+	"delete-alert-mute",
 }
 
 func TestEveryOperationHasAPolicy(t *testing.T) {

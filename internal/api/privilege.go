@@ -132,10 +132,15 @@ func (r *rootShell) command(script string) (cmd, stdin string) {
 	return cmd, ""
 }
 
+// logAs logs script itself, not its sudo wrapper.
+func (r *rootShell) logAs(script string) logAs {
+	return logAs{script: script, asRoot: r.priv != privUser}
+}
+
 // run runs script (as root when possible) and returns its stdout.
 func (r *rootShell) run(ctx context.Context, script string) (string, error) {
 	cmd, stdin := r.command(script)
-	return runInput(ctx, r.c, cmd, stdin, execTimeout)
+	return runLogged(ctx, r.c, cmd, stdin, execTimeout, r.logAs(script))
 }
 
 // execResult is a command whose output and exit status are the point, not
@@ -164,10 +169,11 @@ func (r *rootShell) exec(ctx context.Context, script string, timeout time.Durati
 // from two goroutines; res.output stays empty.
 func (r *rootShell) execTo(ctx context.Context, script string, timeout time.Duration, w io.Writer) (*execResult, error) {
 	cmd, stdin := r.command(script)
-	sess, err := r.c.Client.NewSession()
+	sess, err := r.c.Session(ctx)
 	if err != nil {
 		return nil, err
 	}
+	r.logAs(script).apply(sess)
 	defer sess.Close()
 	sess.Stdout, sess.Stderr = w, w
 	if stdin != "" {

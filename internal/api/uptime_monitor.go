@@ -237,7 +237,7 @@ func (w *capWriter) String() string {
 // limit cut it off, and an error only when the command couldn't run.
 func sshRunner(c *sshpool.Conn) uptime.Runner {
 	return func(ctx context.Context, argv []string) (string, int, error) {
-		sess, err := c.Client.NewSession()
+		sess, err := c.Session(ctx)
 		if err != nil {
 			return "", 0, err
 		}

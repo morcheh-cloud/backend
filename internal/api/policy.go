@@ -352,6 +352,18 @@ var policies = map[string]policy{
 	"get-recording-cast":        active,
 	"delete-recording":          active,
 
+	// The command log. Lists filter to the caller's own below Owner; one
+	// entry is the caller's own or an Owner's (checked inside).
+	"get-command-log-settings":     onWorkspace(auth.Viewer),
+	"set-command-log-settings":     onWorkspace(auth.Owner),
+	"list-workspace-command-log":   active,
+	"workspace-command-log-facets": active,
+	"export-workspace-command-log": active,
+	"list-server-command-log":      onServer(auth.Viewer),
+	"server-command-log-facets":    onServer(auth.Viewer),
+	"export-server-command-log":    onServer(auth.Viewer),
+	"get-command-log":              active,
+
 	"get-power":    onServer(auth.Viewer),
 	"power-action": onServer(auth.Operator),
 	"cancel-power": onServer(auth.Operator),
@@ -590,4 +602,7 @@ var policies = map[string]policy{
 	"update-alert-rule":           onAlertRule(auth.Engineer),
 	"set-alert-rule-enabled":      onAlertRule(auth.Engineer),
 	"delete-alert-rule":           onAlertRule(auth.Engineer),
+	"list-alert-mutes":            active,
+	"create-alert-mute":           active,
+	"delete-alert-mute":           active,
 }

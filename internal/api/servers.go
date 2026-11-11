@@ -271,6 +271,7 @@ type serverHandler struct {
 	pool  *sshpool.Pool
 	terms *terminal.Manager
 	recs  *recordings
+	cmds  *commandLog
 	stats *statsHub
 	privs privileges
 	jobs  *jobs.Runner

@@ -27,6 +27,29 @@ func (q *Queries) AddAlertRuleChannel(ctx context.Context, arg AddAlertRuleChann
 	return err
 }
 
+const alertMuted = `-- name: AlertMuted :one
+SELECT exists (
+    SELECT 1 FROM alert_mutes
+    WHERE workspace_id = $1 AND starts_at <= now() AND until > now()
+      AND (rule_id IS NULL OR rule_id = $2)
+      AND (target_id IS NULL OR target_id = $3)
+)::bool
+`
+
+type AlertMutedParams struct {
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	RuleID      *uuid.UUID `json:"rule_id"`
+	TargetID    *uuid.UUID `json:"target_id"`
+}
+
+// Whether a mute covers this rule on this target right now.
+func (q *Queries) AlertMuted(ctx context.Context, arg AlertMutedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, alertMuted, arg.WorkspaceID, arg.RuleID, arg.TargetID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const alertRuleChannelsToNotify = `-- name: AlertRuleChannelsToNotify :many
 SELECT c.id, c.workspace_id, c.name, c.kind, c.config, c.secrets_enc, c.enabled, c.is_default, c.allow_internal, c.last_sent_at, c.last_error, c.last_error_at, c.created_by_name, c.updated_by_name, c.created_at, c.updated_at FROM notification_channels c
 JOIN alert_rule_channels rc ON rc.channel_id = c.id
@@ -70,9 +93,65 @@ func (q *Queries) AlertRuleChannelsToNotify(ctx context.Context, ruleID uuid.UUI
 	return items, nil
 }
 
-const alertRulesForServer = `-- name: AlertRulesForServer :many
-SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at FROM alert_rules
+const alertRulesForDatabase = `-- name: AlertRulesForDatabase :many
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids FROM alert_rules
 WHERE enabled AND workspace_id = $1
+  AND metric IN ('db_down', 'db_health')
+  AND (scope = 'all' OR (scope = 'databases' AND $2::uuid = ANY (database_ids)))
+`
+
+type AlertRulesForDatabaseParams struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	DatabaseID  uuid.UUID `json:"database_id"`
+}
+
+// The enabled database rules of a database's workspace that cover it.
+func (q *Queries) AlertRulesForDatabase(ctx context.Context, arg AlertRulesForDatabaseParams) ([]AlertRule, error) {
+	rows, err := q.db.Query(ctx, alertRulesForDatabase, arg.WorkspaceID, arg.DatabaseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AlertRule{}
+	for rows.Next() {
+		var i AlertRule
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Enabled,
+			&i.Metric,
+			&i.Op,
+			&i.Threshold,
+			&i.Mount,
+			&i.ForMinutes,
+			&i.Severity,
+			&i.Scope,
+			&i.ServerIds,
+			&i.Tags,
+			&i.RepeatMinutes,
+			&i.NotifyResolved,
+			&i.CreatedByName,
+			&i.UpdatedByName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Unit,
+			&i.DatabaseIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const alertRulesForServer = `-- name: AlertRulesForServer :many
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids FROM alert_rules
+WHERE enabled AND workspace_id = $1
+  AND metric NOT IN ('db_down', 'db_health')
   AND (scope = 'all'
     OR (scope = 'servers' AND $2::uuid = ANY (server_ids))
     OR (scope = 'tags' AND tags && $3::text[]))
@@ -84,7 +163,7 @@ type AlertRulesForServerParams struct {
 	Tags        []string  `json:"tags"`
 }
 
-// The enabled rules of a server's workspace that cover it.
+// The enabled server rules of a server's workspace that cover it.
 func (q *Queries) AlertRulesForServer(ctx context.Context, arg AlertRulesForServerParams) ([]AlertRule, error) {
 	rows, err := q.db.Query(ctx, alertRulesForServer, arg.WorkspaceID, arg.ServerID, arg.Tags)
 	if err != nil {
@@ -114,6 +193,8 @@ func (q *Queries) AlertRulesForServer(ctx context.Context, arg AlertRulesForServ
 			&i.UpdatedByName,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Unit,
+			&i.DatabaseIds,
 		); err != nil {
 			return nil, err
 		}
@@ -166,15 +247,62 @@ func (q *Queries) CountChannelRules(ctx context.Context, ids []uuid.UUID) ([]Cou
 	return items, nil
 }
 
+const createAlertMute = `-- name: CreateAlertMute :one
+INSERT INTO alert_mutes (workspace_id, rule_id, target_id, target_kind, target_name, starts_at, until, note, created_by_name)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, workspace_id, rule_id, target_id, target_kind, target_name, starts_at, until, note, created_by_name, created_at
+`
+
+type CreateAlertMuteParams struct {
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	RuleID        *uuid.UUID `json:"rule_id"`
+	TargetID      *uuid.UUID `json:"target_id"`
+	TargetKind    string     `json:"target_kind"`
+	TargetName    string     `json:"target_name"`
+	StartsAt      time.Time  `json:"starts_at"`
+	Until         time.Time  `json:"until"`
+	Note          string     `json:"note"`
+	CreatedByName string     `json:"created_by_name"`
+}
+
+func (q *Queries) CreateAlertMute(ctx context.Context, arg CreateAlertMuteParams) (AlertMute, error) {
+	row := q.db.QueryRow(ctx, createAlertMute,
+		arg.WorkspaceID,
+		arg.RuleID,
+		arg.TargetID,
+		arg.TargetKind,
+		arg.TargetName,
+		arg.StartsAt,
+		arg.Until,
+		arg.Note,
+		arg.CreatedByName,
+	)
+	var i AlertMute
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RuleID,
+		&i.TargetID,
+		&i.TargetKind,
+		&i.TargetName,
+		&i.StartsAt,
+		&i.Until,
+		&i.Note,
+		&i.CreatedByName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createAlertRule = `-- name: CreateAlertRule :one
 INSERT INTO alert_rules (
-    workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity,
-    scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name
+    workspace_id, name, enabled, metric, op, threshold, mount, unit, for_minutes, severity,
+    scope, server_ids, database_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9,
-    $10, $11, $12, $13, $14, $15, $15
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17, $17
 )
-RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at
+RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids
 `
 
 type CreateAlertRuleParams struct {
@@ -185,10 +313,12 @@ type CreateAlertRuleParams struct {
 	Op             string      `json:"op"`
 	Threshold      float64     `json:"threshold"`
 	Mount          string      `json:"mount"`
+	Unit           string      `json:"unit"`
 	ForMinutes     int32       `json:"for_minutes"`
 	Severity       string      `json:"severity"`
 	Scope          string      `json:"scope"`
 	ServerIds      []uuid.UUID `json:"server_ids"`
+	DatabaseIds    []uuid.UUID `json:"database_ids"`
 	Tags           []string    `json:"tags"`
 	RepeatMinutes  int32       `json:"repeat_minutes"`
 	NotifyResolved bool        `json:"notify_resolved"`
@@ -204,10 +334,12 @@ func (q *Queries) CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams
 		arg.Op,
 		arg.Threshold,
 		arg.Mount,
+		arg.Unit,
 		arg.ForMinutes,
 		arg.Severity,
 		arg.Scope,
 		arg.ServerIds,
+		arg.DatabaseIds,
 		arg.Tags,
 		arg.RepeatMinutes,
 		arg.NotifyResolved,
@@ -234,8 +366,19 @@ func (q *Queries) CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Unit,
+		&i.DatabaseIds,
 	)
 	return i, err
+}
+
+const deleteAlertMute = `-- name: DeleteAlertMute :exec
+DELETE FROM alert_mutes WHERE id = $1
+`
+
+func (q *Queries) DeleteAlertMute(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAlertMute, id)
+	return err
 }
 
 const deleteAlertRule = `-- name: DeleteAlertRule :exec
@@ -256,8 +399,57 @@ func (q *Queries) DeleteAlertStates(ctx context.Context, ruleID uuid.UUID) error
 	return err
 }
 
+const endAlertMute = `-- name: EndAlertMute :one
+UPDATE alert_mutes SET until = greatest(now(), starts_at + interval '1 second')
+WHERE id = $1
+RETURNING id, workspace_id, rule_id, target_id, target_kind, target_name, starts_at, until, note, created_by_name, created_at
+`
+
+// Ends a mute now (one that hasn't started yet goes away).
+func (q *Queries) EndAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error) {
+	row := q.db.QueryRow(ctx, endAlertMute, id)
+	var i AlertMute
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RuleID,
+		&i.TargetID,
+		&i.TargetKind,
+		&i.TargetName,
+		&i.StartsAt,
+		&i.Until,
+		&i.Note,
+		&i.CreatedByName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAlertMute = `-- name: GetAlertMute :one
+SELECT id, workspace_id, rule_id, target_id, target_kind, target_name, starts_at, until, note, created_by_name, created_at FROM alert_mutes WHERE id = $1
+`
+
+func (q *Queries) GetAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error) {
+	row := q.db.QueryRow(ctx, getAlertMute, id)
+	var i AlertMute
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RuleID,
+		&i.TargetID,
+		&i.TargetKind,
+		&i.TargetName,
+		&i.StartsAt,
+		&i.Until,
+		&i.Note,
+		&i.CreatedByName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getAlertRule = `-- name: GetAlertRule :one
-SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at FROM alert_rules WHERE id = $1
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids FROM alert_rules WHERE id = $1
 `
 
 func (q *Queries) GetAlertRule(ctx context.Context, id uuid.UUID) (AlertRule, error) {
@@ -283,6 +475,8 @@ func (q *Queries) GetAlertRule(ctx context.Context, id uuid.UUID) (AlertRule, er
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Unit,
+		&i.DatabaseIds,
 	)
 	return i, err
 }
@@ -299,37 +493,38 @@ func (q *Queries) GetAlertRuleWorkspace(ctx context.Context, id uuid.UUID) (uuid
 }
 
 const getAlertState = `-- name: GetAlertState :one
-SELECT rule_id, server_id, breach_since, firing_since, last_sent_at, value, detail, updated_at FROM alert_states WHERE rule_id = $1 AND server_id = $2
+SELECT rule_id, target_id, breach_since, firing_since, last_sent_at, value, detail, updated_at, target_kind FROM alert_states WHERE rule_id = $1 AND target_id = $2
 `
 
 type GetAlertStateParams struct {
 	RuleID   uuid.UUID `json:"rule_id"`
-	ServerID uuid.UUID `json:"server_id"`
+	TargetID uuid.UUID `json:"target_id"`
 }
 
 func (q *Queries) GetAlertState(ctx context.Context, arg GetAlertStateParams) (AlertState, error) {
-	row := q.db.QueryRow(ctx, getAlertState, arg.RuleID, arg.ServerID)
+	row := q.db.QueryRow(ctx, getAlertState, arg.RuleID, arg.TargetID)
 	var i AlertState
 	err := row.Scan(
 		&i.RuleID,
-		&i.ServerID,
+		&i.TargetID,
 		&i.BreachSince,
 		&i.FiringSince,
 		&i.LastSentAt,
 		&i.Value,
 		&i.Detail,
 		&i.UpdatedAt,
+		&i.TargetKind,
 	)
 	return i, err
 }
 
 const insertAlertEvent = `-- name: InsertAlertEvent :exec
 INSERT INTO alert_events (
-    workspace_id, rule_id, server_id, rule_name, server_name, metric, severity, kind,
-    value, threshold, detail, lasted_secs, at
+    workspace_id, rule_id, server_id, database_id, rule_name, server_name, metric, severity, kind,
+    value, threshold, detail, lasted_secs, muted, at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13
+    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $10, $11, $12, $13, $14, $15
 )
 `
 
@@ -337,6 +532,7 @@ type InsertAlertEventParams struct {
 	WorkspaceID uuid.UUID  `json:"workspace_id"`
 	RuleID      *uuid.UUID `json:"rule_id"`
 	ServerID    *uuid.UUID `json:"server_id"`
+	DatabaseID  *uuid.UUID `json:"database_id"`
 	RuleName    string     `json:"rule_name"`
 	ServerName  string     `json:"server_name"`
 	Metric      string     `json:"metric"`
@@ -346,6 +542,7 @@ type InsertAlertEventParams struct {
 	Threshold   float64    `json:"threshold"`
 	Detail      string     `json:"detail"`
 	LastedSecs  int64      `json:"lasted_secs"`
+	Muted       bool       `json:"muted"`
 	At          time.Time  `json:"at"`
 }
 
@@ -354,6 +551,7 @@ func (q *Queries) InsertAlertEvent(ctx context.Context, arg InsertAlertEventPara
 		arg.WorkspaceID,
 		arg.RuleID,
 		arg.ServerID,
+		arg.DatabaseID,
 		arg.RuleName,
 		arg.ServerName,
 		arg.Metric,
@@ -363,19 +561,21 @@ func (q *Queries) InsertAlertEvent(ctx context.Context, arg InsertAlertEventPara
 		arg.Threshold,
 		arg.Detail,
 		arg.LastedSecs,
+		arg.Muted,
 		arg.At,
 	)
 	return err
 }
 
 const listAlertEvents = `-- name: ListAlertEvents :many
-SELECT id, workspace_id, rule_id, server_id, rule_name, server_name, metric, severity, kind, value, threshold, detail, lasted_secs, at FROM alert_events
+SELECT id, workspace_id, rule_id, server_id, rule_name, server_name, metric, severity, kind, value, threshold, detail, lasted_secs, at, database_id, muted FROM alert_events
 WHERE ($1::bool OR workspace_id = ANY ($2::uuid[]))
   AND ($3::uuid IS NULL OR workspace_id = $3::uuid)
   AND ($4::uuid IS NULL OR server_id = $4::uuid)
-  AND ($5::uuid IS NULL OR rule_id = $5::uuid)
+  AND ($5::uuid IS NULL OR database_id = $5::uuid)
+  AND ($6::uuid IS NULL OR rule_id = $6::uuid)
 ORDER BY at DESC, id DESC
-LIMIT $6
+LIMIT $7
 `
 
 type ListAlertEventsParams struct {
@@ -383,6 +583,7 @@ type ListAlertEventsParams struct {
 	WorkspaceIds []uuid.UUID `json:"workspace_ids"`
 	WorkspaceID  *uuid.UUID  `json:"workspace_id"`
 	ServerID     *uuid.UUID  `json:"server_id"`
+	DatabaseID   *uuid.UUID  `json:"database_id"`
 	RuleID       *uuid.UUID  `json:"rule_id"`
 	Lim          int32       `json:"lim"`
 }
@@ -393,6 +594,7 @@ func (q *Queries) ListAlertEvents(ctx context.Context, arg ListAlertEventsParams
 		arg.WorkspaceIds,
 		arg.WorkspaceID,
 		arg.ServerID,
+		arg.DatabaseID,
 		arg.RuleID,
 		arg.Lim,
 	)
@@ -418,6 +620,73 @@ func (q *Queries) ListAlertEvents(ctx context.Context, arg ListAlertEventsParams
 			&i.Detail,
 			&i.LastedSecs,
 			&i.At,
+			&i.DatabaseID,
+			&i.Muted,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAlertMutes = `-- name: ListAlertMutes :many
+SELECT m.id, m.workspace_id, m.rule_id, m.target_id, m.target_kind, m.target_name, m.starts_at, m.until, m.note, m.created_by_name, m.created_at, coalesce(r.name, '')::text AS rule_name
+FROM alert_mutes m
+LEFT JOIN alert_rules r ON r.id = m.rule_id
+WHERE m.until > now()
+  AND ($1::bool OR m.workspace_id = ANY ($2::uuid[]))
+  AND ($3::uuid IS NULL OR m.workspace_id = $3::uuid)
+ORDER BY m.starts_at, m.until
+`
+
+type ListAlertMutesParams struct {
+	SeeAll       bool        `json:"see_all"`
+	WorkspaceIds []uuid.UUID `json:"workspace_ids"`
+	WorkspaceID  *uuid.UUID  `json:"workspace_id"`
+}
+
+type ListAlertMutesRow struct {
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	RuleID        *uuid.UUID `json:"rule_id"`
+	TargetID      *uuid.UUID `json:"target_id"`
+	TargetKind    string     `json:"target_kind"`
+	TargetName    string     `json:"target_name"`
+	StartsAt      time.Time  `json:"starts_at"`
+	Until         time.Time  `json:"until"`
+	Note          string     `json:"note"`
+	CreatedByName string     `json:"created_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	RuleName      string     `json:"rule_name"`
+}
+
+// Mutes that are on now or start later.
+func (q *Queries) ListAlertMutes(ctx context.Context, arg ListAlertMutesParams) ([]ListAlertMutesRow, error) {
+	rows, err := q.db.Query(ctx, listAlertMutes, arg.SeeAll, arg.WorkspaceIds, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAlertMutesRow{}
+	for rows.Next() {
+		var i ListAlertMutesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RuleID,
+			&i.TargetID,
+			&i.TargetKind,
+			&i.TargetName,
+			&i.StartsAt,
+			&i.Until,
+			&i.Note,
+			&i.CreatedByName,
+			&i.CreatedAt,
+			&i.RuleName,
 		); err != nil {
 			return nil, err
 		}
@@ -455,7 +724,7 @@ func (q *Queries) ListAlertRuleChannels(ctx context.Context, ids []uuid.UUID) ([
 }
 
 const listAlertRules = `-- name: ListAlertRules :many
-SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at FROM alert_rules
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids FROM alert_rules
 WHERE ($1::bool OR workspace_id = ANY ($2::uuid[]))
   AND ($3::uuid IS NULL OR workspace_id = $3::uuid)
 ORDER BY lower(name), id
@@ -496,6 +765,8 @@ func (q *Queries) ListAlertRules(ctx context.Context, arg ListAlertRulesParams) 
 			&i.UpdatedByName,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Unit,
+			&i.DatabaseIds,
 		); err != nil {
 			return nil, err
 		}
@@ -508,26 +779,28 @@ func (q *Queries) ListAlertRules(ctx context.Context, arg ListAlertRulesParams) 
 }
 
 const listAlertStates = `-- name: ListAlertStates :many
-SELECT st.rule_id, st.server_id, st.breach_since, st.firing_since, st.last_sent_at, st.value, st.detail, st.updated_at, s.name AS server_name
+SELECT st.rule_id, st.target_id, st.breach_since, st.firing_since, st.last_sent_at, st.value, st.detail, st.updated_at, st.target_kind, coalesce(s.name, d.name)::text AS target_name
 FROM alert_states st
-JOIN servers s ON s.id = st.server_id
-WHERE st.rule_id = ANY ($1::uuid[])
-ORDER BY st.firing_since NULLS LAST, s.name
+LEFT JOIN servers s ON st.target_kind = 'server' AND s.id = st.target_id
+LEFT JOIN databases d ON st.target_kind = 'database' AND d.id = st.target_id
+WHERE st.rule_id = ANY ($1::uuid[]) AND (s.id IS NOT NULL OR d.id IS NOT NULL)
+ORDER BY st.firing_since NULLS LAST, coalesce(s.name, d.name)
 `
 
 type ListAlertStatesRow struct {
 	RuleID      uuid.UUID  `json:"rule_id"`
-	ServerID    uuid.UUID  `json:"server_id"`
+	TargetID    uuid.UUID  `json:"target_id"`
 	BreachSince *time.Time `json:"breach_since"`
 	FiringSince *time.Time `json:"firing_since"`
 	LastSentAt  *time.Time `json:"last_sent_at"`
 	Value       float64    `json:"value"`
 	Detail      string     `json:"detail"`
 	UpdatedAt   time.Time  `json:"updated_at"`
-	ServerName  string     `json:"server_name"`
+	TargetKind  string     `json:"target_kind"`
+	TargetName  string     `json:"target_name"`
 }
 
-// Where the given rules stand on each server they've seen.
+// Where the given rules stand on each server or database they've seen.
 func (q *Queries) ListAlertStates(ctx context.Context, ids []uuid.UUID) ([]ListAlertStatesRow, error) {
 	rows, err := q.db.Query(ctx, listAlertStates, ids)
 	if err != nil {
@@ -539,14 +812,15 @@ func (q *Queries) ListAlertStates(ctx context.Context, ids []uuid.UUID) ([]ListA
 		var i ListAlertStatesRow
 		if err := rows.Scan(
 			&i.RuleID,
-			&i.ServerID,
+			&i.TargetID,
 			&i.BreachSince,
 			&i.FiringSince,
 			&i.LastSentAt,
 			&i.Value,
 			&i.Detail,
 			&i.UpdatedAt,
-			&i.ServerName,
+			&i.TargetKind,
+			&i.TargetName,
 		); err != nil {
 			return nil, err
 		}
@@ -570,10 +844,22 @@ func (q *Queries) PruneAlertEvents(ctx context.Context, before time.Time) (int64
 	return result.RowsAffected(), nil
 }
 
+const pruneAlertMutes = `-- name: PruneAlertMutes :execrows
+DELETE FROM alert_mutes WHERE until < $1::timestamptz
+`
+
+func (q *Queries) PruneAlertMutes(ctx context.Context, before time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneAlertMutes, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setAlertRuleEnabled = `-- name: SetAlertRuleEnabled :one
 UPDATE alert_rules SET enabled = $1, updated_by_name = $2, updated_at = now()
 WHERE id = $3
-RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at
+RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids
 `
 
 type SetAlertRuleEnabledParams struct {
@@ -605,6 +891,8 @@ func (q *Queries) SetAlertRuleEnabled(ctx context.Context, arg SetAlertRuleEnabl
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Unit,
+		&i.DatabaseIds,
 	)
 	return i, err
 }
@@ -612,11 +900,11 @@ func (q *Queries) SetAlertRuleEnabled(ctx context.Context, arg SetAlertRuleEnabl
 const updateAlertRule = `-- name: UpdateAlertRule :one
 UPDATE alert_rules SET
     name = $1, enabled = $2, metric = $3, op = $4, threshold = $5,
-    mount = $6, for_minutes = $7, severity = $8, scope = $9,
-    server_ids = $10, tags = $11, repeat_minutes = $12,
-    notify_resolved = $13, updated_by_name = $14, updated_at = now()
-WHERE id = $15
-RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at
+    mount = $6, unit = $7, for_minutes = $8, severity = $9, scope = $10,
+    server_ids = $11, database_ids = $12, tags = $13, repeat_minutes = $14,
+    notify_resolved = $15, updated_by_name = $16, updated_at = now()
+WHERE id = $17
+RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids
 `
 
 type UpdateAlertRuleParams struct {
@@ -626,10 +914,12 @@ type UpdateAlertRuleParams struct {
 	Op             string      `json:"op"`
 	Threshold      float64     `json:"threshold"`
 	Mount          string      `json:"mount"`
+	Unit           string      `json:"unit"`
 	ForMinutes     int32       `json:"for_minutes"`
 	Severity       string      `json:"severity"`
 	Scope          string      `json:"scope"`
 	ServerIds      []uuid.UUID `json:"server_ids"`
+	DatabaseIds    []uuid.UUID `json:"database_ids"`
 	Tags           []string    `json:"tags"`
 	RepeatMinutes  int32       `json:"repeat_minutes"`
 	NotifyResolved bool        `json:"notify_resolved"`
@@ -645,10 +935,12 @@ func (q *Queries) UpdateAlertRule(ctx context.Context, arg UpdateAlertRuleParams
 		arg.Op,
 		arg.Threshold,
 		arg.Mount,
+		arg.Unit,
 		arg.ForMinutes,
 		arg.Severity,
 		arg.Scope,
 		arg.ServerIds,
+		arg.DatabaseIds,
 		arg.Tags,
 		arg.RepeatMinutes,
 		arg.NotifyResolved,
@@ -676,14 +968,16 @@ func (q *Queries) UpdateAlertRule(ctx context.Context, arg UpdateAlertRuleParams
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Unit,
+		&i.DatabaseIds,
 	)
 	return i, err
 }
 
 const upsertAlertState = `-- name: UpsertAlertState :exec
-INSERT INTO alert_states (rule_id, server_id, breach_since, firing_since, last_sent_at, value, detail, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, now())
-ON CONFLICT (rule_id, server_id) DO UPDATE SET
+INSERT INTO alert_states (rule_id, target_id, target_kind, breach_since, firing_since, last_sent_at, value, detail, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+ON CONFLICT (rule_id, target_id) DO UPDATE SET
     breach_since = excluded.breach_since, firing_since = excluded.firing_since,
     last_sent_at = excluded.last_sent_at, value = excluded.value, detail = excluded.detail,
     updated_at = now()
@@ -691,7 +985,8 @@ ON CONFLICT (rule_id, server_id) DO UPDATE SET
 
 type UpsertAlertStateParams struct {
 	RuleID      uuid.UUID  `json:"rule_id"`
-	ServerID    uuid.UUID  `json:"server_id"`
+	TargetID    uuid.UUID  `json:"target_id"`
+	TargetKind  string     `json:"target_kind"`
 	BreachSince *time.Time `json:"breach_since"`
 	FiringSince *time.Time `json:"firing_since"`
 	LastSentAt  *time.Time `json:"last_sent_at"`
@@ -702,7 +997,8 @@ type UpsertAlertStateParams struct {
 func (q *Queries) UpsertAlertState(ctx context.Context, arg UpsertAlertStateParams) error {
 	_, err := q.db.Exec(ctx, upsertAlertState,
 		arg.RuleID,
-		arg.ServerID,
+		arg.TargetID,
+		arg.TargetKind,
 		arg.BreachSince,
 		arg.FiringSince,
 		arg.LastSentAt,

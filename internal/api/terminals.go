@@ -225,6 +225,8 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 			if rec != nil {
 				opts.Recorder = rec
 			}
+			cmds := newTermCommands(h.cmds, serverID, p, hostOf(r.RemoteAddr), rec)
+			opts.Commands = cmds
 			sess, err = h.terms.Start(serverID, conn, opts)
 			if err != nil && rec != nil {
 				rec.abandon()
@@ -240,6 +242,7 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 			if rec != nil {
 				rec.attach(sess)
 			}
+			cmds.attach(sess)
 		}
 
 		replay, sub, ok := sess.Attach()

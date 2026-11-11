@@ -16,6 +16,7 @@ import (
 
 	"github.com/morcheh/backend/internal/auth"
 	"github.com/morcheh/backend/internal/cache"
+	"github.com/morcheh/backend/internal/cmdlog"
 	"github.com/morcheh/backend/internal/config"
 	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/jobs"
@@ -126,9 +127,25 @@ func (a *authz) middleware(api huma.API) func(huma.Context, func(huma.Context)) 
 			_ = huma.WriteErr(api, ctx, d.status, d.message)
 			return
 		}
-		watched, stop := a.track(context.WithValue(base, principalKey{}, p), p, pol, ctx.Param("id"))
+		withP := context.WithValue(base, principalKey{}, p)
+		withP = cmdlog.With(withP, requestOrigin(ctx, p))
+		watched, stop := a.track(withP, p, pol, ctx.Param("id"))
 		defer stop()
 		next(huma.WithContext(ctx, watched))
+	}
+}
+
+// requestOrigin says, for the command log, that commands run while handling
+// this request are for p: a read on GET, otherwise a change.
+func requestOrigin(ctx huma.Context, p *principal) cmdlog.Origin {
+	op := ctx.Operation()
+	kind := cmdlog.Change
+	if op.Method == http.MethodGet || op.Method == http.MethodHead {
+		kind = cmdlog.Read
+	}
+	return cmdlog.Origin{
+		Kind: kind, Source: cmpOr(op.Summary, op.OperationID),
+		UserID: &p.User.ID, ClientIP: hostOf(ctx.RemoteAddr()),
 	}
 }
 
