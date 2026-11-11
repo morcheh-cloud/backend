@@ -169,6 +169,8 @@ type CheckResult struct {
 	CertExpires *time.Time `json:"cert_expires,omitempty"`
 	// Detail is shown by Test only: the start of the answer.
 	Detail string `json:"detail,omitempty"`
+	// Locations: what each location found, when checked from several.
+	Locations []LocationResult `json:"locations,omitempty"`
 }
 
 func down(format string, a ...any) CheckResult {
@@ -193,7 +195,7 @@ func fe(field, msg string) *FieldError { return &FieldError{"config." + field, m
 var hostName = regexp.MustCompile(`^[A-Za-z0-9._:\-\[\]%]+$`)
 
 // Validate says what a monitor is missing before it's saved. via says whether
-// it's checked from a panel server.
+// any of its locations is a panel server.
 func Validate(kind string, c MonitorConfig, via bool) *FieldError {
 	needHost := func() *FieldError {
 		if strings.TrimSpace(c.Host) == "" {
@@ -223,7 +225,7 @@ func Validate(kind string, c MonitorConfig, via bool) *FieldError {
 		return fe("url", "The address must start with "+strings.Join(schemes, ":// or ")+"://")
 	}
 	if OnServer(kind) && !via {
-		return &FieldError{"via_server_id", "Pick the server it runs on"}
+		return &FieldError{"locations", "Pick the server it runs on"}
 	}
 	switch kind {
 	case HTTP, Elasticsearch:
@@ -258,7 +260,7 @@ func Validate(kind string, c MonitorConfig, via bool) *FieldError {
 		}
 	case UDP:
 		if via {
-			return &FieldError{"via_server_id", "UDP can only be checked from Morcheh itself"}
+			return &FieldError{"locations", "UDP can only be checked from Morcheh itself"}
 		}
 		if e := needHost(); e != nil {
 			return e

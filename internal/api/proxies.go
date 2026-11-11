@@ -481,6 +481,8 @@ func modulesMissing(d proxy.Driver, in proxy.Inspection, hosts []sqlc.ProxyHost)
 	switch {
 	case in.Geo != "ready" && uses(func(c proxy.HostConfig) bool { return !stream(c) && len(c.Countries) > 0 }):
 		return fieldError("body.config.countries", "Country lookup isn't on for this proxy yet: turn it on in Security first.", nil)
+	case in.Geo != "ready" && uses(func(c proxy.HostConfig) bool { return !stream(c) && c.Redirects.UsesCountries() }):
+		return fieldError("body.config.redirects", "A redirect names a country, but country lookup isn't on for this proxy yet: turn it on in Security first.", nil)
 	case in.StreamGeo != "ready" && uses(func(c proxy.HostConfig) bool { return stream(c) && len(c.Countries) > 0 }):
 		return fieldError("body.config.countries", "Country rules for port forwards aren't on for this proxy yet: turn them on first.", nil)
 	case !in.WAF && uses(func(c proxy.HostConfig) bool { return c.WAF.On() }):
@@ -1071,6 +1073,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	tags := []string{"Reverse proxy"}
 	h.registerTraffic(api, tags)
 	h.registerRequests(api, tags)
+	h.registerRedirectTools(api, tags)
 	base := "/proxies/{id}"
 	registerProxyCertificates(api, h, base, tags)
 	h.registerUpstreamTest(api, base, tags)

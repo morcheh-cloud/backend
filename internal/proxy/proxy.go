@@ -80,6 +80,7 @@ type HostConfig struct {
 	RateLimit   RateLimit    `json:"rate_limit" required:"false" doc:"Limits on requests, connections and speed"`
 	Headers     []HeaderRule `json:"headers,omitempty" maxItems:"50"`
 	Paths       []PathRule   `json:"paths,omitempty" maxItems:"50" doc:"Paths sent somewhere else than the main upstream"`
+	Redirects   Redirects    `json:"redirects" required:"false" doc:"Old addresses sent to new ones (every type but stream; redirects.go)"`
 	Advanced    string       `json:"advanced,omitempty" maxLength:"16384" doc:"Extra directives in the proxy's own language, added inside the site"`
 
 	// Tuning (Capabilities.Tuning): each one is used by some types only and
@@ -575,6 +576,7 @@ func Normalize(h HostConfig) HostConfig {
 	h = normalizeModules(h)
 	h = normalizeBalance(h)
 	h = normalizeSites(h)
+	h = normalizeRedirects(h)
 	h.Custom = strings.TrimSpace(strings.ReplaceAll(h.Custom, "\r\n", "\n"))
 	return h
 }
@@ -857,6 +859,7 @@ func Validate(h HostConfig) []Problem {
 		seen[key] = true
 	}
 	validateFeatures(h, add)
+	validateRedirects(h, add)
 	validateModules(h, add)
 	validateBalance(h, add)
 	validateSites(h, add)
@@ -1188,6 +1191,7 @@ type Capabilities struct {
 	Balancing    bool     `json:"balancing" doc:"Takes balance: load balancing over several servers (proxy, stream)"`
 	PathActions  bool     `json:"path_actions" doc:"Paths take match and action (redirect, static, deny, return), strip_prefix, public, login, access and addresses"`
 	Mirror       bool     `json:"mirror" doc:"Takes mirror: a copy of requests sent to a test server (proxy)"`
+	Redirects    bool     `json:"redirects" doc:"Takes redirects: lists of old addresses sent to new ones (every type but stream)"`
 	Language     string   `json:"language" doc:"The config language, for syntax colors"`
 	ConfigLabel  string   `json:"config_label" doc:"What its config is called, like nginx config"`
 }

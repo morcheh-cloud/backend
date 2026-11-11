@@ -3,9 +3,11 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -109,7 +111,87 @@ func (h *uptimeHandler) checkMonitor(ctx context.Context, m sqlc.Monitor) uptime
 		return uptime.CheckResult{Status: uptime.Down, Message: "Couldn't read the saved secrets"}
 	}
 	timeout := time.Duration(max(m.TimeoutSeconds, 1)) * time.Second
-	return h.runCheck(ctx, m.Kind, monitorConfig(m), s, m.ViaServerID, m.AllowInternal, timeout)
+	rows, err := h.q.ListMonitorLocations(ctx, m.ID)
+	if err != nil {
+		return uptime.CheckResult{Status: uptime.Down, Message: "Couldn't read where to check from"}
+	}
+	probes := h.runAll(ctx, m.Kind, monitorConfig(m), s, planLocs(rows), m.AllowInternal, timeout)
+	return uptime.Combine(ruleOf(m), probes)
+}
+
+// runAll checks from every location at once. A location whose server can't
+// be reached is marked unreachable: it doesn't vote.
+func (h *uptimeHandler) runAll(ctx context.Context, kind string, c uptime.MonitorConfig, s uptime.MonitorSecrets, locs []planLoc, allowInternal bool, timeout time.Duration) []uptime.Probe {
+	probes := make([]uptime.Probe, len(locs))
+	var wg sync.WaitGroup
+	for i, l := range locs {
+		wg.Go(func() {
+			r := h.runCheck(ctx, kind, c, s, l.server, allowInternal, timeout)
+			probes[i] = uptime.Probe{Location: l.key, Name: l.name, Result: r, Unreachable: l.server != nil && r.Code == "via"}
+		})
+	}
+	wg.Wait()
+	return probes
+}
+
+// checkResult is one location's answer as kept in a check row.
+type checkResult struct {
+	Loc       string `json:"loc"`
+	Status    string `json:"status"`
+	LatencyMs *int   `json:"latency_ms,omitempty"`
+	Code      string `json:"code,omitempty"`
+	Message   string `json:"message"`
+}
+
+func checkResults(locs []uptime.LocationResult) []byte {
+	if len(locs) < 2 {
+		return []byte("[]")
+	}
+	out := make([]checkResult, len(locs))
+	for i, l := range locs {
+		out[i] = checkResult{Loc: l.Location, Status: l.Status, LatencyMs: l.LatencyMs, Code: clipText(l.Code, 100), Message: clipText(l.Message, 300)}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return []byte("[]")
+	}
+	return b
+}
+
+// saveLocations keeps each location's own latest answer.
+func (h *uptimeHandler) saveLocations(ctx context.Context, m sqlc.Monitor, locs []uptime.LocationResult, at time.Time) {
+	if len(locs) == 0 {
+		return
+	}
+	rows, err := h.q.ListMonitorLocations(ctx, m.ID)
+	if err != nil {
+		return
+	}
+	for _, row := range rows {
+		key := locKey(row.ServerID)
+		for _, l := range locs {
+			if l.Location != key {
+				continue
+			}
+			_ = h.q.SaveMonitorLocation(ctx, sqlc.SaveMonitorLocationParams{
+				ID: row.ID, Status: l.Status, StatusMessage: clipText(l.Message, 1000),
+				LatencyMs: int32p(l.LatencyMs), Code: clipText(l.Code, 100), CheckedAt: &at,
+			})
+		}
+	}
+}
+
+// locationsLine says how each location answered: "Morcheh: up · vm1: down".
+func locationsLine(locs []uptime.LocationResult) string {
+	parts := make([]string, len(locs))
+	for i, l := range locs {
+		st := l.Status
+		if st == uptime.Unknown {
+			st = "couldn't check"
+		}
+		parts[i] = l.Name + ": " + st
+	}
+	return strings.Join(parts, " · ")
 }
 
 // runCheck runs one check, from Morcheh or through a server over SSH.
@@ -196,9 +278,11 @@ func (h *uptimeHandler) apply(ctx context.Context, m sqlc.Monitor, r uptime.Chec
 	lat := int32p(r.LatencyMs)
 	if err := h.q.InsertMonitorCheck(ctx, sqlc.InsertMonitorCheckParams{
 		MonitorID: m.ID, At: at, Status: r.Status, LatencyMs: lat, Code: clipText(r.Code, 100), Message: clipText(r.Message, 1000),
+		Results: checkResults(r.Locations),
 	}); err != nil {
 		slog.Warn("uptime: save check", "monitor", m.ID, "err", err)
 	}
+	h.saveLocations(ctx, m, r.Locations, at)
 	_ = h.q.AddMonitorDay(ctx, sqlc.AddMonitorDayParams{MonitorID: m.ID, Day: dayOf(at), Status: r.Status, LatencyMs: lat})
 
 	st := sqlc.SaveMonitorStateParams{
@@ -293,6 +377,9 @@ func (h *uptimeHandler) alert(m sqlc.Monitor, event, title string, r uptime.Chec
 	if r.Code != "" {
 		fields = append(fields, notify.Field{Name: "Code", Value: r.Code})
 	}
+	if len(r.Locations) > 1 {
+		fields = append(fields, notify.Field{Name: "Locations", Value: locationsLine(r.Locations)})
+	}
 	url := ""
 	if h.panelURL != "" {
 		url = h.panelURL + "/uptime/" + m.ID.String()
@@ -303,6 +390,9 @@ func (h *uptimeHandler) alert(m sqlc.Monitor, event, title string, r uptime.Chec
 			"monitor_id": m.ID.String(), "monitor_name": m.Name, "kind": m.Kind,
 			"status": r.Status, "message": r.Message, "code": r.Code, "latency_ms": r.LatencyMs,
 		},
+	}
+	if len(r.Locations) > 1 {
+		msg.Data["locations"] = r.Locations
 	}
 	go func() {
 		ctx := context.Background()

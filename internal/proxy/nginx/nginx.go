@@ -85,7 +85,7 @@ func (Driver) Capabilities() proxy.Capabilities {
 		WebSockets: true, Headers: true, Paths: true, Allow: true, Advanced: true,
 		Tuning: true, Cache: true,
 		Auth: true, Pages: true, Hardening: true, UpstreamTLS: true, PathActions: true,
-		Balancing: true, Mirror: true,
+		Balancing: true, Mirror: true, Redirects: true,
 		Countries: true, RateLimit: true,
 		Streams: true, Traffic: true, Certificates: true, TLSOptions: true,
 		Language: "nginx", ConfigLabel: "nginx config",
@@ -152,6 +152,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	imageBlocks(w, t, h)
 	upstreamBlock(w, t, h)
 	mirrorBlocks(w, t, h)
+	redirectBlocks(w, t, h)
 	names := strings.Join(h.Domains, " ")
 	def := ""
 	if h.CatchAll {
@@ -176,6 +177,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 		w.line("server_name %s;", names)
 		logs()
 		acmeLocation(w, proxy.HostConfig{})
+		redirectServer(w, t, h, true)
 		code := h.TLS.ForceCode
 		if code == 0 {
 			code = 301
@@ -250,6 +252,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 			w.line(`add_header %s "%s" always;`, x.Name, x.Value)
 		}
 	}
+	redirectServer(w, t, h, false)
 	serverFeatures(w, id, t, h, env)
 	mirrorServer(w, h)
 

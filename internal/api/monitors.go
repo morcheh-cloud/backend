@@ -85,7 +85,8 @@ type UptimeMonitor struct {
 	Tags            []string             `json:"tags"`
 	Config          uptime.MonitorConfig `json:"config"`
 	Secrets         []string             `json:"secrets" doc:"Which secrets are saved"`
-	ViaServerID     *string              `json:"via_server_id,omitempty" format:"uuid"`
+	Locations       []MonitorLocation    `json:"locations" doc:"Where it's checked from"`
+	Rule            LocationRule         `json:"rule" doc:"How the locations' answers make one status"`
 	ServerID        *string              `json:"server_id,omitempty" format:"uuid"`
 	IntervalSeconds int32                `json:"interval_seconds"`
 	RetrySeconds    int32                `json:"retry_seconds"`
@@ -114,6 +115,60 @@ type UptimeMonitor struct {
 	UpdatedAt       time.Time            `json:"updated_at"`
 }
 
+// LocationRule turns the answers of several locations into one status.
+// Locations that couldn't check at all (their server was unreachable) don't
+// vote; counts above the number that answered mean all of them.
+type LocationRule struct {
+	Down          string `json:"down" enum:"any,majority,all,count" doc:"Down when any, a majority, all or at least down_count locations fail"`
+	DownCount     int32  `json:"down_count" minimum:"1" maximum:"50"`
+	Degraded      string `json:"degraded" enum:"any,majority,count,never" doc:"Below that, degraded when any, a majority or at least degraded_count locations have trouble; never = stays up"`
+	DegradedCount int32  `json:"degraded_count" minimum:"1" maximum:"50"`
+}
+
+func ruleOf(m sqlc.Monitor) uptime.Rule {
+	return uptime.Rule{Down: m.RuleDown, DownCount: int(m.RuleDownCount), Degraded: m.RuleDegraded, DegradedCount: int(m.RuleDegradedCount)}
+}
+
+func toLocationRule(r uptime.Rule) LocationRule {
+	return LocationRule{Down: r.Down, DownCount: int32(r.DownCount), Degraded: r.Degraded, DegradedCount: int32(r.DegradedCount)}
+}
+
+// MonitorLocation is one place a monitor is checked from, with its own
+// latest answer.
+type MonitorLocation struct {
+	Location      string     `json:"location" doc:"morcheh, or the server's id"`
+	ServerID      *string    `json:"server_id,omitempty" format:"uuid"`
+	Name          string     `json:"name"`
+	Status        string     `json:"status" enum:"pending,up,degraded,down,unknown" doc:"unknown = it couldn't check (its server was unreachable)"`
+	StatusMessage string     `json:"status_message"`
+	StatusSince   time.Time  `json:"status_since"`
+	LatencyMs     *int32     `json:"latency_ms,omitempty"`
+	Code          string     `json:"code"`
+	CheckedAt     *time.Time `json:"checked_at,omitempty"`
+}
+
+func locKey(server *uuid.UUID) string {
+	if server == nil {
+		return uptime.Morcheh
+	}
+	return server.String()
+}
+
+func locName(server *uuid.UUID, name string) string {
+	if server == nil {
+		return "Morcheh"
+	}
+	return cmpOr(name, "A removed server")
+}
+
+func toMonitorLocation(l sqlc.ListMonitorLocationsRow) MonitorLocation {
+	return MonitorLocation{
+		Location: locKey(l.ServerID), ServerID: optionalIDString(l.ServerID), Name: locName(l.ServerID, l.ServerName),
+		Status: l.Status, StatusMessage: l.StatusMessage, StatusSince: l.StatusSince, LatencyMs: l.LatencyMs,
+		Code: l.Code, CheckedAt: l.CheckedAt,
+	}
+}
+
 type UptimeMonitorOutput struct {
 	Body UptimeMonitor
 }
@@ -127,7 +182,8 @@ type MonitorBody struct {
 	Tags            []string              `json:"tags,omitempty" maxItems:"20"`
 	Config          uptime.MonitorConfig  `json:"config"`
 	Secrets         uptime.MonitorSecrets `json:"secrets" doc:"A blank secret keeps the saved one"`
-	ViaServerID     *string               `json:"via_server_id,omitempty" format:"uuid" doc:"Check from this server, over SSH (needed for docker, systemd and command)"`
+	Locations       []string              `json:"locations,omitempty" maxItems:"20" doc:"Where to check from: morcheh and/or server ids (over SSH). docker, systemd and command take one server. Left out: Morcheh on create, unchanged on update"`
+	Rule            *LocationRule         `json:"rule,omitempty" doc:"With several locations: when they make it down or degraded. Left out: majority down, any degraded on create, unchanged on update"`
 	ServerID        *string               `json:"server_id,omitempty" format:"uuid" doc:"The server it belongs to, shown on that server's page"`
 	IntervalSeconds int32                 `json:"interval_seconds,omitempty" minimum:"10" maximum:"86400" default:"60"`
 	RetrySeconds    int32                 `json:"retry_seconds,omitempty" minimum:"5" maximum:"86400" default:"20" doc:"How soon to check again after a failure"`
@@ -169,7 +225,7 @@ func toUptimeMonitor(m sqlc.Monitor, s uptime.MonitorSecrets, showToken bool) Up
 	out := UptimeMonitor{
 		ID: m.ID.String(), WorkspaceID: m.WorkspaceID.String(), Name: m.Name, Kind: m.Kind,
 		Description: m.Description, Tags: m.Tags, Config: monitorConfig(m), Secrets: s.Names(),
-		ViaServerID: optionalIDString(m.ViaServerID), ServerID: optionalIDString(m.ServerID),
+		Locations: []MonitorLocation{}, Rule: toLocationRule(ruleOf(m)), ServerID: optionalIDString(m.ServerID),
 		IntervalSeconds: m.IntervalSeconds, RetrySeconds: m.RetrySeconds, TimeoutSeconds: m.TimeoutSeconds,
 		Retries: m.Retries, ResendEvery: m.ResendEvery, NotifyDegraded: m.NotifyDegraded,
 		AllowInternal: m.AllowInternal, Paused: m.Paused, Status: m.Status, StatusMessage: m.StatusMessage,
@@ -226,6 +282,12 @@ func (h *uptimeHandler) enrich(ctx context.Context, items []UptimeMonitor) {
 		}
 		for id, v := range up {
 			items[at[id]].Uptime30d = percent(v[0], v[1])
+		}
+	}
+	if rows, err := h.q.ListMonitorLocationsFor(ctx, ids); err == nil {
+		for _, r := range rows {
+			i := at[r.MonitorID]
+			items[i].Locations = append(items[i].Locations, toMonitorLocation(sqlc.ListMonitorLocationsRow(r)))
 		}
 	}
 	if rows, err := h.q.ListMonitorChannelsFor(ctx, ids); err == nil {
@@ -325,11 +387,135 @@ func cleanTags(tags []string) []string {
 // monitorPlan is a checked body, ready to save.
 type monitorPlan struct {
 	ws       uuid.UUID
-	via      *uuid.UUID
+	locs     []planLoc
+	rule     uptime.Rule
 	server   *uuid.UUID
 	channels []uuid.UUID
 	setCh    bool
 	secrets  uptime.MonitorSecrets
+	// hadMorcheh: the saved monitor was checked from Morcheh.
+	hadMorcheh bool
+}
+
+// planLocations checks where the monitor is checked from and its rule. A
+// server needs Engineer access to check from, unless it already was one.
+func (h *uptimeHandler) planLocations(ctx context.Context, p *principal, kind string, b *MonitorBody, prev *sqlc.Monitor, pl *monitorPlan) error {
+	var saved []sqlc.ListMonitorLocationsRow
+	pl.rule = uptime.DefaultRule
+	if prev != nil {
+		rows, err := h.q.ListMonitorLocations(ctx, prev.ID)
+		if err != nil {
+			return internalError(err)
+		}
+		saved = rows
+		pl.rule = ruleOf(*prev)
+		pl.hadMorcheh = hasMorcheh(planLocs(rows))
+	}
+	if b.Rule != nil {
+		pl.rule = uptime.Rule{
+			Down: b.Rule.Down, DownCount: int(b.Rule.DownCount),
+			Degraded: b.Rule.Degraded, DegradedCount: int(b.Rule.DegradedCount),
+		}
+	}
+	if kind == uptime.Push {
+		return nil
+	}
+	raw := b.Locations
+	if raw == nil {
+		if prev != nil {
+			for _, l := range saved {
+				raw = append(raw, locKey(l.ServerID))
+			}
+		} else if !uptime.OnServer(kind) {
+			raw = []string{uptime.Morcheh}
+		}
+	}
+	had := func(id uuid.UUID) (planLoc, bool) {
+		for _, l := range planLocs(saved) {
+			if l.server != nil && *l.server == id {
+				return l, true
+			}
+		}
+		return planLoc{}, false
+	}
+	for _, r := range raw {
+		r = strings.TrimSpace(r)
+		if r == uptime.Morcheh {
+			if !hasMorcheh(pl.locs) {
+				pl.locs = append(pl.locs, planLoc{key: r, name: "Morcheh"})
+			}
+			continue
+		}
+		id, err := uuid.Parse(r)
+		if err != nil {
+			return fieldError("body.locations", "Server not found", r)
+		}
+		if slices.ContainsFunc(pl.locs, func(l planLoc) bool { return l.key == id.String() }) {
+			continue
+		}
+		if l, ok := had(id); ok {
+			// Already a location: it stays, whoever saves.
+			pl.locs = append(pl.locs, l)
+			continue
+		}
+		srv, err := h.q.GetServer(ctx, id)
+		if isNotFound(err) || (err == nil && p.Access.ServerLevel(srv.WorkspaceID, id) == auth.None) {
+			return fieldError("body.locations", "Server not found", r)
+		}
+		if err != nil {
+			return internalError(err)
+		}
+		if p.Access.ServerLevel(srv.WorkspaceID, id) < auth.Engineer {
+			return fieldError("body.locations", "You need Engineer access to "+srv.Name+" to check from it", r)
+		}
+		pl.locs = append(pl.locs, planLoc{key: id.String(), server: &id, name: srv.Name})
+	}
+	switch {
+	case uptime.OnServer(kind) && len(pl.locs) > 1:
+		return fieldError("body.locations", "It runs on one server: pick just that one", b.Locations)
+	case uptime.OnServer(kind) && len(pl.locs) == 1 && pl.locs[0].server == nil:
+		return fieldError("body.locations", "Pick the server it runs on", b.Locations)
+	case len(pl.locs) == 0 && !uptime.OnServer(kind):
+		return fieldError("body.locations", "Pick at least one place to check from", b.Locations)
+	}
+	return nil
+}
+
+// setLocations makes the saved locations match the plan. Ones that stay keep
+// their latest answer.
+func (h *uptimeHandler) setLocations(ctx context.Context, monitor uuid.UUID, locs []planLoc) error {
+	keep := make([]string, len(locs))
+	for i, l := range locs {
+		keep[i] = l.key
+	}
+	if err := h.q.KeepMonitorLocations(ctx, sqlc.KeepMonitorLocationsParams{MonitorID: monitor, Keep: keep}); err != nil {
+		return err
+	}
+	for _, l := range locs {
+		if err := h.q.AddMonitorLocation(ctx, sqlc.AddMonitorLocationParams{MonitorID: monitor, ServerID: l.server}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// planLoc is a place to check from: server nil = Morcheh.
+type planLoc struct {
+	key    string
+	server *uuid.UUID
+	name   string
+}
+
+func planLocs(rows []sqlc.ListMonitorLocationsRow) []planLoc {
+	out := make([]planLoc, len(rows))
+	for i, l := range rows {
+		out[i] = planLoc{key: locKey(l.ServerID), server: l.ServerID, name: locName(l.ServerID, l.ServerName)}
+	}
+	return out
+}
+
+func hasMorcheh(locs []planLoc) bool {
+	return slices.ContainsFunc(locs, func(l planLoc) bool { return l.server == nil })
 }
 
 // planMonitor checks a body for workspace ws: settings, servers, channels and
@@ -356,32 +542,19 @@ func (h *uptimeHandler) planMonitor(ctx context.Context, p *principal, ws uuid.U
 		return pl, fieldError("body.timeout_seconds", "The time limit can't be longer than the interval", b.TimeoutSeconds)
 	}
 
-	pl.via = parseOptionalID(b.ViaServerID)
-	if kind == uptime.Push {
-		pl.via = nil
+	if err := h.planLocations(ctx, p, kind, b, prev, &pl); err != nil {
+		return pl, err
 	}
-	if pl.via != nil {
-		sws, err := h.q.GetServerWorkspace(ctx, *pl.via)
-		if isNotFound(err) || (err == nil && p.Access.ServerLevel(sws, *pl.via) == auth.None) {
-			return pl, fieldError("body.via_server_id", "Server not found", b.ViaServerID)
-		}
-		if err != nil {
-			return pl, internalError(err)
-		}
-		same := prev != nil && prev.ViaServerID != nil && *prev.ViaServerID == *pl.via
-		if !same && p.Access.ServerLevel(sws, *pl.via) < auth.Engineer {
-			return pl, fieldError("body.via_server_id", "You need Engineer access to this server to check from it", b.ViaServerID)
-		}
-	}
-	if e := uptime.Validate(kind, b.Config, pl.via != nil); e != nil {
+	fromServer := slices.ContainsFunc(pl.locs, func(l planLoc) bool { return l.server != nil })
+	if e := uptime.Validate(kind, b.Config, fromServer); e != nil {
 		return pl, fieldError("body."+e.Field, e.Message, nil)
 	}
 
 	pl.server = parseOptionalID(b.ServerID)
-	if pl.server == nil && pl.via != nil && uptime.OnServer(kind) {
-		pl.server = pl.via
+	if pl.server == nil && uptime.OnServer(kind) && len(pl.locs) == 1 {
+		pl.server = pl.locs[0].server
 	}
-	if pl.server != nil && (pl.via == nil || *pl.server != *pl.via) {
+	if pl.server != nil && !slices.ContainsFunc(pl.locs, func(l planLoc) bool { return l.server != nil && *l.server == *pl.server }) {
 		sws, err := h.q.GetServerWorkspace(ctx, *pl.server)
 		if isNotFound(err) || (err == nil && p.Access.ServerLevel(sws, *pl.server) == auth.None) {
 			return pl, fieldError("body.server_id", "Server not found", b.ServerID)
@@ -391,8 +564,8 @@ func (h *uptimeHandler) planMonitor(ctx context.Context, p *principal, ws uuid.U
 		}
 	}
 
-	if b.AllowInternal && pl.via == nil && !p.Access.Admin {
-		kept := prev != nil && prev.AllowInternal && prev.ViaServerID == nil &&
+	if b.AllowInternal && hasMorcheh(pl.locs) && !p.Access.Admin {
+		kept := prev != nil && prev.AllowInternal && pl.hadMorcheh &&
 			monitorTarget(kind, savedCfg) == monitorTarget(kind, b.Config) && savedCfg.Resolver == b.Config.Resolver
 		if !kept {
 			return pl, fieldError("body.allow_internal", "Only a system admin can allow private addresses", true)
@@ -459,7 +632,9 @@ func (h *uptimeHandler) createMonitor(ctx context.Context, in *struct{ Body Moni
 	m, err := h.q.CreateMonitor(ctx, sqlc.CreateMonitorParams{
 		WorkspaceID: ws, Name: strings.TrimSpace(b.Name), Kind: b.Kind, Config: cfg,
 		SecretsEnc:  h.sealJSON(pl.secrets, len(pl.secrets.Names()) == 0),
-		Description: strings.TrimSpace(b.Description), Tags: b.Tags, ViaServerID: pl.via, ServerID: pl.server,
+		Description: strings.TrimSpace(b.Description), Tags: b.Tags, ServerID: pl.server,
+		RuleDown: pl.rule.Down, RuleDownCount: int32(pl.rule.DownCount),
+		RuleDegraded: pl.rule.Degraded, RuleDegradedCount: int32(pl.rule.DegradedCount),
 		IntervalSeconds: b.IntervalSeconds, RetrySeconds: b.RetrySeconds, TimeoutSeconds: b.TimeoutSeconds,
 		Retries: b.Retries, ResendEvery: b.ResendEvery, NotifyDegraded: b.NotifyDegraded != nil && *b.NotifyDegraded,
 		AllowInternal: b.AllowInternal, Paused: b.Paused, PushToken: token,
@@ -472,6 +647,9 @@ func (h *uptimeHandler) createMonitor(ctx context.Context, in *struct{ Body Moni
 		return nil, internalError(err)
 	}
 	if err := h.setChannels(ctx, m.ID, pl.channels); err != nil {
+		return nil, internalError(err)
+	}
+	if err := h.setLocations(ctx, m.ID, pl.locs); err != nil {
 		return nil, internalError(err)
 	}
 	return h.monitorOut(ctx, m, true)
@@ -503,7 +681,9 @@ func (h *uptimeHandler) updateMonitor(ctx context.Context, in *struct {
 	m, err := h.q.UpdateMonitor(ctx, sqlc.UpdateMonitorParams{
 		ID: prev.ID, Name: strings.TrimSpace(b.Name), Config: cfg,
 		SecretsEnc:  h.sealJSON(pl.secrets, len(pl.secrets.Names()) == 0),
-		Description: strings.TrimSpace(b.Description), Tags: b.Tags, ViaServerID: pl.via, ServerID: pl.server,
+		Description: strings.TrimSpace(b.Description), Tags: b.Tags, ServerID: pl.server,
+		RuleDown: pl.rule.Down, RuleDownCount: int32(pl.rule.DownCount),
+		RuleDegraded: pl.rule.Degraded, RuleDegradedCount: int32(pl.rule.DegradedCount),
 		IntervalSeconds: b.IntervalSeconds, RetrySeconds: b.RetrySeconds, TimeoutSeconds: b.TimeoutSeconds,
 		Retries: b.Retries, ResendEvery: b.ResendEvery, NotifyDegraded: b.NotifyDegraded != nil && *b.NotifyDegraded,
 		AllowInternal: b.AllowInternal, PushToken: token,
@@ -519,6 +699,9 @@ func (h *uptimeHandler) updateMonitor(ctx context.Context, in *struct {
 		if err := h.setChannels(ctx, m.ID, pl.channels); err != nil {
 			return nil, internalError(err)
 		}
+	}
+	if err := h.setLocations(ctx, m.ID, pl.locs); err != nil {
+		return nil, internalError(err)
 	}
 	return h.monitorOut(ctx, m, true)
 }
@@ -569,8 +752,8 @@ func (h *uptimeHandler) testMonitor(ctx context.Context, in *struct{ Body Monito
 		return nil, err
 	}
 	timeout := time.Duration(max(b.TimeoutSeconds, 1)) * time.Second
-	r := h.runCheck(ctx, kind, b.Config, pl.secrets, pl.via, b.AllowInternal, timeout)
-	return &MonitorTestOutput{Body: r}, nil
+	probes := h.runAll(ctx, kind, b.Config, pl.secrets, pl.locs, b.AllowInternal, timeout)
+	return &MonitorTestOutput{Body: uptime.Combine(pl.rule, probes)}, nil
 }
 
 // ---- report ----
@@ -646,6 +829,98 @@ type MonitorReport struct {
 	IncidentList    []UptimeIncident `json:"incident_list"`
 	Windows         []ReportWindow   `json:"windows" doc:"Uptime over 24h, 7d, 30d and 365d"`
 	Days            []ReportDay      `json:"days" doc:"The last 90 days, oldest first"`
+	// Locations: each place's own answers, for a monitor checked from
+	// several. Counted from the kept checks, so a long range may start later
+	// (locations_since).
+	Locations      []ReportLocation `json:"locations"`
+	LocationsSince *time.Time       `json:"locations_since,omitempty"`
+}
+
+type ReportLocation struct {
+	Location   string   `json:"location" doc:"morcheh, or the server's id"`
+	Name       string   `json:"name"`
+	Checks     int32    `json:"checks"`
+	Up         int32    `json:"up"`
+	Degraded   int32    `json:"degraded"`
+	Down       int32    `json:"down"`
+	Unknown    int32    `json:"unknown" doc:"Rounds it couldn't check in"`
+	Uptime     *float64 `json:"uptime,omitempty" doc:"Of the rounds it could check in"`
+	LatencyAvg *float64 `json:"latency_avg,omitempty"`
+	LatencyP95 *float64 `json:"latency_p95,omitempty"`
+	// Buckets line up with the report's (ranges up to 7d).
+	Buckets []LocationBucket `json:"buckets"`
+}
+
+type LocationBucket struct {
+	At         time.Time `json:"at"`
+	Checks     int32     `json:"checks"`
+	Down       int32     `json:"down"`
+	LatencyAvg *float64  `json:"latency_avg,omitempty"`
+}
+
+// reportLocations fills each location's numbers, when there are several.
+func (h *uptimeHandler) reportLocations(ctx context.Context, m sqlc.Monitor, out *MonitorReport, now time.Time) error {
+	locs, err := h.q.ListMonitorLocations(ctx, m.ID)
+	if err != nil {
+		return err
+	}
+	if len(locs) < 2 {
+		return nil
+	}
+	since := out.Since
+	if h.history > 0 && since.Before(now.Add(-h.history)) {
+		since = now.Add(-h.history)
+		out.LocationsSince = &since
+	}
+	stats, err := h.q.MonitorLocationStats(ctx, sqlc.MonitorLocationStatsParams{MonitorID: m.ID, Since: since})
+	if err != nil {
+		return err
+	}
+	byLoc := map[string]sqlc.MonitorLocationStatsRow{}
+	for _, s := range stats {
+		byLoc[s.Loc] = s
+	}
+	buckets := map[string]map[int64]sqlc.MonitorLocationBucketsRow{}
+	if out.Step > 0 && out.Step < 86400 {
+		rows, err := h.q.MonitorLocationBuckets(ctx, sqlc.MonitorLocationBucketsParams{Step: int32(out.Step), Origin: out.Since, MonitorID: m.ID})
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			if buckets[r.Loc] == nil {
+				buckets[r.Loc] = map[int64]sqlc.MonitorLocationBucketsRow{}
+			}
+			buckets[r.Loc][r.Bucket.Unix()] = r
+		}
+	}
+	for _, l := range locs {
+		key := locKey(l.ServerID)
+		s := byLoc[key]
+		rl := ReportLocation{
+			Location: key, Name: locName(l.ServerID, l.ServerName), Checks: s.Checks, Up: s.Up,
+			Degraded: s.Degraded, Down: s.Down, Unknown: s.Unknown, Buckets: []LocationBucket{},
+			Uptime: percent(int64(s.Up+s.Degraded), int64(s.Checks-s.Unknown)),
+		}
+		if s.LatencyAvg > 0 {
+			avg, p95 := s.LatencyAvg, s.LatencyP95
+			rl.LatencyAvg, rl.LatencyP95 = &avg, &p95
+		}
+		if got := buckets[key]; out.Step < 86400 {
+			for _, b := range out.Buckets {
+				lb := LocationBucket{At: b.At}
+				if r, ok := got[b.At.Unix()]; ok {
+					lb.Checks, lb.Down = r.Checks, r.Down
+					if r.LatencyAvg > 0 {
+						v := r.LatencyAvg
+						lb.LatencyAvg = &v
+					}
+				}
+				rl.Buckets = append(rl.Buckets, lb)
+			}
+		}
+		out.Locations = append(out.Locations, rl)
+	}
+	return nil
 }
 
 var reportRanges = map[string]time.Duration{
@@ -661,7 +936,7 @@ func dayOf(t time.Time) pgtype.Date {
 func (h *uptimeHandler) report(ctx context.Context, m sqlc.Monitor, rng string) (*MonitorReport, error) {
 	span := reportRanges[rng]
 	now := time.Now()
-	out := &MonitorReport{Range: rng, Buckets: []ReportBucket{}, IncidentList: []UptimeIncident{}}
+	out := &MonitorReport{Range: rng, Buckets: []ReportBucket{}, IncidentList: []UptimeIncident{}, Locations: []ReportLocation{}}
 	ids := []uuid.UUID{m.ID}
 
 	// Daily rows for the last 365 days serve the long ranges and windows.
@@ -800,7 +1075,38 @@ func (h *uptimeHandler) report(ctx context.Context, m sqlc.Monitor, rng string) 
 		d := byDay[key]
 		out.Days = append(out.Days, ReportDay{Day: key, Checks: d.Checks, Up: d.Up, Degraded: d.Degraded, Down: d.Down})
 	}
+	if err := h.reportLocations(ctx, m, out, now); err != nil {
+		return nil, internalError(err)
+	}
 	return out, nil
+}
+
+// MonitorCheck is one round of checks; locations lists each place's answer
+// when it was checked from several.
+type MonitorCheck struct {
+	At        time.Time               `json:"at"`
+	Status    string                  `json:"status"`
+	LatencyMs *int32                  `json:"latency_ms,omitempty"`
+	Code      string                  `json:"code"`
+	Message   string                  `json:"message"`
+	Locations []uptime.LocationResult `json:"locations"`
+}
+
+func toMonitorCheck(r sqlc.MonitorChecksBetweenRow, names map[string]string) MonitorCheck {
+	c := MonitorCheck{At: r.At, Status: r.Status, LatencyMs: r.LatencyMs, Code: r.Code, Message: r.Message, Locations: []uptime.LocationResult{}}
+	var res []checkResult
+	if json.Unmarshal(r.Results, &res) == nil {
+		for _, x := range res {
+			name := names[x.Loc]
+			if name == "" {
+				name = "A removed server"
+			}
+			c.Locations = append(c.Locations, uptime.LocationResult{
+				Location: x.Loc, Name: name, Status: x.Status, LatencyMs: x.LatencyMs, Code: x.Code, Message: x.Message,
+			})
+		}
+	}
+	return c
 }
 
 // ---- push ----
@@ -993,6 +1299,9 @@ func registerMonitors(api huma.API, h *uptimeHandler) {
 		if err != nil {
 			return nil, internalError(err)
 		}
+		if !in.Body.Paused {
+			_ = h.q.ResetMonitorLocations(ctx, m.ID)
+		}
 		return h.monitorOut(ctx, m, principalOf(ctx).Level >= auth.Engineer)
 	})
 
@@ -1019,7 +1328,7 @@ func registerMonitors(api huma.API, h *uptimeHandler) {
 
 	type checksOut struct {
 		Body struct {
-			Items []sqlc.MonitorChecksBetweenRow `json:"items"`
+			Items []MonitorCheck `json:"items"`
 		}
 	}
 	huma.Register(api, huma.Operation{
@@ -1049,10 +1358,16 @@ func registerMonitors(api huma.API, h *uptimeHandler) {
 			return nil, internalError(err)
 		}
 		out := &checksOut{}
-		out.Body.Items = make([]sqlc.MonitorChecksBetweenRow, 0, len(rows))
+		names := map[string]string{}
+		if locs, err := h.q.ListMonitorLocations(ctx, m.ID); err == nil {
+			for _, l := range locs {
+				names[locKey(l.ServerID)] = locName(l.ServerID, l.ServerName)
+			}
+		}
+		out.Body.Items = make([]MonitorCheck, 0, len(rows))
 		for _, r := range rows {
 			if in.Status == "" || r.Status == in.Status {
-				out.Body.Items = append(out.Body.Items, r)
+				out.Body.Items = append(out.Body.Items, toMonitorCheck(r, names))
 			}
 			if int32(len(out.Body.Items)) >= in.Limit {
 				break

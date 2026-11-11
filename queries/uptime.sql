@@ -74,7 +74,8 @@ SELECT * FROM monitors
 WHERE (@see_all::bool OR workspace_id = ANY (@workspace_ids::uuid[]))
   AND (sqlc.narg('workspace_id')::uuid IS NULL OR workspace_id = sqlc.narg('workspace_id')::uuid)
   AND (sqlc.narg('server_id')::uuid IS NULL OR server_id = sqlc.narg('server_id')::uuid
-       OR via_server_id = sqlc.narg('server_id')::uuid)
+       OR EXISTS (SELECT 1 FROM monitor_locations l
+                  WHERE l.monitor_id = monitors.id AND l.server_id = sqlc.narg('server_id')::uuid))
 ORDER BY lower(name);
 
 -- name: GetMonitor :one
@@ -89,15 +90,17 @@ SELECT * FROM monitors WHERE push_token = $1;
 -- name: CreateMonitor :one
 INSERT INTO monitors (
     workspace_id, name, kind, config, secrets_enc, description, tags,
-    via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds,
+    server_id, interval_seconds, retry_seconds, timeout_seconds,
     retries, resend_every, notify_degraded, allow_internal, paused, push_token,
+    rule_down, rule_down_count, rule_degraded, rule_degraded_count,
     created_by_name, updated_by_name
 ) VALUES (
     @workspace_id, @name, @kind, @config, @secrets_enc, @description, @tags,
-    sqlc.narg('via_server_id'), sqlc.narg('server_id'), @interval_seconds,
+    sqlc.narg('server_id'), @interval_seconds,
     @retry_seconds, @timeout_seconds, @retries, @resend_every, @notify_degraded,
-    @allow_internal, @paused, sqlc.narg('push_token'), @created_by_name,
-    @created_by_name
+    @allow_internal, @paused, sqlc.narg('push_token'),
+    @rule_down, @rule_down_count, @rule_degraded, @rule_degraded_count,
+    @created_by_name, @created_by_name
 )
 RETURNING *;
 
@@ -109,7 +112,6 @@ UPDATE monitors SET
     secrets_enc = @secrets_enc,
     description = @description,
     tags = @tags,
-    via_server_id = sqlc.narg('via_server_id'),
     server_id = sqlc.narg('server_id'),
     interval_seconds = @interval_seconds,
     retry_seconds = @retry_seconds,
@@ -119,6 +121,10 @@ UPDATE monitors SET
     notify_degraded = @notify_degraded,
     allow_internal = @allow_internal,
     push_token = sqlc.narg('push_token'),
+    rule_down = @rule_down,
+    rule_down_count = @rule_down_count,
+    rule_degraded = @rule_degraded,
+    rule_degraded_count = @rule_degraded_count,
     updated_by_name = @updated_by_name,
     next_check_at = now(),
     updated_at = now()
@@ -184,11 +190,81 @@ SELECT c.* FROM notification_channels c
 JOIN monitor_channels mc ON mc.channel_id = c.id
 WHERE mc.monitor_id = $1 AND c.enabled;
 
+-- ---- Locations ----
+
+-- name: ListMonitorLocations :many
+-- A monitor's locations, Morcheh first, then the servers by name.
+SELECT l.*, coalesce(s.name, '')::text AS server_name
+FROM monitor_locations l
+LEFT JOIN servers s ON s.id = l.server_id
+WHERE l.monitor_id = @monitor_id
+ORDER BY l.server_id IS NOT NULL, lower(coalesce(s.name, ''));
+
+-- name: ListMonitorLocationsFor :many
+SELECT l.*, coalesce(s.name, '')::text AS server_name
+FROM monitor_locations l
+LEFT JOIN servers s ON s.id = l.server_id
+WHERE l.monitor_id = ANY (@ids::uuid[])
+ORDER BY l.monitor_id, l.server_id IS NOT NULL, lower(coalesce(s.name, ''));
+
+-- name: AddMonitorLocation :exec
+INSERT INTO monitor_locations (monitor_id, server_id)
+VALUES (@monitor_id, sqlc.narg('server_id'))
+ON CONFLICT (monitor_id, server_id) DO NOTHING;
+
+-- name: KeepMonitorLocations :exec
+-- Removes the locations not listed ("morcheh" or a server id).
+DELETE FROM monitor_locations
+WHERE monitor_id = @monitor_id
+  AND NOT (coalesce(server_id::text, 'morcheh') = ANY (@keep::text[]));
+
+-- name: SaveMonitorLocation :exec
+UPDATE monitor_locations SET
+    status = @status,
+    status_message = @status_message,
+    status_since = CASE WHEN status = @status THEN status_since ELSE @checked_at END,
+    latency_ms = sqlc.narg('latency_ms'),
+    code = @code,
+    checked_at = @checked_at
+WHERE id = @id;
+
+-- name: ResetMonitorLocations :exec
+UPDATE monitor_locations SET status = 'pending', status_message = '', status_since = now()
+WHERE monitor_id = @monitor_id;
+
+-- name: MonitorLocationStats :many
+-- Each location's answers since a time, from the checks' results.
+SELECT (r.v ->> 'loc')::text AS loc,
+    count(*)::int AS checks,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'up')::int AS up,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'degraded')::int AS degraded,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'down')::int AS down,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'unknown')::int AS unknown,
+    coalesce(avg((r.v ->> 'latency_ms')::int), 0)::float8 AS latency_avg,
+    coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY (r.v ->> 'latency_ms')::int), 0)::float8 AS latency_p95
+FROM monitor_checks c
+CROSS JOIN LATERAL jsonb_array_elements(c.results) AS r(v)
+WHERE c.monitor_id = @monitor_id AND c.at >= @since
+GROUP BY 1;
+
+-- name: MonitorLocationBuckets :many
+-- Each location's answers in buckets of @step seconds.
+SELECT date_bin(make_interval(secs => @step::int), c.at, @origin::timestamptz)::timestamptz AS bucket,
+    (r.v ->> 'loc')::text AS loc,
+    count(*)::int AS checks,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'down')::int AS down,
+    coalesce(avg((r.v ->> 'latency_ms')::int), 0)::float8 AS latency_avg
+FROM monitor_checks c
+CROSS JOIN LATERAL jsonb_array_elements(c.results) AS r(v)
+WHERE c.monitor_id = @monitor_id AND c.at >= @origin
+GROUP BY 1, 2
+ORDER BY 1;
+
 -- ---- Checks and history ----
 
 -- name: InsertMonitorCheck :exec
-INSERT INTO monitor_checks (monitor_id, at, status, latency_ms, code, message)
-VALUES (@monitor_id, @at, @status, sqlc.narg('latency_ms'), @code, @message);
+INSERT INTO monitor_checks (monitor_id, at, status, latency_ms, code, message, results)
+VALUES (@monitor_id, @at, @status, sqlc.narg('latency_ms'), @code, @message, @results);
 
 -- name: AddMonitorDay :exec
 INSERT INTO monitor_days (
@@ -242,7 +318,7 @@ WHERE monitor_id = ANY (@ids::uuid[]) AND day >= @since::date
 ORDER BY day;
 
 -- name: MonitorChecksBetween :many
-SELECT at, status, latency_ms, code, message
+SELECT at, status, latency_ms, code, message, results
 FROM monitor_checks
 WHERE monitor_id = @monitor_id AND at >= @since AND at < @until
 ORDER BY at DESC

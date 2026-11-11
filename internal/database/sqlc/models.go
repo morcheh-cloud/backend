@@ -377,38 +377,41 @@ type Job struct {
 }
 
 type Monitor struct {
-	ID              uuid.UUID  `json:"id"`
-	WorkspaceID     uuid.UUID  `json:"workspace_id"`
-	Name            string     `json:"name"`
-	Kind            string     `json:"kind"`
-	Config          []byte     `json:"config"`
-	SecretsEnc      []byte     `json:"secrets_enc"`
-	Description     string     `json:"description"`
-	Tags            []string   `json:"tags"`
-	ViaServerID     *uuid.UUID `json:"via_server_id"`
-	ServerID        *uuid.UUID `json:"server_id"`
-	IntervalSeconds int32      `json:"interval_seconds"`
-	RetrySeconds    int32      `json:"retry_seconds"`
-	TimeoutSeconds  int32      `json:"timeout_seconds"`
-	Retries         int32      `json:"retries"`
-	ResendEvery     int32      `json:"resend_every"`
-	NotifyDegraded  bool       `json:"notify_degraded"`
-	AllowInternal   bool       `json:"allow_internal"`
-	Paused          bool       `json:"paused"`
-	PushToken       *string    `json:"push_token"`
-	Status          string     `json:"status"`
-	StatusMessage   string     `json:"status_message"`
-	StatusSince     time.Time  `json:"status_since"`
-	FailCount       int32      `json:"fail_count"`
-	DownChecks      int32      `json:"down_checks"`
-	LastLatencyMs   *int32     `json:"last_latency_ms"`
-	LastCheckedAt   *time.Time `json:"last_checked_at"`
-	NextCheckAt     time.Time  `json:"next_check_at"`
-	CertExpiresAt   *time.Time `json:"cert_expires_at"`
-	CreatedByName   string     `json:"created_by_name"`
-	UpdatedByName   string     `json:"updated_by_name"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID                uuid.UUID  `json:"id"`
+	WorkspaceID       uuid.UUID  `json:"workspace_id"`
+	Name              string     `json:"name"`
+	Kind              string     `json:"kind"`
+	Config            []byte     `json:"config"`
+	SecretsEnc        []byte     `json:"secrets_enc"`
+	Description       string     `json:"description"`
+	Tags              []string   `json:"tags"`
+	ServerID          *uuid.UUID `json:"server_id"`
+	IntervalSeconds   int32      `json:"interval_seconds"`
+	RetrySeconds      int32      `json:"retry_seconds"`
+	TimeoutSeconds    int32      `json:"timeout_seconds"`
+	Retries           int32      `json:"retries"`
+	ResendEvery       int32      `json:"resend_every"`
+	NotifyDegraded    bool       `json:"notify_degraded"`
+	AllowInternal     bool       `json:"allow_internal"`
+	Paused            bool       `json:"paused"`
+	PushToken         *string    `json:"push_token"`
+	Status            string     `json:"status"`
+	StatusMessage     string     `json:"status_message"`
+	StatusSince       time.Time  `json:"status_since"`
+	FailCount         int32      `json:"fail_count"`
+	DownChecks        int32      `json:"down_checks"`
+	LastLatencyMs     *int32     `json:"last_latency_ms"`
+	LastCheckedAt     *time.Time `json:"last_checked_at"`
+	NextCheckAt       time.Time  `json:"next_check_at"`
+	CertExpiresAt     *time.Time `json:"cert_expires_at"`
+	CreatedByName     string     `json:"created_by_name"`
+	UpdatedByName     string     `json:"updated_by_name"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	RuleDown          string     `json:"rule_down"`
+	RuleDownCount     int32      `json:"rule_down_count"`
+	RuleDegraded      string     `json:"rule_degraded"`
+	RuleDegradedCount int32      `json:"rule_degraded_count"`
 }
 
 type MonitorChannel struct {
@@ -424,6 +427,7 @@ type MonitorCheck struct {
 	LatencyMs *int32    `json:"latency_ms"`
 	Code      string    `json:"code"`
 	Message   string    `json:"message"`
+	Results   []byte    `json:"results"`
 }
 
 type MonitorDay struct {
@@ -456,6 +460,19 @@ type MonitorIncident struct {
 	AcknowledgedAt     *time.Time `json:"acknowledged_at"`
 	AcknowledgedByName string     `json:"acknowledged_by_name"`
 	Note               string     `json:"note"`
+}
+
+type MonitorLocation struct {
+	ID            uuid.UUID  `json:"id"`
+	MonitorID     uuid.UUID  `json:"monitor_id"`
+	ServerID      *uuid.UUID `json:"server_id"`
+	Status        string     `json:"status"`
+	StatusMessage string     `json:"status_message"`
+	StatusSince   time.Time  `json:"status_since"`
+	LatencyMs     *int32     `json:"latency_ms"`
+	Code          string     `json:"code"`
+	CheckedAt     *time.Time `json:"checked_at"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 type NotificationChannel struct {

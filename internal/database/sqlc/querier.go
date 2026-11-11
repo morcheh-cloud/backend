@@ -19,6 +19,7 @@ type Querier interface {
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
 	AddMonitorChannel(ctx context.Context, arg AddMonitorChannelParams) error
 	AddMonitorDay(ctx context.Context, arg AddMonitorDayParams) error
+	AddMonitorLocation(ctx context.Context, arg AddMonitorLocationParams) error
 	AddProxyChange(ctx context.Context, arg AddProxyChangeParams) error
 	AddServerTags(ctx context.Context, arg AddServerTagsParams) (int64, error)
 	AnyBackupPlanEnabled(ctx context.Context, databaseID uuid.UUID) (bool, error)
@@ -264,6 +265,8 @@ type Querier interface {
 	InterruptSoftwareRuns(ctx context.Context) error
 	// At start-up: shells recorded by a previous run of Morcheh are gone.
 	InterruptTerminalRecordings(ctx context.Context) (int64, error)
+	// Removes the locations not listed ("morcheh" or a server id).
+	KeepMonitorLocations(ctx context.Context, arg KeepMonitorLocationsParams) error
 	// Each plan's newest finished run; of a run over several databases, the one
 	// that failed if any did.
 	LastBackups(ctx context.Context, planIds []uuid.UUID) ([]LastBackupsRow, error)
@@ -336,6 +339,10 @@ type Querier interface {
 	ListMonitorChannelsFor(ctx context.Context, ids []uuid.UUID) ([]MonitorChannel, error)
 	ListMonitorEvents(ctx context.Context, arg ListMonitorEventsParams) ([]MonitorEvent, error)
 	ListMonitorIncidents(ctx context.Context, arg ListMonitorIncidentsParams) ([]MonitorIncident, error)
+	// ---- Locations ----
+	// A monitor's locations, Morcheh first, then the servers by name.
+	ListMonitorLocations(ctx context.Context, monitorID uuid.UUID) ([]ListMonitorLocationsRow, error)
+	ListMonitorLocationsFor(ctx context.Context, ids []uuid.UUID) ([]ListMonitorLocationsForRow, error)
 	// ---- Monitors ----
 	ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]Monitor, error)
 	// ---- Notification channels ----
@@ -420,6 +427,10 @@ type Querier interface {
 	MonitorDaysSince(ctx context.Context, arg MonitorDaysSinceParams) ([]MonitorDay, error)
 	// Seconds each monitor spent in incidents since a time (open ones up to now).
 	MonitorDowntimeSince(ctx context.Context, arg MonitorDowntimeSinceParams) ([]MonitorDowntimeSinceRow, error)
+	// Each location's answers in buckets of @step seconds.
+	MonitorLocationBuckets(ctx context.Context, arg MonitorLocationBucketsParams) ([]MonitorLocationBucketsRow, error)
+	// Each location's answers since a time, from the checks' results.
+	MonitorLocationStats(ctx context.Context, arg MonitorLocationStatsParams) ([]MonitorLocationStatsRow, error)
 	// Counts per monitor since a time, from the raw checks.
 	MonitorUptimeSince(ctx context.Context, arg MonitorUptimeSinceParams) ([]MonitorUptimeSinceRow, error)
 	// Categories belong to one workspace, so moved services leave theirs.
@@ -472,6 +483,7 @@ type Querier interface {
 	RecordStorageCheck(ctx context.Context, arg RecordStorageCheckParams) (Storage, error)
 	RemoveServerTags(ctx context.Context, arg RemoveServerTagsParams) (int64, error)
 	ReparentFolderChildren(ctx context.Context, arg ReparentFolderChildrenParams) error
+	ResetMonitorLocations(ctx context.Context, monitorID uuid.UUID) error
 	ResetServerHostKey(ctx context.Context, id uuid.UUID) error
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
 	// Installs left mid-change by a restart.
@@ -481,6 +493,7 @@ type Querier interface {
 	RestoreProxyHost(ctx context.Context, arg RestoreProxyHostParams) error
 	SaveAnsibleRunProgress(ctx context.Context, arg SaveAnsibleRunProgressParams) error
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
+	SaveMonitorLocation(ctx context.Context, arg SaveMonitorLocationParams) error
 	SaveMonitorState(ctx context.Context, arg SaveMonitorStateParams) (Monitor, error)
 	// What a scan found installed. A run in progress keeps its status.
 	SaveScannedSoftware(ctx context.Context, arg SaveScannedSoftwareParams) error

@@ -95,6 +95,22 @@ func (q *Queries) AddMonitorDay(ctx context.Context, arg AddMonitorDayParams) er
 	return err
 }
 
+const addMonitorLocation = `-- name: AddMonitorLocation :exec
+INSERT INTO monitor_locations (monitor_id, server_id)
+VALUES ($1, $2)
+ON CONFLICT (monitor_id, server_id) DO NOTHING
+`
+
+type AddMonitorLocationParams struct {
+	MonitorID uuid.UUID  `json:"monitor_id"`
+	ServerID  *uuid.UUID `json:"server_id"`
+}
+
+func (q *Queries) AddMonitorLocation(ctx context.Context, arg AddMonitorLocationParams) error {
+	_, err := q.db.Exec(ctx, addMonitorLocation, arg.MonitorID, arg.ServerID)
+	return err
+}
+
 const channelsToNotify = `-- name: ChannelsToNotify :many
 SELECT c.id, c.workspace_id, c.name, c.kind, c.config, c.secrets_enc, c.enabled, c.is_default, c.allow_internal, c.last_sent_at, c.last_error, c.last_error_at, c.created_by_name, c.updated_by_name, c.created_at, c.updated_at FROM notification_channels c
 JOIN monitor_channels mc ON mc.channel_id = c.id
@@ -182,39 +198,44 @@ func (q *Queries) CountChannelMonitors(ctx context.Context, ids []uuid.UUID) ([]
 const createMonitor = `-- name: CreateMonitor :one
 INSERT INTO monitors (
     workspace_id, name, kind, config, secrets_enc, description, tags,
-    via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds,
+    server_id, interval_seconds, retry_seconds, timeout_seconds,
     retries, resend_every, notify_degraded, allow_internal, paused, push_token,
+    rule_down, rule_down_count, rule_degraded, rule_degraded_count,
     created_by_name, updated_by_name
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10,
-    $11, $12, $13, $14, $15,
-    $16, $17, $18, $19,
-    $19
+    $8, $9,
+    $10, $11, $12, $13, $14,
+    $15, $16, $17,
+    $18, $19, $20, $21,
+    $22, $22
 )
-RETURNING id, workspace_id, name, kind, config, secrets_enc, description, tags, via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at
+RETURNING id, workspace_id, name, kind, config, secrets_enc, description, tags, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at, rule_down, rule_down_count, rule_degraded, rule_degraded_count
 `
 
 type CreateMonitorParams struct {
-	WorkspaceID     uuid.UUID  `json:"workspace_id"`
-	Name            string     `json:"name"`
-	Kind            string     `json:"kind"`
-	Config          []byte     `json:"config"`
-	SecretsEnc      []byte     `json:"secrets_enc"`
-	Description     string     `json:"description"`
-	Tags            []string   `json:"tags"`
-	ViaServerID     *uuid.UUID `json:"via_server_id"`
-	ServerID        *uuid.UUID `json:"server_id"`
-	IntervalSeconds int32      `json:"interval_seconds"`
-	RetrySeconds    int32      `json:"retry_seconds"`
-	TimeoutSeconds  int32      `json:"timeout_seconds"`
-	Retries         int32      `json:"retries"`
-	ResendEvery     int32      `json:"resend_every"`
-	NotifyDegraded  bool       `json:"notify_degraded"`
-	AllowInternal   bool       `json:"allow_internal"`
-	Paused          bool       `json:"paused"`
-	PushToken       *string    `json:"push_token"`
-	CreatedByName   string     `json:"created_by_name"`
+	WorkspaceID       uuid.UUID  `json:"workspace_id"`
+	Name              string     `json:"name"`
+	Kind              string     `json:"kind"`
+	Config            []byte     `json:"config"`
+	SecretsEnc        []byte     `json:"secrets_enc"`
+	Description       string     `json:"description"`
+	Tags              []string   `json:"tags"`
+	ServerID          *uuid.UUID `json:"server_id"`
+	IntervalSeconds   int32      `json:"interval_seconds"`
+	RetrySeconds      int32      `json:"retry_seconds"`
+	TimeoutSeconds    int32      `json:"timeout_seconds"`
+	Retries           int32      `json:"retries"`
+	ResendEvery       int32      `json:"resend_every"`
+	NotifyDegraded    bool       `json:"notify_degraded"`
+	AllowInternal     bool       `json:"allow_internal"`
+	Paused            bool       `json:"paused"`
+	PushToken         *string    `json:"push_token"`
+	RuleDown          string     `json:"rule_down"`
+	RuleDownCount     int32      `json:"rule_down_count"`
+	RuleDegraded      string     `json:"rule_degraded"`
+	RuleDegradedCount int32      `json:"rule_degraded_count"`
+	CreatedByName     string     `json:"created_by_name"`
 }
 
 func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error) {
@@ -226,7 +247,6 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		arg.SecretsEnc,
 		arg.Description,
 		arg.Tags,
-		arg.ViaServerID,
 		arg.ServerID,
 		arg.IntervalSeconds,
 		arg.RetrySeconds,
@@ -237,6 +257,10 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		arg.AllowInternal,
 		arg.Paused,
 		arg.PushToken,
+		arg.RuleDown,
+		arg.RuleDownCount,
+		arg.RuleDegraded,
+		arg.RuleDegradedCount,
 		arg.CreatedByName,
 	)
 	var i Monitor
@@ -249,7 +273,6 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		&i.SecretsEnc,
 		&i.Description,
 		&i.Tags,
-		&i.ViaServerID,
 		&i.ServerID,
 		&i.IntervalSeconds,
 		&i.RetrySeconds,
@@ -273,6 +296,10 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RuleDown,
+		&i.RuleDownCount,
+		&i.RuleDegraded,
+		&i.RuleDegradedCount,
 	)
 	return i, err
 }
@@ -392,7 +419,7 @@ func (q *Queries) DeleteNotificationChannel(ctx context.Context, id uuid.UUID) e
 }
 
 const getMonitor = `-- name: GetMonitor :one
-SELECT id, workspace_id, name, kind, config, secrets_enc, description, tags, via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at FROM monitors WHERE id = $1
+SELECT id, workspace_id, name, kind, config, secrets_enc, description, tags, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at, rule_down, rule_down_count, rule_degraded, rule_degraded_count FROM monitors WHERE id = $1
 `
 
 func (q *Queries) GetMonitor(ctx context.Context, id uuid.UUID) (Monitor, error) {
@@ -407,7 +434,6 @@ func (q *Queries) GetMonitor(ctx context.Context, id uuid.UUID) (Monitor, error)
 		&i.SecretsEnc,
 		&i.Description,
 		&i.Tags,
-		&i.ViaServerID,
 		&i.ServerID,
 		&i.IntervalSeconds,
 		&i.RetrySeconds,
@@ -431,12 +457,16 @@ func (q *Queries) GetMonitor(ctx context.Context, id uuid.UUID) (Monitor, error)
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RuleDown,
+		&i.RuleDownCount,
+		&i.RuleDegraded,
+		&i.RuleDegradedCount,
 	)
 	return i, err
 }
 
 const getMonitorByPushToken = `-- name: GetMonitorByPushToken :one
-SELECT id, workspace_id, name, kind, config, secrets_enc, description, tags, via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at FROM monitors WHERE push_token = $1
+SELECT id, workspace_id, name, kind, config, secrets_enc, description, tags, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at, rule_down, rule_down_count, rule_degraded, rule_degraded_count FROM monitors WHERE push_token = $1
 `
 
 func (q *Queries) GetMonitorByPushToken(ctx context.Context, pushToken *string) (Monitor, error) {
@@ -451,7 +481,6 @@ func (q *Queries) GetMonitorByPushToken(ctx context.Context, pushToken *string) 
 		&i.SecretsEnc,
 		&i.Description,
 		&i.Tags,
-		&i.ViaServerID,
 		&i.ServerID,
 		&i.IntervalSeconds,
 		&i.RetrySeconds,
@@ -475,6 +504,10 @@ func (q *Queries) GetMonitorByPushToken(ctx context.Context, pushToken *string) 
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RuleDown,
+		&i.RuleDownCount,
+		&i.RuleDegraded,
+		&i.RuleDegradedCount,
 	)
 	return i, err
 }
@@ -551,8 +584,8 @@ func (q *Queries) GetNotificationChannelWorkspace(ctx context.Context, id uuid.U
 
 const insertMonitorCheck = `-- name: InsertMonitorCheck :exec
 
-INSERT INTO monitor_checks (monitor_id, at, status, latency_ms, code, message)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO monitor_checks (monitor_id, at, status, latency_ms, code, message, results)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type InsertMonitorCheckParams struct {
@@ -562,6 +595,7 @@ type InsertMonitorCheckParams struct {
 	LatencyMs *int32    `json:"latency_ms"`
 	Code      string    `json:"code"`
 	Message   string    `json:"message"`
+	Results   []byte    `json:"results"`
 }
 
 // ---- Checks and history ----
@@ -573,6 +607,7 @@ func (q *Queries) InsertMonitorCheck(ctx context.Context, arg InsertMonitorCheck
 		arg.LatencyMs,
 		arg.Code,
 		arg.Message,
+		arg.Results,
 	)
 	return err
 }
@@ -601,8 +636,25 @@ func (q *Queries) InsertMonitorEvent(ctx context.Context, arg InsertMonitorEvent
 	return err
 }
 
+const keepMonitorLocations = `-- name: KeepMonitorLocations :exec
+DELETE FROM monitor_locations
+WHERE monitor_id = $1
+  AND NOT (coalesce(server_id::text, 'morcheh') = ANY ($2::text[]))
+`
+
+type KeepMonitorLocationsParams struct {
+	MonitorID uuid.UUID `json:"monitor_id"`
+	Keep      []string  `json:"keep"`
+}
+
+// Removes the locations not listed ("morcheh" or a server id).
+func (q *Queries) KeepMonitorLocations(ctx context.Context, arg KeepMonitorLocationsParams) error {
+	_, err := q.db.Exec(ctx, keepMonitorLocations, arg.MonitorID, arg.Keep)
+	return err
+}
+
 const listDueMonitors = `-- name: ListDueMonitors :many
-SELECT id, workspace_id, name, kind, config, secrets_enc, description, tags, via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at FROM monitors
+SELECT id, workspace_id, name, kind, config, secrets_enc, description, tags, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at, rule_down, rule_down_count, rule_degraded, rule_degraded_count FROM monitors
 WHERE NOT paused AND next_check_at <= now()
 ORDER BY next_check_at
 LIMIT $1
@@ -626,7 +678,6 @@ func (q *Queries) ListDueMonitors(ctx context.Context, lim int32) ([]Monitor, er
 			&i.SecretsEnc,
 			&i.Description,
 			&i.Tags,
-			&i.ViaServerID,
 			&i.ServerID,
 			&i.IntervalSeconds,
 			&i.RetrySeconds,
@@ -650,6 +701,10 @@ func (q *Queries) ListDueMonitors(ctx context.Context, lim int32) ([]Monitor, er
 			&i.UpdatedByName,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RuleDown,
+			&i.RuleDownCount,
+			&i.RuleDegraded,
+			&i.RuleDegradedCount,
 		); err != nil {
 			return nil, err
 		}
@@ -790,13 +845,125 @@ func (q *Queries) ListMonitorIncidents(ctx context.Context, arg ListMonitorIncid
 	return items, nil
 }
 
+const listMonitorLocations = `-- name: ListMonitorLocations :many
+
+SELECT l.id, l.monitor_id, l.server_id, l.status, l.status_message, l.status_since, l.latency_ms, l.code, l.checked_at, l.created_at, coalesce(s.name, '')::text AS server_name
+FROM monitor_locations l
+LEFT JOIN servers s ON s.id = l.server_id
+WHERE l.monitor_id = $1
+ORDER BY l.server_id IS NOT NULL, lower(coalesce(s.name, ''))
+`
+
+type ListMonitorLocationsRow struct {
+	ID            uuid.UUID  `json:"id"`
+	MonitorID     uuid.UUID  `json:"monitor_id"`
+	ServerID      *uuid.UUID `json:"server_id"`
+	Status        string     `json:"status"`
+	StatusMessage string     `json:"status_message"`
+	StatusSince   time.Time  `json:"status_since"`
+	LatencyMs     *int32     `json:"latency_ms"`
+	Code          string     `json:"code"`
+	CheckedAt     *time.Time `json:"checked_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ServerName    string     `json:"server_name"`
+}
+
+// ---- Locations ----
+// A monitor's locations, Morcheh first, then the servers by name.
+func (q *Queries) ListMonitorLocations(ctx context.Context, monitorID uuid.UUID) ([]ListMonitorLocationsRow, error) {
+	rows, err := q.db.Query(ctx, listMonitorLocations, monitorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMonitorLocationsRow{}
+	for rows.Next() {
+		var i ListMonitorLocationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitorID,
+			&i.ServerID,
+			&i.Status,
+			&i.StatusMessage,
+			&i.StatusSince,
+			&i.LatencyMs,
+			&i.Code,
+			&i.CheckedAt,
+			&i.CreatedAt,
+			&i.ServerName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMonitorLocationsFor = `-- name: ListMonitorLocationsFor :many
+SELECT l.id, l.monitor_id, l.server_id, l.status, l.status_message, l.status_since, l.latency_ms, l.code, l.checked_at, l.created_at, coalesce(s.name, '')::text AS server_name
+FROM monitor_locations l
+LEFT JOIN servers s ON s.id = l.server_id
+WHERE l.monitor_id = ANY ($1::uuid[])
+ORDER BY l.monitor_id, l.server_id IS NOT NULL, lower(coalesce(s.name, ''))
+`
+
+type ListMonitorLocationsForRow struct {
+	ID            uuid.UUID  `json:"id"`
+	MonitorID     uuid.UUID  `json:"monitor_id"`
+	ServerID      *uuid.UUID `json:"server_id"`
+	Status        string     `json:"status"`
+	StatusMessage string     `json:"status_message"`
+	StatusSince   time.Time  `json:"status_since"`
+	LatencyMs     *int32     `json:"latency_ms"`
+	Code          string     `json:"code"`
+	CheckedAt     *time.Time `json:"checked_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ServerName    string     `json:"server_name"`
+}
+
+func (q *Queries) ListMonitorLocationsFor(ctx context.Context, ids []uuid.UUID) ([]ListMonitorLocationsForRow, error) {
+	rows, err := q.db.Query(ctx, listMonitorLocationsFor, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMonitorLocationsForRow{}
+	for rows.Next() {
+		var i ListMonitorLocationsForRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitorID,
+			&i.ServerID,
+			&i.Status,
+			&i.StatusMessage,
+			&i.StatusSince,
+			&i.LatencyMs,
+			&i.Code,
+			&i.CheckedAt,
+			&i.CreatedAt,
+			&i.ServerName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMonitors = `-- name: ListMonitors :many
 
-SELECT id, workspace_id, name, kind, config, secrets_enc, description, tags, via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at FROM monitors
+SELECT id, workspace_id, name, kind, config, secrets_enc, description, tags, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at, rule_down, rule_down_count, rule_degraded, rule_degraded_count FROM monitors
 WHERE ($1::bool OR workspace_id = ANY ($2::uuid[]))
   AND ($3::uuid IS NULL OR workspace_id = $3::uuid)
   AND ($4::uuid IS NULL OR server_id = $4::uuid
-       OR via_server_id = $4::uuid)
+       OR EXISTS (SELECT 1 FROM monitor_locations l
+                  WHERE l.monitor_id = monitors.id AND l.server_id = $4::uuid))
 ORDER BY lower(name)
 `
 
@@ -831,7 +998,6 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]M
 			&i.SecretsEnc,
 			&i.Description,
 			&i.Tags,
-			&i.ViaServerID,
 			&i.ServerID,
 			&i.IntervalSeconds,
 			&i.RetrySeconds,
@@ -855,6 +1021,10 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]M
 			&i.UpdatedByName,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RuleDown,
+			&i.RuleDownCount,
+			&i.RuleDegraded,
+			&i.RuleDegradedCount,
 		); err != nil {
 			return nil, err
 		}
@@ -1131,7 +1301,7 @@ func (q *Queries) MonitorBuckets(ctx context.Context, arg MonitorBucketsParams) 
 }
 
 const monitorChecksBetween = `-- name: MonitorChecksBetween :many
-SELECT at, status, latency_ms, code, message
+SELECT at, status, latency_ms, code, message, results
 FROM monitor_checks
 WHERE monitor_id = $1 AND at >= $2 AND at < $3
 ORDER BY at DESC
@@ -1151,6 +1321,7 @@ type MonitorChecksBetweenRow struct {
 	LatencyMs *int32    `json:"latency_ms"`
 	Code      string    `json:"code"`
 	Message   string    `json:"message"`
+	Results   []byte    `json:"results"`
 }
 
 func (q *Queries) MonitorChecksBetween(ctx context.Context, arg MonitorChecksBetweenParams) ([]MonitorChecksBetweenRow, error) {
@@ -1173,6 +1344,7 @@ func (q *Queries) MonitorChecksBetween(ctx context.Context, arg MonitorChecksBet
 			&i.LatencyMs,
 			&i.Code,
 			&i.Message,
+			&i.Results,
 		); err != nil {
 			return nil, err
 		}
@@ -1256,6 +1428,121 @@ func (q *Queries) MonitorDowntimeSince(ctx context.Context, arg MonitorDowntimeS
 	for rows.Next() {
 		var i MonitorDowntimeSinceRow
 		if err := rows.Scan(&i.MonitorID, &i.Incidents, &i.Seconds); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const monitorLocationBuckets = `-- name: MonitorLocationBuckets :many
+SELECT date_bin(make_interval(secs => $1::int), c.at, $2::timestamptz)::timestamptz AS bucket,
+    (r.v ->> 'loc')::text AS loc,
+    count(*)::int AS checks,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'down')::int AS down,
+    coalesce(avg((r.v ->> 'latency_ms')::int), 0)::float8 AS latency_avg
+FROM monitor_checks c
+CROSS JOIN LATERAL jsonb_array_elements(c.results) AS r(v)
+WHERE c.monitor_id = $3 AND c.at >= $2
+GROUP BY 1, 2
+ORDER BY 1
+`
+
+type MonitorLocationBucketsParams struct {
+	Step      int32     `json:"step"`
+	Origin    time.Time `json:"origin"`
+	MonitorID uuid.UUID `json:"monitor_id"`
+}
+
+type MonitorLocationBucketsRow struct {
+	Bucket     time.Time `json:"bucket"`
+	Loc        string    `json:"loc"`
+	Checks     int32     `json:"checks"`
+	Down       int32     `json:"down"`
+	LatencyAvg float64   `json:"latency_avg"`
+}
+
+// Each location's answers in buckets of @step seconds.
+func (q *Queries) MonitorLocationBuckets(ctx context.Context, arg MonitorLocationBucketsParams) ([]MonitorLocationBucketsRow, error) {
+	rows, err := q.db.Query(ctx, monitorLocationBuckets, arg.Step, arg.Origin, arg.MonitorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MonitorLocationBucketsRow{}
+	for rows.Next() {
+		var i MonitorLocationBucketsRow
+		if err := rows.Scan(
+			&i.Bucket,
+			&i.Loc,
+			&i.Checks,
+			&i.Down,
+			&i.LatencyAvg,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const monitorLocationStats = `-- name: MonitorLocationStats :many
+SELECT (r.v ->> 'loc')::text AS loc,
+    count(*)::int AS checks,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'up')::int AS up,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'degraded')::int AS degraded,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'down')::int AS down,
+    count(*) FILTER (WHERE r.v ->> 'status' = 'unknown')::int AS unknown,
+    coalesce(avg((r.v ->> 'latency_ms')::int), 0)::float8 AS latency_avg,
+    coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY (r.v ->> 'latency_ms')::int), 0)::float8 AS latency_p95
+FROM monitor_checks c
+CROSS JOIN LATERAL jsonb_array_elements(c.results) AS r(v)
+WHERE c.monitor_id = $1 AND c.at >= $2
+GROUP BY 1
+`
+
+type MonitorLocationStatsParams struct {
+	MonitorID uuid.UUID `json:"monitor_id"`
+	Since     time.Time `json:"since"`
+}
+
+type MonitorLocationStatsRow struct {
+	Loc        string  `json:"loc"`
+	Checks     int32   `json:"checks"`
+	Up         int32   `json:"up"`
+	Degraded   int32   `json:"degraded"`
+	Down       int32   `json:"down"`
+	Unknown    int32   `json:"unknown"`
+	LatencyAvg float64 `json:"latency_avg"`
+	LatencyP95 float64 `json:"latency_p95"`
+}
+
+// Each location's answers since a time, from the checks' results.
+func (q *Queries) MonitorLocationStats(ctx context.Context, arg MonitorLocationStatsParams) ([]MonitorLocationStatsRow, error) {
+	rows, err := q.db.Query(ctx, monitorLocationStats, arg.MonitorID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MonitorLocationStatsRow{}
+	for rows.Next() {
+		var i MonitorLocationStatsRow
+		if err := rows.Scan(
+			&i.Loc,
+			&i.Checks,
+			&i.Up,
+			&i.Degraded,
+			&i.Down,
+			&i.Unknown,
+			&i.LatencyAvg,
+			&i.LatencyP95,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1423,6 +1710,16 @@ func (q *Queries) RecordChannelSend(ctx context.Context, arg RecordChannelSendPa
 	return err
 }
 
+const resetMonitorLocations = `-- name: ResetMonitorLocations :exec
+UPDATE monitor_locations SET status = 'pending', status_message = '', status_since = now()
+WHERE monitor_id = $1
+`
+
+func (q *Queries) ResetMonitorLocations(ctx context.Context, monitorID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, resetMonitorLocations, monitorID)
+	return err
+}
+
 const resolveMonitorIncident = `-- name: ResolveMonitorIncident :exec
 UPDATE monitor_incidents SET resolved_at = $1
 WHERE monitor_id = $2 AND resolved_at IS NULL
@@ -1438,6 +1735,38 @@ func (q *Queries) ResolveMonitorIncident(ctx context.Context, arg ResolveMonitor
 	return err
 }
 
+const saveMonitorLocation = `-- name: SaveMonitorLocation :exec
+UPDATE monitor_locations SET
+    status = $1,
+    status_message = $2,
+    status_since = CASE WHEN status = $1 THEN status_since ELSE $3 END,
+    latency_ms = $4,
+    code = $5,
+    checked_at = $3
+WHERE id = $6
+`
+
+type SaveMonitorLocationParams struct {
+	Status        string     `json:"status"`
+	StatusMessage string     `json:"status_message"`
+	CheckedAt     *time.Time `json:"checked_at"`
+	LatencyMs     *int32     `json:"latency_ms"`
+	Code          string     `json:"code"`
+	ID            uuid.UUID  `json:"id"`
+}
+
+func (q *Queries) SaveMonitorLocation(ctx context.Context, arg SaveMonitorLocationParams) error {
+	_, err := q.db.Exec(ctx, saveMonitorLocation,
+		arg.Status,
+		arg.StatusMessage,
+		arg.CheckedAt,
+		arg.LatencyMs,
+		arg.Code,
+		arg.ID,
+	)
+	return err
+}
+
 const saveMonitorState = `-- name: SaveMonitorState :one
 UPDATE monitors SET
     status = $1,
@@ -1450,7 +1779,7 @@ UPDATE monitors SET
     next_check_at = $8,
     cert_expires_at = coalesce($9, cert_expires_at)
 WHERE id = $10
-RETURNING id, workspace_id, name, kind, config, secrets_enc, description, tags, via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at
+RETURNING id, workspace_id, name, kind, config, secrets_enc, description, tags, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at, rule_down, rule_down_count, rule_degraded, rule_degraded_count
 `
 
 type SaveMonitorStateParams struct {
@@ -1489,7 +1818,6 @@ func (q *Queries) SaveMonitorState(ctx context.Context, arg SaveMonitorStatePara
 		&i.SecretsEnc,
 		&i.Description,
 		&i.Tags,
-		&i.ViaServerID,
 		&i.ServerID,
 		&i.IntervalSeconds,
 		&i.RetrySeconds,
@@ -1513,6 +1841,10 @@ func (q *Queries) SaveMonitorState(ctx context.Context, arg SaveMonitorStatePara
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RuleDown,
+		&i.RuleDownCount,
+		&i.RuleDegraded,
+		&i.RuleDegradedCount,
 	)
 	return i, err
 }
@@ -1528,7 +1860,7 @@ UPDATE monitors SET
     next_check_at = now(),
     updated_at = now()
 WHERE id = $2
-RETURNING id, workspace_id, name, kind, config, secrets_enc, description, tags, via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at
+RETURNING id, workspace_id, name, kind, config, secrets_enc, description, tags, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at, rule_down, rule_down_count, rule_degraded, rule_degraded_count
 `
 
 type SetMonitorPausedParams struct {
@@ -1549,7 +1881,6 @@ func (q *Queries) SetMonitorPaused(ctx context.Context, arg SetMonitorPausedPara
 		&i.SecretsEnc,
 		&i.Description,
 		&i.Tags,
-		&i.ViaServerID,
 		&i.ServerID,
 		&i.IntervalSeconds,
 		&i.RetrySeconds,
@@ -1573,6 +1904,10 @@ func (q *Queries) SetMonitorPaused(ctx context.Context, arg SetMonitorPausedPara
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RuleDown,
+		&i.RuleDownCount,
+		&i.RuleDegraded,
+		&i.RuleDegradedCount,
 	)
 	return i, err
 }
@@ -1584,41 +1919,47 @@ UPDATE monitors SET
     secrets_enc = $3,
     description = $4,
     tags = $5,
-    via_server_id = $6,
-    server_id = $7,
-    interval_seconds = $8,
-    retry_seconds = $9,
-    timeout_seconds = $10,
-    retries = $11,
-    resend_every = $12,
-    notify_degraded = $13,
-    allow_internal = $14,
-    push_token = $15,
-    updated_by_name = $16,
+    server_id = $6,
+    interval_seconds = $7,
+    retry_seconds = $8,
+    timeout_seconds = $9,
+    retries = $10,
+    resend_every = $11,
+    notify_degraded = $12,
+    allow_internal = $13,
+    push_token = $14,
+    rule_down = $15,
+    rule_down_count = $16,
+    rule_degraded = $17,
+    rule_degraded_count = $18,
+    updated_by_name = $19,
     next_check_at = now(),
     updated_at = now()
-WHERE id = $17
-RETURNING id, workspace_id, name, kind, config, secrets_enc, description, tags, via_server_id, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at
+WHERE id = $20
+RETURNING id, workspace_id, name, kind, config, secrets_enc, description, tags, server_id, interval_seconds, retry_seconds, timeout_seconds, retries, resend_every, notify_degraded, allow_internal, paused, push_token, status, status_message, status_since, fail_count, down_checks, last_latency_ms, last_checked_at, next_check_at, cert_expires_at, created_by_name, updated_by_name, created_at, updated_at, rule_down, rule_down_count, rule_degraded, rule_degraded_count
 `
 
 type UpdateMonitorParams struct {
-	Name            string     `json:"name"`
-	Config          []byte     `json:"config"`
-	SecretsEnc      []byte     `json:"secrets_enc"`
-	Description     string     `json:"description"`
-	Tags            []string   `json:"tags"`
-	ViaServerID     *uuid.UUID `json:"via_server_id"`
-	ServerID        *uuid.UUID `json:"server_id"`
-	IntervalSeconds int32      `json:"interval_seconds"`
-	RetrySeconds    int32      `json:"retry_seconds"`
-	TimeoutSeconds  int32      `json:"timeout_seconds"`
-	Retries         int32      `json:"retries"`
-	ResendEvery     int32      `json:"resend_every"`
-	NotifyDegraded  bool       `json:"notify_degraded"`
-	AllowInternal   bool       `json:"allow_internal"`
-	PushToken       *string    `json:"push_token"`
-	UpdatedByName   string     `json:"updated_by_name"`
-	ID              uuid.UUID  `json:"id"`
+	Name              string     `json:"name"`
+	Config            []byte     `json:"config"`
+	SecretsEnc        []byte     `json:"secrets_enc"`
+	Description       string     `json:"description"`
+	Tags              []string   `json:"tags"`
+	ServerID          *uuid.UUID `json:"server_id"`
+	IntervalSeconds   int32      `json:"interval_seconds"`
+	RetrySeconds      int32      `json:"retry_seconds"`
+	TimeoutSeconds    int32      `json:"timeout_seconds"`
+	Retries           int32      `json:"retries"`
+	ResendEvery       int32      `json:"resend_every"`
+	NotifyDegraded    bool       `json:"notify_degraded"`
+	AllowInternal     bool       `json:"allow_internal"`
+	PushToken         *string    `json:"push_token"`
+	RuleDown          string     `json:"rule_down"`
+	RuleDownCount     int32      `json:"rule_down_count"`
+	RuleDegraded      string     `json:"rule_degraded"`
+	RuleDegradedCount int32      `json:"rule_degraded_count"`
+	UpdatedByName     string     `json:"updated_by_name"`
+	ID                uuid.UUID  `json:"id"`
 }
 
 // A changed monitor is checked again at once.
@@ -1629,7 +1970,6 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		arg.SecretsEnc,
 		arg.Description,
 		arg.Tags,
-		arg.ViaServerID,
 		arg.ServerID,
 		arg.IntervalSeconds,
 		arg.RetrySeconds,
@@ -1639,6 +1979,10 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		arg.NotifyDegraded,
 		arg.AllowInternal,
 		arg.PushToken,
+		arg.RuleDown,
+		arg.RuleDownCount,
+		arg.RuleDegraded,
+		arg.RuleDegradedCount,
 		arg.UpdatedByName,
 		arg.ID,
 	)
@@ -1652,7 +1996,6 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		&i.SecretsEnc,
 		&i.Description,
 		&i.Tags,
-		&i.ViaServerID,
 		&i.ServerID,
 		&i.IntervalSeconds,
 		&i.RetrySeconds,
@@ -1676,6 +2019,10 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		&i.UpdatedByName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RuleDown,
+		&i.RuleDownCount,
+		&i.RuleDegraded,
+		&i.RuleDegradedCount,
 	)
 	return i, err
 }
