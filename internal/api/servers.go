@@ -274,8 +274,10 @@ type serverHandler struct {
 	cmds  *commandLog
 	stats *statsHub
 	privs privileges
-	jobs  *jobs.Runner
-	authz *authz
+	// How each server's Docker engine is reached (docker_engine.go).
+	docker dockerEngines
+	jobs   *jobs.Runner
+	authz  *authz
 	// Set once the uptime handler exists; nil = no alert rules.
 	alerts *alertEngine
 }
@@ -285,6 +287,7 @@ func (h *serverHandler) forget(ids []uuid.UUID) {
 	for _, id := range ids {
 		h.terms.KillServer(id.String())
 		h.pool.Drop(id.String())
+		h.docker.drop(id.String())
 	}
 }
 

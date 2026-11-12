@@ -454,6 +454,66 @@ type DnsServer struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+type DockerImageScan struct {
+	ServerID  uuid.UUID `json:"server_id"`
+	ImageID   string    `json:"image_id"`
+	Image     string    `json:"image"`
+	Critical  int32     `json:"critical"`
+	High      int32     `json:"high"`
+	Medium    int32     `json:"medium"`
+	Low       int32     `json:"low"`
+	Unknown   int32     `json:"unknown"`
+	Fixable   int32     `json:"fixable"`
+	Findings  []byte    `json:"findings"`
+	Scanner   string    `json:"scanner"`
+	Error     string    `json:"error"`
+	ScannedAt time.Time `json:"scanned_at"`
+}
+
+type DockerImageUpdate struct {
+	ServerID     uuid.UUID `json:"server_id"`
+	Image        string    `json:"image"`
+	LocalDigest  string    `json:"local_digest"`
+	RemoteDigest string    `json:"remote_digest"`
+	State        string    `json:"state"`
+	Error        string    `json:"error"`
+	CheckedAt    time.Time `json:"checked_at"`
+}
+
+type DockerRegistry struct {
+	ID          uuid.UUID `json:"id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	Name        string    `json:"name"`
+	Address     string    `json:"address"`
+	Username    string    `json:"username"`
+	PasswordEnc []byte    `json:"password_enc"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type DockerSetting struct {
+	WorkspaceID  uuid.UUID `json:"workspace_id"`
+	ProjectsDir  string    `json:"projects_dir"`
+	UpdateCheck  bool      `json:"update_check"`
+	ScannerImage string    `json:"scanner_image"`
+	EventsHours  int32     `json:"events_hours"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type DockerTemplate struct {
+	ID            uuid.UUID `json:"id"`
+	WorkspaceID   uuid.UUID `json:"workspace_id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	Category      string    `json:"category"`
+	Compose       string    `json:"compose"`
+	Env           string    `json:"env"`
+	CreatedByName string    `json:"created_by_name"`
+	UpdatedByName string    `json:"updated_by_name"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 type FirewallChange struct {
 	ID          uuid.UUID  `json:"id"`
 	ServerID    uuid.UUID  `json:"server_id"`

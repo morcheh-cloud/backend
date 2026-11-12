@@ -58,6 +58,19 @@ type rootShell struct {
 	c        *sshpool.Conn
 	priv     privilege
 	password string
+	// Hidden from the command log: values in the script, and stdout when it
+	// is data (a file's bytes).
+	secrets  []string
+	noStdout bool
+}
+
+// hiding returns a copy of r that keeps secrets (and, with data, stdout) out
+// of the command log.
+func (r *rootShell) hiding(data bool, secrets ...string) *rootShell {
+	c := *r
+	c.secrets = append(append([]string{}, r.secrets...), secrets...)
+	c.noStdout = c.noStdout || data
+	return &c
 }
 
 func (h *serverHandler) rootShell(ctx context.Context, id string, c *sshpool.Conn) (*rootShell, error) {
@@ -134,7 +147,7 @@ func (r *rootShell) command(script string) (cmd, stdin string) {
 
 // logAs logs script itself, not its sudo wrapper.
 func (r *rootShell) logAs(script string) logAs {
-	return logAs{script: script, asRoot: r.priv != privUser}
+	return logAs{script: script, asRoot: r.priv != privUser, secrets: r.secrets, noStdout: r.noStdout}
 }
 
 // run runs script (as root when possible) and returns its stdout.

@@ -213,6 +213,16 @@ services:
     volumes:
       - testdns2data:/etc/dns
 
+  # Docker in Docker over SSH for the Containers section (dev/test-docker).
+  # SSH on 2224: ant / colony (docker group), ops / colony (sudo only).
+  test-docker:
+    build: dev/test-docker
+    privileged: true
+    ports:
+      - "127.0.0.1:2224:22"
+    volumes:
+      - testdockerdata:/var/lib/docker
+
 volumes:
   pgdata:
   redisdata:
@@ -227,3 +237,4 @@ volumes:
   testredisdata:
   testdns1data:
   testdns2data:
+  testdockerdata:

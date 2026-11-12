@@ -1170,10 +1170,12 @@ type logAs struct {
 	script  string
 	asRoot  bool
 	secrets []string
+	// Stdout is data (a file's bytes), kept out of the logged output.
+	noStdout bool
 }
 
 func (l logAs) apply(s *sshpool.Session) {
-	s.Script, s.AsRoot, s.Secrets = l.script, l.asRoot, l.secrets
+	s.Script, s.AsRoot, s.Secrets, s.NoStdout = l.script, l.asRoot, l.secrets, l.noStdout
 }
 
 // runLogged is runInput logging the command as l says.

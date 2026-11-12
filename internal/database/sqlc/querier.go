@@ -84,6 +84,8 @@ type Querier interface {
 	CreateBackupPlan(ctx context.Context, arg CreateBackupPlanParams) (DatabaseBackupPlan, error)
 	CreateDNSServer(ctx context.Context, arg CreateDNSServerParams) (DnsServer, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
+	CreateDockerRegistry(ctx context.Context, arg CreateDockerRegistryParams) (DockerRegistry, error)
+	CreateDockerTemplate(ctx context.Context, arg CreateDockerTemplateParams) (DockerTemplate, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (UserGroup, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
@@ -136,6 +138,11 @@ type Querier interface {
 	DeleteBackupPlan(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDNSServer(ctx context.Context, id uuid.UUID) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteDockerImageScan(ctx context.Context, arg DeleteDockerImageScanParams) error
+	// Forgets images the server no longer runs.
+	DeleteDockerImageUpdatesExcept(ctx context.Context, arg DeleteDockerImageUpdatesExceptParams) error
+	DeleteDockerRegistry(ctx context.Context, arg DeleteDockerRegistryParams) (int64, error)
+	DeleteDockerTemplate(ctx context.Context, arg DeleteDockerTemplateParams) (int64, error)
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteFinishedJobs(ctx context.Context, arg DeleteFinishedJobsParams) (int64, error)
 	DeleteFolder(ctx context.Context, id uuid.UUID) (int64, error)
@@ -227,6 +234,10 @@ type Querier interface {
 	// What access to a database follows: its workspace, and the server it goes
 	// through.
 	GetDatabaseWorkspace(ctx context.Context, id uuid.UUID) (GetDatabaseWorkspaceRow, error)
+	GetDockerImageScan(ctx context.Context, arg GetDockerImageScanParams) (DockerImageScan, error)
+	GetDockerRegistry(ctx context.Context, arg GetDockerRegistryParams) (DockerRegistry, error)
+	GetDockerSettings(ctx context.Context, workspaceID uuid.UUID) (DockerSetting, error)
+	GetDockerTemplate(ctx context.Context, arg GetDockerTemplateParams) (DockerTemplate, error)
 	GetFirewallChange(ctx context.Context, arg GetFirewallChangeParams) (FirewallChange, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
@@ -364,6 +375,12 @@ type Querier interface {
 	ListDatabases(ctx context.Context, arg ListDatabasesParams) ([]Database, error)
 	// What the monitor should look at now.
 	ListDatabasesDue(ctx context.Context) ([]Database, error)
+	ListDockerImageScans(ctx context.Context, serverID uuid.UUID) ([]DockerImageScan, error)
+	ListDockerImageScansFor(ctx context.Context, serverIds []uuid.UUID) ([]ListDockerImageScansForRow, error)
+	ListDockerImageUpdates(ctx context.Context, serverID uuid.UUID) ([]DockerImageUpdate, error)
+	ListDockerImageUpdatesFor(ctx context.Context, serverIds []uuid.UUID) ([]DockerImageUpdate, error)
+	ListDockerRegistries(ctx context.Context, workspaceID uuid.UUID) ([]DockerRegistry, error)
+	ListDockerTemplates(ctx context.Context, workspaceID uuid.UUID) ([]DockerTemplate, error)
 	ListDueBackupPlans(ctx context.Context, now *time.Time) ([]DatabaseBackupPlan, error)
 	ListDueMonitors(ctx context.Context, lim int32) ([]Monitor, error)
 	ListDueSchedules(ctx context.Context, now *time.Time) ([]Schedule, error)
@@ -469,6 +486,7 @@ type Querier interface {
 	// Serializes first-run setup and last-admin checks for the transaction.
 	LockAuth(ctx context.Context) error
 	LogNotification(ctx context.Context, arg LogNotificationParams) error
+	MarkDockerImageCurrent(ctx context.Context, arg MarkDockerImageCurrentParams) error
 	// A scan no longer finds an app Morche installed.
 	MarkMissingSoftware(ctx context.Context, arg MarkMissingSoftwareParams) error
 	// Checks grouped into buckets of @step seconds.
@@ -625,6 +643,9 @@ type Querier interface {
 	SetUsername(ctx context.Context, arg SetUsernameParams) (User, error)
 	SetWorkspaceLogoKind(ctx context.Context, arg SetWorkspaceLogoKindParams) (Workspace, error)
 	SettleFirewallChanges(ctx context.Context, arg SettleFirewallChangesParams) error
+	// Online servers whose image updates were checked before (they have rows)
+	// but not since @before, in workspaces that leave the daily check on.
+	StaleDockerUpdateServers(ctx context.Context, before time.Time) ([]uuid.UUID, error)
 	StartAnsibleRun(ctx context.Context, id uuid.UUID) error
 	StartBackup(ctx context.Context, arg StartBackupParams) error
 	StartJob(ctx context.Context, id uuid.UUID) error
@@ -660,6 +681,9 @@ type Querier interface {
 	UpdateDNSServer(ctx context.Context, arg UpdateDNSServerParams) (DnsServer, error)
 	// Full replace of the editable fields; the handler resolves the password first.
 	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
+	// A NULL password keeps the saved one.
+	UpdateDockerRegistry(ctx context.Context, arg UpdateDockerRegistryParams) (DockerRegistry, error)
+	UpdateDockerTemplate(ctx context.Context, arg UpdateDockerTemplateParams) (DockerTemplate, error)
 	UpdateFolder(ctx context.Context, arg UpdateFolderParams) (Folder, error)
 	UpdateGroup(ctx context.Context, arg UpdateGroupParams) (UserGroup, error)
 	// A changed monitor is checked again at once.
@@ -679,6 +703,9 @@ type Querier interface {
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
 	UpsertAlertState(ctx context.Context, arg UpsertAlertStateParams) error
+	UpsertDockerImageScan(ctx context.Context, arg UpsertDockerImageScanParams) error
+	UpsertDockerImageUpdate(ctx context.Context, arg UpsertDockerImageUpdateParams) error
+	UpsertDockerSettings(ctx context.Context, arg UpsertDockerSettingsParams) (DockerSetting, error)
 	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)
 	UserStatusCounts(ctx context.Context) ([]UserStatusCountsRow, error)
 	// A workspace's servers a scan can reach now.

@@ -106,6 +106,8 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerCron(api, servers)
 	registerPorts(api, servers)
 	registerProcesses(api, servers)
+	registerDocker(api, servers)
+	startDockerUpdateLoop(servers)
 	registerNetwork(api, servers)
 	registerStats(api, servers)
 	registerFail2ban(api, servers)
