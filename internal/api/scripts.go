@@ -181,8 +181,10 @@ func newScriptHandler(servers *serverHandler, a *authz) *scriptHandler {
 	}
 	go func() {
 		for {
-			if err := h.q.DeleteOldScriptRuns(ctx); err != nil {
-				slog.Warn("delete old script runs", "error", err)
+			if !logOwned("script-runs") {
+				if err := h.q.DeleteOldScriptRuns(ctx); err != nil {
+					slog.Warn("delete old script runs", "error", err)
+				}
 			}
 			time.Sleep(6 * time.Hour)
 		}

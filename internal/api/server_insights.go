@@ -74,17 +74,25 @@ func startServerSampler(h *serverHandler, every, keep time.Duration) {
 			if keep > 0 && time.Since(pruned) > time.Hour {
 				pruned = time.Now()
 				before := pruned.Add(-keep)
-				if _, err := h.q.PruneServerCheckBuckets(ctx, before); err != nil {
-					slog.Warn("prune server check history", "error", err)
+				if !logOwned("server-checks") {
+					if _, err := h.q.PruneServerCheckBuckets(ctx, before); err != nil {
+						slog.Warn("prune server check history", "error", err)
+					}
 				}
-				if _, err := h.q.PruneServerStatusChanges(ctx, before); err != nil {
-					slog.Warn("prune server status changes", "error", err)
+				if !logOwned("server-status") {
+					if _, err := h.q.PruneServerStatusChanges(ctx, before); err != nil {
+						slog.Warn("prune server status changes", "error", err)
+					}
 				}
-				if _, err := h.q.PruneServerSamples(ctx, before); err != nil {
-					slog.Warn("prune server samples", "error", err)
+				if !logOwned("server-samples") {
+					if _, err := h.q.PruneServerSamples(ctx, before); err != nil {
+						slog.Warn("prune server samples", "error", err)
+					}
 				}
-				if _, err := h.q.PruneAlertEvents(ctx, before); err != nil {
-					slog.Warn("prune alert events", "error", err)
+				if !logOwned("alert-events") {
+					if _, err := h.q.PruneAlertEvents(ctx, before); err != nil {
+						slog.Warn("prune alert events", "error", err)
+					}
 				}
 				if _, err := h.q.PruneAlertMutes(ctx, before); err != nil {
 					slog.Warn("prune alert mutes", "error", err)

@@ -119,6 +119,23 @@ var policies = map[string]policy{
 	"admin-get-security":       admin,
 	"admin-update-security":    admin,
 
+	// Log retention and archives.
+	"list-log-datasets":        admin,
+	"list-log-dataset-periods": admin,
+	"preview-log-policy":       admin,
+	"save-log-policy":          admin,
+	"reset-log-policy":         admin,
+	"run-log-policy":           admin,
+	"export-log-dataset":       admin,
+	"compact-log-dataset":      admin,
+	"list-log-archives":        admin,
+	"get-log-archive":          admin,
+	"download-log-archive":     admin,
+	"restore-log-archive":      admin,
+	"put-away-log-archive":     admin,
+	"set-log-archive-hold":     admin,
+	"delete-log-archive":       admin,
+
 	// Panel people and settings.
 	"admin-list-users":        admin,
 	"admin-get-user":          admin,

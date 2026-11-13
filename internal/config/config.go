@@ -55,6 +55,9 @@ type Config struct {
 	// How often Morche looks for cron jobs that are due. 0 = they never run
 	// on time (Run now still works).
 	ScheduleTick time.Duration `env:"SCHEDULE_TICK" envDefault:"15s"`
+	// Where log archives kept on Morche's own machine are written (a
+	// relative path is read from the working directory).
+	LogArchiveDir string `env:"LOG_ARCHIVE_DIR" envDefault:"data/log-archives"`
 	// If set, the first-run form asks for it, so a stranger who reaches a fresh
 	// install can't become its admin.
 	SetupToken string `env:"SETUP_TOKEN"`

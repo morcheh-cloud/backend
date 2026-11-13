@@ -306,10 +306,12 @@ func (l *commandLog) janitor() {
 	cancel()
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		if n, err := l.q.PruneCommandLog(ctx); err != nil {
-			slog.Error("prune command log", "error", err)
-		} else if n > 0 {
-			slog.Info("pruned command log", "count", n)
+		if !logOwned("command-log") {
+			if n, err := l.q.PruneCommandLog(ctx); err != nil {
+				slog.Error("prune command log", "error", err)
+			} else if n > 0 {
+				slog.Info("pruned command log", "count", n)
+			}
 		}
 		cancel()
 		time.Sleep(time.Hour)

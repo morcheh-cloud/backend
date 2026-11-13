@@ -54,6 +54,10 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-false}
       ANSIBLE_SANDBOX: ${ANSIBLE_SANDBOX:-auto}
       TZ: ${TZ:-UTC}
+      LOG_ARCHIVE_DIR: /home/morcheh/log-archives
+    volumes:
+      # Log archives kept on Morche's own machine (Settings › Logs & retention).
+      - logarchives:/home/morcheh/log-archives
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     # Playbook runs go in a bubblewrap sandbox, which needs user namespaces
@@ -80,3 +84,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  logarchives:

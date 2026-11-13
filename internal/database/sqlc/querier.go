@@ -20,6 +20,7 @@ type Querier interface {
 	AddDockerProjectStat(ctx context.Context, arg AddDockerProjectStatParams) error
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
+	AddLogArchiveCopy(ctx context.Context, arg AddLogArchiveCopyParams) (LogArchiveCopy, error)
 	AddMonitorChannel(ctx context.Context, arg AddMonitorChannelParams) error
 	AddMonitorDay(ctx context.Context, arg AddMonitorDayParams) error
 	AddMonitorLocation(ctx context.Context, arg AddMonitorLocationParams) error
@@ -47,6 +48,9 @@ type Querier interface {
 	// Moves next_run_at on, only if nobody else did first.
 	ClaimDockerAutoUpdate(ctx context.Context, arg ClaimDockerAutoUpdateParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
+	ClaimLogArchivePolicy(ctx context.Context, arg ClaimLogArchivePolicyParams) (int64, error)
+	ClaimLogArchiveRestore(ctx context.Context, id uuid.UUID) (int64, error)
+	// Moves next_run_at on, only if nobody else did first.
 	ClaimSchedule(ctx context.Context, arg ClaimScheduleParams) (int64, error)
 	ClearAlertRuleChannels(ctx context.Context, ruleID uuid.UUID) error
 	ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error
@@ -64,6 +68,7 @@ type Querier interface {
 	CountChannelRules(ctx context.Context, ids []uuid.UUID) ([]CountChannelRulesRow, error)
 	// Per policy, what the last 30 days held.
 	CountDockerAutoUpdateEvents(ctx context.Context, workspaceID uuid.UUID) ([]CountDockerAutoUpdateEventsRow, error)
+	CountLogArchives(ctx context.Context, arg CountLogArchivesParams) (int64, error)
 	CountRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountScheduleRuns(ctx context.Context, arg CountScheduleRunsParams) (int64, error)
 	CountScriptRuns(ctx context.Context, arg CountScriptRunsParams) (int64, error)
@@ -98,6 +103,7 @@ type Querier interface {
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (UserGroup, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
+	CreateLogArchive(ctx context.Context, arg CreateLogArchiveParams) (LogArchive, error)
 	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
 	CreateNotificationChannel(ctx context.Context, arg CreateNotificationChannelParams) (NotificationChannel, error)
 	CreatePlaybook(ctx context.Context, arg CreatePlaybookParams) (AnsiblePlaybook, error)
@@ -164,6 +170,8 @@ type Querier interface {
 	DeleteGrant(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteGroup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteJob(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteLogArchive(ctx context.Context, id uuid.UUID) error
+	DeleteLogArchiveCopy(ctx context.Context, id int64) error
 	DeleteMonitor(ctx context.Context, id uuid.UUID) error
 	DeleteNotificationChannel(ctx context.Context, id uuid.UUID) error
 	DeleteOldScriptRuns(ctx context.Context) error
@@ -208,6 +216,7 @@ type Querier interface {
 	DockerStatsServers(ctx context.Context, ids []uuid.UUID) ([]DockerStatsServersRow, error)
 	DueDockerAutoUpdates(ctx context.Context) ([]DockerAutoUpdate, error)
 	DueDockerGitSources(ctx context.Context) ([]DockerGitSource, error)
+	DueLogArchivePolicies(ctx context.Context) ([]LogArchivePolicy, error)
 	// Every enabled rule that watches containers or the Docker engine.
 	EnabledContainerAlertRules(ctx context.Context) ([]AlertRule, error)
 	EnabledDockerAutoUpdatesWithoutNext(ctx context.Context) ([]DockerAutoUpdate, error)
@@ -227,6 +236,9 @@ type Querier interface {
 	EndScriptRun(ctx context.Context, arg EndScriptRunParams) error
 	EndSoftwareRun(ctx context.Context, arg EndSoftwareRunParams) error
 	EndTerminalRecording(ctx context.Context, arg EndTerminalRecordingParams) error
+	ExpiredLogArchiveHolds(ctx context.Context) ([]LogArchive, error)
+	// Files older than their policy keeps them (never one whose rows are back).
+	ExpiredLogArchives(ctx context.Context) ([]LogArchive, error)
 	// Copies of a run that ended without storing them.
 	FailBackupCopies(ctx context.Context, backupID uuid.UUID) error
 	// Copies cut off by a restart of Morche.
@@ -237,6 +249,7 @@ type Querier interface {
 	FinishBackup(ctx context.Context, arg FinishBackupParams) error
 	FinishDockerVolumeBackup(ctx context.Context, arg FinishDockerVolumeBackupParams) error
 	FinishJob(ctx context.Context, arg FinishJobParams) error
+	FinishLogArchive(ctx context.Context, arg FinishLogArchiveParams) (LogArchive, error)
 	FinishScheduleRun(ctx context.Context, arg FinishScheduleRunParams) error
 	FinishScriptRun(ctx context.Context, arg FinishScriptRunParams) error
 	FinishScriptTarget(ctx context.Context, arg FinishScriptTargetParams) error
@@ -289,6 +302,8 @@ type Querier interface {
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
 	GetGroup(ctx context.Context, id uuid.UUID) (UserGroup, error)
 	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
+	GetLogArchive(ctx context.Context, id uuid.UUID) (LogArchive, error)
+	GetLogArchivePolicy(ctx context.Context, dataset string) (LogArchivePolicy, error)
 	GetMonitor(ctx context.Context, id uuid.UUID) (Monitor, error)
 	GetMonitorByPushToken(ctx context.Context, pushToken *string) (Monitor, error)
 	GetMonitorIncident(ctx context.Context, id uuid.UUID) (MonitorIncident, error)
@@ -339,6 +354,9 @@ type Querier interface {
 	GetWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) (WorkspaceLogo, error)
 	GetWorkspaceLogoStamp(ctx context.Context, workspaceID uuid.UUID) (time.Time, error)
 	HasSignedIn(ctx context.Context, userID *uuid.UUID) (bool, error)
+	// Restored rows that are back in the database for now: a policy must not
+	// archive them again while held.
+	HeldLogArchives(ctx context.Context, dataset string) ([]LogArchive, error)
 	HideDockerProjectPlace(ctx context.Context, arg HideDockerProjectPlaceParams) (int64, error)
 	HideDockerProjectPlaceAt(ctx context.Context, arg HideDockerProjectPlaceAtParams) error
 	InsertAlertEvent(ctx context.Context, arg InsertAlertEventParams) error
@@ -353,6 +371,8 @@ type Querier interface {
 	InsertStorageUsage(ctx context.Context, arg InsertStorageUsageParams) (StorageUsage, error)
 	// At start-up: commands a previous run of Morche was waiting on.
 	InterruptCommandLog(ctx context.Context) (int64, error)
+	// At start: nothing is running any more.
+	InterruptLogArchives(ctx context.Context) error
 	// At startup: whatever was running died with the last process.
 	InterruptRunningJobs(ctx context.Context) (int64, error)
 	// What the last process left running can't go on after a restart.
@@ -457,6 +477,9 @@ type Querier interface {
 	// Newest first. ref narrows to one server or storage; active to queued and
 	// running jobs, finished to the rest; created_by to one person's.
 	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
+	ListLogArchiveCopies(ctx context.Context, archiveIds []uuid.UUID) ([]LogArchiveCopy, error)
+	ListLogArchivePolicies(ctx context.Context) ([]LogArchivePolicy, error)
+	ListLogArchives(ctx context.Context, arg ListLogArchivesParams) ([]LogArchive, error)
 	ListMonitorChannels(ctx context.Context, monitorID uuid.UUID) ([]uuid.UUID, error)
 	ListMonitorChannelsFor(ctx context.Context, ids []uuid.UUID) ([]MonitorChannel, error)
 	ListMonitorEvents(ctx context.Context, arg ListMonitorEventsParams) ([]MonitorEvent, error)
@@ -543,6 +566,8 @@ type Querier interface {
 	ListWorkspaces(ctx context.Context) ([]ListWorkspacesRow, error)
 	// Serializes first-run setup and last-admin checks for the transaction.
 	LockAuth(ctx context.Context) error
+	LogArchivePoliciesWithoutNext(ctx context.Context) ([]LogArchivePolicy, error)
+	LogArchiveTotals(ctx context.Context) ([]LogArchiveTotalsRow, error)
 	LogNotification(ctx context.Context, arg LogNotificationParams) error
 	MarkDockerImageCurrent(ctx context.Context, arg MarkDockerImageCurrentParams) error
 	// A scan no longer finds an app Morche installed.
@@ -625,6 +650,7 @@ type Querier interface {
 	RememberDockerProjectPlace(ctx context.Context, arg RememberDockerProjectPlaceParams) error
 	RemoveServerTags(ctx context.Context, arg RemoveServerTagsParams) (int64, error)
 	ReparentFolderChildren(ctx context.Context, arg ReparentFolderChildrenParams) error
+	ResetLogArchiveRestores(ctx context.Context) error
 	ResetMonitorLocations(ctx context.Context, monitorID uuid.UUID) error
 	ResetServerHostKey(ctx context.Context, id uuid.UUID) error
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
@@ -639,6 +665,7 @@ type Querier interface {
 	SaveCommandLogOutput(ctx context.Context, arg []SaveCommandLogOutputParams) *SaveCommandLogOutputBatchResults
 	SaveDockerProjectScan(ctx context.Context, arg SaveDockerProjectScanParams) error
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
+	SaveLogArchivePolicy(ctx context.Context, arg SaveLogArchivePolicyParams) (LogArchivePolicy, error)
 	SaveMonitorLocation(ctx context.Context, arg SaveMonitorLocationParams) error
 	SaveMonitorState(ctx context.Context, arg SaveMonitorStateParams) (Monitor, error)
 	// What a scan found installed. A run in progress keeps its status.
@@ -650,6 +677,8 @@ type Querier interface {
 	SaveSoftwareHostError(ctx context.Context, arg SaveSoftwareHostErrorParams) error
 	SaveSoftwareTargetOutput(ctx context.Context, arg SaveSoftwareTargetOutputParams) error
 	SaveTerminalRecording(ctx context.Context, arg SaveTerminalRecordingParams) error
+	// A kind of logs' default policy, unless it already has one.
+	SeedLogArchivePolicy(ctx context.Context, arg SeedLogArchivePolicyParams) error
 	// Whether this policy already said a container's image has this version.
 	SeenDockerAutoUpdateAvailable(ctx context.Context, arg SeenDockerAutoUpdateAvailableParams) (bool, error)
 	ServerCheckSeries(ctx context.Context, arg ServerCheckSeriesParams) ([]ServerCheckSeriesRow, error)
@@ -689,6 +718,11 @@ type Querier interface {
 	SetDockerAutoUpdateNext(ctx context.Context, arg SetDockerAutoUpdateNextParams) error
 	SetDockerAutoUpdateWebhook(ctx context.Context, arg SetDockerAutoUpdateWebhookParams) (DockerAutoUpdate, error)
 	SetDockerGitWebhook(ctx context.Context, arg SetDockerGitWebhookParams) (DockerGitSource, error)
+	SetLogArchiveCopy(ctx context.Context, arg SetLogArchiveCopyParams) error
+	SetLogArchiveHold(ctx context.Context, arg SetLogArchiveHoldParams) (LogArchive, error)
+	SetLogArchivePolicyNext(ctx context.Context, arg SetLogArchivePolicyNextParams) error
+	SetLogArchivePolicyRun(ctx context.Context, arg SetLogArchivePolicyRunParams) error
+	SetLogArchiveRestore(ctx context.Context, arg SetLogArchiveRestoreParams) (LogArchive, error)
 	// Resuming starts over: pending until the next check says otherwise.
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) (Monitor, error)
 	SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error)
@@ -744,6 +778,8 @@ type Querier interface {
 	// Measurements since @since, plus the last one before it (the baseline for
 	// growth), oldest first.
 	StorageUsageHistory(ctx context.Context, arg StorageUsageHistoryParams) ([]StorageUsageHistoryRow, error)
+	// Periods already kept in a file, so a copy policy doesn't export them twice.
+	StoredLogArchiveWindows(ctx context.Context, dataset string) ([]StoredLogArchiveWindowsRow, error)
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	TouchUserLogin(ctx context.Context, id uuid.UUID) error
 	UpdateAlertChannel(ctx context.Context, arg UpdateAlertChannelParams) (AlertChannel, error)

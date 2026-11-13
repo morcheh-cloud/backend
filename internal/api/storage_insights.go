@@ -406,11 +406,15 @@ func startStorageScanner(h *storageHandler, every, keep time.Duration) {
 			ctx := context.Background()
 			if keep > 0 && time.Since(pruned) > time.Hour {
 				pruned = time.Now()
-				if _, err := h.q.PruneStorageChecks(ctx, time.Now().Add(-keep)); err != nil {
-					slog.Warn("prune storage checks", "error", err)
+				if !logOwned("storage-checks") {
+					if _, err := h.q.PruneStorageChecks(ctx, time.Now().Add(-keep)); err != nil {
+						slog.Warn("prune storage checks", "error", err)
+					}
 				}
-				if _, err := h.q.PruneStorageUsage(ctx, time.Now().Add(-usageKeep)); err != nil {
-					slog.Warn("prune storage usage", "error", err)
+				if !logOwned("storage-usage") {
+					if _, err := h.q.PruneStorageUsage(ctx, time.Now().Add(-usageKeep)); err != nil {
+						slog.Warn("prune storage usage", "error", err)
+					}
 				}
 			}
 			if every > 0 {

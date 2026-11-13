@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -66,6 +67,11 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 		hc.CreateHooks = nil
 	}
 	api := humachi.New(r, hc)
+
+	// Before any clean-up loop starts: a log policy may own those rows, and
+	// every kind of logs has one (its default until an admin changes it).
+	seedLogPolicies(context.Background(), sqlc.New(db))
+	loadLogOwners(context.Background(), sqlc.New(db))
 
 	terms := terminal.NewManager(cfg.TerminalDetachedTimeout)
 	a := newAuthz(cfg, db, rdb, runner, terms)
@@ -173,6 +179,10 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerSchedules(api, schedules)
 	startBackupScheduler(backups, cfg.ScheduleTick)
 	startScheduler(schedules, cfg.ScheduleTick)
+	logs := newLogArchiveHandler(sqlc.New(db), db, st, runner, cfg.LogArchiveDir)
+	registerLogArchives(api, logs)
+	startLogArchiveScheduler(logs, cfg.ScheduleTick)
+	runner.SkipCleanup = func() bool { return logOwned("jobs") }
 	registerJobs(api, a)
 
 	return r, api

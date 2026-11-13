@@ -131,10 +131,12 @@ func startProjectHistoryLoop(h *serverHandler) {
 			}
 			if time.Since(pruned) > time.Hour {
 				pruned = time.Now()
-				if n, err := h.q.PruneDockerProjectStats(ctx); err != nil {
-					slog.Warn("docker: pruning project history", "error", err)
-				} else if n > 0 {
-					slog.Debug("docker: pruned project history", "rows", n)
+				if !logOwned("docker-stats") {
+					if n, err := h.q.PruneDockerProjectStats(ctx); err != nil {
+						slog.Warn("docker: pruning project history", "error", err)
+					} else if n > 0 {
+						slog.Debug("docker: pruned project history", "rows", n)
+					}
 				}
 			}
 		}

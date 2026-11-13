@@ -53,6 +53,8 @@ type JobPlace struct {
 	DatabaseID string `json:"database_id,omitempty" format:"uuid" doc:"The database it backs up"`
 	Volume     string `json:"volume,omitempty" doc:"The Docker volume it works in (path is inside it)"`
 	AutoUpdate string `json:"auto_update,omitempty" format:"uuid" doc:"The container auto-update it is a run of"`
+	Dataset    string `json:"dataset,omitempty" doc:"The kind of logs it archives, puts back or compacts"`
+	Archive    string `json:"archive,omitempty" format:"uuid" doc:"The log archive it writes, restores or puts away"`
 }
 
 // JobRemoved is sent on the stream when a job is deleted; an empty id means
@@ -262,7 +264,8 @@ func registerJobs(api huma.API, a *authz) {
 		}
 		// A run's record says what it ran; starting another goes through its checks.
 		switch old.Kind {
-		case ansibleRunKind, scheduleSyncKind, scheduleRunKind, scriptRunKind, backupKind, restoreKind, softwareRunKind:
+		case ansibleRunKind, scheduleSyncKind, scheduleRunKind, scriptRunKind, backupKind, restoreKind, softwareRunKind,
+			logArchiveKind, logRestoreKind, logPutAwayKind:
 			return nil, huma.Error409Conflict("Run it again from its page.")
 		}
 		p := principalOf(ctx)

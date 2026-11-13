@@ -72,6 +72,7 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # A plain user: nothing the server or its tools run needs root here.
 RUN useradd --create-home --uid 10001 --user-group --shell /bin/sh morcheh && \
+    install -d -o morcheh -g morcheh /home/morcheh/log-archives && \
     chmod 0755 /usr/local/bin/docker-entrypoint.sh
 USER morcheh
 WORKDIR /home/morcheh

@@ -36,10 +36,12 @@ func startUptimeMonitor(h *uptimeHandler) {
 			ctx := context.Background()
 			if time.Since(pruned) > time.Hour {
 				pruned = time.Now()
-				if n, err := h.q.PruneMonitorChecks(ctx, time.Now().Add(-h.history)); err != nil {
-					slog.Warn("uptime: prune checks", "err", err)
-				} else if n > 0 {
-					slog.Debug("uptime: pruned checks", "rows", n)
+				if !logOwned("monitor-checks") {
+					if n, err := h.q.PruneMonitorChecks(ctx, time.Now().Add(-h.history)); err != nil {
+						slog.Warn("uptime: prune checks", "err", err)
+					} else if n > 0 {
+						slog.Debug("uptime: pruned checks", "rows", n)
+					}
 				}
 			}
 			due, err := h.q.ListDueMonitors(ctx, 100)

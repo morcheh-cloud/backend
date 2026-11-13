@@ -524,11 +524,15 @@ func (h *databaseHandler) monitor() {
 		}
 		if time.Since(pruned) > time.Hour {
 			pruned = time.Now()
-			if err := h.q.PruneDatabaseSamples(ctx, pruned.Add(-sampleKeep)); err != nil {
-				slog.Warn("prune database samples", "error", err)
+			if !logOwned("database-samples") {
+				if err := h.q.PruneDatabaseSamples(ctx, pruned.Add(-sampleKeep)); err != nil {
+					slog.Warn("prune database samples", "error", err)
+				}
 			}
-			if err := h.q.PruneDatabaseEvents(ctx, pruned.Add(-eventKeep)); err != nil {
-				slog.Warn("prune database events", "error", err)
+			if !logOwned("database-events") {
+				if err := h.q.PruneDatabaseEvents(ctx, pruned.Add(-eventKeep)); err != nil {
+					slog.Warn("prune database events", "error", err)
+				}
 			}
 		}
 	}

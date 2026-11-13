@@ -195,8 +195,10 @@ func newSoftwareHandler(servers *serverHandler, a *authz, scripts *scriptHandler
 	}
 	go func() {
 		for {
-			if err := h.q.DeleteOldSoftwareRuns(ctx); err != nil {
-				slog.Warn("delete old software runs", "error", err)
+			if !logOwned("software-runs") {
+				if err := h.q.DeleteOldSoftwareRuns(ctx); err != nil {
+					slog.Warn("delete old software runs", "error", err)
+				}
 			}
 			time.Sleep(6 * time.Hour)
 		}

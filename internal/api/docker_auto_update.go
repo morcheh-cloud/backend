@@ -1772,7 +1772,9 @@ func startDockerAutoUpdateLoop(h *serverHandler) {
 			}
 			if time.Since(lastPrune) > 24*time.Hour {
 				lastPrune = time.Now()
-				_ = h.q.PruneDockerAutoUpdateEvents(ctx)
+				if !logOwned("docker-auto-update-events") {
+					_ = h.q.PruneDockerAutoUpdateEvents(ctx)
+				}
 			}
 		}
 	}()

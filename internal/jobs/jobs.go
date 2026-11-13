@@ -103,6 +103,9 @@ type Runner struct {
 	// Limit is how many jobs run at once; PerRef how many of them may touch
 	// one server or storage.
 	Limit, PerRef int
+	// SkipCleanup, when set and true, leaves finished jobs for someone else
+	// (a retention policy) to clear away.
+	SkipCleanup func() bool
 
 	base context.Context
 	stop context.CancelFunc
@@ -519,8 +522,11 @@ func (r *Runner) cleaner() {
 	defer r.wg.Done()
 	for {
 		before := time.Now().Add(-keep)
-		if _, err := r.q.DeleteFinishedJobs(r.base, sqlc.DeleteFinishedJobsParams{Before: &before}); err != nil && r.base.Err() == nil {
-			slog.Error("job cleanup", "error", err)
+		// A retention policy may look after them instead.
+		if r.SkipCleanup == nil || !r.SkipCleanup() {
+			if _, err := r.q.DeleteFinishedJobs(r.base, sqlc.DeleteFinishedJobsParams{Before: &before}); err != nil && r.base.Err() == nil {
+				slog.Error("job cleanup", "error", err)
+			}
 		}
 		select {
 		case <-r.base.Done():

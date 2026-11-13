@@ -758,6 +758,66 @@ type Job struct {
 	CreatedBy  *uuid.UUID  `json:"created_by"`
 }
 
+type LogArchive struct {
+	ID             uuid.UUID  `json:"id"`
+	Dataset        string     `json:"dataset"`
+	Mode           string     `json:"mode"`
+	PeriodFrom     time.Time  `json:"period_from"`
+	PeriodTo       time.Time  `json:"period_to"`
+	State          string     `json:"state"`
+	Error          string     `json:"error"`
+	FileName       string     `json:"file_name"`
+	Rows           int64      `json:"rows"`
+	Tables         []byte     `json:"tables"`
+	Bytes          int64      `json:"bytes"`
+	Sha256         string     `json:"sha256"`
+	Note           string     `json:"note"`
+	JobID          *uuid.UUID `json:"job_id"`
+	CreatedBy      *uuid.UUID `json:"created_by"`
+	CreatedByName  string     `json:"created_by_name"`
+	CreatedAt      time.Time  `json:"created_at"`
+	FinishedAt     *time.Time `json:"finished_at"`
+	RestoreState   string     `json:"restore_state"`
+	RestoredAt     *time.Time `json:"restored_at"`
+	RestoredRows   int64      `json:"restored_rows"`
+	RestoredByName string     `json:"restored_by_name"`
+	RestoreError   string     `json:"restore_error"`
+	HoldUntil      *time.Time `json:"hold_until"`
+}
+
+type LogArchiveCopy struct {
+	ID          int64      `json:"id"`
+	ArchiveID   uuid.UUID  `json:"archive_id"`
+	Local       bool       `json:"local"`
+	StorageID   *uuid.UUID `json:"storage_id"`
+	StorageName string     `json:"storage_name"`
+	Path        string     `json:"path"`
+	State       string     `json:"state"`
+	Error       string     `json:"error"`
+}
+
+type LogArchivePolicy struct {
+	Dataset    string      `json:"dataset"`
+	Enabled    bool        `json:"enabled"`
+	Mode       string      `json:"mode"`
+	AfterDays  int32       `json:"after_days"`
+	MaxMb      int32       `json:"max_mb"`
+	Period     string      `json:"period"`
+	KeepLocal  bool        `json:"keep_local"`
+	StorageIds []uuid.UUID `json:"storage_ids"`
+	Folder     string      `json:"folder"`
+	KeepDays   int32       `json:"keep_days"`
+	Cron       string      `json:"cron"`
+	Timezone   string      `json:"timezone"`
+	NextRunAt  *time.Time  `json:"next_run_at"`
+	LastRunAt  *time.Time  `json:"last_run_at"`
+	LastState  string      `json:"last_state"`
+	LastNote   string      `json:"last_note"`
+	LastJobID  *uuid.UUID  `json:"last_job_id"`
+	UpdatedBy  *uuid.UUID  `json:"updated_by"`
+	UpdatedAt  time.Time   `json:"updated_at"`
+}
+
 type Monitor struct {
 	ID                uuid.UUID  `json:"id"`
 	WorkspaceID       uuid.UUID  `json:"workspace_id"`

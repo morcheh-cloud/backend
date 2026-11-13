@@ -185,10 +185,12 @@ func startRecordingJanitor(r *recordings) {
 		cancel()
 		for {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			if n, err := r.q.PruneTerminalRecordings(ctx); err != nil {
-				slog.Error("prune terminal recordings", "error", err)
-			} else if n > 0 {
-				slog.Info("pruned terminal recordings", "count", n)
+			if !logOwned("terminal-recordings") {
+				if n, err := r.q.PruneTerminalRecordings(ctx); err != nil {
+					slog.Error("prune terminal recordings", "error", err)
+				} else if n > 0 {
+					slog.Info("pruned terminal recordings", "count", n)
+				}
 			}
 			cancel()
 			time.Sleep(time.Hour)

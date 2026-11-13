@@ -646,10 +646,12 @@ func (a *authz) sweep(ctx context.Context) {
 		slog.Warn("delete expired sessions", "error", err)
 	}
 	if time.Since(a.pruned) > time.Hour {
-		if err := a.q.DeleteOldSignIns(ctx, signInKeepDays); err != nil {
-			slog.Warn("delete old sign-ins", "error", err)
-		} else {
-			a.pruned = time.Now()
+		if !logOwned("sign-ins") {
+			if err := a.q.DeleteOldSignIns(ctx, signInKeepDays); err != nil {
+				slog.Warn("delete old sign-ins", "error", err)
+			} else {
+				a.pruned = time.Now()
+			}
 		}
 	}
 	// Picks up a change made from the command line, and cuts off streams
