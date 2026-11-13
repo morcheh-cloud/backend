@@ -16,6 +16,7 @@ type Querier interface {
 	// Runs still going that touch these servers.
 	ActiveSoftwareRunsOn(ctx context.Context, serverIds []uuid.UUID) ([]ActiveSoftwareRunsOnRow, error)
 	AddAlertRuleChannel(ctx context.Context, arg AddAlertRuleChannelParams) error
+	AddDockerProjectStat(ctx context.Context, arg AddDockerProjectStatParams) error
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
 	AddMonitorChannel(ctx context.Context, arg AddMonitorChannelParams) error
@@ -84,8 +85,10 @@ type Querier interface {
 	CreateBackupPlan(ctx context.Context, arg CreateBackupPlanParams) (DatabaseBackupPlan, error)
 	CreateDNSServer(ctx context.Context, arg CreateDNSServerParams) (DnsServer, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
+	CreateDockerProjectVersion(ctx context.Context, arg CreateDockerProjectVersionParams) (CreateDockerProjectVersionRow, error)
 	CreateDockerRegistry(ctx context.Context, arg CreateDockerRegistryParams) (DockerRegistry, error)
 	CreateDockerTemplate(ctx context.Context, arg CreateDockerTemplateParams) (DockerTemplate, error)
+	CreateDockerVolumeBackup(ctx context.Context, arg CreateDockerVolumeBackupParams) (DockerVolumeBackup, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (UserGroup, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
@@ -138,11 +141,14 @@ type Querier interface {
 	DeleteBackupPlan(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDNSServer(ctx context.Context, id uuid.UUID) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteDockerGitSource(ctx context.Context, arg DeleteDockerGitSourceParams) (int64, error)
 	DeleteDockerImageScan(ctx context.Context, arg DeleteDockerImageScanParams) error
 	// Forgets images the server no longer runs.
 	DeleteDockerImageUpdatesExcept(ctx context.Context, arg DeleteDockerImageUpdatesExceptParams) error
 	DeleteDockerRegistry(ctx context.Context, arg DeleteDockerRegistryParams) (int64, error)
+	DeleteDockerServerSettings(ctx context.Context, serverID uuid.UUID) error
 	DeleteDockerTemplate(ctx context.Context, arg DeleteDockerTemplateParams) (int64, error)
+	DeleteDockerVolumeBackup(ctx context.Context, id uuid.UUID) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteFinishedJobs(ctx context.Context, arg DeleteFinishedJobsParams) (int64, error)
 	DeleteFolder(ctx context.Context, id uuid.UUID) (int64, error)
@@ -177,6 +183,23 @@ type Querier interface {
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
 	DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) error
+	// Online servers known to run Docker whose automatic clean-up (their own
+	// setting, else their workspace's) is due.
+	DockerAutoPruneServers(ctx context.Context) ([]uuid.UUID, error)
+	DockerGitChecked(ctx context.Context, arg DockerGitCheckedParams) error
+	DockerGitDeployed(ctx context.Context, arg DockerGitDeployedParams) error
+	DockerProjectMetas(ctx context.Context, serverID uuid.UUID) ([]DockerProjectMetum, error)
+	DockerProjectStatsHistory(ctx context.Context, arg DockerProjectStatsHistoryParams) ([]DockerProjectStatsHistoryRow, error)
+	// Every compose project of a server added up per recorded point, then
+	// averaged per bucket.
+	DockerServerStatsHistory(ctx context.Context, arg DockerServerStatsHistoryParams) ([]DockerServerStatsHistoryRow, error)
+	// Servers whose projects are recorded: the ones measured lately (@ids),
+	// those with points from the last week and those known to run Docker (their
+	// images are checked for updates), in workspaces that keep history.
+	DockerStatsServers(ctx context.Context, ids []uuid.UUID) ([]DockerStatsServersRow, error)
+	DueDockerGitSources(ctx context.Context) ([]DockerGitSource, error)
+	// Every enabled rule that watches containers or the Docker engine.
+	EnabledContainerAlertRules(ctx context.Context) ([]AlertRule, error)
 	// Ends a mute now (one that hasn't started yet goes away).
 	EndAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error)
 	// A run whose job ended without it (canceled while queued, Morche restarted).
@@ -194,10 +217,13 @@ type Querier interface {
 	EndTerminalRecording(ctx context.Context, arg EndTerminalRecordingParams) error
 	// Copies of a run that ended without storing them.
 	FailBackupCopies(ctx context.Context, backupID uuid.UUID) error
+	// Copies cut off by a restart of Morche.
+	FailStaleDockerVolumeBackups(ctx context.Context) error
 	FindGrant(ctx context.Context, arg FindGrantParams) (AccessGrant, error)
 	FinishAnsibleRun(ctx context.Context, arg FinishAnsibleRunParams) error
 	// error is a warning here: a copy that failed while another worked.
 	FinishBackup(ctx context.Context, arg FinishBackupParams) error
+	FinishDockerVolumeBackup(ctx context.Context, arg FinishDockerVolumeBackupParams) error
 	FinishJob(ctx context.Context, arg FinishJobParams) error
 	FinishScheduleRun(ctx context.Context, arg FinishScheduleRunParams) error
 	FinishScriptRun(ctx context.Context, arg FinishScriptRunParams) error
@@ -206,6 +232,7 @@ type Querier interface {
 	FinishSoftwareInstall(ctx context.Context, arg FinishSoftwareInstallParams) error
 	FinishSoftwareRun(ctx context.Context, arg FinishSoftwareRunParams) error
 	FinishSoftwareTarget(ctx context.Context, arg FinishSoftwareTargetParams) error
+	FirstDockerProjectStat(ctx context.Context, arg FirstDockerProjectStatParams) (time.Time, error)
 	// Whether candidate is folder_id itself or one of its descendants; moving a
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
@@ -234,10 +261,15 @@ type Querier interface {
 	// What access to a database follows: its workspace, and the server it goes
 	// through.
 	GetDatabaseWorkspace(ctx context.Context, id uuid.UUID) (GetDatabaseWorkspaceRow, error)
+	GetDockerGitSource(ctx context.Context, arg GetDockerGitSourceParams) (DockerGitSource, error)
+	GetDockerGitSourceByHook(ctx context.Context, webhookHash string) (DockerGitSource, error)
 	GetDockerImageScan(ctx context.Context, arg GetDockerImageScanParams) (DockerImageScan, error)
+	GetDockerProjectVersion(ctx context.Context, arg GetDockerProjectVersionParams) (DockerProjectVersion, error)
 	GetDockerRegistry(ctx context.Context, arg GetDockerRegistryParams) (DockerRegistry, error)
+	GetDockerServerSettings(ctx context.Context, serverID uuid.UUID) (DockerServerSetting, error)
 	GetDockerSettings(ctx context.Context, workspaceID uuid.UUID) (DockerSetting, error)
 	GetDockerTemplate(ctx context.Context, arg GetDockerTemplateParams) (DockerTemplate, error)
+	GetDockerVolumeBackup(ctx context.Context, arg GetDockerVolumeBackupParams) (DockerVolumeBackup, error)
 	GetFirewallChange(ctx context.Context, arg GetFirewallChangeParams) (FirewallChange, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
@@ -327,6 +359,7 @@ type Querier interface {
 	LastRestoreAt(ctx context.Context, arg LastRestoreAtParams) (time.Time, error)
 	// Each script's latest run on one server.
 	LastScriptRuns(ctx context.Context, serverID *uuid.UUID) ([]LastScriptRunsRow, error)
+	LatestDockerProjectVersion(ctx context.Context, arg LatestDockerProjectVersionParams) (DockerProjectVersion, error)
 	// The newest good backup of each database a connection holds (optionally of
 	// one plan): what a cron job checks.
 	LatestGoodBackups(ctx context.Context, arg LatestGoodBackupsParams) ([]DatabaseBackup, error)
@@ -375,12 +408,18 @@ type Querier interface {
 	ListDatabases(ctx context.Context, arg ListDatabasesParams) ([]Database, error)
 	// What the monitor should look at now.
 	ListDatabasesDue(ctx context.Context) ([]Database, error)
+	ListDockerGitSources(ctx context.Context, serverID uuid.UUID) ([]DockerGitSource, error)
 	ListDockerImageScans(ctx context.Context, serverID uuid.UUID) ([]DockerImageScan, error)
 	ListDockerImageScansFor(ctx context.Context, serverIds []uuid.UUID) ([]ListDockerImageScansForRow, error)
 	ListDockerImageUpdates(ctx context.Context, serverID uuid.UUID) ([]DockerImageUpdate, error)
 	ListDockerImageUpdatesFor(ctx context.Context, serverIds []uuid.UUID) ([]DockerImageUpdate, error)
+	ListDockerProjectVersions(ctx context.Context, arg ListDockerProjectVersionsParams) ([]ListDockerProjectVersionsRow, error)
 	ListDockerRegistries(ctx context.Context, workspaceID uuid.UUID) ([]DockerRegistry, error)
+	// Every server of a workspace with its own settings or an automatic
+	// clean-up on record.
+	ListDockerServerSettings(ctx context.Context, workspaceID uuid.UUID) ([]ListDockerServerSettingsRow, error)
 	ListDockerTemplates(ctx context.Context, workspaceID uuid.UUID) ([]DockerTemplate, error)
+	ListDockerVolumeBackups(ctx context.Context, arg ListDockerVolumeBackupsParams) ([]DockerVolumeBackup, error)
 	ListDueBackupPlans(ctx context.Context, now *time.Time) ([]DatabaseBackupPlan, error)
 	ListDueMonitors(ctx context.Context, lim int32) ([]Monitor, error)
 	ListDueSchedules(ctx context.Context, now *time.Time) ([]Schedule, error)
@@ -510,6 +549,8 @@ type Querier interface {
 	MoveStoragesToWorkspace(ctx context.Context, arg MoveStoragesToWorkspaceParams) (int64, error)
 	// Where a service lands at the end of its category (or of the uncategorized).
 	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
+	// Stored copies of a volume beyond the newest @keep made by one cron job.
+	OldDockerVolumeBackups(ctx context.Context, arg OldDockerVolumeBackupsParams) ([]DockerVolumeBackup, error)
 	// ---- Incidents ----
 	OpenMonitorIncident(ctx context.Context, arg OpenMonitorIncidentParams) error
 	// New-address sign-ins nobody has answered yet, for the person's other devices.
@@ -522,6 +563,9 @@ type Querier interface {
 	PruneCommandLog(ctx context.Context) (int64, error)
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
+	PruneDockerProjectStats(ctx context.Context) (int64, error)
+	// Keeps the newest @keep of a project.
+	PruneDockerProjectVersions(ctx context.Context, arg PruneDockerProjectVersionsParams) error
 	PruneFirewallChanges(ctx context.Context, arg PruneFirewallChangesParams) error
 	PruneMonitorChecks(ctx context.Context, before time.Time) (int64, error)
 	PruneProxyChanges(ctx context.Context, arg PruneProxyChangesParams) error
@@ -547,6 +591,7 @@ type Querier interface {
 	// Version and domain keep their last known value while a server is away.
 	RecordDNSServerCheck(ctx context.Context, arg RecordDNSServerCheckParams) (DnsServer, error)
 	RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseCheckParams) (Database, error)
+	RecordDockerAutoPrune(ctx context.Context, arg RecordDockerAutoPruneParams) error
 	// The version keeps its last known value while the server is away.
 	RecordProxyCheck(ctx context.Context, arg RecordProxyCheckParams) error
 	// Stores a connection check. OS fields are only overwritten when the check
@@ -616,6 +661,7 @@ type Querier interface {
 	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
 	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)
 	SetDatabasePaused(ctx context.Context, arg SetDatabasePausedParams) (Database, error)
+	SetDockerGitWebhook(ctx context.Context, arg SetDockerGitWebhookParams) (DockerGitSource, error)
 	// Resuming starts over: pending until the next check says otherwise.
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) (Monitor, error)
 	SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error)
@@ -644,8 +690,9 @@ type Querier interface {
 	SetWorkspaceLogoKind(ctx context.Context, arg SetWorkspaceLogoKindParams) (Workspace, error)
 	SettleFirewallChanges(ctx context.Context, arg SettleFirewallChangesParams) error
 	// Online servers whose image updates were checked before (they have rows)
-	// but not since @before, in workspaces that leave the daily check on.
-	StaleDockerUpdateServers(ctx context.Context, before time.Time) ([]uuid.UUID, error)
+	// but not within their check interval (the server's own, else its
+	// workspace's), where the automatic check is on.
+	StaleDockerUpdateServers(ctx context.Context) ([]uuid.UUID, error)
 	StartAnsibleRun(ctx context.Context, id uuid.UUID) error
 	StartBackup(ctx context.Context, arg StartBackupParams) error
 	StartJob(ctx context.Context, id uuid.UUID) error
@@ -703,8 +750,11 @@ type Querier interface {
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
 	UpsertAlertState(ctx context.Context, arg UpsertAlertStateParams) error
+	UpsertDockerGitSource(ctx context.Context, arg UpsertDockerGitSourceParams) (DockerGitSource, error)
 	UpsertDockerImageScan(ctx context.Context, arg UpsertDockerImageScanParams) error
 	UpsertDockerImageUpdate(ctx context.Context, arg UpsertDockerImageUpdateParams) error
+	UpsertDockerProjectMeta(ctx context.Context, arg UpsertDockerProjectMetaParams) (DockerProjectMetum, error)
+	UpsertDockerServerSettings(ctx context.Context, arg UpsertDockerServerSettingsParams) (DockerServerSetting, error)
 	UpsertDockerSettings(ctx context.Context, arg UpsertDockerSettingsParams) (DockerSetting, error)
 	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)
 	UserStatusCounts(ctx context.Context) ([]UserStatusCountsRow, error)

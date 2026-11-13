@@ -77,6 +77,8 @@ type Session struct {
 	subs     map[*Sub]struct{}
 	detached time.Time
 	exited   bool
+	// container: see Options.Container.
+	container string
 }
 
 // Info is a session as the API lists it.
@@ -88,6 +90,8 @@ type Info struct {
 	Rows     int
 	Clients  int
 	Recorded bool
+	// Container is the container this shell runs in ("" = the server).
+	Container string
 }
 
 type Manager struct {
@@ -114,6 +118,15 @@ type Options struct {
 	// Commands, if set, gets each command line typed into the shell (bash
 	// and zsh only, through hooks installed in the login user's home).
 	Commands Commands
+	// Command, if set, runs instead of the login shell (no command hooks).
+	Command string
+	// Input is written to stdin right after start (sudo's password) and
+	// kept out of the output; the PTY doesn't echo when it is set.
+	Input string
+	// Title names the session in place of "Shell N".
+	Title string
+	// Container is what Info reports for a shell inside a container.
+	Container string
 }
 
 // Recorder keeps a copy of a session: its output (never its input), its
@@ -144,7 +157,7 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 	// The shell itself isn't a logged command; what is typed into it is.
 	ctx := context.Background()
 	var nonce string
-	if o.Commands != nil {
+	if o.Commands != nil && o.Command == "" {
 		if err := InstallHooks(ctx, conn); err != nil {
 			slog.Info("terminal without command capture", "server", serverID, "error", err)
 		} else {
@@ -157,7 +170,11 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 	}
 	wrapped.Quiet = true
 	sess := wrapped.Session
-	modes := ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 115200, ssh.TTY_OP_OSPEED: 115200}
+	echo := uint32(1)
+	if o.Input != "" {
+		echo = 0
+	}
+	modes := ssh.TerminalModes{ssh.ECHO: echo, ssh.TTY_OP_ISPEED: 115200, ssh.TTY_OP_OSPEED: 115200}
 	if err := sess.RequestPty("xterm-256color", o.Rows, o.Cols, modes); err != nil {
 		sess.Close()
 		return nil, ErrNoPTY
@@ -175,6 +192,8 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 		return nil, err
 	}
 	switch {
+	case o.Command != "":
+		err = sess.Start(o.Command)
 	case nonce != "":
 		err = sess.Start(startCommand(o.Cwd, nonce))
 	case o.Cwd != "":
@@ -186,16 +205,26 @@ func (m *Manager) Start(serverID string, conn *sshpool.Conn, o Options) (*Sessio
 		sess.Close()
 		return nil, err
 	}
+	if o.Input != "" {
+		if _, err := io.WriteString(stdin, o.Input); err != nil {
+			sess.Close()
+			return nil, err
+		}
+	}
 
 	s := &Session{
 		ID: uuid.NewString(), ServerID: serverID, Owner: o.Owner, Created: time.Now(),
 		m: m, conn: conn, ssh: sess, stdin: stdin, rec: o.Recorder, cmds: o.Commands,
 		cols: o.Cols, rows: o.Rows, subs: map[*Sub]struct{}{}, detached: time.Now(),
+		container: o.Container,
 	}
 	m.mu.Lock()
 	for s.number = 1; used[s.number]; s.number++ {
 	}
 	s.title = fmt.Sprintf("Shell %d", s.number)
+	if o.Title != "" {
+		s.title = o.Title
+	}
 	m.sessions[s.ID] = s
 	m.mu.Unlock()
 	if nonce != "" {
@@ -413,7 +442,7 @@ func (s *Session) Kill() {
 func (s *Session) info() Info {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return Info{ID: s.ID, Title: s.title, Created: s.Created, Cols: s.cols, Rows: s.rows, Clients: len(s.subs), Recorded: s.rec != nil}
+	return Info{ID: s.ID, Title: s.title, Created: s.Created, Cols: s.cols, Rows: s.rows, Clients: len(s.subs), Recorded: s.rec != nil, Container: s.container}
 }
 
 // Get finds a running session of the server opened by owner.

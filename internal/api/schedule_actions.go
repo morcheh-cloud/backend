@@ -37,14 +37,17 @@ import (
 // ScheduleTask holds what the action needs; only the action's own field is
 // set. sync, archive and fetch use the schedule's source and destinations.
 type ScheduleTask struct {
-	Script   *ScheduleScript   `json:"script,omitempty" doc:"action script"`
-	Ansible  *ScheduleAnsible  `json:"ansible,omitempty" doc:"action ansible"`
-	Service  *ScheduleService  `json:"service,omitempty" doc:"action service"`
-	Reboot   *ScheduleReboot   `json:"reboot,omitempty" doc:"action reboot"`
-	Fetch    *ScheduleFetch    `json:"fetch,omitempty" doc:"action fetch: what to download into the destination folders"`
-	Verify   *ScheduleVerify   `json:"verify,omitempty" doc:"action verify-backup"`
-	Software *ScheduleSoftware `json:"software,omitempty" doc:"action software-update"`
-	Packages *SchedulePackages `json:"packages,omitempty" doc:"action package-upgrade"`
+	Script   *ScheduleScript      `json:"script,omitempty" doc:"action script"`
+	Ansible  *ScheduleAnsible     `json:"ansible,omitempty" doc:"action ansible"`
+	Service  *ScheduleService     `json:"service,omitempty" doc:"action service"`
+	Reboot   *ScheduleReboot      `json:"reboot,omitempty" doc:"action reboot"`
+	Fetch    *ScheduleFetch       `json:"fetch,omitempty" doc:"action fetch: what to download into the destination folders"`
+	Verify   *ScheduleVerify      `json:"verify,omitempty" doc:"action verify-backup"`
+	Software *ScheduleSoftware    `json:"software,omitempty" doc:"action software-update"`
+	Packages *SchedulePackages    `json:"packages,omitempty" doc:"action package-upgrade"`
+	Docker   *ScheduleDocker      `json:"docker,omitempty" doc:"action docker-update"`
+	Volumes  *ScheduleVolumes     `json:"volumes,omitempty" doc:"action docker-volume-backup"`
+	Prune    *ScheduleDockerPrune `json:"prune,omitempty" doc:"action docker-prune"`
 }
 
 // SchedulePackages upgrades the system packages on servers, as Upgrade all
@@ -162,6 +165,13 @@ func taskRefs(action string, t ScheduleTask) []ScheduleRef {
 		add("server", t.Software.ServerIDs...)
 	case action == "package-upgrade" && t.Packages != nil:
 		add("server", t.Packages.ServerIDs...)
+	case action == "docker-update" && t.Docker != nil:
+		add("server", t.Docker.ServerIDs...)
+	case action == "docker-volume-backup" && t.Volumes != nil:
+		add("server", t.Volumes.ServerID)
+		add("storage", t.Volumes.StorageID)
+	case action == "docker-prune" && t.Prune != nil:
+		add("server", t.Prune.ServerIDs...)
 	}
 	return refs
 }
@@ -652,6 +662,7 @@ type taskRun struct {
 	ws      uuid.UUID
 	who     string
 	acc     *auth.Access
+	sched   uuid.UUID
 	plan    schedulePlan
 	loc     *time.Location
 	results []ScheduleRunDest
@@ -694,7 +705,7 @@ func (h *scheduleHandler) runTask(ctx context.Context, t *jobs.Task) (any, error
 	// Everything below acts as that person, checked as when done by hand.
 	ctx = context.WithValue(ctx, principalKey{}, &principal{User: u, Access: acc})
 	r := &taskRun{
-		h: h, t: t, id: run.ID, ws: s.WorkspaceID, who: who, acc: acc,
+		h: h, t: t, id: run.ID, ws: s.WorkspaceID, who: who, acc: acc, sched: s.ID,
 		plan: decodePlan(run.Plan), loc: scheduleLoc(s.Timezone), results: []ScheduleRunDest{},
 	}
 	switch r.plan.Action {
@@ -716,6 +727,12 @@ func (h *scheduleHandler) runTask(ctx context.Context, t *jobs.Task) (any, error
 		return r.software(ctx)
 	case "package-upgrade":
 		return r.packages(ctx)
+	case "docker-update":
+		return r.dockerUpdate(ctx)
+	case "docker-volume-backup":
+		return r.volumeBackups(ctx)
+	case "docker-prune":
+		return r.dockerPrune(ctx)
 	}
 	return fail(fmt.Errorf("Unknown action %q.", r.plan.Action))
 }

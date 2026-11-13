@@ -46,9 +46,9 @@ type liveRecording struct {
 	id      uuid.UUID
 	started time.Time
 	r       *recordings
-	cast  *recording.Cast
-	sess  atomic.Pointer[terminal.Session]
-	ended chan int
+	cast    *recording.Cast
+	sess    atomic.Pointer[terminal.Session]
+	ended   chan int
 }
 
 func (l *liveRecording) Output(data []byte)    { l.cast.Output(data) }

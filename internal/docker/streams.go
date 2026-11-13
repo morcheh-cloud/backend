@@ -199,7 +199,7 @@ func (r rawStats) sample() Sample {
 	}
 	used := r.MemoryStats.Usage
 	// What docker stats shows: the page cache isn't the container's.
-	cache := r.MemoryStats.Stats["inactive_file"] // cgroup v2
+	cache := r.MemoryStats.Stats["inactive_file"]                // cgroup v2
 	if v, ok := r.MemoryStats.Stats["total_inactive_file"]; ok { // cgroup v1
 		cache = v
 	}
@@ -311,4 +311,16 @@ func (c *Client) Pull(ctx context.Context, image, platform, auth string, fn func
 		}
 		fn(ev)
 	}
+}
+
+// StatsNow reads one sample with CPU worked out: the engine takes a second
+// reading itself (about a second later), so this waits that long.
+func (c *Client) StatsNow(ctx context.Context, id string) (Sample, error) {
+	var r rawStats
+	err := c.Get(ctx, "/containers/"+PathEscape(id)+"/stats", url.Values{"stream": {"0"}}, &r)
+	s := r.sample()
+	if s.Time.IsZero() || s.Time.Year() < 2000 {
+		s.Time = time.Now()
+	}
+	return s, err
 }

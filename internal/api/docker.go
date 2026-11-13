@@ -1279,9 +1279,17 @@ func registerDocker(api huma.API, h *serverHandler) {
 	h.jobs.Handle(dockerPullKind, h.runDockerPull)
 	registerDockerEvents(api, h)
 	registerDockerProjects(api, h)
+	registerDockerProjectVersions(api, h)
+	registerDockerGit(api, h)
+	registerDockerProjectHistory(api, h)
+	registerDockerProjectStats(api, h)
+	registerDockerReport(api, h)
 	registerDockerUpdates(api, h)
 	registerDockerScans(api, h)
 	registerDockerSettings(api, h)
+	registerDockerVolumeFiles(api, h)
+	registerDockerImageLayers(api, h)
+	registerDockerRun(api, h)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "remove-docker-image",
@@ -1864,6 +1872,17 @@ func (h *serverHandler) runDockerPrune(ctx context.Context, t *jobs.Task) (any, 
 	if err := t.Decode(&p); err != nil {
 		return nil, err
 	}
+	res, err := h.pruneDocker(ctx, t, p.ServerID, p.DockerPruneBody, 0, "")
+	if err != nil {
+		return nil, jobError(err)
+	}
+	return res, nil
+}
+
+// pruneDocker removes what b names on one server. olderThan > 0 keeps
+// anything newer than that many hours (volumes have no age, so they don't
+// wait); prefix goes before each log line when one job cleans several servers.
+func (h *serverHandler) pruneDocker(ctx context.Context, t *jobs.Task, serverID string, b DockerPruneBody, olderThan int, prefix string) (DockerPruneResult, error) {
 	res := DockerPruneResult{}
 	type step struct {
 		kind, phase, text string
@@ -1871,13 +1890,13 @@ func (h *serverHandler) runDockerPrune(ctx context.Context, t *jobs.Task) (any, 
 		on                bool
 	}
 	steps := []step{
-		{"containers", "Removing stopped containers", "docker container prune -f", nil, p.Containers},
-		{"networks", "Removing unused networks", "docker network prune -f", nil, p.Networks},
-		{"images", "Removing unused images", "docker image prune -f", map[string][]string{"dangling": {"true"}}, p.Images == "dangling"},
-		{"images", "Removing unused images", "docker image prune -a -f", map[string][]string{"dangling": {"false"}}, p.Images == "all"},
-		{"volumes", "Removing unused volumes", "docker volume prune -f", nil, p.Volumes == "anonymous"},
-		{"volumes", "Removing unused volumes", "docker volume prune -a -f", map[string][]string{"all": {"true"}}, p.Volumes == "all"},
-		{"build", "Clearing the build cache", "docker builder prune -f", nil, p.BuildCache},
+		{"containers", "Removing stopped containers", "docker container prune -f", nil, b.Containers},
+		{"networks", "Removing unused networks", "docker network prune -f", nil, b.Networks},
+		{"images", "Removing unused images", "docker image prune -f", map[string][]string{"dangling": {"true"}}, b.Images == "dangling"},
+		{"images", "Removing unused images", "docker image prune -a -f", map[string][]string{"dangling": {"false"}}, b.Images == "all"},
+		{"volumes", "Removing unused volumes", "docker volume prune -f", nil, b.Volumes == "anonymous"},
+		{"volumes", "Removing unused volumes", "docker volume prune -a -f", map[string][]string{"all": {"true"}}, b.Volumes == "all"},
+		{"build", "Clearing the build cache", "docker builder prune -f", nil, b.BuildCache},
 	}
 	total := 0
 	for _, s := range steps {
@@ -1890,9 +1909,21 @@ func (h *serverHandler) runDockerPrune(ctx context.Context, t *jobs.Task) (any, 
 		if !s.on {
 			continue
 		}
-		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Items, pr.ItemsTotal = s.phase, n, total })
-		err := h.dockerDo(ctx, p.ServerID, s.text, func(e *dockerEngine) error {
-			r, err := e.client.Prune(ctx, s.kind, s.filters)
+		filters, text := s.filters, s.text
+		if olderThan > 0 && s.kind != "volumes" {
+			filters = map[string][]string{}
+			for k, v := range s.filters {
+				filters[k] = v
+			}
+			until := fmt.Sprintf("%dh", olderThan)
+			filters["until"] = []string{until}
+			text += " --filter until=" + until
+		}
+		if t != nil {
+			t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Items, pr.ItemsTotal = prefix+s.phase, n, total })
+		}
+		err := h.dockerDo(ctx, serverID, text, func(e *dockerEngine) error {
+			r, err := e.client.Prune(ctx, s.kind, filters)
 			if err != nil {
 				return err
 			}
@@ -1906,15 +1937,18 @@ func (h *serverHandler) runDockerPrune(ctx context.Context, t *jobs.Task) (any, 
 				}
 			}
 			res.Space += r.SpaceReclaimed
-			t.Logf("%s: freed %d bytes", s.phase, r.SpaceReclaimed)
+			if t != nil {
+				t.Logf("%s%s: freed %s", prefix, s.phase, humanBytes(int64(r.SpaceReclaimed)))
+			}
 			return nil
 		})
 		if err != nil {
-			// An old engine without volume prune's "all" filter: say so plainly.
-			return nil, jobError(err)
+			return res, err
 		}
 		n++
 	}
-	t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Items, pr.ItemsTotal = "Done", total, total })
+	if t != nil {
+		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Items, pr.ItemsTotal = "Done", total, total })
+	}
 	return res, nil
 }

@@ -410,6 +410,12 @@ func (c *Client) Volumes(ctx context.Context) ([]Volume, error) {
 	return v.Volumes, c.Get(ctx, "/volumes", nil, &v)
 }
 
+// InspectVolume reads one volume.
+func (c *Client) InspectVolume(ctx context.Context, name string) (Volume, error) {
+	var v Volume
+	return v, c.Get(ctx, "/volumes/"+PathEscape(name), nil, &v)
+}
+
 type VolumeCreate struct {
 	Name       string            `json:"Name,omitempty"`
 	Driver     string            `json:"Driver,omitempty"`

@@ -184,7 +184,7 @@ func registerDockerScans(api huma.API, h *serverHandler) {
 		if err != nil {
 			return nil, err
 		}
-		set, err := h.dockerSettings(ctx, s.WorkspaceID)
+		set, err := h.serverDockerSettings(ctx, s)
 		if err != nil {
 			return nil, err
 		}
@@ -302,15 +302,19 @@ type trivyReport struct {
 
 // scanScript runs trivy on one image and prints its JSON after "@@json",
 // or its errors after "@@err".
-func scanScript(scanner, image string) string {
+func scanScript(scanner, image string, ignoreUnfixed bool) string {
 	q := terminal.ShellQuote
+	opts := "--quiet --format json --scanners vuln"
+	if ignoreUnfixed {
+		opts += " --ignore-unfixed"
+	}
 	return `t=$(mktemp); e=$(mktemp); trap 'rm -f "$t" "$e"' EXIT
 if command -v trivy >/dev/null 2>&1; then
   echo "@@scanner trivy"
-  trivy image --quiet --format json --scanners vuln ` + q(image) + ` >"$t" 2>"$e"; code=$?
+  trivy image ` + opts + ` ` + q(image) + ` >"$t" 2>"$e"; code=$?
 else
   echo "@@scanner "` + q(scanner) + `
-  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock:ro -v morcheh-trivy-cache:/root/.cache/ ` + q(scanner) + ` image --quiet --format json --scanners vuln ` + q(image) + ` >"$t" 2>"$e"; code=$?
+  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock:ro -v morcheh-trivy-cache:/root/.cache/ ` + q(scanner) + ` image ` + opts + ` ` + q(image) + ` >"$t" 2>"$e"; code=$?
 fi
 if [ $code -ne 0 ]; then echo "@@err"; tail -n 5 "$e"; exit 0; fi
 echo "@@json"; cat "$t"`
@@ -325,7 +329,7 @@ func (h *serverHandler) runDockerScan(ctx context.Context, t *jobs.Task) (any, e
 	if err != nil {
 		return nil, jobError(err)
 	}
-	set, err := h.dockerSettings(ctx, s.WorkspaceID)
+	set, err := h.serverDockerSettings(ctx, s)
 	if err != nil {
 		return nil, jobError(err)
 	}
@@ -338,6 +342,7 @@ func (h *serverHandler) runDockerScan(ctx context.Context, t *jobs.Task) (any, e
 		names[it.ImageID] = it.Image
 	}
 	var failed []string
+	var worse []scanWorse
 	total := DockerScanCounts{}
 	for i, id := range p.Images {
 		if t.Canceled() {
@@ -348,7 +353,9 @@ func (h *serverHandler) runDockerScan(ctx context.Context, t *jobs.Task) (any, e
 			t.Logf("Skipped %s: not on the server any more", shortID(id))
 			continue
 		}
-		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Current, pr.Items, pr.ItemsTotal = "Scanning", name, i, len(p.Images) })
+		t.Update(func(pr *jobs.Progress) {
+			pr.Phase, pr.Current, pr.Items, pr.ItemsTotal = "Scanning", name, i, len(p.Images)
+		})
 		t.Logf("Scanning %s", name)
 		// Scan by id: a tag may have moved on.
 		ref := id
@@ -356,7 +363,7 @@ func (h *serverHandler) runDockerScan(ctx context.Context, t *jobs.Task) (any, e
 		var res *execResult
 		err := h.withShell(ctx, p.ServerID, func(_ *sshpool.Conn, sh *rootShell) error {
 			var err error
-			res, err = sh.hiding(true).exec(ctx, scanScript(set.ScannerImage, ref), 20*time.Minute, 64<<20)
+			res, err = sh.hiding(true).exec(ctx, scanScript(set.ScannerImage, ref, set.ScanIgnoreUnfixed), 20*time.Minute, 64<<20)
 			return err
 		})
 		if err == nil && res.timedOut {
@@ -448,12 +455,20 @@ func (h *serverHandler) runDockerScan(ctx context.Context, t *jobs.Task) (any, e
 			total.High += int(row.High)
 			total.Medium += int(row.Medium)
 			total.Low += int(row.Low)
+			var prev *sqlc.DockerImageScan
+			if old, err := h.q.GetDockerImageScan(ctx, sqlc.GetDockerImageScanParams{ServerID: s.ID, ImageID: id}); err == nil {
+				prev = &old
+			}
+			if worseScan(set.NotifyVulns, prev, row) {
+				worse = append(worse, scanWorse{image: name, critical: int(row.Critical), high: int(row.High)})
+			}
 		}
 		if err := h.q.UpsertDockerImageScan(ctx, row); err != nil {
 			return nil, jobError(internalError(err))
 		}
 	}
 	t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Items, pr.ItemsTotal = "Done", len(p.Images), len(p.Images) })
+	h.notifyDockerVulns(s, set, worse)
 	if len(failed) == len(p.Images) && len(failed) > 0 {
 		return nil, jobError(errors.New("Couldn't scan " + strings.Join(failed, ", ") + " (see the output)"))
 	}

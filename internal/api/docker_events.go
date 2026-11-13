@@ -74,7 +74,7 @@ func registerDockerEvents(api huma.API, h *serverHandler) {
 			if err != nil {
 				return nil, err
 			}
-			set, err := h.dockerSettings(ctx, s.WorkspaceID)
+			set, err := h.serverDockerSettings(ctx, s)
 			if err != nil {
 				return nil, err
 			}
@@ -115,4 +115,3 @@ func registerDockerEvents(api huma.API, h *serverHandler) {
 		return out, nil
 	})
 }
-

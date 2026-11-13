@@ -94,7 +94,7 @@ func (q *Queries) AlertRuleChannelsToNotify(ctx context.Context, ruleID uuid.UUI
 }
 
 const alertRulesForDatabase = `-- name: AlertRulesForDatabase :many
-SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids FROM alert_rules
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container FROM alert_rules
 WHERE enabled AND workspace_id = $1
   AND metric IN ('db_down', 'db_health')
   AND (scope = 'all' OR (scope = 'databases' AND $2::uuid = ANY (database_ids)))
@@ -137,6 +137,8 @@ func (q *Queries) AlertRulesForDatabase(ctx context.Context, arg AlertRulesForDa
 			&i.UpdatedAt,
 			&i.Unit,
 			&i.DatabaseIds,
+			&i.Project,
+			&i.Container,
 		); err != nil {
 			return nil, err
 		}
@@ -149,9 +151,10 @@ func (q *Queries) AlertRulesForDatabase(ctx context.Context, arg AlertRulesForDa
 }
 
 const alertRulesForServer = `-- name: AlertRulesForServer :many
-SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids FROM alert_rules
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container FROM alert_rules
 WHERE enabled AND workspace_id = $1
   AND metric NOT IN ('db_down', 'db_health')
+  AND metric NOT LIKE 'container\_%' AND metric <> 'docker_engine'
   AND (scope = 'all'
     OR (scope = 'servers' AND $2::uuid = ANY (server_ids))
     OR (scope = 'tags' AND tags && $3::text[]))
@@ -195,6 +198,8 @@ func (q *Queries) AlertRulesForServer(ctx context.Context, arg AlertRulesForServ
 			&i.UpdatedAt,
 			&i.Unit,
 			&i.DatabaseIds,
+			&i.Project,
+			&i.Container,
 		); err != nil {
 			return nil, err
 		}
@@ -296,13 +301,13 @@ func (q *Queries) CreateAlertMute(ctx context.Context, arg CreateAlertMuteParams
 
 const createAlertRule = `-- name: CreateAlertRule :one
 INSERT INTO alert_rules (
-    workspace_id, name, enabled, metric, op, threshold, mount, unit, for_minutes, severity,
+    workspace_id, name, enabled, metric, op, threshold, mount, unit, project, container, for_minutes, severity,
     scope, server_ids, database_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $17
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+    $13, $14, $15, $16, $17, $18, $19, $19
 )
-RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids
+RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container
 `
 
 type CreateAlertRuleParams struct {
@@ -314,6 +319,8 @@ type CreateAlertRuleParams struct {
 	Threshold      float64     `json:"threshold"`
 	Mount          string      `json:"mount"`
 	Unit           string      `json:"unit"`
+	Project        string      `json:"project"`
+	Container      string      `json:"container"`
 	ForMinutes     int32       `json:"for_minutes"`
 	Severity       string      `json:"severity"`
 	Scope          string      `json:"scope"`
@@ -335,6 +342,8 @@ func (q *Queries) CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams
 		arg.Threshold,
 		arg.Mount,
 		arg.Unit,
+		arg.Project,
+		arg.Container,
 		arg.ForMinutes,
 		arg.Severity,
 		arg.Scope,
@@ -368,6 +377,8 @@ func (q *Queries) CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams
 		&i.UpdatedAt,
 		&i.Unit,
 		&i.DatabaseIds,
+		&i.Project,
+		&i.Container,
 	)
 	return i, err
 }
@@ -397,6 +408,57 @@ DELETE FROM alert_states WHERE rule_id = $1
 func (q *Queries) DeleteAlertStates(ctx context.Context, ruleID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteAlertStates, ruleID)
 	return err
+}
+
+const enabledContainerAlertRules = `-- name: EnabledContainerAlertRules :many
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container FROM alert_rules
+WHERE enabled AND (metric LIKE 'container\_%' OR metric = 'docker_engine')
+ORDER BY workspace_id, created_at
+`
+
+// Every enabled rule that watches containers or the Docker engine.
+func (q *Queries) EnabledContainerAlertRules(ctx context.Context) ([]AlertRule, error) {
+	rows, err := q.db.Query(ctx, enabledContainerAlertRules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AlertRule{}
+	for rows.Next() {
+		var i AlertRule
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Enabled,
+			&i.Metric,
+			&i.Op,
+			&i.Threshold,
+			&i.Mount,
+			&i.ForMinutes,
+			&i.Severity,
+			&i.Scope,
+			&i.ServerIds,
+			&i.Tags,
+			&i.RepeatMinutes,
+			&i.NotifyResolved,
+			&i.CreatedByName,
+			&i.UpdatedByName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Unit,
+			&i.DatabaseIds,
+			&i.Project,
+			&i.Container,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const endAlertMute = `-- name: EndAlertMute :one
@@ -449,7 +511,7 @@ func (q *Queries) GetAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, er
 }
 
 const getAlertRule = `-- name: GetAlertRule :one
-SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids FROM alert_rules WHERE id = $1
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container FROM alert_rules WHERE id = $1
 `
 
 func (q *Queries) GetAlertRule(ctx context.Context, id uuid.UUID) (AlertRule, error) {
@@ -477,6 +539,8 @@ func (q *Queries) GetAlertRule(ctx context.Context, id uuid.UUID) (AlertRule, er
 		&i.UpdatedAt,
 		&i.Unit,
 		&i.DatabaseIds,
+		&i.Project,
+		&i.Container,
 	)
 	return i, err
 }
@@ -724,7 +788,7 @@ func (q *Queries) ListAlertRuleChannels(ctx context.Context, ids []uuid.UUID) ([
 }
 
 const listAlertRules = `-- name: ListAlertRules :many
-SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids FROM alert_rules
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container FROM alert_rules
 WHERE ($1::bool OR workspace_id = ANY ($2::uuid[]))
   AND ($3::uuid IS NULL OR workspace_id = $3::uuid)
 ORDER BY lower(name), id
@@ -767,6 +831,8 @@ func (q *Queries) ListAlertRules(ctx context.Context, arg ListAlertRulesParams) 
 			&i.UpdatedAt,
 			&i.Unit,
 			&i.DatabaseIds,
+			&i.Project,
+			&i.Container,
 		); err != nil {
 			return nil, err
 		}
@@ -859,7 +925,7 @@ func (q *Queries) PruneAlertMutes(ctx context.Context, before time.Time) (int64,
 const setAlertRuleEnabled = `-- name: SetAlertRuleEnabled :one
 UPDATE alert_rules SET enabled = $1, updated_by_name = $2, updated_at = now()
 WHERE id = $3
-RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids
+RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container
 `
 
 type SetAlertRuleEnabledParams struct {
@@ -893,6 +959,8 @@ func (q *Queries) SetAlertRuleEnabled(ctx context.Context, arg SetAlertRuleEnabl
 		&i.UpdatedAt,
 		&i.Unit,
 		&i.DatabaseIds,
+		&i.Project,
+		&i.Container,
 	)
 	return i, err
 }
@@ -900,11 +968,11 @@ func (q *Queries) SetAlertRuleEnabled(ctx context.Context, arg SetAlertRuleEnabl
 const updateAlertRule = `-- name: UpdateAlertRule :one
 UPDATE alert_rules SET
     name = $1, enabled = $2, metric = $3, op = $4, threshold = $5,
-    mount = $6, unit = $7, for_minutes = $8, severity = $9, scope = $10,
-    server_ids = $11, database_ids = $12, tags = $13, repeat_minutes = $14,
-    notify_resolved = $15, updated_by_name = $16, updated_at = now()
-WHERE id = $17
-RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids
+    mount = $6, unit = $7, project = $8, container = $9, for_minutes = $10, severity = $11, scope = $12,
+    server_ids = $13, database_ids = $14, tags = $15, repeat_minutes = $16,
+    notify_resolved = $17, updated_by_name = $18, updated_at = now()
+WHERE id = $19
+RETURNING id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container
 `
 
 type UpdateAlertRuleParams struct {
@@ -915,6 +983,8 @@ type UpdateAlertRuleParams struct {
 	Threshold      float64     `json:"threshold"`
 	Mount          string      `json:"mount"`
 	Unit           string      `json:"unit"`
+	Project        string      `json:"project"`
+	Container      string      `json:"container"`
 	ForMinutes     int32       `json:"for_minutes"`
 	Severity       string      `json:"severity"`
 	Scope          string      `json:"scope"`
@@ -936,6 +1006,8 @@ func (q *Queries) UpdateAlertRule(ctx context.Context, arg UpdateAlertRuleParams
 		arg.Threshold,
 		arg.Mount,
 		arg.Unit,
+		arg.Project,
+		arg.Container,
 		arg.ForMinutes,
 		arg.Severity,
 		arg.Scope,
@@ -970,6 +1042,8 @@ func (q *Queries) UpdateAlertRule(ctx context.Context, arg UpdateAlertRuleParams
 		&i.UpdatedAt,
 		&i.Unit,
 		&i.DatabaseIds,
+		&i.Project,
+		&i.Container,
 	)
 	return i, err
 }

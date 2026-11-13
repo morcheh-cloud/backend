@@ -115,6 +115,13 @@ func (h *serverHandler) checkDockerUpdates(ctx context.Context, id string, progr
 		imageOf[c.Image] = c.ImageID
 	}
 	sort.Strings(refs)
+	before := map[string]sqlc.DockerImageUpdate{}
+	if rows, err := h.q.ListDockerImageUpdates(ctx, sid); err == nil {
+		for _, r := range rows {
+			before[r.Image] = r
+		}
+	}
+	var fresh []string // images that newly have a version waiting
 	available := 0
 	for i, ref := range refs {
 		if progress != nil {
@@ -162,6 +169,9 @@ func (h *serverHandler) checkDockerUpdates(ctx context.Context, id string, progr
 		}
 		if row.State == "available" {
 			available++
+			if b, ok := before[ref]; !ok || b.State != "available" || b.RemoteDigest != row.RemoteDigest {
+				fresh = append(fresh, ref)
+			}
 		}
 		if err := h.q.UpsertDockerImageUpdate(ctx, row); err != nil {
 			return available, err
@@ -172,6 +182,11 @@ func (h *serverHandler) checkDockerUpdates(ctx context.Context, id string, progr
 	}
 	if err := h.q.DeleteDockerImageUpdatesExcept(ctx, sqlc.DeleteDockerImageUpdatesExceptParams{ServerID: sid, Images: refs}); err != nil {
 		return available, err
+	}
+	if len(fresh) > 0 {
+		if s, err := h.q.GetServer(ctx, sid); err == nil {
+			h.notifyDockerUpdates(ctx, s, fresh)
+		}
 	}
 	return available, nil
 }
@@ -300,7 +315,9 @@ func registerDockerUpdates(api huma.API, h *serverHandler) {
 			return nil, err
 		}
 		n, err := h.checkDockerUpdates(ctx, p.ServerID, func(i, total int, image string) {
-			t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Current, pr.Items, pr.ItemsTotal = "Asking the registries", image, i, total })
+			t.Update(func(pr *jobs.Progress) {
+				pr.Phase, pr.Current, pr.Items, pr.ItemsTotal = "Asking the registries", image, i, total
+			})
 		})
 		if err != nil {
 			return nil, jobError(err)
@@ -360,37 +377,14 @@ func (h *serverHandler) runDockerUpdate(ctx context.Context, t *jobs.Task) (any,
 	updated := 0
 	for i, c := range picked {
 		name := containerName(c.Names)
-		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Current, pr.Items, pr.ItemsTotal = "Recreating", name, i, len(picked) })
+		t.Update(func(pr *jobs.Progress) {
+			pr.Phase, pr.Current, pr.Items, pr.ItemsTotal = "Recreating", name, i, len(picked)
+		})
 		if pinnedRef(c.Image) {
 			t.Logf("Skipped %s: its image is pinned (%s)", name, c.Image)
 			continue
 		}
-		project := c.Labels["com.docker.compose.project"]
-		service := c.Labels["com.docker.compose.service"]
-		dir := c.Labels["com.docker.compose.project.working_dir"]
-		files := c.Labels["com.docker.compose.project.config_files"]
-		var err error
-		if project != "" && service != "" && dir != "" && files != "" {
-			cp := dockerComposeParams{ServerID: p.ServerID, Project: project, Dir: dir}
-			for f := range strings.SplitSeq(files, ",") {
-				if f = strings.TrimSpace(f); f != "" {
-					if !path.IsAbs(f) {
-						f = path.Join(dir, f)
-					}
-					cp.Files = append(cp.Files, f)
-				}
-			}
-			t.Logf("Recreating %s (service %s of %s)", name, service, project)
-			err = h.withShell(ctx, p.ServerID, func(_ *sshpool.Conn, sh *rootShell) error {
-				return h.composeRun(ctx, t, sh, cp, "up -d --no-deps "+terminal.ShellQuote(service))
-			})
-		} else {
-			t.Logf("Recreating %s", name)
-			err = h.dockerDo(ctx, p.ServerID, "docker recreate "+name+" ("+c.Image+")", func(e *dockerEngine) error {
-				_, err := e.client.Recreate(ctx, c.ID)
-				return err
-			})
-		}
+		err := h.recreateContainer(ctx, t, p.ServerID, c)
 		if err != nil {
 			msg := dockerProblemText(err)
 			t.Logf("Couldn't update %s: %s", name, msg)
@@ -407,8 +401,39 @@ func (h *serverHandler) runDockerUpdate(ctx context.Context, t *jobs.Task) (any,
 	return map[string]int{"updated": updated}, nil
 }
 
-// startDockerUpdateLoop re-checks image updates once a day on servers that
-// were checked before (so servers without Docker are never asked).
+// recreateContainer puts a new container in place of c on the image its
+// reference points to now: a compose service through compose up, anything
+// else by copying its settings.
+func (h *serverHandler) recreateContainer(ctx context.Context, t *jobs.Task, serverID string, c docker.ContainerSummary) error {
+	name := containerName(c.Names)
+	project := c.Labels["com.docker.compose.project"]
+	service := c.Labels["com.docker.compose.service"]
+	dir := c.Labels["com.docker.compose.project.working_dir"]
+	files := c.Labels["com.docker.compose.project.config_files"]
+	if project != "" && service != "" && dir != "" && files != "" {
+		cp := dockerComposeParams{ServerID: serverID, Project: project, Dir: dir}
+		for f := range strings.SplitSeq(files, ",") {
+			if f = strings.TrimSpace(f); f != "" {
+				if !path.IsAbs(f) {
+					f = path.Join(dir, f)
+				}
+				cp.Files = append(cp.Files, f)
+			}
+		}
+		t.Logf("Recreating %s (service %s of %s)", name, service, project)
+		return h.withShell(ctx, serverID, func(_ *sshpool.Conn, sh *rootShell) error {
+			return h.composeRun(ctx, t, sh, cp, "up -d --no-deps "+terminal.ShellQuote(service))
+		})
+	}
+	t.Logf("Recreating %s", name)
+	return h.dockerDo(ctx, serverID, "docker recreate "+name+" ("+c.Image+")", func(e *dockerEngine) error {
+		_, err := e.client.Recreate(ctx, c.ID)
+		return err
+	})
+}
+
+// startDockerUpdateLoop re-checks image updates on servers that were checked
+// before, as often as their workspace's settings say (so servers without Docker are never asked).
 func startDockerUpdateLoop(h *serverHandler) {
 	go func() {
 		running := map[uuid.UUID]bool{}
@@ -423,7 +448,7 @@ func startDockerUpdateLoop(h *serverHandler) {
 					break drain
 				}
 			}
-			ids, err := h.q.StaleDockerUpdateServers(context.Background(), time.Now().Add(-24*time.Hour))
+			ids, err := h.q.StaleDockerUpdateServers(context.Background())
 			if err != nil {
 				slog.Warn("list servers for image update checks", "error", err)
 				continue

@@ -29,6 +29,7 @@ type TerminalSession struct {
 	Rows      int       `json:"rows" example:"32"`
 	Clients   int       `json:"clients" doc:"Browser tabs attached right now; 0 means it runs detached"`
 	Recorded  bool      `json:"recorded" doc:"Its output is being recorded (the workspace records terminals)"`
+	Container string    `json:"container,omitempty" doc:"Full ID of the container this shell runs in; empty for a shell on the server"`
 }
 
 type TerminalPath struct {
@@ -37,7 +38,7 @@ type TerminalPath struct {
 }
 
 func toTerminal(i terminal.Info) TerminalSession {
-	return TerminalSession{ID: i.ID, Title: i.Title, CreatedAt: i.Created, Cols: i.Cols, Rows: i.Rows, Clients: i.Clients, Recorded: i.Recorded}
+	return TerminalSession{ID: i.ID, Title: i.Title, CreatedAt: i.Created, Cols: i.Cols, Rows: i.Rows, Clients: i.Clients, Recorded: i.Recorded, Container: i.Container}
 }
 
 // Control messages are JSON text frames; terminal bytes are binary frames.
@@ -68,7 +69,7 @@ func registerTerminals(api huma.API, r chi.Router, h *serverHandler, origins []s
 		Path:        "/servers/{id}/terminals",
 		Summary:     "List a server's open terminals",
 		Description: "Shells keep running on the backend while no browser is attached, so a reload or a dropped network resumes them. " +
-			"Connect with a WebSocket to `/servers/{id}/terminals/connect` (`?session=` to attach to one of these, else a new shell; `cols`, `rows`, `cwd` for a new one). " +
+			"Connect with a WebSocket to `/servers/{id}/terminals/connect` (`?session=` to attach to one of these, else a new shell; `cols`, `rows`, `cwd` for a new one; `container` (+ optional `user`, `shell`) opens a shell inside that running container instead). " +
 			"Binary frames carry terminal bytes both ways; JSON text frames carry control: the client sends `{type:\"resize\",cols,rows}`; the server sends `session`, `title`, `exit` and `error`.",
 		Tags: tags,
 	}, func(ctx context.Context, in *ServerIDPath) (*struct {
@@ -233,6 +234,24 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 				opts.Recorder = rec
 			}
 			cmds := newTermCommands(h.cmds, serverID, p, hostOf(r.RemoteAddr), rec)
+			if ref := q.Get("container"); ref != "" {
+				cmd, input, title, id, err := h.containerShell(ctx, serverID, conn, ref, q.Get("user"), q.Get("shell"))
+				if err != nil {
+					if rec != nil {
+						rec.abandon()
+					}
+					var refused *execRefusal
+					if errors.As(err, &refused) {
+						fail(refused.status, refused.message)
+					} else {
+						status, message := problem(err)
+						fail(status, message)
+					}
+					return
+				}
+				opts.Command, opts.Input, opts.Title, opts.Container, opts.Cwd = cmd, input, title, id, ""
+				cmds.opened = "Shell opened in container " + title
+			}
 			opts.Commands = cmds
 			sess, err = h.terms.Start(serverID, conn, opts)
 			if err != nil && rec != nil {

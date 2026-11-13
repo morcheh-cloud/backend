@@ -95,6 +95,8 @@ type AlertRule struct {
 	UpdatedAt      time.Time   `json:"updated_at"`
 	Unit           string      `json:"unit"`
 	DatabaseIds    []uuid.UUID `json:"database_ids"`
+	Project        string      `json:"project"`
+	Container      string      `json:"container"`
 }
 
 type AlertRuleChannel struct {
@@ -454,6 +456,39 @@ type DnsServer struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+type DockerAutoPrune struct {
+	ServerID uuid.UUID `json:"server_id"`
+	RanAt    time.Time `json:"ran_at"`
+	Space    int64     `json:"space"`
+	Removed  int32     `json:"removed"`
+	Error    string    `json:"error"`
+}
+
+type DockerGitSource struct {
+	ServerID       uuid.UUID  `json:"server_id"`
+	Project        string     `json:"project"`
+	Dir            string     `json:"dir"`
+	RepoUrl        string     `json:"repo_url"`
+	Branch         string     `json:"branch"`
+	ComposePath    string     `json:"compose_path"`
+	Username       string     `json:"username"`
+	TokenEnc       []byte     `json:"token_enc"`
+	AutoDeploy     bool       `json:"auto_deploy"`
+	PollMinutes    int32      `json:"poll_minutes"`
+	WebhookEnc     []byte     `json:"webhook_enc"`
+	WebhookHash    string     `json:"webhook_hash"`
+	LastCommit     string     `json:"last_commit"`
+	LastMessage    string     `json:"last_message"`
+	LastAuthor     string     `json:"last_author"`
+	LastDeployedAt *time.Time `json:"last_deployed_at"`
+	LastCheckedAt  *time.Time `json:"last_checked_at"`
+	LastError      string     `json:"last_error"`
+	CreatedBy      *uuid.UUID `json:"created_by"`
+	CreatedByName  string     `json:"created_by_name"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
 type DockerImageScan struct {
 	ServerID  uuid.UUID `json:"server_id"`
 	ImageID   string    `json:"image_id"`
@@ -480,6 +515,43 @@ type DockerImageUpdate struct {
 	CheckedAt    time.Time `json:"checked_at"`
 }
 
+type DockerProjectMetum struct {
+	ServerID      uuid.UUID `json:"server_id"`
+	Project       string    `json:"project"`
+	Title         string    `json:"title"`
+	Note          string    `json:"note"`
+	UpdatedByName string    `json:"updated_by_name"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type DockerProjectStat struct {
+	ServerID  uuid.UUID `json:"server_id"`
+	Project   string    `json:"project"`
+	At        time.Time `json:"at"`
+	Cpu       float64   `json:"cpu"`
+	CpuMax    float64   `json:"cpu_max"`
+	Memory    int64     `json:"memory"`
+	MemoryMax int64     `json:"memory_max"`
+	NetRx     float64   `json:"net_rx"`
+	NetTx     float64   `json:"net_tx"`
+	Running   int32     `json:"running"`
+	Total     int32     `json:"total"`
+	Unhealthy int32     `json:"unhealthy"`
+}
+
+type DockerProjectVersion struct {
+	ID            uuid.UUID `json:"id"`
+	ServerID      uuid.UUID `json:"server_id"`
+	Project       string    `json:"project"`
+	Revision      string    `json:"revision"`
+	Compose       string    `json:"compose"`
+	EnvEnc        []byte    `json:"env_enc"`
+	Reason        string    `json:"reason"`
+	Note          string    `json:"note"`
+	CreatedByName string    `json:"created_by_name"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type DockerRegistry struct {
 	ID          uuid.UUID `json:"id"`
 	WorkspaceID uuid.UUID `json:"workspace_id"`
@@ -491,13 +563,43 @@ type DockerRegistry struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type DockerServerSetting struct {
+	ServerID  uuid.UUID `json:"server_id"`
+	Overrides []byte    `json:"overrides"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type DockerSetting struct {
-	WorkspaceID  uuid.UUID `json:"workspace_id"`
-	ProjectsDir  string    `json:"projects_dir"`
-	UpdateCheck  bool      `json:"update_check"`
-	ScannerImage string    `json:"scanner_image"`
-	EventsHours  int32     `json:"events_hours"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	WorkspaceID       uuid.UUID   `json:"workspace_id"`
+	ProjectsDir       string      `json:"projects_dir"`
+	UpdateCheck       bool        `json:"update_check"`
+	ScannerImage      string      `json:"scanner_image"`
+	EventsHours       int32       `json:"events_hours"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+	StatsDays         int32       `json:"stats_days"`
+	UpdateCheckHours  int32       `json:"update_check_hours"`
+	ScanIgnoreUnfixed bool        `json:"scan_ignore_unfixed"`
+	RemoveOrphans     bool        `json:"remove_orphans"`
+	VersionsKeep      int32       `json:"versions_keep"`
+	DefaultRestart    string      `json:"default_restart"`
+	DefaultMemoryMb   int32       `json:"default_memory_mb"`
+	DefaultCpus       float64     `json:"default_cpus"`
+	DefaultLogMaxMb   int32       `json:"default_log_max_mb"`
+	DefaultLogFiles   int32       `json:"default_log_files"`
+	PruneAuto         bool        `json:"prune_auto"`
+	PruneHours        int32       `json:"prune_hours"`
+	PruneImages       string      `json:"prune_images"`
+	PruneContainers   bool        `json:"prune_containers"`
+	PruneNetworks     bool        `json:"prune_networks"`
+	PruneBuildCache   bool        `json:"prune_build_cache"`
+	PruneOlderHours   int32       `json:"prune_older_hours"`
+	NotifyUpdates     bool        `json:"notify_updates"`
+	NotifyVulns       string      `json:"notify_vulns"`
+	NotifyChannels    []uuid.UUID `json:"notify_channels"`
+	BackupStorageID   *uuid.UUID  `json:"backup_storage_id"`
+	BackupFolder      string      `json:"backup_folder"`
+	BackupStop        bool        `json:"backup_stop"`
+	BackupKeep        int32       `json:"backup_keep"`
 }
 
 type DockerTemplate struct {
@@ -512,6 +614,26 @@ type DockerTemplate struct {
 	UpdatedByName string    `json:"updated_by_name"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type DockerVolumeBackup struct {
+	ID            uuid.UUID  `json:"id"`
+	ServerID      uuid.UUID  `json:"server_id"`
+	Volume        string     `json:"volume"`
+	StorageID     *uuid.UUID `json:"storage_id"`
+	StorageName   string     `json:"storage_name"`
+	Path          string     `json:"path"`
+	Size          int64      `json:"size"`
+	Sha256        string     `json:"sha256"`
+	State         string     `json:"state"`
+	Error         string     `json:"error"`
+	Note          string     `json:"note"`
+	Stopped       int32      `json:"stopped"`
+	ScheduleID    *uuid.UUID `json:"schedule_id"`
+	JobID         *uuid.UUID `json:"job_id"`
+	CreatedByName string     `json:"created_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
 }
 
 type FirewallChange struct {

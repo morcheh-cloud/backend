@@ -27,12 +27,13 @@ type AllowEntry struct {
 const addressRefusedType = "urn:morcheh:address-not-allowed"
 
 // Operations that answer from any address: the health check, monitors' push
-// URLs (called by machines, not people) and the sign-in page's state, which is
+// URLs and git webhooks (called by machines, not people) and the sign-in page's state, which is
 // how the panel learns it's been refused.
 var allowlistExempt = map[string]bool{
 	"get-health":          true,
 	"push-heartbeat":      true,
 	"push-heartbeat-post": true,
+	"docker-git-webhook":  true,
 	"get-auth-state":      true,
 }
 

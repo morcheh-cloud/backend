@@ -2,7 +2,7 @@
 #   ant / colony  — in the docker group (Morche talks to the socket directly)
 #   ops / colony  — not in the group, passwordless sudo (the dial-stdio path)
 FROM docker:29-dind
-RUN apk add --no-cache openssh-server sudo bash \
+RUN apk add --no-cache openssh-server openssh-sftp-server sudo bash \
  && addgroup -S docker 2>/dev/null; \
     adduser -D -s /bin/bash ant && echo 'ant:colony' | chpasswd && addgroup ant docker \
  && adduser -D -s /bin/bash ops && echo 'ops:colony' | chpasswd \

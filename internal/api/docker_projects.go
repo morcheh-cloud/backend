@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 
 	"github.com/morcheh/backend/internal/auth"
+	"github.com/morcheh/backend/internal/database/sqlc"
 	"github.com/morcheh/backend/internal/docker"
 	"github.com/morcheh/backend/internal/jobs"
 	"github.com/morcheh/backend/internal/sshpool"
@@ -39,6 +41,8 @@ type DockerProject struct {
 	Images     []string    `json:"images"`
 	Containers []DockerRef `json:"containers"`
 	Created    *time.Time  `json:"created,omitempty" doc:"When its oldest container was made"`
+	Title      string      `json:"title" doc:"A display name set in Morche; empty = use the name"`
+	Note       string      `json:"note" doc:"A description set in Morche"`
 }
 
 type DockerProjectDetails struct {
@@ -55,6 +59,7 @@ type DockerProjectFilesBody struct {
 	Compose  string `json:"compose" minLength:"1" maxLength:"500000"`
 	Env      string `json:"env,omitempty" maxLength:"200000"`
 	Revision string `json:"revision,omitempty" doc:"From the details; empty = overwrite"`
+	Note     string `json:"note,omitempty" maxLength:"300" doc:"What changed, kept with this version in the history"`
 }
 
 type DockerProjectCreateBody struct {
@@ -152,7 +157,7 @@ func (h *serverHandler) dockerProjects(ctx context.Context, id string) ([]Docker
 	if err != nil {
 		return nil, "", err
 	}
-	set, err := h.dockerSettings(ctx, s.WorkspaceID)
+	set, err := h.serverDockerSettings(ctx, s)
 	if err != nil {
 		return nil, "", err
 	}
@@ -244,8 +249,19 @@ done`
 		return nil
 	})
 
+	metas := map[string]sqlc.DockerProjectMetum{}
+	if sid, err := uuid.Parse(id); err == nil {
+		if rows, err := h.q.DockerProjectMetas(ctx, sid); err == nil {
+			for _, m := range rows {
+				metas[m.Project] = m
+			}
+		}
+	}
 	out := make([]DockerProject, 0, len(byName))
 	for _, p := range byName {
+		if m, ok := metas[p.Name]; ok {
+			p.Title, p.Note = m.Title, m.Note
+		}
 		p.Managed = p.Dir != "" && path.Dir(path.Clean(p.Dir)) == root
 		p.State = projectState(p.Running, p.Total)
 		sort.Strings(p.Services)
@@ -425,16 +441,11 @@ func registerDockerProjects(api huma.API, h *serverHandler) {
 		if b.Revision != "" && b.Revision != cur.Revision {
 			return nil, huma.Error409Conflict("Someone changed these files since you opened them")
 		}
-		b64c := base64.StdEncoding.EncodeToString([]byte(b.Compose))
-		b64e := base64.StdEncoding.EncodeToString([]byte(b.Env))
-		script := writeFilesScript(p.Name, p.Dir, p.Files[0], p.Files, b.Compose, b.Env, b64c, b64e)
-		err = h.withShell(ctx, in.ID, func(_ *sshpool.Conn, sh *rootShell) error {
-			_, err := sh.hiding(false, b64c, b64e).run(ctx, script)
-			return err
-		})
-		if err != nil {
-			return nil, shellFailure(err, "body.compose")
+		h.keepFoundVersion(ctx, in.ID, cur)
+		if err := h.writeProjectFiles(ctx, in.ID, p, b.Compose, b.Env); err != nil {
+			return nil, err
 		}
+		h.recordProjectVersion(ctx, in.ID, p.Name, b.Compose, b.Env, b.Env != "", "save", strings.TrimSpace(b.Note))
 		d, err := h.readProjectFiles(ctx, in.ID, p)
 		if err != nil {
 			return nil, err
@@ -492,6 +503,7 @@ func registerDockerProjects(api huma.API, h *serverHandler) {
 			}
 			return nil, shellFailure(err, "body.compose")
 		}
+		h.recordProjectVersion(ctx, in.ID, b.Name, b.Compose, b.Env, b.Env != "", "create", "")
 		p := DockerProject{
 			Name: b.Name, Dir: dir, Files: []string{file}, Managed: true, State: "not-deployed",
 			Services: []string{}, Images: []string{}, Containers: []DockerRef{},
@@ -536,11 +548,17 @@ func registerDockerProjects(api huma.API, h *serverHandler) {
 		return h.submitCompose(ctx, in.ID, p, root, in.Action)
 	})
 	h.jobs.Handle(dockerComposeKind, h.runDockerCompose)
+	registerDockerProjectCheck(api, h)
 }
 
 var composeVerbs = map[string]string{
 	"up": "Deploy", "down": "Take down", "start": "Start", "stop": "Stop", "restart": "Restart",
 	"pull": "Pull images of", "redeploy": "Redeploy", "destroy": "Destroy",
+}
+
+var composePhases = map[string]string{
+	"up": "Deploying", "redeploy": "Redeploying", "down": "Taking down", "destroy": "Destroying",
+	"start": "Starting", "stop": "Stopping", "restart": "Restarting",
 }
 
 func (h *serverHandler) submitCompose(ctx context.Context, id string, p DockerProject, root, action string) (*JobOutput, error) {
@@ -591,18 +609,69 @@ func (h *serverHandler) pullWithAuth(ctx context.Context, t *jobs.Task, serverID
 			return err
 		}
 	}
+	// Bytes of the images pulled so far; Done grows across images so the
+	// job's rate stays right. Current = "image · 12 MB of 40 MB".
+	var pulled int64
 	for i, image := range images {
 		if missingOnly && (have[image] || have[image+":latest"] || have["docker.io/library/"+image]) {
+			t.Logf("Using %s (already on the server)", image)
 			continue
 		}
-		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Current, pr.Items, pr.ItemsTotal = "Pulling images", image, i, len(images) })
+		t.Update(func(pr *jobs.Progress) {
+			pr.Phase, pr.Current, pr.Items, pr.ItemsTotal = "Pulling images", image, i, len(images)
+		})
 		t.Logf("Pulling %s", image)
 		auth := h.serverRegistryAuth(ctx, serverID, image)
+		layers := map[string]*[2]int64{} // id → done, total
+		var last time.Time
+		size := func() (done, total int64) {
+			for _, l := range layers {
+				done += l[0]
+				total += l[1]
+			}
+			return done, total
+		}
 		err := h.dockerDo(ctx, serverID, "docker pull "+image, func(e *dockerEngine) error {
-			return e.client.Pull(ctx, image, "", auth, func(docker.PullEvent) {})
+			return e.client.Pull(ctx, image, "", auth, func(ev docker.PullEvent) {
+				if ev.ID == "" {
+					return
+				}
+				l := layers[ev.ID]
+				if l == nil {
+					l = &[2]int64{}
+					layers[ev.ID] = l
+				}
+				switch ev.Status {
+				case "Downloading":
+					l[0], l[1] = ev.Progress.Current, ev.Progress.Total
+				case "Download complete", "Pull complete", "Already exists":
+					l[0] = l[1]
+				default:
+					return
+				}
+				if time.Since(last) < 300*time.Millisecond {
+					return
+				}
+				last = time.Now()
+				done, total := size()
+				t.Update(func(pr *jobs.Progress) {
+					pr.Done = pulled + done
+					if total > 0 {
+						pr.Current = image + " · " + humanBytes(done) + " of " + humanBytes(total)
+					}
+				})
+			})
 		})
 		if err != nil {
 			return fmt.Errorf("pulling %s: %s", image, dockerProblemText(err))
+		}
+		done, _ := size()
+		pulled += done
+		t.Update(func(pr *jobs.Progress) { pr.Done, pr.Items = pulled, i+1 })
+		if done > 0 {
+			t.Logf("Pulled %s (%s)", image, humanBytes(done))
+		} else {
+			t.Logf("Pulled %s", image)
 		}
 	}
 	return nil
@@ -655,13 +724,31 @@ func (h *serverHandler) composeRun(ctx context.Context, t *jobs.Task, sh *rootSh
 	return nil
 }
 
+// composeUpArgs is `compose up` as the server's workspace wants it: with
+// --remove-orphans unless its settings turned that off.
+func (h *serverHandler) composeUpArgs(ctx context.Context, serverID string) string {
+	if srv, err := h.get(ctx, serverID); err == nil {
+		if set, err := h.serverDockerSettings(ctx, srv); err == nil && !set.RemoveOrphans {
+			return "up -d"
+		}
+	}
+	return "up -d --remove-orphans"
+}
+
 func (h *serverHandler) runDockerCompose(ctx context.Context, t *jobs.Task) (any, error) {
 	var p dockerComposeParams
 	if err := t.Decode(&p); err != nil {
 		return nil, err
 	}
+	// The project page shows the containers as they come; don't let it
+	// answer from a measurement taken before this job changed them.
+	defer forgetProjectStats(p.ServerID)
+	// "==> " lines mark the steps, so the project page can tell how far a
+	// deploy got (the progress is cleared when a job ends).
 	var images []string
 	if (p.Action == "pull" || p.Action == "redeploy" || p.Action == "up") && len(p.Files) > 0 {
+		t.Logf("==> Reading the compose file")
+		t.Update(func(pr *jobs.Progress) { pr.Phase = "Reading the compose file" })
 		err := h.withShell(ctx, p.ServerID, func(_ *sshpool.Conn, sh *rootShell) error {
 			var err error
 			images, err = composeImages(ctx, sh, p)
@@ -670,17 +757,23 @@ func (h *serverHandler) runDockerCompose(ctx context.Context, t *jobs.Task) (any
 		if err != nil {
 			return nil, jobError(shellFailure(err, ""))
 		}
+		t.Logf("==> Pulling images")
 		if err := h.pullWithAuth(ctx, t, p.ServerID, images, p.Action == "up"); err != nil {
 			return nil, jobError(err)
 		}
 	}
+	up := h.composeUpArgs(ctx, p.ServerID)
 	steps := map[string]string{
-		"up": "up -d --remove-orphans", "redeploy": "up -d --remove-orphans",
+		"up": up, "redeploy": up,
 		"down": "down --remove-orphans", "destroy": "down --volumes --remove-orphans",
 		"start": "start", "stop": "stop", "restart": "restart",
 	}
 	if args, ok := steps[p.Action]; ok {
-		t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Current = composeVerbs[p.Action]+"ing", p.Project })
+		t.Update(func(pr *jobs.Progress) {
+			pr.Phase, pr.Current = composePhases[p.Action], p.Project
+			pr.Done, pr.Items, pr.ItemsTotal = 0, 0, 0
+		})
+		t.Logf("==> docker compose %s", args)
 		err := h.withShell(ctx, p.ServerID, func(_ *sshpool.Conn, sh *rootShell) error {
 			return h.composeRun(ctx, t, sh, p, args)
 		})
@@ -701,6 +794,7 @@ func (h *serverHandler) runDockerCompose(ctx context.Context, t *jobs.Task) (any
 		removed = true
 		t.Logf("Removed %s", p.Dir)
 	}
+	t.Logf("==> Done")
 	t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Items, pr.ItemsTotal = "Done", len(images), len(images) })
 	return map[string]any{"project": p.Project, "action": p.Action, "images": images, "folder_removed": removed}, nil
 }

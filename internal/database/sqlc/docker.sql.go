@@ -12,6 +12,83 @@ import (
 	"github.com/google/uuid"
 )
 
+const addDockerProjectStat = `-- name: AddDockerProjectStat :exec
+INSERT INTO docker_project_stats (server_id, project, at, cpu, cpu_max, memory, memory_max, net_rx, net_tx, running, total, unhealthy)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT DO NOTHING
+`
+
+type AddDockerProjectStatParams struct {
+	ServerID  uuid.UUID `json:"server_id"`
+	Project   string    `json:"project"`
+	At        time.Time `json:"at"`
+	Cpu       float64   `json:"cpu"`
+	CpuMax    float64   `json:"cpu_max"`
+	Memory    int64     `json:"memory"`
+	MemoryMax int64     `json:"memory_max"`
+	NetRx     float64   `json:"net_rx"`
+	NetTx     float64   `json:"net_tx"`
+	Running   int32     `json:"running"`
+	Total     int32     `json:"total"`
+	Unhealthy int32     `json:"unhealthy"`
+}
+
+func (q *Queries) AddDockerProjectStat(ctx context.Context, arg AddDockerProjectStatParams) error {
+	_, err := q.db.Exec(ctx, addDockerProjectStat,
+		arg.ServerID,
+		arg.Project,
+		arg.At,
+		arg.Cpu,
+		arg.CpuMax,
+		arg.Memory,
+		arg.MemoryMax,
+		arg.NetRx,
+		arg.NetTx,
+		arg.Running,
+		arg.Total,
+		arg.Unhealthy,
+	)
+	return err
+}
+
+const createDockerProjectVersion = `-- name: CreateDockerProjectVersion :one
+INSERT INTO docker_project_versions (server_id, project, revision, compose, env_enc, reason, note, created_by_name)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, created_at
+`
+
+type CreateDockerProjectVersionParams struct {
+	ServerID      uuid.UUID `json:"server_id"`
+	Project       string    `json:"project"`
+	Revision      string    `json:"revision"`
+	Compose       string    `json:"compose"`
+	EnvEnc        []byte    `json:"env_enc"`
+	Reason        string    `json:"reason"`
+	Note          string    `json:"note"`
+	CreatedByName string    `json:"created_by_name"`
+}
+
+type CreateDockerProjectVersionRow struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (q *Queries) CreateDockerProjectVersion(ctx context.Context, arg CreateDockerProjectVersionParams) (CreateDockerProjectVersionRow, error) {
+	row := q.db.QueryRow(ctx, createDockerProjectVersion,
+		arg.ServerID,
+		arg.Project,
+		arg.Revision,
+		arg.Compose,
+		arg.EnvEnc,
+		arg.Reason,
+		arg.Note,
+		arg.CreatedByName,
+	)
+	var i CreateDockerProjectVersionRow
+	err := row.Scan(&i.ID, &i.CreatedAt)
+	return i, err
+}
+
 const createDockerRegistry = `-- name: CreateDockerRegistry :one
 INSERT INTO docker_registries (workspace_id, name, address, username, password_enc)
 VALUES ($1, $2, $3, $4, $5)
@@ -91,6 +168,74 @@ func (q *Queries) CreateDockerTemplate(ctx context.Context, arg CreateDockerTemp
 	return i, err
 }
 
+const createDockerVolumeBackup = `-- name: CreateDockerVolumeBackup :one
+INSERT INTO docker_volume_backups (server_id, volume, storage_id, storage_name, path, schedule_id, job_id, created_by_name)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, server_id, volume, storage_id, storage_name, path, size, sha256, state, error, note, stopped, schedule_id, job_id, created_by_name, created_at, finished_at
+`
+
+type CreateDockerVolumeBackupParams struct {
+	ServerID      uuid.UUID  `json:"server_id"`
+	Volume        string     `json:"volume"`
+	StorageID     *uuid.UUID `json:"storage_id"`
+	StorageName   string     `json:"storage_name"`
+	Path          string     `json:"path"`
+	ScheduleID    *uuid.UUID `json:"schedule_id"`
+	JobID         *uuid.UUID `json:"job_id"`
+	CreatedByName string     `json:"created_by_name"`
+}
+
+func (q *Queries) CreateDockerVolumeBackup(ctx context.Context, arg CreateDockerVolumeBackupParams) (DockerVolumeBackup, error) {
+	row := q.db.QueryRow(ctx, createDockerVolumeBackup,
+		arg.ServerID,
+		arg.Volume,
+		arg.StorageID,
+		arg.StorageName,
+		arg.Path,
+		arg.ScheduleID,
+		arg.JobID,
+		arg.CreatedByName,
+	)
+	var i DockerVolumeBackup
+	err := row.Scan(
+		&i.ID,
+		&i.ServerID,
+		&i.Volume,
+		&i.StorageID,
+		&i.StorageName,
+		&i.Path,
+		&i.Size,
+		&i.Sha256,
+		&i.State,
+		&i.Error,
+		&i.Note,
+		&i.Stopped,
+		&i.ScheduleID,
+		&i.JobID,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
+const deleteDockerGitSource = `-- name: DeleteDockerGitSource :execrows
+DELETE FROM docker_git_sources WHERE server_id = $1 AND project = $2
+`
+
+type DeleteDockerGitSourceParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Project  string    `json:"project"`
+}
+
+func (q *Queries) DeleteDockerGitSource(ctx context.Context, arg DeleteDockerGitSourceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDockerGitSource, arg.ServerID, arg.Project)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteDockerImageScan = `-- name: DeleteDockerImageScan :exec
 DELETE FROM docker_image_scans WHERE server_id = $1 AND image_id = $2
 `
@@ -137,6 +282,15 @@ func (q *Queries) DeleteDockerRegistry(ctx context.Context, arg DeleteDockerRegi
 	return result.RowsAffected(), nil
 }
 
+const deleteDockerServerSettings = `-- name: DeleteDockerServerSettings :exec
+DELETE FROM docker_server_settings WHERE server_id = $1
+`
+
+func (q *Queries) DeleteDockerServerSettings(ctx context.Context, serverID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteDockerServerSettings, serverID)
+	return err
+}
+
 const deleteDockerTemplate = `-- name: DeleteDockerTemplate :execrows
 DELETE FROM docker_templates WHERE id = $1 AND workspace_id = $2
 `
@@ -152,6 +306,478 @@ func (q *Queries) DeleteDockerTemplate(ctx context.Context, arg DeleteDockerTemp
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteDockerVolumeBackup = `-- name: DeleteDockerVolumeBackup :exec
+DELETE FROM docker_volume_backups WHERE id = $1
+`
+
+func (q *Queries) DeleteDockerVolumeBackup(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteDockerVolumeBackup, id)
+	return err
+}
+
+const dockerAutoPruneServers = `-- name: DockerAutoPruneServers :many
+SELECT s.id
+FROM servers s
+LEFT JOIN docker_settings ds ON ds.workspace_id = s.workspace_id
+LEFT JOIN docker_server_settings o ON o.server_id = s.id
+LEFT JOIN docker_auto_prunes p ON p.server_id = s.id
+WHERE s.status = 'online'
+  AND COALESCE((o.overrides->>'prune_auto')::boolean, ds.prune_auto, false)
+  AND (EXISTS (SELECT 1 FROM docker_image_updates u WHERE u.server_id = s.id)
+    OR EXISTS (SELECT 1 FROM docker_project_stats st WHERE st.server_id = s.id AND st.at > now() - interval '7 days'))
+  AND (p.ran_at IS NULL OR p.ran_at < now() - make_interval(hours => COALESCE((o.overrides->>'prune_hours')::int, ds.prune_hours, 168)))
+LIMIT 20
+`
+
+// Online servers known to run Docker whose automatic clean-up (their own
+// setting, else their workspace's) is due.
+func (q *Queries) DockerAutoPruneServers(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, dockerAutoPruneServers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dockerGitChecked = `-- name: DockerGitChecked :exec
+UPDATE docker_git_sources SET last_checked_at = now(), last_error = $3
+WHERE server_id = $1 AND project = $2
+`
+
+type DockerGitCheckedParams struct {
+	ServerID  uuid.UUID `json:"server_id"`
+	Project   string    `json:"project"`
+	LastError string    `json:"last_error"`
+}
+
+func (q *Queries) DockerGitChecked(ctx context.Context, arg DockerGitCheckedParams) error {
+	_, err := q.db.Exec(ctx, dockerGitChecked, arg.ServerID, arg.Project, arg.LastError)
+	return err
+}
+
+const dockerGitDeployed = `-- name: DockerGitDeployed :exec
+UPDATE docker_git_sources SET last_commit = $3, last_message = $4, last_author = $5,
+    last_deployed_at = now(), last_checked_at = now(), last_error = ''
+WHERE server_id = $1 AND project = $2
+`
+
+type DockerGitDeployedParams struct {
+	ServerID    uuid.UUID `json:"server_id"`
+	Project     string    `json:"project"`
+	LastCommit  string    `json:"last_commit"`
+	LastMessage string    `json:"last_message"`
+	LastAuthor  string    `json:"last_author"`
+}
+
+func (q *Queries) DockerGitDeployed(ctx context.Context, arg DockerGitDeployedParams) error {
+	_, err := q.db.Exec(ctx, dockerGitDeployed,
+		arg.ServerID,
+		arg.Project,
+		arg.LastCommit,
+		arg.LastMessage,
+		arg.LastAuthor,
+	)
+	return err
+}
+
+const dockerProjectMetas = `-- name: DockerProjectMetas :many
+SELECT server_id, project, title, note, updated_by_name, updated_at FROM docker_project_meta WHERE server_id = $1
+`
+
+func (q *Queries) DockerProjectMetas(ctx context.Context, serverID uuid.UUID) ([]DockerProjectMetum, error) {
+	rows, err := q.db.Query(ctx, dockerProjectMetas, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerProjectMetum{}
+	for rows.Next() {
+		var i DockerProjectMetum
+		if err := rows.Scan(
+			&i.ServerID,
+			&i.Project,
+			&i.Title,
+			&i.Note,
+			&i.UpdatedByName,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dockerProjectStatsHistory = `-- name: DockerProjectStatsHistory :many
+SELECT date_bin(make_interval(secs => $1::int), at, '2000-01-01T00:00:00Z'::timestamptz)::timestamptz AS bucket,
+    avg(cpu)::float8 AS cpu, max(cpu_max)::float8 AS cpu_max,
+    avg(memory)::float8 AS memory, max(memory_max)::bigint AS memory_max,
+    avg(net_rx)::float8 AS net_rx, avg(net_tx)::float8 AS net_tx,
+    min(running)::int AS running, max(total)::int AS total, max(unhealthy)::int AS unhealthy
+FROM docker_project_stats
+WHERE server_id = $2 AND project = $3 AND at >= $4::timestamptz
+GROUP BY 1 ORDER BY 1
+`
+
+type DockerProjectStatsHistoryParams struct {
+	StepSeconds int32     `json:"step_seconds"`
+	ServerID    uuid.UUID `json:"server_id"`
+	Project     string    `json:"project"`
+	Since       time.Time `json:"since"`
+}
+
+type DockerProjectStatsHistoryRow struct {
+	Bucket    time.Time `json:"bucket"`
+	Cpu       float64   `json:"cpu"`
+	CpuMax    float64   `json:"cpu_max"`
+	Memory    float64   `json:"memory"`
+	MemoryMax int64     `json:"memory_max"`
+	NetRx     float64   `json:"net_rx"`
+	NetTx     float64   `json:"net_tx"`
+	Running   int32     `json:"running"`
+	Total     int32     `json:"total"`
+	Unhealthy int32     `json:"unhealthy"`
+}
+
+func (q *Queries) DockerProjectStatsHistory(ctx context.Context, arg DockerProjectStatsHistoryParams) ([]DockerProjectStatsHistoryRow, error) {
+	rows, err := q.db.Query(ctx, dockerProjectStatsHistory,
+		arg.StepSeconds,
+		arg.ServerID,
+		arg.Project,
+		arg.Since,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerProjectStatsHistoryRow{}
+	for rows.Next() {
+		var i DockerProjectStatsHistoryRow
+		if err := rows.Scan(
+			&i.Bucket,
+			&i.Cpu,
+			&i.CpuMax,
+			&i.Memory,
+			&i.MemoryMax,
+			&i.NetRx,
+			&i.NetTx,
+			&i.Running,
+			&i.Total,
+			&i.Unhealthy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dockerServerStatsHistory = `-- name: DockerServerStatsHistory :many
+WITH t AS (
+    SELECT at, sum(cpu) AS cpu, sum(cpu_max) AS cpu_max, sum(memory) AS memory,
+        sum(net_rx) AS net_rx, sum(net_tx) AS net_tx, sum(running) AS running, sum(total) AS total
+    FROM docker_project_stats
+    WHERE server_id = $2 AND at >= $3::timestamptz
+    GROUP BY at
+)
+SELECT date_bin(make_interval(secs => $1::int), at, '2000-01-01T00:00:00Z'::timestamptz)::timestamptz AS bucket,
+    avg(cpu)::float8 AS cpu, max(cpu_max)::float8 AS cpu_max,
+    avg(memory)::float8 AS memory, max(memory)::bigint AS memory_max,
+    avg(net_rx)::float8 AS net_rx, avg(net_tx)::float8 AS net_tx,
+    min(running)::int AS running, max(total)::int AS total
+FROM t
+GROUP BY 1 ORDER BY 1
+`
+
+type DockerServerStatsHistoryParams struct {
+	StepSeconds int32     `json:"step_seconds"`
+	ServerID    uuid.UUID `json:"server_id"`
+	Since       time.Time `json:"since"`
+}
+
+type DockerServerStatsHistoryRow struct {
+	Bucket    time.Time `json:"bucket"`
+	Cpu       float64   `json:"cpu"`
+	CpuMax    float64   `json:"cpu_max"`
+	Memory    float64   `json:"memory"`
+	MemoryMax int64     `json:"memory_max"`
+	NetRx     float64   `json:"net_rx"`
+	NetTx     float64   `json:"net_tx"`
+	Running   int32     `json:"running"`
+	Total     int32     `json:"total"`
+}
+
+// Every compose project of a server added up per recorded point, then
+// averaged per bucket.
+func (q *Queries) DockerServerStatsHistory(ctx context.Context, arg DockerServerStatsHistoryParams) ([]DockerServerStatsHistoryRow, error) {
+	rows, err := q.db.Query(ctx, dockerServerStatsHistory, arg.StepSeconds, arg.ServerID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerServerStatsHistoryRow{}
+	for rows.Next() {
+		var i DockerServerStatsHistoryRow
+		if err := rows.Scan(
+			&i.Bucket,
+			&i.Cpu,
+			&i.CpuMax,
+			&i.Memory,
+			&i.MemoryMax,
+			&i.NetRx,
+			&i.NetTx,
+			&i.Running,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dockerStatsServers = `-- name: DockerStatsServers :many
+SELECT s.id, COALESCE((o.overrides->>'stats_days')::int, ds.stats_days, 30)::int AS stats_days
+FROM servers s
+LEFT JOIN docker_settings ds ON ds.workspace_id = s.workspace_id
+LEFT JOIN docker_server_settings o ON o.server_id = s.id
+WHERE s.status = 'online' AND COALESCE((o.overrides->>'stats_days')::int, ds.stats_days, 30) > 0
+  AND (s.id = ANY($1::uuid[])
+    OR EXISTS (SELECT 1 FROM docker_project_stats p WHERE p.server_id = s.id AND p.at > now() - interval '7 days')
+    OR EXISTS (SELECT 1 FROM docker_image_updates u WHERE u.server_id = s.id))
+LIMIT 200
+`
+
+type DockerStatsServersRow struct {
+	ID        uuid.UUID `json:"id"`
+	StatsDays int32     `json:"stats_days"`
+}
+
+// Servers whose projects are recorded: the ones measured lately (@ids),
+// those with points from the last week and those known to run Docker (their
+// images are checked for updates), in workspaces that keep history.
+func (q *Queries) DockerStatsServers(ctx context.Context, ids []uuid.UUID) ([]DockerStatsServersRow, error) {
+	rows, err := q.db.Query(ctx, dockerStatsServers, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerStatsServersRow{}
+	for rows.Next() {
+		var i DockerStatsServersRow
+		if err := rows.Scan(&i.ID, &i.StatsDays); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dueDockerGitSources = `-- name: DueDockerGitSources :many
+SELECT server_id, project, dir, repo_url, branch, compose_path, username, token_enc, auto_deploy, poll_minutes, webhook_enc, webhook_hash, last_commit, last_message, last_author, last_deployed_at, last_checked_at, last_error, created_by, created_by_name, created_at, updated_at FROM docker_git_sources
+WHERE auto_deploy AND poll_minutes > 0
+  AND (last_checked_at IS NULL OR last_checked_at < now() - make_interval(mins => poll_minutes))
+ORDER BY last_checked_at NULLS FIRST
+LIMIT 50
+`
+
+func (q *Queries) DueDockerGitSources(ctx context.Context) ([]DockerGitSource, error) {
+	rows, err := q.db.Query(ctx, dueDockerGitSources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerGitSource{}
+	for rows.Next() {
+		var i DockerGitSource
+		if err := rows.Scan(
+			&i.ServerID,
+			&i.Project,
+			&i.Dir,
+			&i.RepoUrl,
+			&i.Branch,
+			&i.ComposePath,
+			&i.Username,
+			&i.TokenEnc,
+			&i.AutoDeploy,
+			&i.PollMinutes,
+			&i.WebhookEnc,
+			&i.WebhookHash,
+			&i.LastCommit,
+			&i.LastMessage,
+			&i.LastAuthor,
+			&i.LastDeployedAt,
+			&i.LastCheckedAt,
+			&i.LastError,
+			&i.CreatedBy,
+			&i.CreatedByName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const failStaleDockerVolumeBackups = `-- name: FailStaleDockerVolumeBackups :exec
+UPDATE docker_volume_backups
+SET state = 'failed', error = 'Morche stopped before it finished.', finished_at = now()
+WHERE state = 'running'
+`
+
+// Copies cut off by a restart of Morche.
+func (q *Queries) FailStaleDockerVolumeBackups(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, failStaleDockerVolumeBackups)
+	return err
+}
+
+const finishDockerVolumeBackup = `-- name: FinishDockerVolumeBackup :exec
+UPDATE docker_volume_backups
+SET state = $1, size = $2, sha256 = $3, error = $4, note = $5, stopped = $6, finished_at = now()
+WHERE id = $7
+`
+
+type FinishDockerVolumeBackupParams struct {
+	State   string    `json:"state"`
+	Size    int64     `json:"size"`
+	Sha256  string    `json:"sha256"`
+	Error   string    `json:"error"`
+	Note    string    `json:"note"`
+	Stopped int32     `json:"stopped"`
+	ID      uuid.UUID `json:"id"`
+}
+
+func (q *Queries) FinishDockerVolumeBackup(ctx context.Context, arg FinishDockerVolumeBackupParams) error {
+	_, err := q.db.Exec(ctx, finishDockerVolumeBackup,
+		arg.State,
+		arg.Size,
+		arg.Sha256,
+		arg.Error,
+		arg.Note,
+		arg.Stopped,
+		arg.ID,
+	)
+	return err
+}
+
+const firstDockerProjectStat = `-- name: FirstDockerProjectStat :one
+SELECT min(at)::timestamptz FROM docker_project_stats WHERE server_id = $1 AND project = $2
+`
+
+type FirstDockerProjectStatParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Project  string    `json:"project"`
+}
+
+func (q *Queries) FirstDockerProjectStat(ctx context.Context, arg FirstDockerProjectStatParams) (time.Time, error) {
+	row := q.db.QueryRow(ctx, firstDockerProjectStat, arg.ServerID, arg.Project)
+	var column_1 time.Time
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const getDockerGitSource = `-- name: GetDockerGitSource :one
+SELECT server_id, project, dir, repo_url, branch, compose_path, username, token_enc, auto_deploy, poll_minutes, webhook_enc, webhook_hash, last_commit, last_message, last_author, last_deployed_at, last_checked_at, last_error, created_by, created_by_name, created_at, updated_at FROM docker_git_sources WHERE server_id = $1 AND project = $2
+`
+
+type GetDockerGitSourceParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Project  string    `json:"project"`
+}
+
+func (q *Queries) GetDockerGitSource(ctx context.Context, arg GetDockerGitSourceParams) (DockerGitSource, error) {
+	row := q.db.QueryRow(ctx, getDockerGitSource, arg.ServerID, arg.Project)
+	var i DockerGitSource
+	err := row.Scan(
+		&i.ServerID,
+		&i.Project,
+		&i.Dir,
+		&i.RepoUrl,
+		&i.Branch,
+		&i.ComposePath,
+		&i.Username,
+		&i.TokenEnc,
+		&i.AutoDeploy,
+		&i.PollMinutes,
+		&i.WebhookEnc,
+		&i.WebhookHash,
+		&i.LastCommit,
+		&i.LastMessage,
+		&i.LastAuthor,
+		&i.LastDeployedAt,
+		&i.LastCheckedAt,
+		&i.LastError,
+		&i.CreatedBy,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getDockerGitSourceByHook = `-- name: GetDockerGitSourceByHook :one
+SELECT server_id, project, dir, repo_url, branch, compose_path, username, token_enc, auto_deploy, poll_minutes, webhook_enc, webhook_hash, last_commit, last_message, last_author, last_deployed_at, last_checked_at, last_error, created_by, created_by_name, created_at, updated_at FROM docker_git_sources WHERE webhook_hash = $1
+`
+
+func (q *Queries) GetDockerGitSourceByHook(ctx context.Context, webhookHash string) (DockerGitSource, error) {
+	row := q.db.QueryRow(ctx, getDockerGitSourceByHook, webhookHash)
+	var i DockerGitSource
+	err := row.Scan(
+		&i.ServerID,
+		&i.Project,
+		&i.Dir,
+		&i.RepoUrl,
+		&i.Branch,
+		&i.ComposePath,
+		&i.Username,
+		&i.TokenEnc,
+		&i.AutoDeploy,
+		&i.PollMinutes,
+		&i.WebhookEnc,
+		&i.WebhookHash,
+		&i.LastCommit,
+		&i.LastMessage,
+		&i.LastAuthor,
+		&i.LastDeployedAt,
+		&i.LastCheckedAt,
+		&i.LastError,
+		&i.CreatedBy,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getDockerImageScan = `-- name: GetDockerImageScan :one
@@ -184,6 +810,34 @@ func (q *Queries) GetDockerImageScan(ctx context.Context, arg GetDockerImageScan
 	return i, err
 }
 
+const getDockerProjectVersion = `-- name: GetDockerProjectVersion :one
+SELECT id, server_id, project, revision, compose, env_enc, reason, note, created_by_name, created_at FROM docker_project_versions WHERE id = $1 AND server_id = $2 AND project = $3
+`
+
+type GetDockerProjectVersionParams struct {
+	ID       uuid.UUID `json:"id"`
+	ServerID uuid.UUID `json:"server_id"`
+	Project  string    `json:"project"`
+}
+
+func (q *Queries) GetDockerProjectVersion(ctx context.Context, arg GetDockerProjectVersionParams) (DockerProjectVersion, error) {
+	row := q.db.QueryRow(ctx, getDockerProjectVersion, arg.ID, arg.ServerID, arg.Project)
+	var i DockerProjectVersion
+	err := row.Scan(
+		&i.ID,
+		&i.ServerID,
+		&i.Project,
+		&i.Revision,
+		&i.Compose,
+		&i.EnvEnc,
+		&i.Reason,
+		&i.Note,
+		&i.CreatedByName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getDockerRegistry = `-- name: GetDockerRegistry :one
 SELECT id, workspace_id, name, address, username, password_enc, created_at, updated_at FROM docker_registries WHERE id = $1 AND workspace_id = $2
 `
@@ -209,8 +863,19 @@ func (q *Queries) GetDockerRegistry(ctx context.Context, arg GetDockerRegistryPa
 	return i, err
 }
 
+const getDockerServerSettings = `-- name: GetDockerServerSettings :one
+SELECT server_id, overrides, updated_at FROM docker_server_settings WHERE server_id = $1
+`
+
+func (q *Queries) GetDockerServerSettings(ctx context.Context, serverID uuid.UUID) (DockerServerSetting, error) {
+	row := q.db.QueryRow(ctx, getDockerServerSettings, serverID)
+	var i DockerServerSetting
+	err := row.Scan(&i.ServerID, &i.Overrides, &i.UpdatedAt)
+	return i, err
+}
+
 const getDockerSettings = `-- name: GetDockerSettings :one
-SELECT workspace_id, projects_dir, update_check, scanner_image, events_hours, updated_at FROM docker_settings WHERE workspace_id = $1
+SELECT workspace_id, projects_dir, update_check, scanner_image, events_hours, updated_at, stats_days, update_check_hours, scan_ignore_unfixed, remove_orphans, versions_keep, default_restart, default_memory_mb, default_cpus, default_log_max_mb, default_log_files, prune_auto, prune_hours, prune_images, prune_containers, prune_networks, prune_build_cache, prune_older_hours, notify_updates, notify_vulns, notify_channels, backup_storage_id, backup_folder, backup_stop, backup_keep FROM docker_settings WHERE workspace_id = $1
 `
 
 func (q *Queries) GetDockerSettings(ctx context.Context, workspaceID uuid.UUID) (DockerSetting, error) {
@@ -223,6 +888,30 @@ func (q *Queries) GetDockerSettings(ctx context.Context, workspaceID uuid.UUID) 
 		&i.ScannerImage,
 		&i.EventsHours,
 		&i.UpdatedAt,
+		&i.StatsDays,
+		&i.UpdateCheckHours,
+		&i.ScanIgnoreUnfixed,
+		&i.RemoveOrphans,
+		&i.VersionsKeep,
+		&i.DefaultRestart,
+		&i.DefaultMemoryMb,
+		&i.DefaultCpus,
+		&i.DefaultLogMaxMb,
+		&i.DefaultLogFiles,
+		&i.PruneAuto,
+		&i.PruneHours,
+		&i.PruneImages,
+		&i.PruneContainers,
+		&i.PruneNetworks,
+		&i.PruneBuildCache,
+		&i.PruneOlderHours,
+		&i.NotifyUpdates,
+		&i.NotifyVulns,
+		&i.NotifyChannels,
+		&i.BackupStorageID,
+		&i.BackupFolder,
+		&i.BackupStop,
+		&i.BackupKeep,
 	)
 	return i, err
 }
@@ -253,6 +942,117 @@ func (q *Queries) GetDockerTemplate(ctx context.Context, arg GetDockerTemplatePa
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getDockerVolumeBackup = `-- name: GetDockerVolumeBackup :one
+SELECT id, server_id, volume, storage_id, storage_name, path, size, sha256, state, error, note, stopped, schedule_id, job_id, created_by_name, created_at, finished_at FROM docker_volume_backups WHERE id = $1 AND server_id = $2
+`
+
+type GetDockerVolumeBackupParams struct {
+	ID       uuid.UUID `json:"id"`
+	ServerID uuid.UUID `json:"server_id"`
+}
+
+func (q *Queries) GetDockerVolumeBackup(ctx context.Context, arg GetDockerVolumeBackupParams) (DockerVolumeBackup, error) {
+	row := q.db.QueryRow(ctx, getDockerVolumeBackup, arg.ID, arg.ServerID)
+	var i DockerVolumeBackup
+	err := row.Scan(
+		&i.ID,
+		&i.ServerID,
+		&i.Volume,
+		&i.StorageID,
+		&i.StorageName,
+		&i.Path,
+		&i.Size,
+		&i.Sha256,
+		&i.State,
+		&i.Error,
+		&i.Note,
+		&i.Stopped,
+		&i.ScheduleID,
+		&i.JobID,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
+const latestDockerProjectVersion = `-- name: LatestDockerProjectVersion :one
+SELECT id, server_id, project, revision, compose, env_enc, reason, note, created_by_name, created_at FROM docker_project_versions
+WHERE server_id = $1 AND project = $2
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type LatestDockerProjectVersionParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Project  string    `json:"project"`
+}
+
+func (q *Queries) LatestDockerProjectVersion(ctx context.Context, arg LatestDockerProjectVersionParams) (DockerProjectVersion, error) {
+	row := q.db.QueryRow(ctx, latestDockerProjectVersion, arg.ServerID, arg.Project)
+	var i DockerProjectVersion
+	err := row.Scan(
+		&i.ID,
+		&i.ServerID,
+		&i.Project,
+		&i.Revision,
+		&i.Compose,
+		&i.EnvEnc,
+		&i.Reason,
+		&i.Note,
+		&i.CreatedByName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listDockerGitSources = `-- name: ListDockerGitSources :many
+SELECT server_id, project, dir, repo_url, branch, compose_path, username, token_enc, auto_deploy, poll_minutes, webhook_enc, webhook_hash, last_commit, last_message, last_author, last_deployed_at, last_checked_at, last_error, created_by, created_by_name, created_at, updated_at FROM docker_git_sources WHERE server_id = $1 ORDER BY project
+`
+
+func (q *Queries) ListDockerGitSources(ctx context.Context, serverID uuid.UUID) ([]DockerGitSource, error) {
+	rows, err := q.db.Query(ctx, listDockerGitSources, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerGitSource{}
+	for rows.Next() {
+		var i DockerGitSource
+		if err := rows.Scan(
+			&i.ServerID,
+			&i.Project,
+			&i.Dir,
+			&i.RepoUrl,
+			&i.Branch,
+			&i.ComposePath,
+			&i.Username,
+			&i.TokenEnc,
+			&i.AutoDeploy,
+			&i.PollMinutes,
+			&i.WebhookEnc,
+			&i.WebhookHash,
+			&i.LastCommit,
+			&i.LastMessage,
+			&i.LastAuthor,
+			&i.LastDeployedAt,
+			&i.LastCheckedAt,
+			&i.LastError,
+			&i.CreatedBy,
+			&i.CreatedByName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listDockerImageScans = `-- name: ListDockerImageScans :many
@@ -410,6 +1210,64 @@ func (q *Queries) ListDockerImageUpdatesFor(ctx context.Context, serverIds []uui
 	return items, nil
 }
 
+const listDockerProjectVersions = `-- name: ListDockerProjectVersions :many
+SELECT id, server_id, project, revision, reason, note, created_by_name, created_at,
+       length(compose)::int AS compose_size, (env_enc IS NOT NULL)::bool AS has_env
+FROM docker_project_versions
+WHERE server_id = $1 AND project = $2
+ORDER BY created_at DESC, id DESC
+LIMIT 200
+`
+
+type ListDockerProjectVersionsParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Project  string    `json:"project"`
+}
+
+type ListDockerProjectVersionsRow struct {
+	ID            uuid.UUID `json:"id"`
+	ServerID      uuid.UUID `json:"server_id"`
+	Project       string    `json:"project"`
+	Revision      string    `json:"revision"`
+	Reason        string    `json:"reason"`
+	Note          string    `json:"note"`
+	CreatedByName string    `json:"created_by_name"`
+	CreatedAt     time.Time `json:"created_at"`
+	ComposeSize   int32     `json:"compose_size"`
+	HasEnv        bool      `json:"has_env"`
+}
+
+func (q *Queries) ListDockerProjectVersions(ctx context.Context, arg ListDockerProjectVersionsParams) ([]ListDockerProjectVersionsRow, error) {
+	rows, err := q.db.Query(ctx, listDockerProjectVersions, arg.ServerID, arg.Project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDockerProjectVersionsRow{}
+	for rows.Next() {
+		var i ListDockerProjectVersionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServerID,
+			&i.Project,
+			&i.Revision,
+			&i.Reason,
+			&i.Note,
+			&i.CreatedByName,
+			&i.CreatedAt,
+			&i.ComposeSize,
+			&i.HasEnv,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDockerRegistries = `-- name: ListDockerRegistries :many
 SELECT id, workspace_id, name, address, username, password_enc, created_at, updated_at FROM docker_registries WHERE workspace_id = $1 ORDER BY lower(name), id
 `
@@ -432,6 +1290,60 @@ func (q *Queries) ListDockerRegistries(ctx context.Context, workspaceID uuid.UUI
 			&i.PasswordEnc,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDockerServerSettings = `-- name: ListDockerServerSettings :many
+SELECT s.id AS server_id, s.name AS server_name,
+    COALESCE(o.overrides, '{}'::jsonb)::jsonb AS overrides, o.updated_at,
+    p.ran_at AS pruned_at, COALESCE(p.space, 0)::bigint AS pruned_space,
+    COALESCE(p.removed, 0)::int AS pruned_removed, COALESCE(p.error, '')::text AS prune_error
+FROM servers s
+LEFT JOIN docker_server_settings o ON o.server_id = s.id
+LEFT JOIN docker_auto_prunes p ON p.server_id = s.id
+WHERE s.workspace_id = $1 AND (o.server_id IS NOT NULL OR p.server_id IS NOT NULL)
+ORDER BY s.name
+`
+
+type ListDockerServerSettingsRow struct {
+	ServerID      uuid.UUID  `json:"server_id"`
+	ServerName    string     `json:"server_name"`
+	Overrides     []byte     `json:"overrides"`
+	UpdatedAt     *time.Time `json:"updated_at"`
+	PrunedAt      *time.Time `json:"pruned_at"`
+	PrunedSpace   int64      `json:"pruned_space"`
+	PrunedRemoved int32      `json:"pruned_removed"`
+	PruneError    string     `json:"prune_error"`
+}
+
+// Every server of a workspace with its own settings or an automatic
+// clean-up on record.
+func (q *Queries) ListDockerServerSettings(ctx context.Context, workspaceID uuid.UUID) ([]ListDockerServerSettingsRow, error) {
+	rows, err := q.db.Query(ctx, listDockerServerSettings, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDockerServerSettingsRow{}
+	for rows.Next() {
+		var i ListDockerServerSettingsRow
+		if err := rows.Scan(
+			&i.ServerID,
+			&i.ServerName,
+			&i.Overrides,
+			&i.UpdatedAt,
+			&i.PrunedAt,
+			&i.PrunedSpace,
+			&i.PrunedRemoved,
+			&i.PruneError,
 		); err != nil {
 			return nil, err
 		}
@@ -479,6 +1391,56 @@ func (q *Queries) ListDockerTemplates(ctx context.Context, workspaceID uuid.UUID
 	return items, nil
 }
 
+const listDockerVolumeBackups = `-- name: ListDockerVolumeBackups :many
+SELECT id, server_id, volume, storage_id, storage_name, path, size, sha256, state, error, note, stopped, schedule_id, job_id, created_by_name, created_at, finished_at FROM docker_volume_backups
+WHERE server_id = $1 AND ($2::text IS NULL OR volume = $2)
+ORDER BY created_at DESC
+LIMIT 500
+`
+
+type ListDockerVolumeBackupsParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Volume   *string   `json:"volume"`
+}
+
+func (q *Queries) ListDockerVolumeBackups(ctx context.Context, arg ListDockerVolumeBackupsParams) ([]DockerVolumeBackup, error) {
+	rows, err := q.db.Query(ctx, listDockerVolumeBackups, arg.ServerID, arg.Volume)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerVolumeBackup{}
+	for rows.Next() {
+		var i DockerVolumeBackup
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServerID,
+			&i.Volume,
+			&i.StorageID,
+			&i.StorageName,
+			&i.Path,
+			&i.Size,
+			&i.Sha256,
+			&i.State,
+			&i.Error,
+			&i.Note,
+			&i.Stopped,
+			&i.ScheduleID,
+			&i.JobID,
+			&i.CreatedByName,
+			&i.CreatedAt,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markDockerImageCurrent = `-- name: MarkDockerImageCurrent :exec
 UPDATE docker_image_updates SET state = 'current', local_digest = remote_digest, checked_at = now()
 WHERE server_id = $1 AND image = $2
@@ -494,21 +1456,190 @@ func (q *Queries) MarkDockerImageCurrent(ctx context.Context, arg MarkDockerImag
 	return err
 }
 
+const oldDockerVolumeBackups = `-- name: OldDockerVolumeBackups :many
+SELECT id, server_id, volume, storage_id, storage_name, path, size, sha256, state, error, note, stopped, schedule_id, job_id, created_by_name, created_at, finished_at FROM docker_volume_backups
+WHERE server_id = $1 AND volume = $2 AND schedule_id IS NOT DISTINCT FROM $3::uuid AND state = 'stored'
+ORDER BY created_at DESC
+OFFSET $4::int
+`
+
+type OldDockerVolumeBackupsParams struct {
+	ServerID   uuid.UUID  `json:"server_id"`
+	Volume     string     `json:"volume"`
+	ScheduleID *uuid.UUID `json:"schedule_id"`
+	Keep       int32      `json:"keep"`
+}
+
+// Stored copies of a volume beyond the newest @keep made by one cron job.
+func (q *Queries) OldDockerVolumeBackups(ctx context.Context, arg OldDockerVolumeBackupsParams) ([]DockerVolumeBackup, error) {
+	rows, err := q.db.Query(ctx, oldDockerVolumeBackups,
+		arg.ServerID,
+		arg.Volume,
+		arg.ScheduleID,
+		arg.Keep,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerVolumeBackup{}
+	for rows.Next() {
+		var i DockerVolumeBackup
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServerID,
+			&i.Volume,
+			&i.StorageID,
+			&i.StorageName,
+			&i.Path,
+			&i.Size,
+			&i.Sha256,
+			&i.State,
+			&i.Error,
+			&i.Note,
+			&i.Stopped,
+			&i.ScheduleID,
+			&i.JobID,
+			&i.CreatedByName,
+			&i.CreatedAt,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneDockerProjectStats = `-- name: PruneDockerProjectStats :execrows
+DELETE FROM docker_project_stats p
+USING servers s
+LEFT JOIN docker_settings ds ON ds.workspace_id = s.workspace_id
+LEFT JOIN docker_server_settings o ON o.server_id = s.id
+WHERE p.server_id = s.id AND p.at < now() - make_interval(days => COALESCE((o.overrides->>'stats_days')::int, ds.stats_days, 30))
+`
+
+func (q *Queries) PruneDockerProjectStats(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneDockerProjectStats)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const pruneDockerProjectVersions = `-- name: PruneDockerProjectVersions :exec
+DELETE FROM docker_project_versions v
+WHERE v.server_id = $1 AND v.project = $2 AND v.id NOT IN (
+    SELECT k.id FROM docker_project_versions k
+    WHERE k.server_id = $1 AND k.project = $2
+    ORDER BY k.created_at DESC, k.id DESC
+    LIMIT $3::int
+)
+`
+
+type PruneDockerProjectVersionsParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Project  string    `json:"project"`
+	Keep     int32     `json:"keep"`
+}
+
+// Keeps the newest @keep of a project.
+func (q *Queries) PruneDockerProjectVersions(ctx context.Context, arg PruneDockerProjectVersionsParams) error {
+	_, err := q.db.Exec(ctx, pruneDockerProjectVersions, arg.ServerID, arg.Project, arg.Keep)
+	return err
+}
+
+const recordDockerAutoPrune = `-- name: RecordDockerAutoPrune :exec
+INSERT INTO docker_auto_prunes (server_id, ran_at, space, removed, error)
+VALUES ($1, now(), $2, $3, $4)
+ON CONFLICT (server_id) DO UPDATE SET ran_at = now(), space = EXCLUDED.space, removed = EXCLUDED.removed, error = EXCLUDED.error
+`
+
+type RecordDockerAutoPruneParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Space    int64     `json:"space"`
+	Removed  int32     `json:"removed"`
+	Error    string    `json:"error"`
+}
+
+func (q *Queries) RecordDockerAutoPrune(ctx context.Context, arg RecordDockerAutoPruneParams) error {
+	_, err := q.db.Exec(ctx, recordDockerAutoPrune,
+		arg.ServerID,
+		arg.Space,
+		arg.Removed,
+		arg.Error,
+	)
+	return err
+}
+
+const setDockerGitWebhook = `-- name: SetDockerGitWebhook :one
+UPDATE docker_git_sources SET webhook_enc = $3, webhook_hash = $4, updated_at = now()
+WHERE server_id = $1 AND project = $2
+RETURNING server_id, project, dir, repo_url, branch, compose_path, username, token_enc, auto_deploy, poll_minutes, webhook_enc, webhook_hash, last_commit, last_message, last_author, last_deployed_at, last_checked_at, last_error, created_by, created_by_name, created_at, updated_at
+`
+
+type SetDockerGitWebhookParams struct {
+	ServerID    uuid.UUID `json:"server_id"`
+	Project     string    `json:"project"`
+	WebhookEnc  []byte    `json:"webhook_enc"`
+	WebhookHash string    `json:"webhook_hash"`
+}
+
+func (q *Queries) SetDockerGitWebhook(ctx context.Context, arg SetDockerGitWebhookParams) (DockerGitSource, error) {
+	row := q.db.QueryRow(ctx, setDockerGitWebhook,
+		arg.ServerID,
+		arg.Project,
+		arg.WebhookEnc,
+		arg.WebhookHash,
+	)
+	var i DockerGitSource
+	err := row.Scan(
+		&i.ServerID,
+		&i.Project,
+		&i.Dir,
+		&i.RepoUrl,
+		&i.Branch,
+		&i.ComposePath,
+		&i.Username,
+		&i.TokenEnc,
+		&i.AutoDeploy,
+		&i.PollMinutes,
+		&i.WebhookEnc,
+		&i.WebhookHash,
+		&i.LastCommit,
+		&i.LastMessage,
+		&i.LastAuthor,
+		&i.LastDeployedAt,
+		&i.LastCheckedAt,
+		&i.LastError,
+		&i.CreatedBy,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const staleDockerUpdateServers = `-- name: StaleDockerUpdateServers :many
 SELECT s.id
 FROM servers s
 JOIN docker_image_updates u ON u.server_id = s.id
 LEFT JOIN docker_settings ds ON ds.workspace_id = s.workspace_id
-WHERE s.status = 'online' AND COALESCE(ds.update_check, true)
-GROUP BY s.id
-HAVING max(u.checked_at) < $1::timestamptz
+LEFT JOIN docker_server_settings o ON o.server_id = s.id
+WHERE s.status = 'online' AND COALESCE((o.overrides->>'update_check')::boolean, ds.update_check, true)
+GROUP BY s.id, ds.update_check_hours, o.overrides
+HAVING max(u.checked_at) < now() - make_interval(hours => COALESCE((o.overrides->>'update_check_hours')::int, ds.update_check_hours, 24))
 LIMIT 50
 `
 
 // Online servers whose image updates were checked before (they have rows)
-// but not since @before, in workspaces that leave the daily check on.
-func (q *Queries) StaleDockerUpdateServers(ctx context.Context, before time.Time) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, staleDockerUpdateServers, before)
+// but not within their check interval (the server's own, else its
+// workspace's), where the automatic check is on.
+func (q *Queries) StaleDockerUpdateServers(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, staleDockerUpdateServers)
 	if err != nil {
 		return nil, err
 	}
@@ -623,6 +1754,80 @@ func (q *Queries) UpdateDockerTemplate(ctx context.Context, arg UpdateDockerTemp
 	return i, err
 }
 
+const upsertDockerGitSource = `-- name: UpsertDockerGitSource :one
+INSERT INTO docker_git_sources (server_id, project, dir, repo_url, branch, compose_path, username, token_enc,
+    auto_deploy, poll_minutes, webhook_enc, webhook_hash, created_by, created_by_name)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+ON CONFLICT (server_id, project) DO UPDATE SET
+    repo_url = EXCLUDED.repo_url, branch = EXCLUDED.branch, compose_path = EXCLUDED.compose_path,
+    username = EXCLUDED.username, token_enc = EXCLUDED.token_enc, auto_deploy = EXCLUDED.auto_deploy,
+    poll_minutes = EXCLUDED.poll_minutes, created_by = EXCLUDED.created_by,
+    created_by_name = EXCLUDED.created_by_name, last_error = '', updated_at = now()
+RETURNING server_id, project, dir, repo_url, branch, compose_path, username, token_enc, auto_deploy, poll_minutes, webhook_enc, webhook_hash, last_commit, last_message, last_author, last_deployed_at, last_checked_at, last_error, created_by, created_by_name, created_at, updated_at
+`
+
+type UpsertDockerGitSourceParams struct {
+	ServerID      uuid.UUID  `json:"server_id"`
+	Project       string     `json:"project"`
+	Dir           string     `json:"dir"`
+	RepoUrl       string     `json:"repo_url"`
+	Branch        string     `json:"branch"`
+	ComposePath   string     `json:"compose_path"`
+	Username      string     `json:"username"`
+	TokenEnc      []byte     `json:"token_enc"`
+	AutoDeploy    bool       `json:"auto_deploy"`
+	PollMinutes   int32      `json:"poll_minutes"`
+	WebhookEnc    []byte     `json:"webhook_enc"`
+	WebhookHash   string     `json:"webhook_hash"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+}
+
+func (q *Queries) UpsertDockerGitSource(ctx context.Context, arg UpsertDockerGitSourceParams) (DockerGitSource, error) {
+	row := q.db.QueryRow(ctx, upsertDockerGitSource,
+		arg.ServerID,
+		arg.Project,
+		arg.Dir,
+		arg.RepoUrl,
+		arg.Branch,
+		arg.ComposePath,
+		arg.Username,
+		arg.TokenEnc,
+		arg.AutoDeploy,
+		arg.PollMinutes,
+		arg.WebhookEnc,
+		arg.WebhookHash,
+		arg.CreatedBy,
+		arg.CreatedByName,
+	)
+	var i DockerGitSource
+	err := row.Scan(
+		&i.ServerID,
+		&i.Project,
+		&i.Dir,
+		&i.RepoUrl,
+		&i.Branch,
+		&i.ComposePath,
+		&i.Username,
+		&i.TokenEnc,
+		&i.AutoDeploy,
+		&i.PollMinutes,
+		&i.WebhookEnc,
+		&i.WebhookHash,
+		&i.LastCommit,
+		&i.LastMessage,
+		&i.LastAuthor,
+		&i.LastDeployedAt,
+		&i.LastCheckedAt,
+		&i.LastError,
+		&i.CreatedBy,
+		&i.CreatedByName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const upsertDockerImageScan = `-- name: UpsertDockerImageScan :exec
 INSERT INTO docker_image_scans (server_id, image_id, image, critical, high, medium, low, unknown, fixable, findings, scanner, error, scanned_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
@@ -705,24 +1910,128 @@ func (q *Queries) UpsertDockerImageUpdate(ctx context.Context, arg UpsertDockerI
 	return err
 }
 
+const upsertDockerProjectMeta = `-- name: UpsertDockerProjectMeta :one
+INSERT INTO docker_project_meta (server_id, project, title, note, updated_by_name, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT (server_id, project) DO UPDATE SET
+    title = EXCLUDED.title, note = EXCLUDED.note,
+    updated_by_name = EXCLUDED.updated_by_name, updated_at = now()
+RETURNING server_id, project, title, note, updated_by_name, updated_at
+`
+
+type UpsertDockerProjectMetaParams struct {
+	ServerID      uuid.UUID `json:"server_id"`
+	Project       string    `json:"project"`
+	Title         string    `json:"title"`
+	Note          string    `json:"note"`
+	UpdatedByName string    `json:"updated_by_name"`
+}
+
+func (q *Queries) UpsertDockerProjectMeta(ctx context.Context, arg UpsertDockerProjectMetaParams) (DockerProjectMetum, error) {
+	row := q.db.QueryRow(ctx, upsertDockerProjectMeta,
+		arg.ServerID,
+		arg.Project,
+		arg.Title,
+		arg.Note,
+		arg.UpdatedByName,
+	)
+	var i DockerProjectMetum
+	err := row.Scan(
+		&i.ServerID,
+		&i.Project,
+		&i.Title,
+		&i.Note,
+		&i.UpdatedByName,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertDockerServerSettings = `-- name: UpsertDockerServerSettings :one
+INSERT INTO docker_server_settings (server_id, overrides)
+VALUES ($1, $2)
+ON CONFLICT (server_id) DO UPDATE SET overrides = EXCLUDED.overrides, updated_at = now()
+RETURNING server_id, overrides, updated_at
+`
+
+type UpsertDockerServerSettingsParams struct {
+	ServerID  uuid.UUID `json:"server_id"`
+	Overrides []byte    `json:"overrides"`
+}
+
+func (q *Queries) UpsertDockerServerSettings(ctx context.Context, arg UpsertDockerServerSettingsParams) (DockerServerSetting, error) {
+	row := q.db.QueryRow(ctx, upsertDockerServerSettings, arg.ServerID, arg.Overrides)
+	var i DockerServerSetting
+	err := row.Scan(&i.ServerID, &i.Overrides, &i.UpdatedAt)
+	return i, err
+}
+
 const upsertDockerSettings = `-- name: UpsertDockerSettings :one
-INSERT INTO docker_settings (workspace_id, projects_dir, update_check, scanner_image, events_hours)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO docker_settings (workspace_id, projects_dir, update_check, scanner_image, events_hours, stats_days, update_check_hours, scan_ignore_unfixed, remove_orphans, versions_keep, default_restart, default_memory_mb, default_cpus, default_log_max_mb, default_log_files, prune_auto, prune_hours, prune_images, prune_containers, prune_networks, prune_build_cache, prune_older_hours, notify_updates, notify_vulns, notify_channels, backup_storage_id, backup_folder, backup_stop, backup_keep)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
 ON CONFLICT (workspace_id) DO UPDATE SET
     projects_dir = EXCLUDED.projects_dir,
     update_check = EXCLUDED.update_check,
     scanner_image = EXCLUDED.scanner_image,
     events_hours = EXCLUDED.events_hours,
+    stats_days = EXCLUDED.stats_days,
+    update_check_hours = EXCLUDED.update_check_hours,
+    scan_ignore_unfixed = EXCLUDED.scan_ignore_unfixed,
+    remove_orphans = EXCLUDED.remove_orphans,
+    versions_keep = EXCLUDED.versions_keep,
+    default_restart = EXCLUDED.default_restart,
+    default_memory_mb = EXCLUDED.default_memory_mb,
+    default_cpus = EXCLUDED.default_cpus,
+    default_log_max_mb = EXCLUDED.default_log_max_mb,
+    default_log_files = EXCLUDED.default_log_files,
+    prune_auto = EXCLUDED.prune_auto,
+    prune_hours = EXCLUDED.prune_hours,
+    prune_images = EXCLUDED.prune_images,
+    prune_containers = EXCLUDED.prune_containers,
+    prune_networks = EXCLUDED.prune_networks,
+    prune_build_cache = EXCLUDED.prune_build_cache,
+    prune_older_hours = EXCLUDED.prune_older_hours,
+    notify_updates = EXCLUDED.notify_updates,
+    notify_vulns = EXCLUDED.notify_vulns,
+    notify_channels = EXCLUDED.notify_channels,
+    backup_storage_id = EXCLUDED.backup_storage_id,
+    backup_folder = EXCLUDED.backup_folder,
+    backup_stop = EXCLUDED.backup_stop,
+    backup_keep = EXCLUDED.backup_keep,
     updated_at = now()
-RETURNING workspace_id, projects_dir, update_check, scanner_image, events_hours, updated_at
+RETURNING workspace_id, projects_dir, update_check, scanner_image, events_hours, updated_at, stats_days, update_check_hours, scan_ignore_unfixed, remove_orphans, versions_keep, default_restart, default_memory_mb, default_cpus, default_log_max_mb, default_log_files, prune_auto, prune_hours, prune_images, prune_containers, prune_networks, prune_build_cache, prune_older_hours, notify_updates, notify_vulns, notify_channels, backup_storage_id, backup_folder, backup_stop, backup_keep
 `
 
 type UpsertDockerSettingsParams struct {
-	WorkspaceID  uuid.UUID `json:"workspace_id"`
-	ProjectsDir  string    `json:"projects_dir"`
-	UpdateCheck  bool      `json:"update_check"`
-	ScannerImage string    `json:"scanner_image"`
-	EventsHours  int32     `json:"events_hours"`
+	WorkspaceID       uuid.UUID   `json:"workspace_id"`
+	ProjectsDir       string      `json:"projects_dir"`
+	UpdateCheck       bool        `json:"update_check"`
+	ScannerImage      string      `json:"scanner_image"`
+	EventsHours       int32       `json:"events_hours"`
+	StatsDays         int32       `json:"stats_days"`
+	UpdateCheckHours  int32       `json:"update_check_hours"`
+	ScanIgnoreUnfixed bool        `json:"scan_ignore_unfixed"`
+	RemoveOrphans     bool        `json:"remove_orphans"`
+	VersionsKeep      int32       `json:"versions_keep"`
+	DefaultRestart    string      `json:"default_restart"`
+	DefaultMemoryMb   int32       `json:"default_memory_mb"`
+	DefaultCpus       float64     `json:"default_cpus"`
+	DefaultLogMaxMb   int32       `json:"default_log_max_mb"`
+	DefaultLogFiles   int32       `json:"default_log_files"`
+	PruneAuto         bool        `json:"prune_auto"`
+	PruneHours        int32       `json:"prune_hours"`
+	PruneImages       string      `json:"prune_images"`
+	PruneContainers   bool        `json:"prune_containers"`
+	PruneNetworks     bool        `json:"prune_networks"`
+	PruneBuildCache   bool        `json:"prune_build_cache"`
+	PruneOlderHours   int32       `json:"prune_older_hours"`
+	NotifyUpdates     bool        `json:"notify_updates"`
+	NotifyVulns       string      `json:"notify_vulns"`
+	NotifyChannels    []uuid.UUID `json:"notify_channels"`
+	BackupStorageID   *uuid.UUID  `json:"backup_storage_id"`
+	BackupFolder      string      `json:"backup_folder"`
+	BackupStop        bool        `json:"backup_stop"`
+	BackupKeep        int32       `json:"backup_keep"`
 }
 
 func (q *Queries) UpsertDockerSettings(ctx context.Context, arg UpsertDockerSettingsParams) (DockerSetting, error) {
@@ -732,6 +2041,30 @@ func (q *Queries) UpsertDockerSettings(ctx context.Context, arg UpsertDockerSett
 		arg.UpdateCheck,
 		arg.ScannerImage,
 		arg.EventsHours,
+		arg.StatsDays,
+		arg.UpdateCheckHours,
+		arg.ScanIgnoreUnfixed,
+		arg.RemoveOrphans,
+		arg.VersionsKeep,
+		arg.DefaultRestart,
+		arg.DefaultMemoryMb,
+		arg.DefaultCpus,
+		arg.DefaultLogMaxMb,
+		arg.DefaultLogFiles,
+		arg.PruneAuto,
+		arg.PruneHours,
+		arg.PruneImages,
+		arg.PruneContainers,
+		arg.PruneNetworks,
+		arg.PruneBuildCache,
+		arg.PruneOlderHours,
+		arg.NotifyUpdates,
+		arg.NotifyVulns,
+		arg.NotifyChannels,
+		arg.BackupStorageID,
+		arg.BackupFolder,
+		arg.BackupStop,
+		arg.BackupKeep,
 	)
 	var i DockerSetting
 	err := row.Scan(
@@ -741,6 +2074,30 @@ func (q *Queries) UpsertDockerSettings(ctx context.Context, arg UpsertDockerSett
 		&i.ScannerImage,
 		&i.EventsHours,
 		&i.UpdatedAt,
+		&i.StatsDays,
+		&i.UpdateCheckHours,
+		&i.ScanIgnoreUnfixed,
+		&i.RemoveOrphans,
+		&i.VersionsKeep,
+		&i.DefaultRestart,
+		&i.DefaultMemoryMb,
+		&i.DefaultCpus,
+		&i.DefaultLogMaxMb,
+		&i.DefaultLogFiles,
+		&i.PruneAuto,
+		&i.PruneHours,
+		&i.PruneImages,
+		&i.PruneContainers,
+		&i.PruneNetworks,
+		&i.PruneBuildCache,
+		&i.PruneOlderHours,
+		&i.NotifyUpdates,
+		&i.NotifyVulns,
+		&i.NotifyChannels,
+		&i.BackupStorageID,
+		&i.BackupFolder,
+		&i.BackupStop,
+		&i.BackupKeep,
 	)
 	return i, err
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -52,6 +53,8 @@ type AlertRule struct {
 	Threshold      float64          `json:"threshold"`
 	Mount          string           `json:"mount"`
 	Unit           string           `json:"unit"`
+	Project        string           `json:"project"`
+	Container      string           `json:"container"`
 	ForMinutes     int32            `json:"for_minutes"`
 	Severity       string           `json:"severity"`
 	Scope          string           `json:"scope"`
@@ -75,11 +78,13 @@ type AlertRuleOutput struct {
 type AlertRuleBody struct {
 	Name           string   `json:"name" minLength:"1" maxLength:"100"`
 	Enabled        *bool    `json:"enabled,omitempty" doc:"Default true"`
-	Metric         string   `json:"metric" enum:"cpu,iowait,load,memory,swap,disk,net_rx,net_tx,offline,service,db_down,db_health"`
+	Metric         string   `json:"metric" enum:"cpu,iowait,load,memory,swap,disk,net_rx,net_tx,offline,service,db_down,db_health,container_down,container_unhealthy,container_restarts,container_cpu,container_memory,docker_engine,container_vulns_critical,container_vulns_high"`
 	Op             string   `json:"op,omitempty" enum:"above,below" default:"above"`
-	Threshold      float64  `json:"threshold" doc:"Percent for cpu, iowait, memory, swap and disk; load per core; bytes per second for net_rx/net_tx; ignored for offline, service, db_down and db_health"`
+	Threshold      float64  `json:"threshold" doc:"Percent for cpu, iowait, memory, swap, disk and container_memory (of its limit); load per core; bytes per second for net_rx/net_tx; percent of one core for container_cpu; stops in 10 minutes for container_restarts; findings in the image's last scan for container_vulns_critical (critical) and container_vulns_high (high or critical); ignored for offline, service, db_down, db_health, container_down, container_unhealthy and docker_engine"`
 	Mount          string   `json:"mount,omitempty" maxLength:"255" doc:"disk only: one mount point; empty = the fullest"`
 	Unit           string   `json:"unit,omitempty" maxLength:"255" doc:"service only: one systemd unit that must keep running; empty = any service that failed"`
+	Project        string   `json:"project,omitempty" maxLength:"100" doc:"container_* only: a compose project (* = any characters); empty = any"`
+	Container      string   `json:"container,omitempty" maxLength:"100" doc:"container_* only: a container or compose service name (* = any characters); empty = any"`
 	ForMinutes     int32    `json:"for_minutes" minimum:"0" maximum:"1440" doc:"How long it must hold before alerting; 0 = at once"`
 	Severity       string   `json:"severity,omitempty" enum:"warning,critical" default:"warning"`
 	Scope          string   `json:"scope,omitempty" enum:"all,servers,tags,databases" default:"all" doc:"databases = for db_down/db_health, which take all or databases"`
@@ -106,7 +111,7 @@ func toAlertRule(r sqlc.AlertRule, channels []string, states []AlertRuleState) A
 	return AlertRule{
 		ID: r.ID.String(), WorkspaceID: r.WorkspaceID.String(), Name: r.Name, Enabled: r.Enabled,
 		Metric: r.Metric, Op: r.Op, Threshold: r.Threshold, Mount: r.Mount, Unit: r.Unit,
-		ForMinutes: r.ForMinutes, Severity: r.Severity, Scope: r.Scope, ServerIDs: ids,
+		Project: r.Project, Container: r.Container, ForMinutes: r.ForMinutes, Severity: r.Severity, Scope: r.Scope, ServerIDs: ids,
 		DatabaseIDs: idStrings(r.DatabaseIds), Tags: tags,
 		RepeatMinutes: r.RepeatMinutes, NotifyResolved: r.NotifyResolved, ChannelIDs: channels,
 		States: states, CreatedByName: r.CreatedByName, UpdatedByName: r.UpdatedByName,
@@ -193,9 +198,13 @@ func (h *alertRuleHandler) getRule(ctx context.Context, raw string) (sqlc.AlertR
 	return r, nil
 }
 
+// containerPatternRe is a project or container name, * and ? allowed.
+var containerPatternRe = regexp.MustCompile(`^[A-Za-z0-9*?][A-Za-z0-9_.*?-]*$`)
+
 // cleanedRule is a checked body, ready to save.
 type cleanedRule struct {
 	name, op, mount, unit, severity, scope string
+	project, container                     string
 	servers, databases                     []uuid.UUID
 	tags                                   []string
 	channels                               []uuid.UUID
@@ -208,6 +217,7 @@ func (h *alertRuleHandler) clean(ctx context.Context, ws uuid.UUID, b *AlertRule
 		name: strings.TrimSpace(b.Name), op: cmpOr(b.Op, "above"), mount: strings.TrimSpace(b.Mount),
 		severity: cmpOr(b.Severity, "warning"), scope: cmpOr(b.Scope, "all"),
 		unit:    strings.TrimSpace(b.Unit),
+		project: strings.TrimSpace(b.Project), container: strings.TrimSpace(b.Container),
 		servers: []uuid.UUID{}, databases: []uuid.UUID{}, tags: []string{}, channels: []uuid.UUID{},
 		enabled: b.Enabled == nil || *b.Enabled, resolved: b.NotifyResolved == nil || *b.NotifyResolved,
 	}
@@ -231,6 +241,32 @@ func (h *alertRuleHandler) clean(ctx context.Context, ws uuid.UUID, b *AlertRule
 		c.unit = ""
 	} else if c.unit != "" && !unitRe.MatchString(c.unit) {
 		return c, fieldError("body.unit", "Use a unit name like nginx or nginx.service", b.Unit)
+	}
+	switch b.Metric {
+	case metricContainerRestarts:
+		c.op = "above"
+		if b.Threshold < 0 || b.Threshold > 1000 {
+			return c, fieldError("body.threshold", "Use a number of stops from 0 to 1000", b.Threshold)
+		}
+	case metricVulnsCritical, metricVulnsHigh:
+		c.op = "above"
+		if b.Threshold > 100000 {
+			return c, fieldError("body.threshold", "Use a number of findings up to 100000", b.Threshold)
+		}
+	case metricContainerCPU:
+		if b.Threshold > 12800 {
+			return c, fieldError("body.threshold", "Use a percent of one core, up to 12800", b.Threshold)
+		}
+	}
+	if !containerMetric(b.Metric) || b.Metric == metricDockerEngine {
+		c.project, c.container = "", ""
+	} else {
+		if c.project != "" && !containerPatternRe.MatchString(c.project) {
+			return c, fieldError("body.project", "Use a project name like shop or shop-*", b.Project)
+		}
+		if c.container != "" && !containerPatternRe.MatchString(c.container) {
+			return c, fieldError("body.container", "Use a container or service name like web or web-*", b.Container)
+		}
 	}
 	if databaseMetric(b.Metric) != (c.scope == "databases") && c.scope != "all" {
 		if databaseMetric(b.Metric) {
@@ -336,7 +372,8 @@ func (h *alertRuleHandler) create(ctx context.Context, in *struct{ Body AlertRul
 	}
 	r, err := h.q.CreateAlertRule(ctx, sqlc.CreateAlertRuleParams{
 		WorkspaceID: ws, Name: c.name, Enabled: c.enabled, Metric: b.Metric, Op: c.op,
-		Threshold: b.Threshold, Mount: c.mount, Unit: c.unit, ForMinutes: b.ForMinutes, Severity: c.severity,
+		Threshold: b.Threshold, Mount: c.mount, Unit: c.unit, Project: c.project, Container: c.container,
+		ForMinutes: b.ForMinutes, Severity: c.severity,
 		Scope: c.scope, ServerIds: c.servers, DatabaseIds: c.databases, Tags: c.tags, RepeatMinutes: b.RepeatMinutes,
 		NotifyResolved: c.resolved, CreatedByName: cmpOr(p.User.FullName, p.User.Username),
 	})
@@ -365,7 +402,8 @@ func (h *alertRuleHandler) update(ctx context.Context, in *struct {
 	}
 	r, err := h.q.UpdateAlertRule(ctx, sqlc.UpdateAlertRuleParams{
 		ID: prev.ID, Name: c.name, Enabled: c.enabled, Metric: b.Metric, Op: c.op,
-		Threshold: b.Threshold, Mount: c.mount, Unit: c.unit, ForMinutes: b.ForMinutes, Severity: c.severity,
+		Threshold: b.Threshold, Mount: c.mount, Unit: c.unit, Project: c.project, Container: c.container,
+		ForMinutes: b.ForMinutes, Severity: c.severity,
 		Scope: c.scope, ServerIds: c.servers, DatabaseIds: c.databases, Tags: c.tags, RepeatMinutes: b.RepeatMinutes,
 		NotifyResolved: c.resolved, UpdatedByName: cmpOr(p.User.FullName, p.User.Username),
 	})
@@ -418,6 +456,7 @@ func (h *alertRuleHandler) preview(ctx context.Context, in *struct {
 	rule := sqlc.AlertRule{
 		Metric: b.Metric, Op: c.op, Threshold: b.Threshold, Mount: c.mount, Scope: c.scope,
 		ServerIds: c.servers, DatabaseIds: c.databases, Tags: c.tags, Unit: c.unit,
+		Project: c.project, Container: c.container,
 	}
 	sc := p.scope()
 	if databaseMetric(rule.Metric) {
@@ -455,7 +494,7 @@ func (h *alertRuleHandler) preview(ctx context.Context, in *struct {
 	out.Body.Items = []AlertPreviewItem{}
 	for _, s := range covered {
 		it := AlertPreviewItem{TargetID: s.ID.String(), TargetKind: "server", TargetName: s.Name, Status: s.Status}
-		if rule.Metric == metricService {
+		if rule.Metric == metricService || containerMetric(rule.Metric) {
 			// Read on the next sample; nothing kept to show now.
 		} else if rule.Metric == metricOffline {
 			if s.LastCheckedAt != nil {

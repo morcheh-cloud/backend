@@ -9,10 +9,10 @@ import (
 
 func TestClassifyAgent(t *testing.T) {
 	cases := map[string]agentKind{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36": {"Chrome", "Windows", "Desktop"},
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36":         {"Chrome", "Windows", "Desktop"},
 		"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1": {"Safari", "iOS", "Phone"},
-		"Mozilla/5.0 (Linux; Android 14; SM-X200) AppleWebKit/537.36 Chrome/130.0 Safari/537.36":                        {"Chrome", "Android", "Tablet"},
-		"Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)":                                         {"Googlebot", "", "Bot"},
+		"Mozilla/5.0 (Linux; Android 14; SM-X200) AppleWebKit/537.36 Chrome/130.0 Safari/537.36":                              {"Chrome", "Android", "Tablet"},
+		"Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)":                                            {"Googlebot", "", "Bot"},
 		"curl/8.5.0": {"curl", "", "Tool"},
 		"":           {"No user agent", "", "Tool"},
 	}

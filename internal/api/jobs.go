@@ -51,6 +51,7 @@ type JobPlace struct {
 	RunID      string `json:"run_id,omitempty" format:"uuid" doc:"The Ansible or cron job run it belongs to"`
 	ScheduleID string `json:"schedule_id,omitempty" format:"uuid" doc:"The cron job it is a run of"`
 	DatabaseID string `json:"database_id,omitempty" format:"uuid" doc:"The database it backs up"`
+	Volume     string `json:"volume,omitempty" doc:"The Docker volume it works in (path is inside it)"`
 }
 
 // JobRemoved is sent on the stream when a job is deleted; an empty id means

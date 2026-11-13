@@ -37,14 +37,36 @@ const (
 	// Databases.
 	metricDBDown   = "db_down"
 	metricDBHealth = "db_health"
+	// Containers on a server (read by the Docker loop, alert_docker.go).
+	metricContainerDown      = "container_down"
+	metricContainerUnhealthy = "container_unhealthy"
+	metricContainerRestarts  = "container_restarts"
+	metricContainerCPU       = "container_cpu"
+	metricContainerMemory    = "container_memory"
+	metricDockerEngine       = "docker_engine"
+	// Known vulnerabilities in a running container's image (last scan).
+	metricVulnsCritical = "container_vulns_critical"
+	metricVulnsHigh     = "container_vulns_high"
 )
+
+// vulnMetric says whether a rule counts an image's known vulnerabilities.
+func vulnMetric(m string) bool { return m == metricVulnsCritical || m == metricVulnsHigh }
+
+// containerMetric says whether a rule watches containers or the engine.
+func containerMetric(m string) bool {
+	return strings.HasPrefix(m, "container_") || m == metricDockerEngine
+}
 
 // databaseMetric says whether a rule watches databases (not servers).
 func databaseMetric(m string) bool { return m == metricDBDown || m == metricDBHealth }
 
 // stateMetric says whether a metric is a yes/no state, without a threshold.
 func stateMetric(m string) bool {
-	return m == metricOffline || m == metricService || databaseMetric(m)
+	switch m {
+	case metricOffline, metricService, metricContainerDown, metricContainerUnhealthy, metricDockerEngine:
+		return true
+	}
+	return databaseMetric(m)
 }
 
 var metricLabels = map[string]string{
@@ -52,12 +74,16 @@ var metricLabels = map[string]string{
 	metricMemory: "Memory", metricSwap: "Swap", metricDisk: "Disk",
 	metricNetRx: "Download", metricNetTx: "Upload", metricOffline: "Unreachable",
 	metricService: "Service", metricDBDown: "Database unreachable", metricDBHealth: "Database health",
+	metricContainerDown: "Container down", metricContainerUnhealthy: "Container unhealthy",
+	metricContainerRestarts: "Container restarts", metricContainerCPU: "Container CPU",
+	metricContainerMemory: "Container memory", metricDockerEngine: "Docker engine",
+	metricVulnsCritical: "Critical vulnerabilities", metricVulnsHigh: "High vulnerabilities",
 }
 
 // percentMetric says whether a metric's threshold is a percent (0–100).
 func percentMetric(m string) bool {
 	switch m {
-	case metricCPU, metricIOWait, metricMemory, metricSwap, metricDisk:
+	case metricCPU, metricIOWait, metricMemory, metricSwap, metricDisk, metricContainerMemory:
 		return true
 	}
 	return false
@@ -72,6 +98,17 @@ func formatMetric(metric string, v float64) string {
 		return fmt.Sprintf("%.2f per core", v)
 	case metric == metricNetRx, metric == metricNetTx:
 		return fmt.Sprintf("%.1f Mbit/s", v*8/1e6)
+	case metric == metricContainerCPU:
+		return fmt.Sprintf("%.0f%% of a core", v)
+	case metric == metricContainerRestarts:
+		if v == 1 {
+			return "1 stop"
+		}
+		return fmt.Sprintf("%g stops", v)
+	case metric == metricVulnsCritical:
+		return fmt.Sprintf("%g critical", v)
+	case metric == metricVulnsHigh:
+		return fmt.Sprintf("%g high or critical", v)
 	}
 	return fmt.Sprintf("%g", v)
 }
@@ -88,6 +125,16 @@ func ruleCondition(r sqlc.AlertRule) string {
 			return r.Unit + " not running"
 		}
 		return "a service failed"
+	case metricContainerDown:
+		return containerWhich(r) + " not running"
+	case metricContainerUnhealthy:
+		return containerWhich(r) + " unhealthy"
+	case metricDockerEngine:
+		return "the engine can't be used"
+	case metricVulnsCritical, metricVulnsHigh:
+		return "an image with more than " + formatMetric(r.Metric, r.Threshold)
+	case metricContainerRestarts:
+		return fmt.Sprintf("more than %s in %d minutes", formatMetric(r.Metric, r.Threshold), int(restartWindow/time.Minute))
 	}
 	return r.Op + " " + formatMetric(r.Metric, r.Threshold)
 }
@@ -422,6 +469,44 @@ func alertText(r sqlc.AlertRule, t alertTarget, kind string, v float64, detail s
 			return "A service failed: " + detail
 		}
 		return fmt.Sprintf("%g services failed: %s", v, detail)
+	case metricDockerEngine:
+		if resolved {
+			return "The Docker engine on " + t.name + " works again."
+		}
+		return "The Docker engine on " + t.name + " can't be used: " + detail
+	case metricContainerDown, metricContainerUnhealthy:
+		state, many := "isn't running", "aren't running"
+		if r.Metric == metricContainerUnhealthy {
+			state, many = "is unhealthy", "are unhealthy"
+		}
+		switch {
+		case resolved && r.Metric == metricContainerDown:
+			return "Every watched container is running again."
+		case resolved:
+			return "Every watched container is healthy again."
+		case v == 1:
+			return "A container " + state + ": " + detail
+		}
+		return fmt.Sprintf("%g containers %s: %s", v, many, detail)
+	case metricVulnsCritical, metricVulnsHigh:
+		if resolved {
+			return "The watched containers' images are back to " + formatMetric(r.Metric, v) + " known vulnerabilities at most."
+		}
+		return "Containers run images with known vulnerabilities: " + detail
+	case metricContainerRestarts:
+		if resolved {
+			return "No container keeps restarting any more."
+		}
+		return "Containers keep stopping: " + detail
+	case metricContainerCPU, metricContainerMemory:
+		what := "CPU"
+		if r.Metric == metricContainerMemory {
+			what = "Memory"
+		}
+		if resolved {
+			return what + " of the watched containers is back to " + formatMetric(r.Metric, v) + "."
+		}
+		return fmt.Sprintf("%s of containers is %s: %s", what, ruleCondition(r), detail)
 	}
 	what := metricLabels[r.Metric]
 	if r.Metric == metricDisk && detail != "" {
@@ -471,6 +556,10 @@ func (e *alertEngine) alertMessage(r sqlc.AlertRule, t alertTarget, kind string,
 		switch {
 		case t.kind == "database":
 			url = e.up.panelURL + "/databases/" + t.id.String()
+		case containerMetric(r.Metric) && r.Project != "" && !strings.ContainsAny(r.Project, "*?["):
+			url = e.up.panelURL + "/containers/projects/" + r.Project + "?env=" + t.id.String()
+		case containerMetric(r.Metric):
+			url = e.up.panelURL + "/containers/list?env=" + t.id.String()
 		case r.Metric == metricService:
 			url = e.up.panelURL + "/servers/" + t.id.String() + "/services"
 		case r.Metric == metricOffline:
@@ -483,6 +572,9 @@ func (e *alertEngine) alertMessage(r sqlc.AlertRule, t alertTarget, kind string,
 		"rule_id": r.ID.String(), "rule_name": r.Name, "target_kind": t.kind,
 		"metric": r.Metric, "severity": r.Severity, "state": kind,
 		"value": v, "threshold": r.Threshold, "op": r.Op, "detail": detail,
+	}
+	if containerMetric(r.Metric) {
+		data["project"], data["container"] = r.Project, r.Container
 	}
 	if t.kind == "database" {
 		data["database_id"], data["database_name"] = t.id.String(), t.name

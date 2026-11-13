@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,37 +25,398 @@ const (
 	defaultProjectsDir  = "/opt/morcheh/projects"
 	defaultScannerImage = "aquasec/trivy:latest"
 	defaultEventsHours  = 24
+	defaultStatsDays    = 30
+	defaultUpdateHours  = 24
+	defaultVersionsKeep = 50
 )
 
 type DockerSettings struct {
-	ProjectsDir  string    `json:"projects_dir" doc:"Folder on each server where new compose projects are created, one folder per project"`
-	UpdateCheck  bool      `json:"update_check" doc:"Check once a day whether running images have a newer version"`
-	ScannerImage string    `json:"scanner_image" doc:"Image used to scan for vulnerabilities when Trivy isn't installed on the server"`
-	EventsHours  int       `json:"events_hours" minimum:"1" maximum:"720" doc:"How far back the event log reads by default"`
-	UpdatedAt    time.Time `json:"updated_at,omitzero"`
+	ProjectsDir       string `json:"projects_dir" doc:"Folder on each server where new compose projects are created, one folder per project"`
+	UpdateCheck       bool   `json:"update_check" doc:"Check once a day whether running images have a newer version"`
+	ScannerImage      string `json:"scanner_image" doc:"Image used to scan for vulnerabilities when Trivy isn't installed on the server"`
+	EventsHours       int    `json:"events_hours" minimum:"1" maximum:"720" doc:"How far back the event log reads by default"`
+	StatsDays         int    `json:"stats_days" minimum:"0" maximum:"90" doc:"Days projects' CPU, memory and network are kept (a point every 5 minutes); 0 = not recorded"`
+	UpdateCheckHours  int    `json:"update_check_hours" enum:"6,12,24,72,168" doc:"Hours between automatic image update checks"`
+	ScanIgnoreUnfixed bool   `json:"scan_ignore_unfixed" doc:"Vulnerability scans leave out findings that have no fixed version yet"`
+	RemoveOrphans     bool   `json:"remove_orphans" doc:"Deploying a project removes containers of services no longer in its compose file"`
+	VersionsKeep      int    `json:"versions_keep" minimum:"5" maximum:"200" doc:"Compose file versions kept per project"`
+
+	DefaultRestart  string  `json:"default_restart" enum:",no,always,unless-stopped,on-failure" doc:"Restart policy added to services of a new project that don't set one; empty = add none"`
+	DefaultMemoryMB int     `json:"default_memory_mb" minimum:"0" maximum:"1048576" doc:"Memory limit (MiB) added to services of a new project that don't set one; 0 = none"`
+	DefaultCPUs     float64 `json:"default_cpus" minimum:"0" maximum:"512" doc:"CPU limit (cores) added to services of a new project that don't set one; 0 = none"`
+	DefaultLogMaxMB int     `json:"default_log_max_mb" minimum:"0" maximum:"10240" doc:"Log rotation added to services of a new project that don't set logging: size of one file (MiB); 0 = none"`
+	DefaultLogFiles int     `json:"default_log_files" minimum:"0" maximum:"100" doc:"Log files kept by that rotation"`
+
+	PruneAuto       bool   `json:"prune_auto" doc:"Clean up unused things on every server by itself"`
+	PruneHours      int    `json:"prune_hours" enum:"24,72,168,720" doc:"Hours between automatic clean-ups"`
+	PruneImages     string `json:"prune_images" enum:"none,dangling,all" doc:"Images it removes: none, untagged only, or every image no container uses"`
+	PruneContainers bool   `json:"prune_containers" doc:"Also remove stopped containers"`
+	PruneNetworks   bool   `json:"prune_networks" doc:"Also remove networks no container uses"`
+	PruneBuildCache bool   `json:"prune_build_cache" doc:"Also remove the build cache"`
+	PruneOlderHours int    `json:"prune_older_hours" enum:"0,24,72,168,720" doc:"Only remove things older than this many hours; 0 = any age"`
+
+	NotifyUpdates  bool     `json:"notify_updates" doc:"Send a message when a running image gets a new version"`
+	NotifyVulns    string   `json:"notify_vulns" enum:"off,critical,high" doc:"Send a message when a scan finds more vulnerabilities at this severity (high = high and critical)"`
+	NotifyChannels []string `json:"notify_channels" doc:"Notification channels those messages go to"`
+
+	BackupStorageID string `json:"backup_storage_id" doc:"Storage volume backups go to unless another is picked; empty = ask"`
+	BackupFolder    string `json:"backup_folder" doc:"Folder on that storage; empty = /backups/docker-volumes"`
+	BackupStop      bool   `json:"backup_stop" doc:"Stop the containers using a volume while it is backed up"`
+	BackupKeep      int    `json:"backup_keep" minimum:"0" maximum:"1000" doc:"Copies of a volume kept from backups made by hand; older ones are removed; 0 = keep all"`
+
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
 }
 
 type DockerSettingsBody struct {
-	ProjectsDir  string `json:"projects_dir" minLength:"2" maxLength:"500"`
-	UpdateCheck  bool   `json:"update_check"`
-	ScannerImage string `json:"scanner_image" minLength:"1" maxLength:"300"`
-	EventsHours  int    `json:"events_hours" minimum:"1" maximum:"720"`
+	ProjectsDir       string `json:"projects_dir" minLength:"2" maxLength:"500"`
+	UpdateCheck       bool   `json:"update_check"`
+	ScannerImage      string `json:"scanner_image" minLength:"1" maxLength:"300"`
+	EventsHours       int    `json:"events_hours" minimum:"1" maximum:"720"`
+	StatsDays         int    `json:"stats_days" minimum:"0" maximum:"90"`
+	UpdateCheckHours  int    `json:"update_check_hours" enum:"6,12,24,72,168"`
+	ScanIgnoreUnfixed bool   `json:"scan_ignore_unfixed"`
+	RemoveOrphans     bool   `json:"remove_orphans"`
+	VersionsKeep      int    `json:"versions_keep" minimum:"5" maximum:"200"`
+
+	DefaultRestart  string  `json:"default_restart,omitempty" required:"false" enum:",no,always,unless-stopped,on-failure"`
+	DefaultMemoryMB int     `json:"default_memory_mb,omitempty" required:"false" minimum:"0" maximum:"1048576"`
+	DefaultCPUs     float64 `json:"default_cpus,omitempty" required:"false" minimum:"0" maximum:"512"`
+	DefaultLogMaxMB int     `json:"default_log_max_mb,omitempty" required:"false" minimum:"0" maximum:"10240"`
+	DefaultLogFiles int     `json:"default_log_files,omitempty" required:"false" minimum:"0" maximum:"100"`
+
+	PruneAuto       bool   `json:"prune_auto,omitempty" required:"false"`
+	PruneHours      int    `json:"prune_hours,omitempty" required:"false" enum:"24,72,168,720"`
+	PruneImages     string `json:"prune_images,omitempty" required:"false" enum:"none,dangling,all"`
+	PruneContainers bool   `json:"prune_containers,omitempty" required:"false"`
+	PruneNetworks   bool   `json:"prune_networks,omitempty" required:"false"`
+	PruneBuildCache bool   `json:"prune_build_cache,omitempty" required:"false"`
+	PruneOlderHours int    `json:"prune_older_hours,omitempty" required:"false" enum:"0,24,72,168,720"`
+
+	NotifyUpdates  bool     `json:"notify_updates,omitempty" required:"false"`
+	NotifyVulns    string   `json:"notify_vulns,omitempty" required:"false" enum:"off,critical,high"`
+	NotifyChannels []string `json:"notify_channels,omitempty" required:"false" maxItems:"20"`
+
+	BackupStorageID string `json:"backup_storage_id,omitempty" required:"false"`
+	BackupFolder    string `json:"backup_folder,omitempty" required:"false" maxLength:"500"`
+	BackupStop      bool   `json:"backup_stop,omitempty" required:"false"`
+	BackupKeep      int    `json:"backup_keep,omitempty" required:"false" minimum:"0" maximum:"1000"`
+}
+
+// DockerSettingsOverrides are the settings one server sets for itself; a
+// missing key follows the workspace. The keys are DockerSettings' own.
+type DockerSettingsOverrides struct {
+	ProjectsDir       *string   `json:"projects_dir,omitempty" required:"false" minLength:"2" maxLength:"500"`
+	UpdateCheck       *bool     `json:"update_check,omitempty" required:"false"`
+	ScannerImage      *string   `json:"scanner_image,omitempty" required:"false" minLength:"1" maxLength:"300"`
+	EventsHours       *int      `json:"events_hours,omitempty" required:"false" minimum:"1" maximum:"720"`
+	StatsDays         *int      `json:"stats_days,omitempty" required:"false" minimum:"0" maximum:"90"`
+	UpdateCheckHours  *int      `json:"update_check_hours,omitempty" required:"false" enum:"6,12,24,72,168"`
+	ScanIgnoreUnfixed *bool     `json:"scan_ignore_unfixed,omitempty" required:"false"`
+	RemoveOrphans     *bool     `json:"remove_orphans,omitempty" required:"false"`
+	VersionsKeep      *int      `json:"versions_keep,omitempty" required:"false" minimum:"5" maximum:"200"`
+	DefaultRestart    *string   `json:"default_restart,omitempty" required:"false" enum:",no,always,unless-stopped,on-failure"`
+	DefaultMemoryMB   *int      `json:"default_memory_mb,omitempty" required:"false" minimum:"0" maximum:"1048576"`
+	DefaultCPUs       *float64  `json:"default_cpus,omitempty" required:"false" minimum:"0" maximum:"512"`
+	DefaultLogMaxMB   *int      `json:"default_log_max_mb,omitempty" required:"false" minimum:"0" maximum:"10240"`
+	DefaultLogFiles   *int      `json:"default_log_files,omitempty" required:"false" minimum:"0" maximum:"100"`
+	PruneAuto         *bool     `json:"prune_auto,omitempty" required:"false"`
+	PruneHours        *int      `json:"prune_hours,omitempty" required:"false" enum:"24,72,168,720"`
+	PruneImages       *string   `json:"prune_images,omitempty" required:"false" enum:"none,dangling,all"`
+	PruneContainers   *bool     `json:"prune_containers,omitempty" required:"false"`
+	PruneNetworks     *bool     `json:"prune_networks,omitempty" required:"false"`
+	PruneBuildCache   *bool     `json:"prune_build_cache,omitempty" required:"false"`
+	PruneOlderHours   *int      `json:"prune_older_hours,omitempty" required:"false" enum:"0,24,72,168,720"`
+	NotifyUpdates     *bool     `json:"notify_updates,omitempty" required:"false"`
+	NotifyVulns       *string   `json:"notify_vulns,omitempty" required:"false" enum:"off,critical,high"`
+	NotifyChannels    *[]string `json:"notify_channels,omitempty" required:"false" maxItems:"20"`
+	BackupStorageID   *string   `json:"backup_storage_id,omitempty" required:"false"`
+	BackupFolder      *string   `json:"backup_folder,omitempty" required:"false" maxLength:"500"`
+	BackupStop        *bool     `json:"backup_stop,omitempty" required:"false"`
+	BackupKeep        *int      `json:"backup_keep,omitempty" required:"false" minimum:"0" maximum:"1000"`
+}
+
+// DockerServerSettings is one server's own settings and last clean-up.
+type DockerServerSettings struct {
+	ServerID   string                  `json:"server_id" format:"uuid"`
+	ServerName string                  `json:"server_name"`
+	Overrides  DockerSettingsOverrides `json:"overrides"`
+	UpdatedAt  *time.Time              `json:"updated_at,omitempty"`
+	Prune      *DockerAutoPrune        `json:"prune,omitempty" doc:"The last automatic clean-up"`
+}
+
+type DockerAutoPrune struct {
+	At      time.Time `json:"at"`
+	Space   int64     `json:"space" doc:"Bytes freed"`
+	Removed int       `json:"removed" doc:"Things removed"`
+	Error   string    `json:"error,omitempty"`
+}
+
+// DockerEffectiveSettings is what applies on one server.
+type DockerEffectiveSettings struct {
+	DockerSettings
+	Overridden []string `json:"overridden" doc:"Keys this server sets for itself"`
+}
+
+func uuidStrings(ids []uuid.UUID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.String()
+	}
+	return out
 }
 
 func toDockerSettings(s sqlc.DockerSetting) DockerSettings {
-	return DockerSettings{ProjectsDir: s.ProjectsDir, UpdateCheck: s.UpdateCheck, ScannerImage: s.ScannerImage, EventsHours: int(s.EventsHours), UpdatedAt: s.UpdatedAt}
+	storage := ""
+	if s.BackupStorageID != nil {
+		storage = s.BackupStorageID.String()
+	}
+	return DockerSettings{ProjectsDir: s.ProjectsDir, UpdateCheck: s.UpdateCheck, ScannerImage: s.ScannerImage, EventsHours: int(s.EventsHours), StatsDays: int(s.StatsDays),
+		UpdateCheckHours: int(s.UpdateCheckHours), ScanIgnoreUnfixed: s.ScanIgnoreUnfixed, RemoveOrphans: s.RemoveOrphans, VersionsKeep: int(s.VersionsKeep),
+		DefaultRestart: s.DefaultRestart, DefaultMemoryMB: int(s.DefaultMemoryMb), DefaultCPUs: s.DefaultCpus, DefaultLogMaxMB: int(s.DefaultLogMaxMb), DefaultLogFiles: int(s.DefaultLogFiles),
+		PruneAuto: s.PruneAuto, PruneHours: int(s.PruneHours), PruneImages: s.PruneImages, PruneContainers: s.PruneContainers, PruneNetworks: s.PruneNetworks,
+		PruneBuildCache: s.PruneBuildCache, PruneOlderHours: int(s.PruneOlderHours),
+		NotifyUpdates: s.NotifyUpdates, NotifyVulns: s.NotifyVulns, NotifyChannels: uuidStrings(s.NotifyChannels),
+		BackupStorageID: storage, BackupFolder: s.BackupFolder, BackupStop: s.BackupStop, BackupKeep: int(s.BackupKeep),
+		UpdatedAt: s.UpdatedAt}
+}
+
+func defaultDockerSettings() DockerSettings {
+	return DockerSettings{ProjectsDir: defaultProjectsDir, UpdateCheck: true, ScannerImage: defaultScannerImage, EventsHours: defaultEventsHours, StatsDays: defaultStatsDays,
+		UpdateCheckHours: defaultUpdateHours, RemoveOrphans: true, VersionsKeep: defaultVersionsKeep,
+		PruneHours: 168, PruneImages: "dangling", PruneNetworks: true, PruneBuildCache: true, PruneOlderHours: 24,
+		NotifyVulns: "off", NotifyChannels: []string{}}
 }
 
 // dockerSettings returns the workspace's settings, or the defaults.
 func (h *serverHandler) dockerSettings(ctx context.Context, ws uuid.UUID) (DockerSettings, error) {
 	s, err := h.q.GetDockerSettings(ctx, ws)
 	if isNotFound(err) {
-		return DockerSettings{ProjectsDir: defaultProjectsDir, UpdateCheck: true, ScannerImage: defaultScannerImage, EventsHours: defaultEventsHours}, nil
+		return defaultDockerSettings(), nil
 	}
 	if err != nil {
 		return DockerSettings{}, internalError(err)
 	}
 	return toDockerSettings(s), nil
+}
+
+// serverDockerSettings is what applies on a server: the workspace's settings
+// with the server's own laid over them.
+func (h *serverHandler) serverDockerSettings(ctx context.Context, s sqlc.Server) (DockerSettings, error) {
+	set, _, err := h.effectiveDockerSettings(ctx, s)
+	return set, err
+}
+
+func (h *serverHandler) effectiveDockerSettings(ctx context.Context, s sqlc.Server) (DockerSettings, []string, error) {
+	set, err := h.dockerSettings(ctx, s.WorkspaceID)
+	if err != nil {
+		return set, nil, err
+	}
+	o, err := h.q.GetDockerServerSettings(ctx, s.ID)
+	if isNotFound(err) {
+		return set, []string{}, nil
+	}
+	if err != nil {
+		return set, nil, internalError(err)
+	}
+	return overlayDockerSettings(set, o.Overrides)
+}
+
+// overlayDockerSettings lays a server's stored overrides over set and returns
+// the keys it changed.
+func overlayDockerSettings(set DockerSettings, raw []byte) (DockerSettings, []string, error) {
+	keys := map[string]json.RawMessage{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &keys); err != nil {
+			return set, nil, internalError(err)
+		}
+	}
+	at := set.UpdatedAt
+	if err := json.Unmarshal(raw, &set); err != nil && len(raw) > 0 {
+		return set, nil, internalError(err)
+	}
+	set.UpdatedAt = at
+	out := make([]string, 0, len(keys))
+	for k := range keys {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return set, out, nil
+}
+
+func dockerBodyOf(s DockerSettings) DockerSettingsBody {
+	return DockerSettingsBody{ProjectsDir: s.ProjectsDir, UpdateCheck: s.UpdateCheck, ScannerImage: s.ScannerImage, EventsHours: s.EventsHours, StatsDays: s.StatsDays,
+		UpdateCheckHours: s.UpdateCheckHours, ScanIgnoreUnfixed: s.ScanIgnoreUnfixed, RemoveOrphans: s.RemoveOrphans, VersionsKeep: s.VersionsKeep,
+		DefaultRestart: s.DefaultRestart, DefaultMemoryMB: s.DefaultMemoryMB, DefaultCPUs: s.DefaultCPUs, DefaultLogMaxMB: s.DefaultLogMaxMB, DefaultLogFiles: s.DefaultLogFiles,
+		PruneAuto: s.PruneAuto, PruneHours: s.PruneHours, PruneImages: s.PruneImages, PruneContainers: s.PruneContainers, PruneNetworks: s.PruneNetworks,
+		PruneBuildCache: s.PruneBuildCache, PruneOlderHours: s.PruneOlderHours,
+		NotifyUpdates: s.NotifyUpdates, NotifyVulns: s.NotifyVulns, NotifyChannels: s.NotifyChannels,
+		BackupStorageID: s.BackupStorageID, BackupFolder: s.BackupFolder, BackupStop: s.BackupStop, BackupKeep: s.BackupKeep}
+}
+
+// checkDockerSettings tidies b and refuses what can't work: a relative
+// folder, a channel or storage of another workspace.
+func (h *serverHandler) checkDockerSettings(ctx context.Context, ws uuid.UUID, b *DockerSettingsBody) (sqlc.UpsertDockerSettingsParams, error) {
+	p := sqlc.UpsertDockerSettingsParams{WorkspaceID: ws}
+	dir := path.Clean(strings.TrimSpace(b.ProjectsDir))
+	if !strings.HasPrefix(dir, "/") || dir == "/" || strings.ContainsAny(dir, "\n\r\x00") {
+		return p, fieldError("body.projects_dir", "Use a full folder path like /opt/projects", dir)
+	}
+	b.ProjectsDir = dir
+	img := strings.TrimSpace(b.ScannerImage)
+	if img == "" || strings.ContainsAny(img, " \t\n") {
+		return p, fieldError("body.scanner_image", "An image name has no spaces", img)
+	}
+	b.ScannerImage = img
+	if b.PruneHours == 0 {
+		b.PruneHours = 168
+	}
+	if b.PruneImages == "" {
+		b.PruneImages = "dangling"
+	}
+	if b.NotifyVulns == "" {
+		b.NotifyVulns = "off"
+	}
+	if (b.DefaultLogMaxMB > 0) != (b.DefaultLogFiles > 0) {
+		if b.DefaultLogMaxMB > 0 {
+			b.DefaultLogFiles = 3
+		} else {
+			b.DefaultLogMaxMB = 0
+			b.DefaultLogFiles = 0
+		}
+	}
+	channels := []uuid.UUID{}
+	for i, raw := range b.NotifyChannels {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return p, fieldError(fmt.Sprintf("body.notify_channels[%d]", i), "No such channel", raw)
+		}
+		cw, err := h.q.GetNotificationChannelWorkspace(ctx, id)
+		if isNotFound(err) || (err == nil && cw != ws) {
+			return p, fieldError(fmt.Sprintf("body.notify_channels[%d]", i), "That channel isn't in this workspace", raw)
+		}
+		if err != nil {
+			return p, internalError(err)
+		}
+		if !slices.Contains(channels, id) {
+			channels = append(channels, id)
+		}
+	}
+	b.NotifyChannels = uuidStrings(channels)
+	if (b.NotifyUpdates || b.NotifyVulns != "off") && len(channels) == 0 {
+		return p, fieldError("body.notify_channels", "Pick a channel for these messages", nil)
+	}
+	var storage *uuid.UUID
+	if raw := strings.TrimSpace(b.BackupStorageID); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return p, fieldError("body.backup_storage_id", "No such storage", raw)
+		}
+		st, err := h.q.GetStorage(ctx, id)
+		if isNotFound(err) || (err == nil && st.WorkspaceID != ws) {
+			return p, fieldError("body.backup_storage_id", "That storage isn't in this workspace", raw)
+		}
+		if err != nil {
+			return p, internalError(err)
+		}
+		if st.ReadOnly {
+			return p, fieldError("body.backup_storage_id", "That storage is read-only", raw)
+		}
+		storage = &id
+	}
+	b.BackupStorageID = ""
+	if storage != nil {
+		b.BackupStorageID = storage.String()
+	}
+	folder := strings.TrimSpace(b.BackupFolder)
+	if folder != "" {
+		if strings.ContainsAny(folder, "\n\r\x00") {
+			return p, fieldError("body.backup_folder", "Use a plain folder path", folder)
+		}
+		folder = path.Clean("/" + folder)
+		if folder == "/" {
+			folder = ""
+		}
+	}
+	b.BackupFolder = folder
+	p = sqlc.UpsertDockerSettingsParams{
+		WorkspaceID: ws, ProjectsDir: b.ProjectsDir, UpdateCheck: b.UpdateCheck, ScannerImage: b.ScannerImage, EventsHours: int32(b.EventsHours),
+		StatsDays: int32(b.StatsDays), UpdateCheckHours: int32(b.UpdateCheckHours), ScanIgnoreUnfixed: b.ScanIgnoreUnfixed,
+		RemoveOrphans: b.RemoveOrphans, VersionsKeep: int32(b.VersionsKeep),
+		DefaultRestart: b.DefaultRestart, DefaultMemoryMb: int32(b.DefaultMemoryMB), DefaultCpus: b.DefaultCPUs,
+		DefaultLogMaxMb: int32(b.DefaultLogMaxMB), DefaultLogFiles: int32(b.DefaultLogFiles),
+		PruneAuto: b.PruneAuto, PruneHours: int32(b.PruneHours), PruneImages: b.PruneImages, PruneContainers: b.PruneContainers,
+		PruneNetworks: b.PruneNetworks, PruneBuildCache: b.PruneBuildCache, PruneOlderHours: int32(b.PruneOlderHours),
+		NotifyUpdates: b.NotifyUpdates, NotifyVulns: b.NotifyVulns, NotifyChannels: channels,
+		BackupStorageID: storage, BackupFolder: b.BackupFolder, BackupStop: b.BackupStop, BackupKeep: int32(b.BackupKeep),
+	}
+	return p, nil
+}
+
+// checkDockerOverrides checks a server's own settings by laying them over the
+// workspace's and checking the whole; only the keys it sets are kept, tidied.
+func (h *serverHandler) checkDockerOverrides(ctx context.Context, ws uuid.UUID, o DockerSettingsOverrides) ([]byte, error) {
+	raw, err := json.Marshal(o)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	keys := map[string]json.RawMessage{}
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		return nil, internalError(err)
+	}
+	base, err := h.dockerSettings(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	merged, _, err := overlayDockerSettings(base, raw)
+	if err != nil {
+		return nil, err
+	}
+	b := dockerBodyOf(merged)
+	if _, err := h.checkDockerSettings(ctx, ws, &b); err != nil {
+		return nil, err
+	}
+	tidy, err := json.Marshal(DockerSettings{ProjectsDir: b.ProjectsDir, UpdateCheck: b.UpdateCheck, ScannerImage: b.ScannerImage, EventsHours: b.EventsHours, StatsDays: b.StatsDays,
+		UpdateCheckHours: b.UpdateCheckHours, ScanIgnoreUnfixed: b.ScanIgnoreUnfixed, RemoveOrphans: b.RemoveOrphans, VersionsKeep: b.VersionsKeep,
+		DefaultRestart: b.DefaultRestart, DefaultMemoryMB: b.DefaultMemoryMB, DefaultCPUs: b.DefaultCPUs, DefaultLogMaxMB: b.DefaultLogMaxMB, DefaultLogFiles: b.DefaultLogFiles,
+		PruneAuto: b.PruneAuto, PruneHours: b.PruneHours, PruneImages: b.PruneImages, PruneContainers: b.PruneContainers, PruneNetworks: b.PruneNetworks,
+		PruneBuildCache: b.PruneBuildCache, PruneOlderHours: b.PruneOlderHours,
+		NotifyUpdates: b.NotifyUpdates, NotifyVulns: b.NotifyVulns, NotifyChannels: b.NotifyChannels,
+		BackupStorageID: b.BackupStorageID, BackupFolder: b.BackupFolder, BackupStop: b.BackupStop, BackupKeep: b.BackupKeep})
+	if err != nil {
+		return nil, internalError(err)
+	}
+	all := map[string]json.RawMessage{}
+	if err := json.Unmarshal(tidy, &all); err != nil {
+		return nil, internalError(err)
+	}
+	// A log size and its file count are tidied as a pair, so one sent alone
+	// keeps the other's tidied value too.
+	pairs := map[string]string{"default_log_max_mb": "default_log_files", "default_log_files": "default_log_max_mb"}
+	for k := range keys {
+		if p, ok := pairs[k]; ok {
+			if _, sent := keys[p]; !sent && string(all[p]) != "0" {
+				keys[p] = nil
+			}
+		}
+	}
+	out := map[string]json.RawMessage{}
+	for k := range keys {
+		if v, ok := all[k]; ok {
+			out[k] = v
+		}
+	}
+	return json.Marshal(out)
+}
+
+func toDockerServerSettings(r sqlc.ListDockerServerSettingsRow) DockerServerSettings {
+	out := DockerServerSettings{ServerID: r.ServerID.String(), ServerName: r.ServerName, UpdatedAt: r.UpdatedAt}
+	if len(r.Overrides) > 0 {
+		_ = json.Unmarshal(r.Overrides, &out.Overrides)
+	}
+	if r.PrunedAt != nil {
+		out.Prune = &DockerAutoPrune{At: *r.PrunedAt, Space: r.PrunedSpace, Removed: int(r.PrunedRemoved), Error: r.PruneError}
+	}
+	return out
 }
 
 // ---- Registries ----
@@ -234,6 +598,11 @@ type dockerRegistryPath struct {
 	Registry string `path:"registry" format:"uuid"`
 }
 
+type DockerServerSettingsPath struct {
+	WorkspacePath
+	Server string `path:"server" format:"uuid"`
+}
+
 type dockerTemplatePath struct {
 	WorkspacePath
 	Template string `path:"template" format:"uuid"`
@@ -268,21 +637,127 @@ func registerDockerSettings(api huma.API, h *serverHandler) {
 		Body DockerSettingsBody
 	}) (*struct{ Body DockerSettings }, error) {
 		b := in.Body
-		dir := path.Clean(strings.TrimSpace(b.ProjectsDir))
-		if !strings.HasPrefix(dir, "/") || dir == "/" || strings.ContainsAny(dir, "\n\r\x00") {
-			return nil, fieldError("body.projects_dir", "Use a full folder path like /opt/projects", dir)
+		p, err := h.checkDockerSettings(ctx, uuid.MustParse(in.ID), &b)
+		if err != nil {
+			return nil, err
 		}
-		img := strings.TrimSpace(b.ScannerImage)
-		if strings.ContainsAny(img, " \t\n") {
-			return nil, fieldError("body.scanner_image", "An image name has no spaces", img)
-		}
-		s, err := h.q.UpsertDockerSettings(ctx, sqlc.UpsertDockerSettingsParams{
-			WorkspaceID: uuid.MustParse(in.ID), ProjectsDir: dir, UpdateCheck: b.UpdateCheck, ScannerImage: img, EventsHours: int32(b.EventsHours),
-		})
+		s, err := h.q.UpsertDockerSettings(ctx, p)
 		if err != nil {
 			return nil, internalError(err)
 		}
 		return &struct{ Body DockerSettings }{toDockerSettings(s)}, nil
+	})
+
+	// serverOf returns the server when it's in the workspace of the path.
+	serverOf := func(ctx context.Context, in DockerServerSettingsPath) (sqlc.Server, error) {
+		s, err := h.q.GetServer(ctx, uuid.MustParse(in.Server))
+		if isNotFound(err) || (err == nil && s.WorkspaceID != uuid.MustParse(in.ID)) {
+			return s, huma.Error404NotFound("No such server in this workspace")
+		}
+		if err != nil {
+			return s, internalError(err)
+		}
+		return s, nil
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-docker-server-settings",
+		Method:      http.MethodGet,
+		Path:        base + "/settings/servers",
+		Summary:     "Servers with their own container settings",
+		Description: "Every server of the workspace that sets some container settings for itself, or had an automatic clean-up.",
+		Tags:        tags,
+	}, func(ctx context.Context, in *WorkspacePath) (*struct {
+		Body struct {
+			Items []DockerServerSettings `json:"items"`
+		}
+	}, error) {
+		rows, err := h.q.ListDockerServerSettings(ctx, uuid.MustParse(in.ID))
+		if err != nil {
+			return nil, internalError(err)
+		}
+		out := &struct {
+			Body struct {
+				Items []DockerServerSettings `json:"items"`
+			}
+		}{}
+		out.Body.Items = make([]DockerServerSettings, 0, len(rows))
+		for _, r := range rows {
+			out.Body.Items = append(out.Body.Items, toDockerServerSettings(r))
+		}
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-docker-server-settings",
+		Method:      http.MethodPut,
+		Path:        base + "/settings/servers/{server}",
+		Summary:     "Set a server's own container settings",
+		Description: "Only the keys sent are the server's own; the rest follow the workspace. Sending none = follow the workspace in everything.",
+		Tags:        tags,
+	}, func(ctx context.Context, in *struct {
+		DockerServerSettingsPath
+		Body DockerSettingsOverrides
+	}) (*struct{ Body DockerServerSettings }, error) {
+		s, err := serverOf(ctx, in.DockerServerSettingsPath)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := h.checkDockerOverrides(ctx, s.WorkspaceID, in.Body)
+		if err != nil {
+			return nil, err
+		}
+		out := DockerServerSettings{ServerID: s.ID.String(), ServerName: s.Name}
+		if string(raw) == "{}" {
+			if err := h.q.DeleteDockerServerSettings(ctx, s.ID); err != nil {
+				return nil, internalError(err)
+			}
+			return &struct{ Body DockerServerSettings }{out}, nil
+		}
+		row, err := h.q.UpsertDockerServerSettings(ctx, sqlc.UpsertDockerServerSettingsParams{ServerID: s.ID, Overrides: raw})
+		if err != nil {
+			return nil, internalError(err)
+		}
+		_ = json.Unmarshal(row.Overrides, &out.Overrides)
+		out.UpdatedAt = &row.UpdatedAt
+		return &struct{ Body DockerServerSettings }{out}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-docker-server-settings",
+		Method:        http.MethodDelete,
+		Path:          base + "/settings/servers/{server}",
+		Summary:       "A server follows the workspace's container settings again",
+		Tags:          tags,
+		DefaultStatus: http.StatusNoContent,
+	}, func(ctx context.Context, in *DockerServerSettingsPath) (*struct{}, error) {
+		s, err := serverOf(ctx, *in)
+		if err != nil {
+			return nil, err
+		}
+		if err := h.q.DeleteDockerServerSettings(ctx, s.ID); err != nil {
+			return nil, internalError(err)
+		}
+		return &struct{}{}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-server-docker-settings",
+		Method:      http.MethodGet,
+		Path:        "/servers/{id}/docker/settings",
+		Summary:     "Container settings that apply on a server",
+		Description: "The workspace's settings with the server's own laid over them.",
+		Tags:        tags,
+	}, func(ctx context.Context, in *ServerIDPath) (*struct{ Body DockerEffectiveSettings }, error) {
+		s, err := h.get(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		set, keys, err := h.effectiveDockerSettings(ctx, s)
+		if err != nil {
+			return nil, err
+		}
+		return &struct{ Body DockerEffectiveSettings }{DockerEffectiveSettings{DockerSettings: set, Overridden: keys}}, nil
 	})
 
 	// -- Registries --

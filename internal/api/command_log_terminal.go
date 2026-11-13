@@ -29,6 +29,8 @@ type termCommands struct {
 	kind   string
 	root   bool
 	closed bool
+	// opened is the shell row's text ("Terminal opened" when empty).
+	opened string
 }
 
 func newTermCommands(l *commandLog, serverID string, p *principal, clientIP string, rec *liveRecording) *termCommands {
@@ -45,7 +47,11 @@ func (t *termCommands) attach(s *terminal.Session) {
 	defer t.mu.Unlock()
 	t.sess = s
 	t.origin.Ref = s.ID
-	h := t.begin("Terminal opened", "", true, s.Created)
+	text := t.opened
+	if text == "" {
+		text = "Terminal opened"
+	}
+	h := t.begin(text, "", true, s.Created)
 	t.shell = h
 	if h == nil {
 		return

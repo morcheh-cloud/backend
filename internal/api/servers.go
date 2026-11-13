@@ -274,6 +274,8 @@ type serverHandler struct {
 	cmds  *commandLog
 	stats *statsHub
 	privs privileges
+	// Root sftp-servers kept open for browsing Docker volumes.
+	volClients volumeClients
 	// How each server's Docker engine is reached (docker_engine.go).
 	docker dockerEngines
 	jobs   *jobs.Runner
