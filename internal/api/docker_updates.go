@@ -103,16 +103,26 @@ func (h *serverHandler) checkDockerUpdates(ctx context.Context, id string, progr
 		return 0, err
 	}
 	digests := map[string][]string{}
+	tagged := map[string]string{} // tag → the image id it points to here
 	for _, im := range ims {
 		digests[im.ID] = im.RepoDigests
+		for _, t := range im.RepoTags {
+			tagged[t] = im.ID
+		}
 	}
-	imageOf := map[string]string{} // reference → the image id containers use
+	// reference → the image id its containers use. When some still run an
+	// older image than the tag now points to (pulled, never recreated), that
+	// one counts: those containers are the ones with an update waiting.
+	imageOf := map[string]string{}
 	var refs []string
 	for _, c := range cs {
-		if _, ok := imageOf[c.Image]; !ok {
+		old, ok := imageOf[c.Image]
+		if !ok {
 			refs = append(refs, c.Image)
 		}
-		imageOf[c.Image] = c.ImageID
+		if !ok || old == tagged[withTag(c.Image)] {
+			imageOf[c.Image] = c.ImageID
+		}
 	}
 	sort.Strings(refs)
 	before := map[string]sqlc.DockerImageUpdate{}
@@ -130,43 +140,7 @@ func (h *serverHandler) checkDockerUpdates(ctx context.Context, id string, progr
 		if ctx.Err() != nil {
 			return available, ctx.Err()
 		}
-		row := sqlc.UpsertDockerImageUpdateParams{ServerID: sid, Image: ref}
-		local := digests[imageOf[ref]]
-		for _, d := range local {
-			if sameRepo(ref, d) {
-				_, row.LocalDigest, _ = strings.Cut(d, "@")
-				break
-			}
-		}
-		switch {
-		case pinnedRef(ref):
-			row.State = "pinned"
-		case row.LocalDigest == "":
-			row.State = "local"
-		default:
-			auth := h.serverRegistryAuth(ctx, id, ref)
-			var remote string
-			err := h.withDocker(ctx, id, func(e *dockerEngine) error {
-				var err error
-				remote, err = e.client.RemoteDigest(ctx, ref, auth)
-				return err
-			})
-			switch {
-			case err != nil:
-				row.State, row.Error = "error", dockerProblemText(err)
-			case remote == "":
-				row.State, row.Error = "error", "The registry didn't say"
-			default:
-				row.RemoteDigest = remote
-				row.State = "available"
-				for _, d := range local {
-					if strings.HasSuffix(d, "@"+remote) {
-						row.State = "current"
-						break
-					}
-				}
-			}
-		}
+		row := h.registryState(ctx, id, sid, ref, digests[imageOf[ref]])
 		if row.State == "available" {
 			available++
 			if b, ok := before[ref]; !ok || b.State != "available" || b.RemoteDigest != row.RemoteDigest {
@@ -189,6 +163,48 @@ func (h *serverHandler) checkDockerUpdates(ctx context.Context, id string, progr
 		}
 	}
 	return available, nil
+}
+
+// registryState compares one image reference with its registry. local is
+// the repo digests of the image the containers use now.
+func (h *serverHandler) registryState(ctx context.Context, id string, sid uuid.UUID, ref string, local []string) sqlc.UpsertDockerImageUpdateParams {
+	row := sqlc.UpsertDockerImageUpdateParams{ServerID: sid, Image: ref}
+	for _, d := range local {
+		if sameRepo(ref, d) {
+			_, row.LocalDigest, _ = strings.Cut(d, "@")
+			break
+		}
+	}
+	switch {
+	case pinnedRef(ref):
+		row.State = "pinned"
+	case row.LocalDigest == "":
+		row.State = "local"
+	default:
+		auth := h.serverRegistryAuth(ctx, id, ref)
+		var remote string
+		err := h.withDocker(ctx, id, func(e *dockerEngine) error {
+			var err error
+			remote, err = e.client.RemoteDigest(ctx, ref, auth)
+			return err
+		})
+		switch {
+		case err != nil:
+			row.State, row.Error = "error", dockerProblemText(err)
+		case remote == "":
+			row.State, row.Error = "error", "The registry didn't say"
+		default:
+			row.RemoteDigest = remote
+			row.State = "available"
+			for _, d := range local {
+				if strings.HasSuffix(d, "@"+remote) {
+					row.State = "current"
+					break
+				}
+			}
+		}
+	}
+	return row
 }
 
 func registerDockerUpdates(api huma.API, h *serverHandler) {
@@ -469,4 +485,16 @@ func startDockerUpdateLoop(h *serverHandler) {
 			}
 		}
 	}()
+}
+
+// withTag adds the ":latest" Docker assumes to a reference without a tag or
+// digest.
+func withTag(ref string) string {
+	if strings.Contains(ref, "@") {
+		return ref
+	}
+	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
+		return ref
+	}
+	return ref + ":latest"
 }

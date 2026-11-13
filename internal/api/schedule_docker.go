@@ -152,7 +152,7 @@ func (r *taskRun) dockerOne(ctx context.Context, t *ScheduleDocker, serverID, se
 	}
 	newer := map[string]bool{}
 	for _, row := range rows {
-		if row.State == "update" {
+		if row.State == "available" {
 			newer[row.Image] = true
 		}
 	}
@@ -193,7 +193,7 @@ func (r *taskRun) dockerOne(ctx context.Context, t *ScheduleDocker, serverID, se
 	}
 
 	var updated, rolled, failed []string
-	keepOld := map[string]bool{} // images that went back: still "update"
+	keepOld := map[string]bool{} // images that went back: still "available"
 	for i, u := range picks {
 		if ctx.Err() != nil {
 			return "", "", ctx.Err()

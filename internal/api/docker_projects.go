@@ -34,6 +34,7 @@ type DockerProject struct {
 	Dir        string      `json:"dir" doc:"Its folder on the server; empty when the containers don't say"`
 	Files      []string    `json:"files" doc:"Its compose files (full paths)"`
 	Managed    bool        `json:"managed" doc:"In the workspace's projects folder"`
+	Source     string      `json:"source" enum:"folder,containers,scan,added" doc:"How Morche knows it: folder = in the projects folder; containers = its containers name it; scan = found on the disk; added = someone gave its path"`
 	State      string      `json:"state" enum:"running,partial,stopped,not-deployed"`
 	Running    int         `json:"running"`
 	Total      int         `json:"total"`
@@ -249,6 +250,8 @@ done`
 		return nil
 	})
 
+	sources := h.mergePlaces(ctx, id, root, byName, get)
+
 	metas := map[string]sqlc.DockerProjectMetum{}
 	if sid, err := uuid.Parse(id); err == nil {
 		if rows, err := h.q.DockerProjectMetas(ctx, sid); err == nil {
@@ -263,6 +266,14 @@ done`
 			p.Title, p.Note = m.Title, m.Note
 		}
 		p.Managed = p.Dir != "" && path.Dir(path.Clean(p.Dir)) == root
+		switch {
+		case p.Managed:
+			p.Source = "folder"
+		case sources[p.Name] != "":
+			p.Source = sources[p.Name]
+		default:
+			p.Source = "containers"
+		}
 		p.State = projectState(p.Running, p.Total)
 		sort.Strings(p.Services)
 		sort.Strings(p.Images)
@@ -380,13 +391,14 @@ func registerDockerProjects(api huma.API, h *serverHandler) {
 		Method:      http.MethodGet,
 		Path:        base,
 		Summary:     "Compose projects on a server",
-		Description: "Projects its containers belong to, plus folders in the workspace's projects folder that hold a compose file.",
+		Description: "Projects its containers belong to, folders in the workspace's projects folder that hold a compose file, and compose projects elsewhere on the disk that were found or added. The first listing starts a look for compose files in the background.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *ServerIDPath) (*struct{ Body []DockerProject }, error) {
 		ps, _, err := h.dockerProjects(ctx, in.ID)
 		if err != nil {
 			return nil, err
 		}
+		h.maybeAutoScan(in.ID)
 		return &struct{ Body []DockerProject }{ps}, nil
 	})
 
@@ -549,6 +561,7 @@ func registerDockerProjects(api huma.API, h *serverHandler) {
 	})
 	h.jobs.Handle(dockerComposeKind, h.runDockerCompose)
 	registerDockerProjectCheck(api, h)
+	registerDockerProjectPlaces(api, h)
 }
 
 var composeVerbs = map[string]string{

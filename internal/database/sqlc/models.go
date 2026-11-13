@@ -464,6 +464,59 @@ type DockerAutoPrune struct {
 	Error    string    `json:"error"`
 }
 
+type DockerAutoUpdate struct {
+	ID             uuid.UUID   `json:"id"`
+	WorkspaceID    uuid.UUID   `json:"workspace_id"`
+	Name           string      `json:"name"`
+	Enabled        bool        `json:"enabled"`
+	ServerIds      []uuid.UUID `json:"server_ids"`
+	Pick           string      `json:"pick"`
+	Include        []string    `json:"include"`
+	Exclude        []string    `json:"exclude"`
+	IncludeStopped bool        `json:"include_stopped"`
+	ReviveStopped  bool        `json:"revive_stopped"`
+	Cron           string      `json:"cron"`
+	Timezone       string      `json:"timezone"`
+	Mode           string      `json:"mode"`
+	NoPull         bool        `json:"no_pull"`
+	Cleanup        bool        `json:"cleanup"`
+	Rollback       bool        `json:"rollback"`
+	WaitSeconds    int32       `json:"wait_seconds"`
+	RestartLinked  bool        `json:"restart_linked"`
+	StopTimeout    int32       `json:"stop_timeout"`
+	MinAgeHours    int32       `json:"min_age_hours"`
+	Hooks          bool        `json:"hooks"`
+	HookTimeout    int32       `json:"hook_timeout"`
+	Notify         string      `json:"notify"`
+	Channels       []uuid.UUID `json:"channels"`
+	WebhookEnc     []byte      `json:"webhook_enc"`
+	WebhookHash    string      `json:"webhook_hash"`
+	NextRunAt      *time.Time  `json:"next_run_at"`
+	LastRunAt      *time.Time  `json:"last_run_at"`
+	LastState      string      `json:"last_state"`
+	LastNote       string      `json:"last_note"`
+	LastJobID      *uuid.UUID  `json:"last_job_id"`
+	CreatedBy      *uuid.UUID  `json:"created_by"`
+	UpdatedBy      *uuid.UUID  `json:"updated_by"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
+}
+
+type DockerAutoUpdateEvent struct {
+	ID          uuid.UUID  `json:"id"`
+	PolicyID    uuid.UUID  `json:"policy_id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	ServerID    uuid.UUID  `json:"server_id"`
+	JobID       *uuid.UUID `json:"job_id"`
+	Container   string     `json:"container"`
+	Image       string     `json:"image"`
+	OldImage    string     `json:"old_image"`
+	NewImage    string     `json:"new_image"`
+	Result      string     `json:"result"`
+	Message     string     `json:"message"`
+	At          time.Time  `json:"at"`
+}
+
 type DockerGitSource struct {
 	ServerID       uuid.UUID  `json:"server_id"`
 	Project        string     `json:"project"`
@@ -513,6 +566,7 @@ type DockerImageUpdate struct {
 	State        string    `json:"state"`
 	Error        string    `json:"error"`
 	CheckedAt    time.Time `json:"checked_at"`
+	SeenAt       time.Time `json:"seen_at"`
 }
 
 type DockerProjectMetum struct {
@@ -522,6 +576,26 @@ type DockerProjectMetum struct {
 	Note          string    `json:"note"`
 	UpdatedByName string    `json:"updated_by_name"`
 	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type DockerProjectPlace struct {
+	ServerID    uuid.UUID `json:"server_id"`
+	Project     string    `json:"project"`
+	Dir         string    `json:"dir"`
+	Files       []string  `json:"files"`
+	Source      string    `json:"source"`
+	Hidden      bool      `json:"hidden"`
+	AddedByName string    `json:"added_by_name"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type DockerProjectScan struct {
+	ServerID  uuid.UUID `json:"server_id"`
+	ScannedAt time.Time `json:"scanned_at"`
+	TookMs    int32     `json:"took_ms"`
+	Items     []byte    `json:"items"`
+	Truncated bool      `json:"truncated"`
+	Error     string    `json:"error"`
 }
 
 type DockerProjectStat struct {

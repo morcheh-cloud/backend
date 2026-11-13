@@ -98,7 +98,9 @@ INSERT INTO docker_image_updates (server_id, image, local_digest, remote_digest,
 VALUES (@server_id, @image, @local_digest, @remote_digest, @state, @error, now())
 ON CONFLICT (server_id, image) DO UPDATE SET
     local_digest = EXCLUDED.local_digest,
-    remote_digest = EXCLUDED.remote_digest,
+    remote_digest = CASE WHEN EXCLUDED.remote_digest = '' THEN docker_image_updates.remote_digest ELSE EXCLUDED.remote_digest END,
+    seen_at = CASE WHEN EXCLUDED.remote_digest <> '' AND EXCLUDED.remote_digest <> docker_image_updates.remote_digest
+        THEN now() ELSE docker_image_updates.seen_at END,
     state = EXCLUDED.state,
     error = EXCLUDED.error,
     checked_at = now();
@@ -377,3 +379,37 @@ LIMIT 20;
 INSERT INTO docker_auto_prunes (server_id, ran_at, space, removed, error)
 VALUES (@server_id, now(), @space, @removed, @error)
 ON CONFLICT (server_id) DO UPDATE SET ran_at = now(), space = EXCLUDED.space, removed = EXCLUDED.removed, error = EXCLUDED.error;
+
+-- name: DockerProjectPlaces :many
+SELECT * FROM docker_project_places WHERE server_id = $1;
+
+-- name: UpsertDockerProjectPlace :exec
+INSERT INTO docker_project_places (server_id, project, dir, files, source, added_by_name)
+VALUES (@server_id, @project, @dir, @files, @source, @added_by_name)
+ON CONFLICT (server_id, project) DO UPDATE SET
+    dir = EXCLUDED.dir, files = EXCLUDED.files, source = EXCLUDED.source,
+    hidden = false, added_by_name = EXCLUDED.added_by_name;
+
+-- name: RememberDockerProjectPlace :exec
+INSERT INTO docker_project_places (server_id, project, dir, files, source)
+VALUES (@server_id, @project, @dir, @files, 'containers')
+ON CONFLICT (server_id, project) DO NOTHING;
+
+-- name: HideDockerProjectPlace :execrows
+UPDATE docker_project_places SET hidden = true
+WHERE server_id = @server_id AND project = @project;
+
+-- name: HideDockerProjectPlaceAt :exec
+INSERT INTO docker_project_places (server_id, project, dir, files, source, hidden, added_by_name)
+VALUES (@server_id, @project, @dir, @files, 'scan', true, @added_by_name)
+ON CONFLICT (server_id, project) DO UPDATE SET hidden = true;
+
+-- name: DockerProjectScan :one
+SELECT * FROM docker_project_scans WHERE server_id = $1;
+
+-- name: SaveDockerProjectScan :exec
+INSERT INTO docker_project_scans (server_id, scanned_at, took_ms, items, truncated, error)
+VALUES (@server_id, now(), @took_ms, @items, @truncated, @error)
+ON CONFLICT (server_id) DO UPDATE SET
+    scanned_at = now(), took_ms = EXCLUDED.took_ms, items = EXCLUDED.items,
+    truncated = EXCLUDED.truncated, error = EXCLUDED.error;

@@ -425,6 +425,57 @@ func (q *Queries) DockerProjectMetas(ctx context.Context, serverID uuid.UUID) ([
 	return items, nil
 }
 
+const dockerProjectPlaces = `-- name: DockerProjectPlaces :many
+SELECT server_id, project, dir, files, source, hidden, added_by_name, created_at FROM docker_project_places WHERE server_id = $1
+`
+
+func (q *Queries) DockerProjectPlaces(ctx context.Context, serverID uuid.UUID) ([]DockerProjectPlace, error) {
+	rows, err := q.db.Query(ctx, dockerProjectPlaces, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerProjectPlace{}
+	for rows.Next() {
+		var i DockerProjectPlace
+		if err := rows.Scan(
+			&i.ServerID,
+			&i.Project,
+			&i.Dir,
+			&i.Files,
+			&i.Source,
+			&i.Hidden,
+			&i.AddedByName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dockerProjectScan = `-- name: DockerProjectScan :one
+SELECT server_id, scanned_at, took_ms, items, truncated, error FROM docker_project_scans WHERE server_id = $1
+`
+
+func (q *Queries) DockerProjectScan(ctx context.Context, serverID uuid.UUID) (DockerProjectScan, error) {
+	row := q.db.QueryRow(ctx, dockerProjectScan, serverID)
+	var i DockerProjectScan
+	err := row.Scan(
+		&i.ServerID,
+		&i.ScannedAt,
+		&i.TookMs,
+		&i.Items,
+		&i.Truncated,
+		&i.Error,
+	)
+	return i, err
+}
+
 const dockerProjectStatsHistory = `-- name: DockerProjectStatsHistory :many
 SELECT date_bin(make_interval(secs => $1::int), at, '2000-01-01T00:00:00Z'::timestamptz)::timestamptz AS bucket,
     avg(cpu)::float8 AS cpu, max(cpu_max)::float8 AS cpu_max,
@@ -978,6 +1029,49 @@ func (q *Queries) GetDockerVolumeBackup(ctx context.Context, arg GetDockerVolume
 	return i, err
 }
 
+const hideDockerProjectPlace = `-- name: HideDockerProjectPlace :execrows
+UPDATE docker_project_places SET hidden = true
+WHERE server_id = $1 AND project = $2
+`
+
+type HideDockerProjectPlaceParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Project  string    `json:"project"`
+}
+
+func (q *Queries) HideDockerProjectPlace(ctx context.Context, arg HideDockerProjectPlaceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, hideDockerProjectPlace, arg.ServerID, arg.Project)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const hideDockerProjectPlaceAt = `-- name: HideDockerProjectPlaceAt :exec
+INSERT INTO docker_project_places (server_id, project, dir, files, source, hidden, added_by_name)
+VALUES ($1, $2, $3, $4, 'scan', true, $5)
+ON CONFLICT (server_id, project) DO UPDATE SET hidden = true
+`
+
+type HideDockerProjectPlaceAtParams struct {
+	ServerID    uuid.UUID `json:"server_id"`
+	Project     string    `json:"project"`
+	Dir         string    `json:"dir"`
+	Files       []string  `json:"files"`
+	AddedByName string    `json:"added_by_name"`
+}
+
+func (q *Queries) HideDockerProjectPlaceAt(ctx context.Context, arg HideDockerProjectPlaceAtParams) error {
+	_, err := q.db.Exec(ctx, hideDockerProjectPlaceAt,
+		arg.ServerID,
+		arg.Project,
+		arg.Dir,
+		arg.Files,
+		arg.AddedByName,
+	)
+	return err
+}
+
 const latestDockerProjectVersion = `-- name: LatestDockerProjectVersion :one
 SELECT id, server_id, project, revision, compose, env_enc, reason, note, created_by_name, created_at FROM docker_project_versions
 WHERE server_id = $1 AND project = $2
@@ -1147,7 +1241,7 @@ func (q *Queries) ListDockerImageScansFor(ctx context.Context, serverIds []uuid.
 }
 
 const listDockerImageUpdates = `-- name: ListDockerImageUpdates :many
-SELECT server_id, image, local_digest, remote_digest, state, error, checked_at FROM docker_image_updates WHERE server_id = $1 ORDER BY image
+SELECT server_id, image, local_digest, remote_digest, state, error, checked_at, seen_at FROM docker_image_updates WHERE server_id = $1 ORDER BY image
 `
 
 func (q *Queries) ListDockerImageUpdates(ctx context.Context, serverID uuid.UUID) ([]DockerImageUpdate, error) {
@@ -1167,6 +1261,7 @@ func (q *Queries) ListDockerImageUpdates(ctx context.Context, serverID uuid.UUID
 			&i.State,
 			&i.Error,
 			&i.CheckedAt,
+			&i.SeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1179,7 +1274,7 @@ func (q *Queries) ListDockerImageUpdates(ctx context.Context, serverID uuid.UUID
 }
 
 const listDockerImageUpdatesFor = `-- name: ListDockerImageUpdatesFor :many
-SELECT server_id, image, local_digest, remote_digest, state, error, checked_at FROM docker_image_updates WHERE server_id = ANY($1::uuid[]) ORDER BY server_id, image
+SELECT server_id, image, local_digest, remote_digest, state, error, checked_at, seen_at FROM docker_image_updates WHERE server_id = ANY($1::uuid[]) ORDER BY server_id, image
 `
 
 func (q *Queries) ListDockerImageUpdatesFor(ctx context.Context, serverIds []uuid.UUID) ([]DockerImageUpdate, error) {
@@ -1199,6 +1294,7 @@ func (q *Queries) ListDockerImageUpdatesFor(ctx context.Context, serverIds []uui
 			&i.State,
 			&i.Error,
 			&i.CheckedAt,
+			&i.SeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1575,6 +1671,56 @@ func (q *Queries) RecordDockerAutoPrune(ctx context.Context, arg RecordDockerAut
 	return err
 }
 
+const rememberDockerProjectPlace = `-- name: RememberDockerProjectPlace :exec
+INSERT INTO docker_project_places (server_id, project, dir, files, source)
+VALUES ($1, $2, $3, $4, 'containers')
+ON CONFLICT (server_id, project) DO NOTHING
+`
+
+type RememberDockerProjectPlaceParams struct {
+	ServerID uuid.UUID `json:"server_id"`
+	Project  string    `json:"project"`
+	Dir      string    `json:"dir"`
+	Files    []string  `json:"files"`
+}
+
+func (q *Queries) RememberDockerProjectPlace(ctx context.Context, arg RememberDockerProjectPlaceParams) error {
+	_, err := q.db.Exec(ctx, rememberDockerProjectPlace,
+		arg.ServerID,
+		arg.Project,
+		arg.Dir,
+		arg.Files,
+	)
+	return err
+}
+
+const saveDockerProjectScan = `-- name: SaveDockerProjectScan :exec
+INSERT INTO docker_project_scans (server_id, scanned_at, took_ms, items, truncated, error)
+VALUES ($1, now(), $2, $3, $4, $5)
+ON CONFLICT (server_id) DO UPDATE SET
+    scanned_at = now(), took_ms = EXCLUDED.took_ms, items = EXCLUDED.items,
+    truncated = EXCLUDED.truncated, error = EXCLUDED.error
+`
+
+type SaveDockerProjectScanParams struct {
+	ServerID  uuid.UUID `json:"server_id"`
+	TookMs    int32     `json:"took_ms"`
+	Items     []byte    `json:"items"`
+	Truncated bool      `json:"truncated"`
+	Error     string    `json:"error"`
+}
+
+func (q *Queries) SaveDockerProjectScan(ctx context.Context, arg SaveDockerProjectScanParams) error {
+	_, err := q.db.Exec(ctx, saveDockerProjectScan,
+		arg.ServerID,
+		arg.TookMs,
+		arg.Items,
+		arg.Truncated,
+		arg.Error,
+	)
+	return err
+}
+
 const setDockerGitWebhook = `-- name: SetDockerGitWebhook :one
 UPDATE docker_git_sources SET webhook_enc = $3, webhook_hash = $4, updated_at = now()
 WHERE server_id = $1 AND project = $2
@@ -1883,7 +2029,9 @@ INSERT INTO docker_image_updates (server_id, image, local_digest, remote_digest,
 VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (server_id, image) DO UPDATE SET
     local_digest = EXCLUDED.local_digest,
-    remote_digest = EXCLUDED.remote_digest,
+    remote_digest = CASE WHEN EXCLUDED.remote_digest = '' THEN docker_image_updates.remote_digest ELSE EXCLUDED.remote_digest END,
+    seen_at = CASE WHEN EXCLUDED.remote_digest <> '' AND EXCLUDED.remote_digest <> docker_image_updates.remote_digest
+        THEN now() ELSE docker_image_updates.seen_at END,
     state = EXCLUDED.state,
     error = EXCLUDED.error,
     checked_at = now()
@@ -1945,6 +2093,35 @@ func (q *Queries) UpsertDockerProjectMeta(ctx context.Context, arg UpsertDockerP
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const upsertDockerProjectPlace = `-- name: UpsertDockerProjectPlace :exec
+INSERT INTO docker_project_places (server_id, project, dir, files, source, added_by_name)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (server_id, project) DO UPDATE SET
+    dir = EXCLUDED.dir, files = EXCLUDED.files, source = EXCLUDED.source,
+    hidden = false, added_by_name = EXCLUDED.added_by_name
+`
+
+type UpsertDockerProjectPlaceParams struct {
+	ServerID    uuid.UUID `json:"server_id"`
+	Project     string    `json:"project"`
+	Dir         string    `json:"dir"`
+	Files       []string  `json:"files"`
+	Source      string    `json:"source"`
+	AddedByName string    `json:"added_by_name"`
+}
+
+func (q *Queries) UpsertDockerProjectPlace(ctx context.Context, arg UpsertDockerProjectPlaceParams) error {
+	_, err := q.db.Exec(ctx, upsertDockerProjectPlace,
+		arg.ServerID,
+		arg.Project,
+		arg.Dir,
+		arg.Files,
+		arg.Source,
+		arg.AddedByName,
+	)
+	return err
 }
 
 const upsertDockerServerSettings = `-- name: UpsertDockerServerSettings :one

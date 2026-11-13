@@ -108,6 +108,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerProcesses(api, servers)
 	registerDocker(api, servers)
 	startDockerUpdateLoop(servers)
+	startDockerAutoUpdateLoop(servers)
 	startDockerAutoPruneLoop(servers)
 	startDockerAlertLoop(servers)
 	startDockerGitLoop(servers)

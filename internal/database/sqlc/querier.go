@@ -16,6 +16,7 @@ type Querier interface {
 	// Runs still going that touch these servers.
 	ActiveSoftwareRunsOn(ctx context.Context, serverIds []uuid.UUID) ([]ActiveSoftwareRunsOnRow, error)
 	AddAlertRuleChannel(ctx context.Context, arg AddAlertRuleChannelParams) error
+	AddDockerAutoUpdateEvent(ctx context.Context, arg AddDockerAutoUpdateEventParams) error
 	AddDockerProjectStat(ctx context.Context, arg AddDockerProjectStatParams) error
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
 	AddGroupMembers(ctx context.Context, arg AddGroupMembersParams) error
@@ -44,6 +45,8 @@ type Querier interface {
 	// Moves a due plan on; 0 rows means something else already did.
 	ClaimBackupPlan(ctx context.Context, arg ClaimBackupPlanParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
+	ClaimDockerAutoUpdate(ctx context.Context, arg ClaimDockerAutoUpdateParams) (int64, error)
+	// Moves next_run_at on, only if nobody else did first.
 	ClaimSchedule(ctx context.Context, arg ClaimScheduleParams) (int64, error)
 	ClearAlertRuleChannels(ctx context.Context, ruleID uuid.UUID) error
 	ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error
@@ -59,6 +62,8 @@ type Querier interface {
 	CountBackups(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountChannelMonitors(ctx context.Context, ids []uuid.UUID) ([]CountChannelMonitorsRow, error)
 	CountChannelRules(ctx context.Context, ids []uuid.UUID) ([]CountChannelRulesRow, error)
+	// Per policy, what the last 30 days held.
+	CountDockerAutoUpdateEvents(ctx context.Context, workspaceID uuid.UUID) ([]CountDockerAutoUpdateEventsRow, error)
 	CountRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountScheduleRuns(ctx context.Context, arg CountScheduleRunsParams) (int64, error)
 	CountScriptRuns(ctx context.Context, arg CountScriptRunsParams) (int64, error)
@@ -85,6 +90,7 @@ type Querier interface {
 	CreateBackupPlan(ctx context.Context, arg CreateBackupPlanParams) (DatabaseBackupPlan, error)
 	CreateDNSServer(ctx context.Context, arg CreateDNSServerParams) (DnsServer, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
+	CreateDockerAutoUpdate(ctx context.Context, arg CreateDockerAutoUpdateParams) (DockerAutoUpdate, error)
 	CreateDockerProjectVersion(ctx context.Context, arg CreateDockerProjectVersionParams) (CreateDockerProjectVersionRow, error)
 	CreateDockerRegistry(ctx context.Context, arg CreateDockerRegistryParams) (DockerRegistry, error)
 	CreateDockerTemplate(ctx context.Context, arg CreateDockerTemplateParams) (DockerTemplate, error)
@@ -141,6 +147,7 @@ type Querier interface {
 	DeleteBackupPlan(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDNSServer(ctx context.Context, id uuid.UUID) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteDockerAutoUpdate(ctx context.Context, arg DeleteDockerAutoUpdateParams) (int64, error)
 	DeleteDockerGitSource(ctx context.Context, arg DeleteDockerGitSourceParams) (int64, error)
 	DeleteDockerImageScan(ctx context.Context, arg DeleteDockerImageScanParams) error
 	// Forgets images the server no longer runs.
@@ -189,6 +196,8 @@ type Querier interface {
 	DockerGitChecked(ctx context.Context, arg DockerGitCheckedParams) error
 	DockerGitDeployed(ctx context.Context, arg DockerGitDeployedParams) error
 	DockerProjectMetas(ctx context.Context, serverID uuid.UUID) ([]DockerProjectMetum, error)
+	DockerProjectPlaces(ctx context.Context, serverID uuid.UUID) ([]DockerProjectPlace, error)
+	DockerProjectScan(ctx context.Context, serverID uuid.UUID) (DockerProjectScan, error)
 	DockerProjectStatsHistory(ctx context.Context, arg DockerProjectStatsHistoryParams) ([]DockerProjectStatsHistoryRow, error)
 	// Every compose project of a server added up per recorded point, then
 	// averaged per bucket.
@@ -197,15 +206,18 @@ type Querier interface {
 	// those with points from the last week and those known to run Docker (their
 	// images are checked for updates), in workspaces that keep history.
 	DockerStatsServers(ctx context.Context, ids []uuid.UUID) ([]DockerStatsServersRow, error)
+	DueDockerAutoUpdates(ctx context.Context) ([]DockerAutoUpdate, error)
 	DueDockerGitSources(ctx context.Context) ([]DockerGitSource, error)
 	// Every enabled rule that watches containers or the Docker engine.
 	EnabledContainerAlertRules(ctx context.Context) ([]AlertRule, error)
+	EnabledDockerAutoUpdatesWithoutNext(ctx context.Context) ([]DockerAutoUpdate, error)
 	// Ends a mute now (one that hasn't started yet goes away).
 	EndAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error)
 	// A run whose job ended without it (canceled while queued, Morche restarted).
 	EndAnsibleRun(ctx context.Context, arg EndAnsibleRunParams) error
 	// Only a run still going: a run that finished keeps its outcome.
 	EndBackup(ctx context.Context, arg EndBackupParams) error
+	EndDockerAutoUpdateRun(ctx context.Context, arg EndDockerAutoUpdateRunParams) error
 	// Only a restore still going. The login it was given goes with it.
 	EndRestore(ctx context.Context, arg EndRestoreParams) error
 	// Ends a run that's still queued or running, keeping what it recorded.
@@ -261,6 +273,8 @@ type Querier interface {
 	// What access to a database follows: its workspace, and the server it goes
 	// through.
 	GetDatabaseWorkspace(ctx context.Context, id uuid.UUID) (GetDatabaseWorkspaceRow, error)
+	GetDockerAutoUpdate(ctx context.Context, id uuid.UUID) (DockerAutoUpdate, error)
+	GetDockerAutoUpdateByHook(ctx context.Context, webhookHash string) (DockerAutoUpdate, error)
 	GetDockerGitSource(ctx context.Context, arg GetDockerGitSourceParams) (DockerGitSource, error)
 	GetDockerGitSourceByHook(ctx context.Context, webhookHash string) (DockerGitSource, error)
 	GetDockerImageScan(ctx context.Context, arg GetDockerImageScanParams) (DockerImageScan, error)
@@ -325,6 +339,8 @@ type Querier interface {
 	GetWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) (WorkspaceLogo, error)
 	GetWorkspaceLogoStamp(ctx context.Context, workspaceID uuid.UUID) (time.Time, error)
 	HasSignedIn(ctx context.Context, userID *uuid.UUID) (bool, error)
+	HideDockerProjectPlace(ctx context.Context, arg HideDockerProjectPlaceParams) (int64, error)
+	HideDockerProjectPlaceAt(ctx context.Context, arg HideDockerProjectPlaceAtParams) error
 	InsertAlertEvent(ctx context.Context, arg InsertAlertEventParams) error
 	InsertDatabaseEvent(ctx context.Context, arg InsertDatabaseEventParams) (DatabaseEvent, error)
 	InsertDatabaseSample(ctx context.Context, arg InsertDatabaseSampleParams) error
@@ -408,6 +424,9 @@ type Querier interface {
 	ListDatabases(ctx context.Context, arg ListDatabasesParams) ([]Database, error)
 	// What the monitor should look at now.
 	ListDatabasesDue(ctx context.Context) ([]Database, error)
+	ListDockerAutoUpdateEvents(ctx context.Context, arg ListDockerAutoUpdateEventsParams) ([]ListDockerAutoUpdateEventsRow, error)
+	ListDockerAutoUpdates(ctx context.Context, workspaceID uuid.UUID) ([]DockerAutoUpdate, error)
+	ListDockerAutoUpdatesForServer(ctx context.Context, serverID uuid.UUID) ([]DockerAutoUpdate, error)
 	ListDockerGitSources(ctx context.Context, serverID uuid.UUID) ([]DockerGitSource, error)
 	ListDockerImageScans(ctx context.Context, serverID uuid.UUID) ([]DockerImageScan, error)
 	ListDockerImageScansFor(ctx context.Context, serverIds []uuid.UUID) ([]ListDockerImageScansForRow, error)
@@ -563,6 +582,7 @@ type Querier interface {
 	PruneCommandLog(ctx context.Context) (int64, error)
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
+	PruneDockerAutoUpdateEvents(ctx context.Context) error
 	PruneDockerProjectStats(ctx context.Context) (int64, error)
 	// Keeps the newest @keep of a project.
 	PruneDockerProjectVersions(ctx context.Context, arg PruneDockerProjectVersionsParams) error
@@ -602,6 +622,7 @@ type Querier interface {
 	RecordSignIn(ctx context.Context, arg RecordSignInParams) (SignIn, error)
 	// host_key is only stored when the check saw one (SFTP).
 	RecordStorageCheck(ctx context.Context, arg RecordStorageCheckParams) (Storage, error)
+	RememberDockerProjectPlace(ctx context.Context, arg RememberDockerProjectPlaceParams) error
 	RemoveServerTags(ctx context.Context, arg RemoveServerTagsParams) (int64, error)
 	ReparentFolderChildren(ctx context.Context, arg ReparentFolderChildrenParams) error
 	ResetMonitorLocations(ctx context.Context, monitorID uuid.UUID) error
@@ -616,6 +637,7 @@ type Querier interface {
 	// Writes a row's whole state; called again as it ends or repeats.
 	SaveCommandLog(ctx context.Context, arg []SaveCommandLogParams) *SaveCommandLogBatchResults
 	SaveCommandLogOutput(ctx context.Context, arg []SaveCommandLogOutputParams) *SaveCommandLogOutputBatchResults
+	SaveDockerProjectScan(ctx context.Context, arg SaveDockerProjectScanParams) error
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
 	SaveMonitorLocation(ctx context.Context, arg SaveMonitorLocationParams) error
 	SaveMonitorState(ctx context.Context, arg SaveMonitorStateParams) (Monitor, error)
@@ -628,6 +650,8 @@ type Querier interface {
 	SaveSoftwareHostError(ctx context.Context, arg SaveSoftwareHostErrorParams) error
 	SaveSoftwareTargetOutput(ctx context.Context, arg SaveSoftwareTargetOutputParams) error
 	SaveTerminalRecording(ctx context.Context, arg SaveTerminalRecordingParams) error
+	// Whether this policy already said a container's image has this version.
+	SeenDockerAutoUpdateAvailable(ctx context.Context, arg SeenDockerAutoUpdateAvailableParams) (bool, error)
 	ServerCheckSeries(ctx context.Context, arg ServerCheckSeriesParams) ([]ServerCheckSeriesRow, error)
 	ServerCheckSummary(ctx context.Context, arg ServerCheckSummaryParams) ([]ServerCheckSummaryRow, error)
 	// Each filesystem's use, bucketed (last value of the bucket).
@@ -661,6 +685,9 @@ type Querier interface {
 	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
 	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)
 	SetDatabasePaused(ctx context.Context, arg SetDatabasePausedParams) (Database, error)
+	SetDockerAutoUpdateEnabled(ctx context.Context, arg SetDockerAutoUpdateEnabledParams) (DockerAutoUpdate, error)
+	SetDockerAutoUpdateNext(ctx context.Context, arg SetDockerAutoUpdateNextParams) error
+	SetDockerAutoUpdateWebhook(ctx context.Context, arg SetDockerAutoUpdateWebhookParams) (DockerAutoUpdate, error)
 	SetDockerGitWebhook(ctx context.Context, arg SetDockerGitWebhookParams) (DockerGitSource, error)
 	// Resuming starts over: pending until the next check says otherwise.
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) (Monitor, error)
@@ -695,6 +722,7 @@ type Querier interface {
 	StaleDockerUpdateServers(ctx context.Context) ([]uuid.UUID, error)
 	StartAnsibleRun(ctx context.Context, id uuid.UUID) error
 	StartBackup(ctx context.Context, arg StartBackupParams) error
+	StartDockerAutoUpdateRun(ctx context.Context, arg StartDockerAutoUpdateRunParams) error
 	StartJob(ctx context.Context, id uuid.UUID) error
 	StartRestore(ctx context.Context, id uuid.UUID) error
 	StartScheduleRun(ctx context.Context, id uuid.UUID) error
@@ -728,6 +756,7 @@ type Querier interface {
 	UpdateDNSServer(ctx context.Context, arg UpdateDNSServerParams) (DnsServer, error)
 	// Full replace of the editable fields; the handler resolves the password first.
 	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
+	UpdateDockerAutoUpdate(ctx context.Context, arg UpdateDockerAutoUpdateParams) (DockerAutoUpdate, error)
 	// A NULL password keeps the saved one.
 	UpdateDockerRegistry(ctx context.Context, arg UpdateDockerRegistryParams) (DockerRegistry, error)
 	UpdateDockerTemplate(ctx context.Context, arg UpdateDockerTemplateParams) (DockerTemplate, error)
@@ -754,6 +783,7 @@ type Querier interface {
 	UpsertDockerImageScan(ctx context.Context, arg UpsertDockerImageScanParams) error
 	UpsertDockerImageUpdate(ctx context.Context, arg UpsertDockerImageUpdateParams) error
 	UpsertDockerProjectMeta(ctx context.Context, arg UpsertDockerProjectMetaParams) (DockerProjectMetum, error)
+	UpsertDockerProjectPlace(ctx context.Context, arg UpsertDockerProjectPlaceParams) error
 	UpsertDockerServerSettings(ctx context.Context, arg UpsertDockerServerSettingsParams) (DockerServerSetting, error)
 	UpsertDockerSettings(ctx context.Context, arg UpsertDockerSettingsParams) (DockerSetting, error)
 	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)

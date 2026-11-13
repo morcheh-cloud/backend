@@ -52,6 +52,7 @@ type JobPlace struct {
 	ScheduleID string `json:"schedule_id,omitempty" format:"uuid" doc:"The cron job it is a run of"`
 	DatabaseID string `json:"database_id,omitempty" format:"uuid" doc:"The database it backs up"`
 	Volume     string `json:"volume,omitempty" doc:"The Docker volume it works in (path is inside it)"`
+	AutoUpdate string `json:"auto_update,omitempty" format:"uuid" doc:"The container auto-update it is a run of"`
 }
 
 // JobRemoved is sent on the stream when a job is deleted; an empty id means

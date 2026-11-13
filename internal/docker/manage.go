@@ -113,6 +113,12 @@ func (c *Client) Login(ctx context.Context, server, username, password string) (
 // kept, renamed, until the new one runs; on any failure it comes back.
 // Returns the new container's id.
 func (c *Client) Recreate(ctx context.Context, id string) (string, error) {
+	return c.RecreateWait(ctx, id, 30)
+}
+
+// RecreateWait is Recreate giving the old container stop seconds to stop
+// (< 0 = its own setting).
+func (c *Client) RecreateWait(ctx context.Context, id string, stop int) (string, error) {
 	var raw map[string]json.RawMessage
 	if err := c.Get(ctx, "/containers/"+url.PathEscape(id)+"/json", nil, &raw); err != nil {
 		return "", err
@@ -209,7 +215,7 @@ func (c *Client) Recreate(ctx context.Context, id string) (string, error) {
 		}
 	}
 	if meta.State.Running {
-		if err := c.Act(ctx, id, "stop", 30, ""); err != nil && StatusOf(err) != http.StatusNotModified {
+		if err := c.Act(ctx, id, "stop", stop, ""); err != nil && StatusOf(err) != http.StatusNotModified {
 			restore(created.ID)
 			return "", err
 		}

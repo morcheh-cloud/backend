@@ -1285,11 +1285,13 @@ func registerDocker(api huma.API, h *serverHandler) {
 	registerDockerProjectStats(api, h)
 	registerDockerReport(api, h)
 	registerDockerUpdates(api, h)
+	registerDockerAutoUpdates(api, h)
 	registerDockerScans(api, h)
 	registerDockerSettings(api, h)
 	registerDockerVolumeFiles(api, h)
 	registerDockerImageLayers(api, h)
 	registerDockerRun(api, h)
+	registerDockerDaemon(api, h)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "remove-docker-image",

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // The engine's own shapes, only the fields Morche reads.
@@ -337,9 +338,39 @@ func (c *Client) Version(ctx context.Context) (Version, error) {
 	return v, c.Get(ctx, "/version", nil, &v)
 }
 
+// Containers lists every container with the image name each was made from.
+// Once a newer image takes a container's tag (pulled, not yet recreated), the
+// engine lists that container by its old image's id ("sha256:…"): the
+// container's own Config.Image still names it.
 func (c *Client) Containers(ctx context.Context) ([]ContainerSummary, error) {
 	var v []ContainerSummary
-	return v, c.Get(ctx, "/containers/json", url.Values{"all": {"1"}}, &v)
+	if err := c.Get(ctx, "/containers/json", url.Values{"all": {"1"}}, &v); err != nil {
+		return nil, err
+	}
+	for i := range v {
+		if !BareImageID(v[i].Image) {
+			continue
+		}
+		if in, _, err := c.Inspect(ctx, v[i].ID, false); err == nil && in.Config.Image != "" && !BareImageID(in.Config.Image) {
+			v[i].Image = in.Config.Image
+		}
+	}
+	return v, nil
+}
+
+// BareImageID says whether ref is an image id ("sha256:…", 12 or 64 hex
+// characters) rather than a name.
+func BareImageID(ref string) bool {
+	id := strings.TrimPrefix(ref, "sha256:")
+	if len(id) != 12 && len(id) != 64 {
+		return false
+	}
+	for _, r := range id {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) Inspect(ctx context.Context, id string, size bool) (ContainerInspect, json.RawMessage, error) {
