@@ -1,0 +1,27 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: LibreSpeed
+category: Development
+description: Self-hosted lightweight Speed Test.
+website: https://github.com/librespeed/speedtest
+tags:
+  - speedtest
+  - internet-speed
+logo: templates/librespeed.webp
+env: PORT=8080
+compose: |
+  services:
+    librespeed:
+      image: ghcr.io/librespeed/speedtest:latest
+      restart: unless-stopped
+      environment:
+        - MODE=standalone
+        - TELEMETRY=false
+        - DISTANCE=km
+        - WEBPORT=82
+      healthcheck:
+        test: curl 127.0.0.1:82 || exit 1
+        timeout: 1s
+        interval: 1m0s
+        retries: 1
+      ports:
+        - ${PORT:-8080}:82

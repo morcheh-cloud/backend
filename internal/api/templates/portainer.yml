@@ -1,0 +1,20 @@
+name: Portainer
+category: Containers
+description: Web UI for Docker. Open it within 5 minutes of starting to create the admin user (else restart it); it uses a self-signed certificate.
+logo: portainer
+featured: true
+env: |
+  PORT=9443
+compose: |
+  services:
+    portainer:
+      image: portainer/portainer-ce:lts
+      restart: unless-stopped
+      ports:
+        - "${PORT:-9443}:9443"
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - data:/data
+
+  volumes:
+    data:

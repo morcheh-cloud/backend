@@ -1,0 +1,26 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: GoatCounter
+category: Analytics
+description: Lightweight web analytics platform.
+website: https://www.goatcounter.com/help
+tags:
+  - analytics
+  - insights
+  - privacy
+env: PORT=8080
+compose: |
+  services:
+    goatcounter:
+      image: arp242/goatcounter:2.7
+      restart: unless-stopped
+      volumes:
+        - goatcounter-data:/home/goatcounter/goatcounter-data
+      healthcheck:
+        test: [CMD-SHELL, "wget -qO- http://127.0.0.1:8080/status >/dev/null 2>&1 || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    goatcounter-data:

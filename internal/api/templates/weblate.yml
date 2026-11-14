@@ -1,0 +1,103 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Weblate
+category: Productivity
+description: Weblate is a libre software web-based continuous localization system.
+website: https://weblate.org
+tags:
+  - localization
+  - translation
+  - web
+  - web-based
+  - continuous
+  - libre
+  - software
+logo: templates/weblate.webp
+env: |-
+  PORT=8080
+  WEBLATE_HOST={{host}}:${PORT}
+  WEBLATE_PASSWORD={{secret}}
+  POSTGRES_PASSWORD={{secret}}
+  POSTGRES_USER={{user}}
+  REDIS_PASSWORD={{secret}}
+
+  # Optional settings
+  WEBLATE_ADMIN_NAME=Admin
+  WEBLATE_ADMIN_EMAIL=admin@example.com
+  WEBLATE_SERVER_EMAIL=admin@example.com
+  WEBLATE_DEFAULT_FROM_EMAIL=admin@example.com
+  WEBLATE_EMAIL_HOST=localhost
+  WEBLATE_EMAIL_PORT=587
+  WEBLATE_EMAIL_HOST_USER=
+  WEBLATE_EMAIL_HOST_PASSWORD=
+  WEBLATE_EMAIL_USE_TLS=true
+  WEBLATE_EMAIL_USE_SSL=false
+  POSTGRES_DB=weblate
+compose: |
+  services:
+    weblate:
+      image: weblate/weblate:latest
+      restart: unless-stopped
+      environment:
+        - WEBLATE_SITE_DOMAIN=$WEBLATE_HOST
+        - WEBLATE_ADMIN_NAME=${WEBLATE_ADMIN_NAME:-Admin}
+        - WEBLATE_ADMIN_EMAIL=${WEBLATE_ADMIN_EMAIL:-admin@example.com}
+        - WEBLATE_ADMIN_PASSWORD=$WEBLATE_PASSWORD
+        - WEBLATE_SERVER_EMAIL=${WEBLATE_SERVER_EMAIL:-admin@example.com}
+        - WEBLATE_DEFAULT_FROM_EMAIL=${WEBLATE_DEFAULT_FROM_EMAIL:-admin@example.com}
+        - WEBLATE_EMAIL_HOST=${WEBLATE_EMAIL_HOST:-localhost}
+        - WEBLATE_EMAIL_PORT=${WEBLATE_EMAIL_PORT:-587}
+        - WEBLATE_EMAIL_HOST_USER=${WEBLATE_EMAIL_HOST_USER}
+        - WEBLATE_EMAIL_HOST_PASSWORD=${WEBLATE_EMAIL_HOST_PASSWORD}
+        - WEBLATE_EMAIL_USE_TLS=${WEBLATE_EMAIL_USE_TLS:-true}
+        - WEBLATE_EMAIL_USE_SSL=${WEBLATE_EMAIL_USE_SSL:-false}
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_DATABASE=${POSTGRES_DB:-weblate}
+        - POSTGRES_HOST=postgresql
+        - POSTGRES_PORT=5432
+        - REDIS_HOST=redis
+        - REDIS_PORT=6379
+        - REDIS_PASSWORD=$REDIS_PASSWORD
+      volumes:
+        - weblate-data:/app/data
+        - weblate-cache:/app/cache
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8080]
+        interval: 2s
+        timeout: 10s
+        retries: 30
+      ports:
+        - ${PORT:-8080}:8080
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=${POSTGRES_DB:-weblate}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    redis:
+      image: redis:7-alpine
+      restart: unless-stopped
+      command: |
+        --appendonly yes --requirepass ${REDIS_PASSWORD}
+      environment:
+        - REDIS_PASSWORD=$REDIS_PASSWORD
+      volumes:
+        - weblate-redis-data:/data
+      healthcheck:
+        test: [CMD, redis-cli, ping]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    weblate-data:
+    weblate-cache:
+    postgresql-data:
+    weblate-redis-data:

@@ -1,0 +1,88 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Garage
+category: Storage
+description: Garage is an S3-compatible distributed object storage service designed for self-hosting.
+website: https://garagehq.deuxfleurs.fr/documentation/
+tags:
+  - object
+  - storage
+  - server
+  - s3
+  - api
+  - distributed
+logo: templates/garage.svg
+env: |-
+  RPCSECRET_HEX={{hex:64}}
+  GARAGE_PASSWORD={{secret}}
+  GARAGEMETRICS_PASSWORD={{secret}}
+  GARAGE_USER={{user}}
+  GARAGE_PASSWORD_2={{secret:64}}
+
+  # Optional settings
+  GARAGE_S3_API_URL=
+  GARAGE_WEB_URL=
+  GARAGE_ADMIN_URL=
+  GARAGE_DEFAULT_BUCKET=default
+  RUST_LOG="garage=info"
+compose: |
+  services:
+    garage:
+      image: dxflrs/garage:v2.3.0
+      restart: unless-stopped
+      command: [/garage, server, --single-node, --default-bucket]
+      environment:
+        - GARAGE_S3_API_URL=$GARAGE_S3_API_URL
+        - GARAGE_WEB_URL=$GARAGE_WEB_URL
+        - GARAGE_ADMIN_URL=$GARAGE_ADMIN_URL
+        - GARAGE_RPC_SECRET=${RPCSECRET_HEX}
+        - GARAGE_ADMIN_TOKEN=$GARAGE_PASSWORD
+        - GARAGE_METRICS_TOKEN=$GARAGEMETRICS_PASSWORD
+        - GARAGE_ALLOW_WORLD_READABLE_SECRETS=true
+        - GARAGE_DEFAULT_ACCESS_KEY=${GARAGE_USER}
+        - GARAGE_DEFAULT_SECRET_KEY=${GARAGE_PASSWORD_2}
+        - GARAGE_DEFAULT_BUCKET=${GARAGE_DEFAULT_BUCKET:-default}
+        - RUST_LOG=${RUST_LOG:-garage=info}
+      volumes:
+        - garage-meta:/var/lib/garage/meta
+        - garage-data:/var/lib/garage/data
+      healthcheck:
+        test: [CMD, /garage, stats, -a]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      configs:
+        - source: garage-garage.toml
+          target: /etc/garage.toml
+  volumes:
+    garage-meta:
+    garage-data:
+  configs:
+    garage-garage.toml:
+      content: |
+        metadata_dir = "/var/lib/garage/meta"
+        data_dir = "/var/lib/garage/data"
+        db_engine = "lmdb"
+
+        replication_factor = 1
+        consistency_mode = "consistent"
+
+        compression_level = 1
+        block_size = "1M"
+
+        rpc_bind_addr = "[::]:3901"
+        rpc_secret_file = "env:GARAGE_RPC_SECRET"
+        bootstrap_peers = []
+
+        [s3_api]
+        s3_region = "garage"
+        api_bind_addr = "[::]:3900"
+        root_domain = ".s3.garage.localhost"
+
+        [s3_web]
+        bind_addr = "[::]:3902"
+        root_domain = ".web.garage.localhost"
+
+        [admin]
+        api_bind_addr = "[::]:3903"
+        admin_token_file = "env:GARAGE_ADMIN_TOKEN"
+        metrics_token_file = "env:GARAGE_METRICS_TOKEN"

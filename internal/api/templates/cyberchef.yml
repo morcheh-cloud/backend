@@ -1,0 +1,31 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: CyberChef
+category: Security
+description: The Cyber Swiss Army Knife - a web app for encryption, encoding, compression and data analysis
+website: https://github.com/gchq/CyberChef
+tags:
+  - encryption
+  - encoding
+  - compression
+  - data analysis
+  - tools
+  - development
+logo: templates/cyberchef.webp
+env: PORT=8080
+compose: |
+  services:
+    cyberchef:
+      image: ghcr.io/gchq/cyberchef:latest
+      restart: unless-stopped
+      platform: linux/amd64
+      volumes:
+        - cyberchef-data:/app/data
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8080]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    cyberchef-data:

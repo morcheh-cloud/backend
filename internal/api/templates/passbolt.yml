@@ -1,0 +1,64 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Passbolt
+category: Security
+description: Passbolt Community Edition (CE) API. The JSON API for the open source password manager for teams!
+website: https://www.passbolt.com/ce/docker
+tags:
+  - security
+  - credentials
+  - password-manager
+  - open source
+logo: templates/passbolt.svg
+env: |-
+  PORT=8080
+  PASSBOLT_URL=http://{{host}}:${PORT}
+  PASSBOLT_USER={{user}}
+  PASSBOLT_PASSWORD={{secret}}
+  ROOTMARIADB_PASSWORD={{secret}}
+
+  # Optional settings
+  MYSQL_DB=passbolt-db
+compose: |
+  services:
+    passbolt:
+      image: passbolt/passbolt:latest-ce
+      restart: unless-stopped
+      environment:
+        - APP_FULL_BASE_URL=${PASSBOLT_URL}
+        - DATASOURCES_DEFAULT_HOST=mariadb
+        - DATASOURCES_DEFAULT_USERNAME=${PASSBOLT_USER}
+        - DATASOURCES_DEFAULT_PASSWORD=${PASSBOLT_PASSWORD}
+        - DATASOURCES_DEFAULT_DATABASE=${MYSQL_DB:-passbolt-db}
+      volumes:
+        - gpg_volume:/etc/passbolt/gpg
+        - jwt_volume:/etc/passbolt/jwt
+      command: [/usr/bin/wait-for.sh, -t, "0", mariadb:3306, --, /docker-entrypoint.sh]
+      depends_on:
+        mariadb:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80
+    mariadb:
+      image: mariadb:11
+      restart: unless-stopped
+      environment:
+        - MARIADB_ROOT_PASSWORD=${ROOTMARIADB_PASSWORD}
+        - MARIADB_DATABASE=${MYSQL_DB:-passbolt-db}
+        - MARIADB_USER=${PASSBOLT_USER}
+        - MARIADB_PASSWORD=${PASSBOLT_PASSWORD}
+      volumes:
+        - passbolt_mariadb_data:/var/lib/mysql
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    gpg_volume:
+    jwt_volume:
+    passbolt_mariadb_data:

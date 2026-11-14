@@ -1,0 +1,84 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Label Studio
+category: AI
+description: Label Studio is a multi-type data labeling and annotation tool with standardized output format
+website: https://labelstud.io/guide/
+tags:
+  - workflow
+  - orchestration
+  - data-pipeline
+  - python
+  - labelstudio
+  - ai
+  - elasticsearch
+  - datasets
+  - data
+  - machine-learning
+  - data-science
+  - nlp
+logo: templates/labelstudio.webp
+env: |-
+  PORT=8080
+  LABELSTUDIO_URL=http://{{host}}:${PORT}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  LABELSTUDIO_PASSWORD={{secret}}
+
+  # Optional settings
+  EXPERIMENTAL_FEATURES=false
+  DJANGO_DB=default
+  POSTGRES_DB=labelstudio
+  SSRF_PROTECTION_ENABLED=true
+  LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK=true
+  DATA_UPLOAD_MAX_NUMBER_FILES=10000
+  LABEL_STUDIO_USERNAME=admin@example.com
+compose: |
+  services:
+    labelstudio:
+      image: heartexlabs/label-studio:latest
+      restart: unless-stopped
+      depends_on:
+        postgres:
+          condition: service_healthy
+      environment:
+        - CSRF_TRUSTED_ORIGINS=${LABELSTUDIO_URL}
+        - EXPERIMENTAL_FEATURES=${EXPERIMENTAL_FEATURES:-false}
+        - DJANGO_DB=${DJANGO_DB:-default}
+        - POSTGRE_NAME=${POSTGRES_DB:-labelstudio}
+        - POSTGRE_USER=${POSTGRES_USER}
+        - POSTGRE_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRE_PORT=5432
+        - POSTGRE_HOST=postgres
+        - LABEL_STUDIO_HOST=${LABELSTUDIO_URL}
+        - SSRF_PROTECTION_ENABLED=${SSRF_PROTECTION_ENABLED:-true}
+        - LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK=${LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK:-true}
+        - DATA_UPLOAD_MAX_NUMBER_FILES=${DATA_UPLOAD_MAX_NUMBER_FILES:-10000}
+        - LABEL_STUDIO_USERNAME=${LABEL_STUDIO_USERNAME:-admin@example.com}
+        - LABEL_STUDIO_PASSWORD=${LABELSTUDIO_PASSWORD}
+        - LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK=${LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK:-true}
+      volumes:
+        - labelstudio-data:/label-studio/data
+      healthcheck:
+        test: [CMD-SHELL, "curl -f http://localhost:8080/health || exit 1"]
+        interval: 5s
+        timeout: 20s
+        retries: 3
+      ports:
+        - ${PORT:-8080}:8080
+    postgres:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-labelstudio}
+      volumes:
+        - pg-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -h localhost -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 3
+  volumes:
+    labelstudio-data:
+    pg-data:

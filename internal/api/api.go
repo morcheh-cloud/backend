@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/morcheh/backend/internal/cache"
@@ -173,6 +174,11 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerPVEInfra(api, pve)
 	registerPVEConsole(api, r, pve, cfg.CORSOrigins)
 	startPVEMonitor(pve, cfg.PVECheckInterval)
+	cloudH := &cloudHandler{q: sqlc.New(db), box: box, authz: a, fakeURL: cfg.ArvanFakeURL, cache: map[uuid.UUID]cloudCached{}, res: map[uuid.UUID]cloudResCached{}}
+	registerCloudAccounts(api, cloudH)
+	registerCloudServers(api, cloudH)
+	registerCloudResources(api, cloudH)
+	startCloudMonitor(cloudH, cfg.CloudCheckInterval)
 	alertRules.pve = pve
 	apps := newAppHandler(sqlc.New(db), db, box, a)
 	registerApps(api, apps)
@@ -188,6 +194,9 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerSchedules(api, schedules)
 	startBackupScheduler(backups, cfg.ScheduleTick)
 	startScheduler(schedules, cfg.ScheduleTick)
+	storageSyncs := newStorageSyncHandler(st, a)
+	registerStorageSyncs(api, storageSyncs)
+	startStorageSyncScheduler(storageSyncs, cfg.ScheduleTick)
 	logs := newLogArchiveHandler(sqlc.New(db), db, st, runner, cfg.LogArchiveDir)
 	registerLogArchives(api, logs)
 	startLogArchiveScheduler(logs, cfg.ScheduleTick)

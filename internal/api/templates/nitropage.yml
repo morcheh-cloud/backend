@@ -1,0 +1,38 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: NitroPage
+category: Websites
+description: Nitropage is an extensible, visual website builder, offering a growing library of versatile building blocks, focal-point image cropping and sovereign font management.
+website: https://nitropage.org
+tags:
+  - nitropage
+  - builder
+  - editor
+  - wysiwyg
+  - cms
+  - content
+  - management
+logo: templates/nitropage.svg
+env: |-
+  PORT=3000
+  SALT_SECRET={{secret}}
+  SESSION_PASSWORD={{secret:64}}
+compose: |
+  services:
+    nitropage:
+      image: nitropage/nitropage:sqlite
+      restart: unless-stopped
+      environment:
+        - NP_AUTH_SALT=${SALT_SECRET}
+        - NP_AUTH_PASSWORD=${SESSION_PASSWORD}
+        - DATABASE_URL=file:../.data/dev.db
+      volumes:
+        - nitropage-data:/app/.data
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000/admin]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-3000}:3000
+  volumes:
+    nitropage-data:

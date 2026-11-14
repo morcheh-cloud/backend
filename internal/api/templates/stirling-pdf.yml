@@ -1,0 +1,37 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Stirling PDF
+category: Productivity
+description: Stirling is a powerful web based PDF manipulation tool
+website: https://github.com/Stirling-Tools/Stirling-PDF
+tags:
+  - pdf
+  - manipulation
+  - web
+  - tool
+logo: templates/stirling.webp
+featured: true
+env: PORT=8080
+compose: |
+  services:
+    stirling-pdf:
+      image: stirlingtools/stirling-pdf:latest
+      restart: unless-stopped
+      volumes:
+        - stirling-training-data:/usr/share/tesseract-ocr/5/tessdata
+        - stirling-configs:/configs
+        - stirling-custom-files:/customFiles/
+        - stirling-logs:/logs/
+      environment:
+        - DOCKER_ENABLE_SECURITY=false
+      healthcheck:
+        test: curl --fail --silent http://127.0.0.1:8080/api/v1/info/status | grep -q "UP" || exit 1
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    stirling-training-data:
+    stirling-configs:
+    stirling-custom-files:
+    stirling-logs:

@@ -94,6 +94,9 @@ func (h *proxyHandler) submitCertificate(ctx context.Context, rawID string, req 
 	if !d.Capabilities().Certificates {
 		return nil, huma.Error422UnprocessableEntity(d.Label() + " can't get certificates from the panel yet")
 	}
+	if err := readOnly(r.Proxy); err != nil {
+		return nil, err
+	}
 	req, err = cleanCertRequest(req)
 	if err != nil {
 		return nil, err

@@ -1,0 +1,30 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Jenkins
+category: Git & CI
+description: Jenkins is an open source automation server, Jenkins provides hundreds of plugins to support building, deploying and automating any project.
+website: https://www.jenkins.io/doc/
+tags:
+  - jenkins
+  - automation
+  - open-source
+logo: templates/jenkins.svg
+featured: true
+env: PORT=8080
+compose: |
+  services:
+    jenkins:
+      image: jenkins/jenkins:latest
+      restart: unless-stopped
+      volumes:
+        - jenkins-home:/var/jenkins_home
+        - /var/run/docker.sock:/var/run/docker.sock
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:8080/login]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+        start_period: 40s
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    jenkins-home:

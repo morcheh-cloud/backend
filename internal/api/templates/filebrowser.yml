@@ -1,0 +1,40 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: File Browser
+category: Storage
+description: FileBrowser is a web-based file manager and file explorer with a user-friendly interface.
+website: https://filebrowser.org
+tags:
+  - file-management
+  - storage-access
+  - data-organization
+  - file-utilization
+  - administration-tool
+logo: templates/filebrowser.svg
+env: PORT=8080
+compose: |
+  services:
+    filebrowser:
+      image: filebrowser/filebrowser:latest
+      restart: unless-stopped
+      volumes:
+        - type: bind
+          source: ./srv
+          target: /srv
+          bind:
+            create_host_path: true
+      ports:
+        - ${PORT:-8080}:80
+      configs:
+        - source: filebrowser-database.db
+          target: /database.db
+        - source: filebrowser-filebrowser.json
+          target: /.filebrowser.json
+  configs:
+    filebrowser-database.db:
+      content: ""
+    filebrowser-filebrowser.json:
+      content: |
+        {
+          "address": "0.0.0.0",
+          "port": 80
+        }

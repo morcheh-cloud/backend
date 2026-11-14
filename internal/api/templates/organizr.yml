@@ -1,0 +1,31 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Organizr
+category: Productivity
+description: Homelab Services Organizer
+website: https://docs.organizr.app/
+tags:
+  - tool
+logo: templates/organizr.webp
+env: |-
+  PORT=8080
+
+  # Optional settings
+  branch=v2-master
+compose: |
+  services:
+    organizr:
+      image: organizr/organizr:latest
+      restart: unless-stopped
+      environment:
+        - branch=${branch:-v2-master}
+      volumes:
+        - organizr-data:/config
+      healthcheck:
+        test: [CMD-SHELL, "curl -sf http://localhost:80 || exit 1"]
+        interval: 10s
+        timeout: 1s
+        retries: 3
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    organizr-data:

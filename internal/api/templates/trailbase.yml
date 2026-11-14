@@ -1,0 +1,24 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: TrailBase
+category: Backend
+description: A blazingly fast Rust/SQLite/Wasmtime app server with type-safe APIs
+website: https://trailbase.io/
+tags:
+  - trailbase
+  - backend
+  - saas
+  - mobile
+  - api
+logo: templates/trailbase.svg
+env: PORT=4000
+compose: |
+  services:
+    trailbase:
+      image: trailbase/trailbase:0.22.6
+      restart: unless-stopped
+      volumes:
+        - trailbase-data:/app/traildepot
+      ports:
+        - ${PORT:-4000}:4000
+  volumes:
+    trailbase-data:

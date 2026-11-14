@@ -311,6 +311,8 @@ type DockerDiskUsage struct {
 	BuildCache  DockerUsage `json:"build_cache"`
 	Total       int64       `json:"total"`
 	Reclaimable int64       `json:"reclaimable"`
+	MeasuredAt  time.Time   `json:"measured_at" doc:"When the engine measured these numbers"`
+	Measuring   bool        `json:"measuring" doc:"A newer measurement is running: ask again in a few seconds"`
 }
 
 type DockerFleetServer struct {
@@ -1346,6 +1348,18 @@ func registerDocker(api huma.API, h *serverHandler) {
 		Sizes bool `query:"sizes"`
 	}) (*struct{ Body []DockerVolume }, error) {
 		out := &struct{ Body []DockerVolume }{[]DockerVolume{}}
+		sizes := map[string]int64{}
+		if in.Sizes {
+			r, err := h.diskUsage(ctx, in.ID, false)
+			if err != nil {
+				return nil, err
+			}
+			for _, v := range r.du.Volumes {
+				if v.UsageData != nil {
+					sizes[v.Name] = v.UsageData.Size
+				}
+			}
+		}
 		err := h.withDocker(ctx, in.ID, func(e *dockerEngine) error {
 			vs, err := e.client.Volumes(ctx)
 			if err != nil {
@@ -1354,18 +1368,6 @@ func registerDocker(api huma.API, h *serverHandler) {
 			cs, err := e.client.Containers(ctx)
 			if err != nil {
 				return err
-			}
-			sizes := map[string]int64{}
-			if in.Sizes {
-				du, err := e.client.DiskUsage(ctx)
-				if err != nil {
-					return err
-				}
-				for _, v := range du.Volumes {
-					if v.UsageData != nil {
-						sizes[v.Name] = v.UsageData.Size
-					}
-				}
 			}
 			for _, v := range vs {
 				dv := toDockerVolume(v, cs)
@@ -1555,16 +1557,21 @@ func registerDocker(api huma.API, h *serverHandler) {
 		Method:      http.MethodGet,
 		Path:        base + "/disk-usage",
 		Summary:     "Space used by images, containers, volumes and the build cache",
-		Description: "What `docker system df` shows, with what a prune of each could free. The engine measures everything, so it can take a while.",
+		Description: "What `docker system df` shows, with what a prune of each could free. The engine measures everything, which can take a while, so the last measurement comes back at once (`measured_at`) and a newer one runs behind it when it's over 30 s old, out of date after a change, or `refresh` asks (`measuring`). Only a server never measured waits.",
 		Tags:        tags,
-	}, func(ctx context.Context, in *ServerIDPath) (*struct{ Body DockerDiskUsage }, error) {
+	}, func(ctx context.Context, in *struct {
+		ServerIDPath
+		Refresh bool `query:"refresh" doc:"Measure again now, behind the last answer"`
+	}) (*struct{ Body DockerDiskUsage }, error) {
 		out := &struct{ Body DockerDiskUsage }{}
-		err := h.withDocker(ctx, in.ID, func(e *dockerEngine) error {
-			du, err := e.client.DiskUsage(ctx)
+		err := func() error {
+			r, err := h.diskUsage(ctx, in.ID, in.Refresh)
 			if err != nil {
 				return err
 			}
+			du := r.du
 			b := &out.Body
+			b.MeasuredAt, b.Measuring = r.at, r.measuring
 			b.Images.Size = du.LayersSize
 			for _, im := range du.Images {
 				b.Images.Count++
@@ -1609,7 +1616,7 @@ func registerDocker(api huma.API, h *serverHandler) {
 			b.Total = b.Images.Size + b.Containers.Size + b.Volumes.Size + b.BuildCache.Size
 			b.Reclaimable = b.Images.Reclaimable + b.Containers.Reclaimable + b.Volumes.Reclaimable + b.BuildCache.Reclaimable
 			return nil
-		})
+		}()
 		return out, err
 	})
 

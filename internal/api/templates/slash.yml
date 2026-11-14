@@ -1,0 +1,30 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Slash
+category: Productivity
+description: An open source, self-hosted links shortener and sharing platform.
+website: https://github.com/yourselfhosted/slash
+tags:
+  - links
+  - shortener
+  - sharing
+  - url
+  - short
+  - link
+  - sharing
+env: PORT=5231
+compose: |
+  services:
+    slash:
+      image: yourselfhosted/slash
+      restart: unless-stopped
+      volumes:
+        - slash-data:/var/opt/slash
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:5231]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-5231}:5231
+  volumes:
+    slash-data:

@@ -1,0 +1,56 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: WordPress with MySQL
+category: Websites
+description: WordPress is open source software you can use to create a beautiful website, blog, or app.
+website: https://wordpress.org
+tags:
+  - cms
+  - blog
+  - content
+  - management
+  - mysql
+logo: templates/wordpress.svg
+env: |-
+  PORT=8080
+  WORDPRESS_USER={{user}}
+  WORDPRESS_PASSWORD={{secret}}
+  ROOT_PASSWORD={{secret}}
+compose: |
+  services:
+    wordpress:
+      image: wordpress:latest
+      restart: unless-stopped
+      volumes:
+        - wordpress-files:/var/www/html
+      environment:
+        - WORDPRESS_DB_HOST=mysql
+        - WORDPRESS_DB_USER=$WORDPRESS_USER
+        - WORDPRESS_DB_PASSWORD=$WORDPRESS_PASSWORD
+        - WORDPRESS_DB_NAME=wordpress
+      depends_on:
+        - mysql
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1]
+        interval: 2s
+        timeout: 10s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80
+    mysql:
+      image: mysql:8
+      restart: unless-stopped
+      volumes:
+        - mysql-data:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=$ROOT_PASSWORD
+        - MYSQL_DATABASE=wordpress
+        - MYSQL_USER=$WORDPRESS_USER
+        - MYSQL_PASSWORD=$WORDPRESS_PASSWORD
+      healthcheck:
+        test: [CMD, mysqladmin, ping, -h, 127.0.0.1]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    wordpress-files:
+    mysql-data:

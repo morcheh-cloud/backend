@@ -1,0 +1,177 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Ente Photos with S3
+category: Media
+description: Ente Photos is a fully open source, End to End Encrypted alternative to Google Photos and Apple Photos.
+website: https://help.ente.io/self-hosting/installation/compose
+tags:
+  - photos
+  - gallery
+  - backup
+  - encryption
+  - privacy
+  - self-hosted
+  - google-photos
+  - alternative
+logo: templates/ente-photos.svg
+env: |-
+  MUSEUM_PORT=8080
+  WEB_PORT=3000
+  ALBUMS_PORT=3002
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  ALBUMS_URL=http://{{host}}:${ALBUMS_PORT}
+  MINIO_USER={{user}}
+  MINIO_PASSWORD={{secret}}
+  ENCRYPTION_KEY={{base64:32}}
+  HASH_KEY={{base64:64}}
+  JWT_PASSWORD={{secret:64}}
+  MUSEUM_URL=http://{{host}}:${MUSEUM_PORT}
+  WEB_URL=http://{{host}}:${WEB_PORT}
+
+  # Optional settings
+  POSTGRES_DB=ente_db
+  ENTE_HTTP_USE_TLS=false
+  MINIO_SERVER_URL=
+  ENTE_INTERNAL_ADMIN=1580559962386438
+  ENTE_INTERNAL_DISABLE_REGISTRATION=false
+  ENTE_SMTP_HOST=
+  ENTE_SMTP_PORT=
+  ENTE_SMTP_USERNAME=
+  ENTE_SMTP_PASSWORD=
+  ENTE_SMTP_EMAIL=
+  ENTE_SMTP_SENDER_NAME=
+  ENTE_SMTP_ENCRYPTION=
+  MINIO_BROWSER_REDIRECT_URL=
+compose: |
+  services:
+    museum:
+      image: ghcr.io/ente/server:613c6a96390d7a624cf30b946955705d632423cc
+      restart: unless-stopped
+      environment:
+        - ENTE_DB_HOST=postgres
+        - ENTE_DB_PORT=5432
+        - ENTE_DB_NAME=${POSTGRES_DB:-ente_db}
+        - ENTE_DB_USER=${POSTGRES_USER}
+        - ENTE_DB_PASSWORD=${POSTGRES_PASSWORD}
+        - ENTE_HTTP_USE_TLS=${ENTE_HTTP_USE_TLS:-false}
+        - ENTE_APPS_PUBLIC_ALBUMS=${ALBUMS_URL}
+        - ENTE_S3_ARE_LOCAL_BUCKETS=false
+        - ENTE_S3_USE_PATH_STYLE_URLS=true
+        - ENTE_S3_B2_EU_CEN_KEY=${MINIO_USER}
+        - ENTE_S3_B2_EU_CEN_SECRET=${MINIO_PASSWORD}
+        - ENTE_S3_B2_EU_CEN_ENDPOINT=${MINIO_SERVER_URL}
+        - ENTE_S3_B2_EU_CEN_REGION=eu-central-2
+        - ENTE_S3_B2_EU_CEN_BUCKET=b2-eu-cen
+        - ENTE_KEY_ENCRYPTION=${ENCRYPTION_KEY}
+        - ENTE_KEY_HASH=${HASH_KEY}
+        - ENTE_JWT_SECRET=${JWT_PASSWORD}
+        - ENTE_INTERNAL_ADMIN=${ENTE_INTERNAL_ADMIN:-1580559962386438}
+        - ENTE_INTERNAL_DISABLE_REGISTRATION=${ENTE_INTERNAL_DISABLE_REGISTRATION:-false}
+        - ENTE_SMTP_HOST=${ENTE_SMTP_HOST}
+        - ENTE_SMTP_PORT=${ENTE_SMTP_PORT}
+        - ENTE_SMTP_USERNAME=${ENTE_SMTP_USERNAME}
+        - ENTE_SMTP_PASSWORD=${ENTE_SMTP_PASSWORD}
+        - ENTE_SMTP_EMAIL=${ENTE_SMTP_EMAIL}
+        - ENTE_SMTP_SENDER_NAME=${ENTE_SMTP_SENDER_NAME}
+        - ENTE_SMTP_ENCRYPTION=${ENTE_SMTP_ENCRYPTION}
+      volumes:
+        - museum-data:/data
+        - museum-config:/config
+      depends_on:
+        postgres:
+          condition: service_healthy
+        minio:
+          condition: service_started
+      healthcheck:
+        test: [CMD, wget, --spider, http://127.0.0.1:8080/ping]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+      ports:
+        - ${MUSEUM_PORT:-8080}:8080
+    web:
+      image: ghcr.io/ente/web:ca03165f5e7f2a50105e6e40019c17ae6cdd934f
+      restart: unless-stopped
+      environment:
+        - ENTE_API_ORIGIN=${MUSEUM_URL}
+        - ENTE_ALBUMS_ORIGIN=${ALBUMS_URL}
+      healthcheck:
+        test: [CMD, curl, --fail, http://localhost:3000]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+        start_period: 10s
+      ports:
+        - ${WEB_PORT:-3000}:3000
+    albums:
+      image: ghcr.io/ente/web:ca03165f5e7f2a50105e6e40019c17ae6cdd934f
+      restart: unless-stopped
+      environment:
+        - ENTE_API_ORIGIN=${MUSEUM_URL}
+        - ENTE_ALBUMS_ORIGIN=${ALBUMS_URL}
+        - ENTE_PHOTOS_ORIGIN=${WEB_URL}
+      healthcheck:
+        test: [CMD, curl, --fail, http://localhost:3002]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+        start_period: 10s
+      ports:
+        - ${ALBUMS_PORT:-3002}:3002
+    postgres:
+      image: postgres:15-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-ente_db}
+      volumes:
+        - postgres-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-ente_db}"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+    minio:
+      image: pgsty/silo:RELEASE.2026-10-15T00-00-00Z
+      restart: unless-stopped
+      command: server /data --console-address ":9001"
+      environment:
+        - MINIO_SERVER_URL=$MINIO_SERVER_URL
+        - MINIO_BROWSER_REDIRECT_URL=$MINIO_BROWSER_REDIRECT_URL
+        - MINIO_ROOT_USER=$MINIO_USER
+        - MINIO_ROOT_PASSWORD=$MINIO_PASSWORD
+      volumes:
+        - minio-data:/data
+      healthcheck:
+        test: [CMD, mc, ready, local]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    minio-init:
+      image: pgsty/silo:RELEASE.2026-10-15T00-00-00Z
+      depends_on:
+        minio:
+          condition: service_started
+      restart: on-failure
+      environment:
+        - MINIO_ROOT_USER=${MINIO_USER}
+        - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
+      entrypoint: |-
+        /bin/sh -c "
+          sleep 5;
+          until mc alias set minio http://minio:9000 \$${MINIO_ROOT_USER} \$${MINIO_ROOT_PASSWORD}; do
+            echo 'Waiting for MinIO...';
+            sleep 2;
+          done;
+          mc admin config set minio api cors_allow_origin='*' || true;
+          mc mb minio/b2-eu-cen --ignore-existing;
+          mc mb minio/wasabi-eu-central-2-v3 --ignore-existing;
+          mc mb minio/scw-eu-fr-v3 --ignore-existing;
+          echo 'MinIO buckets and CORS configured';
+        "
+  volumes:
+    museum-data:
+    museum-config:
+    postgres-data:
+    minio-data:

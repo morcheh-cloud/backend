@@ -1,0 +1,22 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Whoogle
+category: Search
+description: Whoogle is a self-hosted, privacy-focused search engine front-end for accessing Google search results without tracking and data collection.
+website: https://github.com/benbusby/whoogle-search?tab=readme-ov-file
+tags:
+  - privacy
+  - search engine
+logo: templates/whoogle.webp
+env: PORT=5000
+compose: |
+  services:
+    whoogle:
+      image: benbusby/whoogle-search:latest
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:5000]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-5000}:5000

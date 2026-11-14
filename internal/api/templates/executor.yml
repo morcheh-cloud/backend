@@ -1,0 +1,50 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Executor
+category: Development
+description: Self-hosted AI agent integrations and code execution server.
+website: https://executor.sh/docs/hosted/docker
+tags:
+  - executor
+  - ai
+  - agents
+  - mcp
+  - automation
+  - development
+logo: templates/executor.webp
+env: |-
+  PORT=4788
+  EXECUTOR_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  EXECUTOR_VERSION=latest
+  EXECUTOR_HOST=0.0.0.0
+  EXECUTOR_DB_PATH=/data/data.db
+  EXECUTOR_ORG_NAME=Default
+  EXECUTOR_ORG_SLUG=default
+  EXECUTOR_ALLOW_LOCAL_NETWORK=false
+compose: |
+  services:
+    executor:
+      image: ghcr.io/rhyssullivan/executor-selfhost:${EXECUTOR_VERSION:-latest}
+      restart: unless-stopped
+      environment:
+        - EXECUTOR_WEB_BASE_URL=${EXECUTOR_URL}
+        - EXECUTOR_HOST=${EXECUTOR_HOST:-0.0.0.0}
+        - PORT=${PORT:-4788}
+        - EXECUTOR_DATA_DIR=/data
+        - EXECUTOR_DB_PATH=${EXECUTOR_DB_PATH:-/data/data.db}
+        - EXECUTOR_ORG_NAME=${EXECUTOR_ORG_NAME:-Default}
+        - EXECUTOR_ORG_SLUG=${EXECUTOR_ORG_SLUG:-default}
+        - EXECUTOR_ALLOW_LOCAL_NETWORK=${EXECUTOR_ALLOW_LOCAL_NETWORK:-false}
+      volumes:
+        - executor-data:/data
+      healthcheck:
+        test: [CMD, bun, -e, "fetch(`http://127.0.0.1:$${process.env.PORT||4788}/api/health`).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+        interval: 30s
+        timeout: 5s
+        retries: 5
+        start_period: 20s
+      ports:
+        - ${PORT:-4788}:4788
+  volumes:
+    executor-data:

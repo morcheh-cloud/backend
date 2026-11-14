@@ -1,0 +1,31 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Gotenberg
+category: Development
+description: Gotenberg is a Docker-powered stateless API for PDF files.
+website: https://gotenberg.dev/docs/getting-started/introduction
+tags:
+  - api
+  - backend
+  - pdf
+  - tool
+logo: templates/gotenberg.webp
+env: |-
+  PORT=3000
+  GOTENBERG_USER={{user}}
+  GOTENBERG_PASSWORD={{secret}}
+compose: |
+  services:
+    gotenberg:
+      image: gotenberg/gotenberg:latest
+      restart: unless-stopped
+      environment:
+        - GOTENBERG_API_BASIC_AUTH_USERNAME=${GOTENBERG_USER}
+        - GOTENBERG_API_BASIC_AUTH_PASSWORD=${GOTENBERG_PASSWORD}
+      command: [gotenberg, --api-enable-basic-auth, --api-disable-health-check-logging]
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000/health]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-3000}:3000

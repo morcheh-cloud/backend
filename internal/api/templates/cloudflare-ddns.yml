@@ -1,0 +1,34 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Cloudflare DDNS
+category: Automation
+description: A small, feature-rich, and robust Cloudflare DDNS updater.
+website: https://github.com/favonia/cloudflare-ddns
+tags:
+  - cloud
+  - ddns
+logo: templates/cloudflare-ddns.svg
+env: |-
+  # Fill these in before starting
+  CLOUDFLARE_API_TOKEN=
+  DOMAINS=
+
+  # Optional settings
+  PROXIED=false
+  IP6_PROVIDER=none
+compose: |
+  services:
+    cloudflare-ddns:
+      image: favonia/cloudflare-ddns:1.16.2
+      restart: unless-stopped
+      network_mode: host
+      user: 1000:1000
+      read_only: true
+      cap_drop:
+        - all
+      security_opt:
+        - no-new-privileges:true
+      environment:
+        - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:?}
+        - DOMAINS=${DOMAINS:?}
+        - PROXIED=${PROXIED:-false}
+        - IP6_PROVIDER=${IP6_PROVIDER:-none}

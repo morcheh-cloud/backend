@@ -349,9 +349,11 @@ func markUnpublished(ci *proxy.ContainerInfo, hosts []sqlc.ProxyHost, states []P
 	}
 }
 
-// checkContainer makes sure a container to add as a proxy is on the server
-// and isn't a proxy manager that writes its own config.
-func (h *proxyHandler) checkContainer(ctx context.Context, serverID uuid.UUID, runtime, name string) error {
+// checkContainer makes sure a container to add as a proxy is on the server,
+// and names the proxy manager it runs ("" for plain nginx): Morche only
+// reads such a one.
+func (h *proxyHandler) checkContainer(ctx context.Context, serverID uuid.UUID, runtime, name string) (string, error) {
+	manager := ""
 	err := h.s.withConn(ctx, serverID.String(), func(c *sshpool.Conn) error {
 		sh, err := h.shell(ctx, sqlc.Proxy{ServerID: serverID, Runtime: runtime, Container: name}, c)
 		if err != nil {
@@ -361,19 +363,17 @@ func (h *proxyHandler) checkContainer(ctx context.Context, serverID uuid.UUID, r
 		if err != nil {
 			return err
 		}
-		if ci.Managed != "" {
-			return fieldError("body.container", ci.Name+" runs "+ci.Managed+", which writes nginx's config itself. Manage it there.", name)
-		}
+		manager = ci.Managed
 		return nil
 	})
 	var be *boxError
 	if errors.As(err, &be) {
-		return fieldError("body.container", be.msg, name)
+		return "", fieldError("body.container", be.msg, name)
 	}
 	if err != nil {
-		return toProblem(err)
+		return "", toProblem(err)
 	}
-	return nil
+	return manager, nil
 }
 
 // DetectedContainer is a container that looks like the proxy.
@@ -451,7 +451,7 @@ func (h *proxyHandler) registerDetect(api huma.API, tags []string) {
 				fits++
 			}
 			if dc.ProxyID == "" && ci.Managed == "" {
-				open++
+				open++ // a proxy manager can be added (read only), but isn't suggested
 			}
 			out.Containers = append(out.Containers, dc)
 		}

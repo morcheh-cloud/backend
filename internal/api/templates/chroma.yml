@@ -1,0 +1,34 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Chroma
+category: AI
+description: Chroma is the open-source search and retrieval database for AI applications.
+website: https://cookbook.chromadb.dev/
+tags:
+  - ai
+  - vector-database
+  - semantic-search
+  - machine-learning
+  - bm25
+  - embeddings
+  - llm
+logo: templates/chroma.svg
+env: PORT=8000
+compose: |
+  services:
+    chromadb:
+      image: chromadb/chroma:1.0.15
+      restart: unless-stopped
+      volumes:
+        - chroma-data:/data
+      environment:
+        - IS_PERSISTENT=TRUE
+        - PERSIST_DIRECTORY=/data
+      healthcheck:
+        test: [CMD, /bin/bash, -c, "cat < /dev/null > /dev/tcp/localhost/8000"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+      ports:
+        - ${PORT:-8000}:8000
+  volumes:
+    chroma-data:

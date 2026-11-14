@@ -1,0 +1,60 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Uptime Kuma with MariaDB
+category: Monitoring
+description: Uptime Kuma is a monitoring tool for tracking the status and performance of your applications in real-time.
+website: https://github.com/louislam/uptime-kuma?tab=readme-ov-file
+tags:
+  - monitoring
+  - status
+  - performance
+  - web
+  - services
+  - applications
+  - real-time
+logo: templates/uptime-kuma.svg
+env: |-
+  PORT=3001
+  MARIADB_USER={{user}}
+  MARIADB_PASSWORD={{secret}}
+  ROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  TZ=Etc/UTC
+  MYSQL_DATABASE=uptime-kuma-db
+compose: |
+  services:
+    uptime-kuma:
+      image: louislam/uptime-kuma:2
+      restart: unless-stopped
+      environment:
+        - TZ=${TZ:-Etc/UTC}
+      volumes:
+        - uptime-kuma-data:/app/data
+      healthcheck:
+        test: [CMD-SHELL, extra/healthcheck]
+        interval: 5s
+        timeout: 5s
+        retries: 10
+      depends_on:
+        mariadb:
+          condition: service_healthy
+      ports:
+        - ${PORT:-3001}:3001
+    mariadb:
+      image: mariadb:11
+      restart: unless-stopped
+      environment:
+        - MYSQL_USER=${MARIADB_USER}
+        - MYSQL_PASSWORD=${MARIADB_PASSWORD}
+        - MYSQL_ROOT_PASSWORD=${ROOT_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-uptime-kuma-db}
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      volumes:
+        - mariadb-data:/var/lib/mysql
+  volumes:
+    uptime-kuma-data:
+    mariadb-data:

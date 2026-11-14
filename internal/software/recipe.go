@@ -1,8 +1,8 @@
 // Package software is Morche's application catalog: recipes that install,
 // update and remove software on a server over SSH (system packages like
-// Docker or Git, and Docker Compose apps like Grafana), the shell scripts
-// that do it, what a scan of a server says is there, and a registry client
-// that tells whether a container image has a newer build.
+// Docker or Git, and vendor install scripts), the shell scripts that do it,
+// and what a scan of a server says is there. Container apps are not here:
+// they are Containers templates (compose projects).
 package software
 
 import (
@@ -27,17 +27,12 @@ const (
 	// System packages from the server's package manager. Install, update and
 	// uninstall default to the package manager; a recipe may write its own.
 	KindPackage = "package"
-	// A Docker Compose app in /opt/morcheh/apps/<id>.
-	KindDocker = "docker"
 	// Anything else: the recipe writes every script itself.
 	KindScript = "script"
 )
 
 // System is the pseudo-recipe for "upgrade the server's packages".
 const System = "system"
-
-// AppsDir is where Docker apps live on a server, one folder each.
-const AppsDir = "/opt/morcheh/apps"
 
 // Package managers a recipe can name packages for. "default" is any other.
 var PackageManagers = []string{"apt", "dnf", "yum", "zypper", "apk", "pacman"}
@@ -48,7 +43,7 @@ type Recipe struct {
 	Name        string `json:"name" yaml:"name"`
 	Summary     string `json:"summary" yaml:"summary" doc:"One line"`
 	Description string `json:"description,omitempty" yaml:"description"`
-	Kind        string `json:"kind" yaml:"kind" enum:"package,docker,script"`
+	Kind        string `json:"kind" yaml:"kind" enum:"package,script"`
 	Category    string `json:"category" yaml:"category"`
 	Icon        string `json:"icon,omitempty" yaml:"icon" doc:"A lucide icon name for the panel"`
 	Logo        string `json:"logo,omitempty" yaml:"logo" doc:"A brand logo the panel ships (Simple Icons name, e.g. redis); shown in place of the icon when the panel has it"`
@@ -74,8 +69,6 @@ type Recipe struct {
 	Install   string `json:"install,omitempty" yaml:"install"`
 	Update    string `json:"update,omitempty" yaml:"update"`
 	Uninstall string `json:"uninstall,omitempty" yaml:"uninstall"`
-	// Docker apps: the compose file, with ${NAME} for the parameters.
-	Compose string `json:"compose,omitempty" yaml:"compose"`
 
 	Builtin bool `json:"builtin" yaml:"-"`
 	// Taken out of the catalog: no new installs, but earlier ones can still
@@ -85,8 +78,8 @@ type Recipe struct {
 	RecordID string `json:"record_id,omitempty" yaml:"-"`
 }
 
-// RecipeParam is a value asked for at install time. Package and script recipes get
-// it as an environment variable; Docker apps as ${NAME} in the compose file.
+// RecipeParam is a value asked for at install time, given to the recipe's
+// scripts as an environment variable.
 type RecipeParam struct {
 	Name     string   `json:"name" yaml:"name" doc:"Variable name, upper case"`
 	Label    string   `json:"label" yaml:"label"`
@@ -180,7 +173,7 @@ func bad(field, msg string) error { return &FieldError{field, msg} }
 func reservedParam(name string) bool {
 	switch name {
 	case "PATH", "IFS", "ENV", "BASH_ENV", "SHELLOPTS", "BASHOPTS", "PS4", "HOME", "SHELL", "USER",
-		"LOGNAME", "SUDO_ASKPASS", "PM", "PKGS", "COMPOSE_PROJECT_NAME", "COMPOSE_FILE":
+		"LOGNAME", "SUDO_ASKPASS", "PM", "PKGS":
 		return true
 	}
 	return strings.HasPrefix(name, "LD_") || strings.HasPrefix(name, "BASH_FUNC") ||
@@ -242,27 +235,6 @@ func (r Recipe) Check() error {
 				}
 			}
 		}
-	case KindDocker:
-		if len(r.Also) > 0 {
-			return bad("also", "Only a package recipe has other package names.")
-		}
-		if strings.TrimSpace(r.Compose) == "" {
-			return bad("compose", "Write the compose file.")
-		}
-		var doc struct {
-			Services map[string]any `yaml:"services"`
-		}
-		if err := yaml.Unmarshal([]byte(r.Compose), &doc); err != nil {
-			return bad("compose", "It isn't valid YAML: "+err.Error())
-		}
-		if len(doc.Services) == 0 {
-			return bad("compose", "It has no services.")
-		}
-		for name := range doc.Services {
-			if !serviceRe.MatchString(name) {
-				return bad("compose", "Use lowercase letters, digits, dashes and underscores for service names ("+name+").")
-			}
-		}
 	case KindScript:
 		if strings.TrimSpace(r.Install) == "" {
 			return bad("install", "Write the install script.")
@@ -271,7 +243,7 @@ func (r Recipe) Check() error {
 			return bad("version", "Write a command that prints the version, so Morche can tell it's installed.")
 		}
 	default:
-		return bad("kind", "Pick package, docker or script.")
+		return bad("kind", "Pick package or script.")
 	}
 	for _, os := range r.OS {
 		if !slices.Contains(PackageManagers, os) {
@@ -303,7 +275,7 @@ func (r Recipe) Check() error {
 			return bad(f+".generate", "Use password or hex.")
 		}
 		if p.Default != "" {
-			if err := checkValue(p, p.Default, r.Kind); err != nil {
+			if err := checkValue(p, p.Default); err != nil {
 				return bad(f+".default", err.Error())
 			}
 		}
@@ -336,20 +308,15 @@ func (r Recipe) Check() error {
 
 var (
 	packageNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+:@-]*$`)
-	serviceRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 	portRe        = regexp.MustCompile(`^[0-9]{1,5}$`)
 	logoRe        = regexp.MustCompile(`^[a-z0-9]{1,40}$`)
 	domainRe      = regexp.MustCompile(`^[A-Za-z0-9*]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$`)
 	numberRe      = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
 )
 
-func checkValue(p RecipeParam, v, kind string) error {
+func checkValue(p RecipeParam, v string) error {
 	if strings.ContainsAny(v, "\n\r\x00") {
 		return errors.New("Keep it to one line.")
-	}
-	// Docker apps' values go in a .env file in single quotes.
-	if kind == KindDocker && strings.Contains(v, "'") {
-		return errors.New("It can't contain a single quote (').")
 	}
 	if len(v) > 4096 {
 		return errors.New("It's too long.")
@@ -421,7 +388,7 @@ func (r Recipe) Values(given map[string]string) (map[string]string, []string, er
 			out[p.Name] = v
 			continue
 		}
-		if err := checkValue(p, v, r.Kind); err != nil {
+		if err := checkValue(p, v); err != nil {
 			return nil, nil, bad("params."+p.Name, err.Error())
 		}
 		out[p.Name] = v
@@ -498,7 +465,7 @@ func (r Recipe) PackagesFor(pm string) []string {
 // Supports says whether the recipe works with package manager pm.
 func (r Recipe) Supports(pm string) bool {
 	if pm == "" || pm == "none" {
-		return r.Kind == KindDocker || len(r.OS) == 0 && r.Kind == KindScript
+		return len(r.OS) == 0 && r.Kind == KindScript
 	}
 	if len(r.OS) > 0 && !slices.Contains(r.OS, pm) {
 		return false
@@ -508,27 +475,6 @@ func (r Recipe) Supports(pm string) bool {
 	}
 	return true
 }
-
-// Images are the container images the compose file names (with ${…}
-// left in when the tag is a parameter).
-func (r Recipe) Images() []string {
-	var out []string
-	for _, m := range imageRe.FindAllStringSubmatch(r.Compose, -1) {
-		img := strings.Trim(m[1], `"'`)
-		if !slices.Contains(out, img) {
-			out = append(out, img)
-		}
-	}
-	return out
-}
-
-var imageRe = regexp.MustCompile(`(?m)^\s+image:\s*(\S+)\s*$`)
-
-// Project is the compose project name of a Docker app.
-func Project(id string) string { return "morcheh-" + id }
-
-// Dir is the folder of a Docker app on the server.
-func Dir(id string) string { return AppsDir + "/" + id }
 
 func cmpOr(a, b string) string {
 	if a != "" {

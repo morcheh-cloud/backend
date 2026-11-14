@@ -1,0 +1,113 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: EspoCRM
+category: Productivity
+description: EspoCRM is a free and open-source CRM platform.
+website: https://docs.espocrm.com
+tags:
+  - crm
+  - self-hosted
+  - open-source
+  - workflow
+  - automation
+  - project management
+logo: templates/espocrm.svg
+env: |-
+  ESPOCRM_PORT=8080
+  ESPOCRM_WEBSOCKET_PORT=8081
+  ADMIN_PASSWORD={{secret}}
+  MARIADB_USER={{user}}
+  MARIADB_PASSWORD={{secret}}
+  ESPOCRM_URL=http://{{host}}:${ESPOCRM_PORT}
+  ESPOCRM_WEBSOCKET_URL=http://{{host}}:${ESPOCRM_WEBSOCKET_PORT}
+  ROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  ESPOCRM_ADMIN_USERNAME=admin
+  MARIADB_DATABASE=espocrm
+compose: |
+  services:
+    espocrm:
+      image: espocrm/espocrm:10
+      environment:
+        - ESPOCRM_ADMIN_USERNAME=${ESPOCRM_ADMIN_USERNAME:-admin}
+        - ESPOCRM_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+        - ESPOCRM_DATABASE_PLATFORM=Mysql
+        - ESPOCRM_DATABASE_HOST=espocrm-db
+        - ESPOCRM_DATABASE_NAME=${MARIADB_DATABASE:-espocrm}
+        - ESPOCRM_DATABASE_USER=${MARIADB_USER}
+        - ESPOCRM_DATABASE_PASSWORD=${MARIADB_PASSWORD}
+        - ESPOCRM_SITE_URL=${ESPOCRM_URL}
+      volumes:
+        - espocrm-data:/var/www/html/data
+        - espocrm-custom:/var/www/html/custom
+        - espocrm-custom-client:/var/www/html/client/custom
+      restart: unless-stopped
+      depends_on:
+        espocrm-db:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, bin/command, app-check]
+        start_period: 20s
+        interval: 60s
+        timeout: 20s
+        retries: 3
+      ports:
+        - ${ESPOCRM_PORT:-8080}:80
+    espocrm-daemon:
+      image: espocrm/espocrm:10
+      volumes_from:
+        - espocrm
+      restart: unless-stopped
+      entrypoint: docker-daemon.sh
+      depends_on:
+        espocrm:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, bin/command, app-check]
+        start_period: 20s
+        interval: 180s
+        timeout: 20s
+        retries: 3
+    espocrm-websocket:
+      image: espocrm/espocrm:10
+      environment:
+        - ESPOCRM_CONFIG_USE_WEB_SOCKET=true
+        - ESPOCRM_CONFIG_WEB_SOCKET_URL=$ESPOCRM_WEBSOCKET_URL
+        - ESPOCRM_CONFIG_WEB_SOCKET_ZERO_M_Q_SUBSCRIBER_DSN=tcp://*:7777
+        - ESPOCRM_CONFIG_WEB_SOCKET_ZERO_M_Q_SUBMISSION_DSN=tcp://espocrm-websocket:7777
+      volumes_from:
+        - espocrm
+      restart: unless-stopped
+      entrypoint: docker-websocket.sh
+      depends_on:
+        espocrm:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, bin/command, app-check]
+        start_period: 20s
+        interval: 180s
+        timeout: 20s
+        retries: 3
+      ports:
+        - ${ESPOCRM_WEBSOCKET_PORT:-8081}:8080
+    espocrm-db:
+      image: mariadb:12.3
+      environment:
+        - MARIADB_DATABASE=${MARIADB_DATABASE:-espocrm}
+        - MARIADB_USER=${MARIADB_USER}
+        - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+        - MARIADB_ROOT_PASSWORD=${ROOT_PASSWORD}
+      volumes:
+        - espocrm-db:/var/lib/mysql
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 20s
+        start_period: 10s
+        timeout: 10s
+        retries: 3
+  volumes:
+    espocrm-data:
+    espocrm-custom:
+    espocrm-custom-client:
+    espocrm-db:

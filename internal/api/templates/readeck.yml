@@ -1,0 +1,34 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Readeck
+category: Productivity
+description: Simple web application that lets you save the precious readable content of web pages you like and want to keep forever.
+website: https://readeck.org/en/docs/
+tags:
+  - read-it-later
+  - pocket-alternative
+  - omnivore-alternative
+  - instapaper-alternative
+logo: templates/readeck.svg
+env: |-
+  PORT=8000
+
+  # Optional settings
+  READECK_USE_X_FORWARDED=true
+compose: |
+  services:
+    readeck:
+      image: codeberg.org/readeck/readeck:latest
+      restart: unless-stopped
+      environment:
+        - READECK_USE_X_FORWARDED=${READECK_USE_X_FORWARDED:-true}
+      volumes:
+        - readeck_data:/readeck
+      healthcheck:
+        test: [CMD, /bin/readeck, healthcheck, -config, config.toml]
+        interval: 30s
+        timeout: 2s
+        retries: 3
+      ports:
+        - ${PORT:-8000}:8000
+  volumes:
+    readeck_data:

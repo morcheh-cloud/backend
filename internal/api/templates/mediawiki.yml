@@ -1,0 +1,28 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: MediaWiki
+category: Websites
+description: MediaWiki is a collaboration and documentation platform brought to you by a vibrant community.
+website: https://www.mediawiki.org
+tags:
+  - wiki
+  - collaboration
+  - documentation
+env: PORT=8080
+compose: |
+  services:
+    mediawiki:
+      image: mediawiki:latest
+      restart: unless-stopped
+      volumes:
+        - mediawiki-images:/var/www/html/images
+        - mediawiki-sqlite:/var/www/html/data
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:80]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    mediawiki-images:
+    mediawiki-sqlite:

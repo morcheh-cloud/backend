@@ -1,0 +1,35 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Statusnook
+category: Monitoring
+description: Effortlessly deploy a status page and start monitoring endpoints in minutes
+website: https://statusnook.com
+tags:
+  - go
+  - html
+  - monitoring
+  - sqlite
+  - self
+  - hosted
+  - status
+  - page
+  - htmx
+  - smtp
+  - slack
+logo: templates/statusnook.svg
+env: PORT=8000
+compose: |
+  services:
+    statusnook:
+      image: goksan/statusnook
+      restart: unless-stopped
+      volumes:
+        - statusnook-data:/app/statusnook-data
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:8000]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8000}:8000
+  volumes:
+    statusnook-data:

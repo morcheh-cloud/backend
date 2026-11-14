@@ -1,0 +1,13 @@
+name: Adminer
+category: Databases
+description: A database web UI for MySQL, PostgreSQL, SQLite and more.
+featured: true
+env: |
+  PORT=8081
+compose: |
+  services:
+    adminer:
+      image: adminer:latest
+      restart: unless-stopped
+      ports:
+        - "127.0.0.1:${PORT:-8081}:8080"

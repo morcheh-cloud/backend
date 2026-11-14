@@ -1,0 +1,242 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Invoice Ninja
+category: Finance
+description: The leading open-source invoicing platform
+website: https://invoiceninja.github.io/selfhost.html
+tags:
+  - invoicing
+  - billing
+  - accounting
+  - finance
+  - self-hosted
+logo: templates/invoiceninja.webp
+env: |-
+  PORT=9000
+  INVOICENINJA_URL=http://{{host}}:${PORT}
+  INVOICENINJA_KEY={{base64:32}}
+  REDIS_PASSWORD={{secret}}
+  MARIADB_USER={{user}}
+  MARIADB_PASSWORD={{secret}}
+  INVOICENINJAUSER_PASSWORD={{secret}}
+  MARIADBROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  APP_NAME="\"Invoice Ninja\""
+  APP_ENV=production
+  APP_DEBUG=false
+  REQUIRE_HTTPS=false
+  PHANTOMJS_PDF_GENERATION=false
+  PDF_GENERATOR=hosted_ninja
+  TRUSTED_PROXIES="*"
+  QUEUE_CONNECTION=redis
+  REDIS_HOST=redis
+  REDIS_PORT=6379
+  DB_HOST=mariadb
+  DB_PORT=3306
+  DB_DATABASE=invoiceninja
+  IN_USER_EMAIL=admin@example.com
+  MAIL_MAILER=log
+  MAIL_HOST=
+  MAIL_PORT=
+  MAIL_USERNAME=
+  MAIL_PASSWORD=
+  MAIL_ENCRYPTION=
+  MAIL_FROM_ADDRESS=
+  MAIL_FROM_NAME=
+  AWS_ACCESS_KEY_ID=
+  AWS_SECRET_ACCESS_KEY=
+  AWS_DEFAULT_REGION=
+  AWS_BUCKET=
+  AWS_URL=
+  AWS_ENDPOINT=
+  NORDIGEN_SECRET_ID=
+  NORDIGEN_SECRET_KEY=
+  SCOUT_DRIVER=
+  LICENSE_KEY=
+compose: |
+  services:
+    invoice-ninja:
+      image: invoiceninja/invoiceninja:5
+      restart: unless-stopped
+      environment:
+        - APP_NAME=${APP_NAME:-"Invoice Ninja"}
+        - APP_ENV=${APP_ENV:-production}
+        - APP_URL=${INVOICENINJA_URL}
+        - APP_KEY=base64:${INVOICENINJA_KEY}
+        - APP_DEBUG=${APP_DEBUG:-false}
+        - REQUIRE_HTTPS=${REQUIRE_HTTPS:-false}
+        - PHANTOMJS_PDF_GENERATION=${PHANTOMJS_PDF_GENERATION:-false}
+        - PDF_GENERATOR=${PDF_GENERATOR:-hosted_ninja}
+        - TRUSTED_PROXIES=${TRUSTED_PROXIES:-*}
+        - CACHE_DRIVER=redis
+        - QUEUE_CONNECTION=${QUEUE_CONNECTION:-redis}
+        - SESSION_DRIVER=redis
+        - REDIS_HOST=${REDIS_HOST:-redis}
+        - REDIS_PASSWORD=${REDIS_PASSWORD}
+        - REDIS_PORT=${REDIS_PORT:-6379}
+        - DB_HOST=${DB_HOST:-mariadb}
+        - DB_PORT=${DB_PORT:-3306}
+        - DB_DATABASE=${DB_DATABASE:-invoiceninja}
+        - DB_USERNAME=${MARIADB_USER}
+        - DB_PASSWORD=${MARIADB_PASSWORD}
+        - IN_USER_EMAIL=${IN_USER_EMAIL:-admin@example.com}
+        - IN_PASSWORD=${INVOICENINJAUSER_PASSWORD}
+        - MAIL_MAILER=${MAIL_MAILER:-log}
+        - MAIL_HOST=${MAIL_HOST}
+        - MAIL_PORT=${MAIL_PORT}
+        - MAIL_USERNAME=${MAIL_USERNAME}
+        - MAIL_PASSWORD=${MAIL_PASSWORD}
+        - MAIL_ENCRYPTION=${MAIL_ENCRYPTION}
+        - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS}
+        - MAIL_FROM_NAME=${MAIL_FROM_NAME}
+        - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+        - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+        - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+        - AWS_BUCKET=${AWS_BUCKET}
+        - AWS_URL=${AWS_URL}
+        - AWS_ENDPOINT=${AWS_ENDPOINT}
+        - NORDIGEN_SECRET_ID=${NORDIGEN_SECRET_ID}
+        - NORDIGEN_SECRET_KEY=${NORDIGEN_SECRET_KEY}
+        - IS_DOCKER=true
+        - SCOUT_DRIVER=${SCOUT_DRIVER}
+        - LICENSE_KEY=${LICENSE_KEY}
+      healthcheck:
+        test: [CMD, echo, ok]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      volumes:
+        - invoice-ninja-public:/var/www/app/public
+        - invoice-ninja-storage:/var/www/app/storage
+      depends_on:
+        mariadb:
+          condition: service_healthy
+      ports:
+        - ${PORT:-9000}:9000
+      configs:
+        - source: invoice-ninja-supervisord.conf
+          target: /etc/supervisord.conf
+        - source: invoice-ninja-php.ini
+          target: /usr/local/etc/php/php.ini
+        - source: invoice-ninja-php-cli.ini
+          target: /usr/local/etc/php/php-cli.ini
+    mariadb:
+      image: mariadb:11
+      restart: unless-stopped
+      volumes:
+        - mariadb-data:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=${MARIADBROOT_PASSWORD}
+        - MYSQL_DATABASE=${DB_DATABASE:-invoiceninja}
+        - MYSQL_USER=${MARIADB_USER}
+        - MYSQL_PASSWORD=${MARIADB_PASSWORD}
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    redis:
+      image: redis:7.4-alpine
+      restart: unless-stopped
+      command: redis-server --requirepass ${REDIS_PASSWORD}
+      environment:
+        - REDIS_PASSWORD=${REDIS_PASSWORD}
+      volumes:
+        - invoice-ninja-redis-data:/data
+      healthcheck:
+        test: [CMD, redis-cli, -a, "${REDIS_PASSWORD}", ping]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+  volumes:
+    invoice-ninja-public:
+    invoice-ninja-storage:
+    mariadb-data:
+    invoice-ninja-redis-data:
+  configs:
+    invoice-ninja-supervisord.conf:
+      content: |
+        [supervisord]
+        nodaemon=true
+        pidfile=/tmp/supervisord.pid
+        logfile=/dev/null ; nodaemon will cause logs to go to stdout
+        logfile_maxbytes=0
+        loglevel=info
+
+        [program:php-fpm]
+        redirect_stderr=true
+        stdout_logfile=/dev/stdout
+        stdout_logfile_maxbytes=0
+        stderr_logfile=/dev/stderr
+        stderr_logfile_maxbytes=0
+        command=php artisan serve --host 0.0.0.0 --port 9000
+
+        [program:scheduler]
+        autorestart=true
+        redirect_stderr=true
+        stdout_logfile=/dev/stdout
+        stdout_logfile_maxbytes=0
+        stderr_logfile=/dev/stderr
+        stderr_logfile_maxbytes=0
+        command=php artisan schedule:work
+
+        [program:queue-worker]
+        process_name=%(program_name)s_%(process_num)02d
+        autorestart=true
+        redirect_stderr=true
+        stdout_logfile=/dev/stdout
+        stdout_logfile_maxbytes=0
+        stderr_logfile=/dev/stderr
+        stderr_logfile_maxbytes=0
+        numprocs=2
+        command=php artisan queue:work --sleep=3 --tries=1 --memory=256 --timeout=3600
+
+        [eventlistener:shutdown]
+        command=shutdown.sh
+        events=PROCESS_STATE_STOPPED, PROCESS_STATE_EXITED, PROCESS_STATE_FATAL
+        stdout_logfile=/dev/stdout
+        stdout_logfile_maxbytes=0
+        stderr_logfile=/dev/stderr
+        stderr_logfile_maxbytes=0
+    invoice-ninja-php.ini:
+      content: |
+        session.auto_start = Off
+        short_open_tag = Off
+
+        error_reporting = E_ALL & ~E_NOTICE & ~E_WARNING & ~E_STRICT & ~E_DEPRECATED
+
+        ; opcache.enable=1
+        ; opcache.preload=/srv/www/invoiceninja/current/preload.php
+        ; opcache.preload_user=www-data
+
+        ; ; The OPcache shared memory storage size.
+        ; opcache.max_accelerated_files=300000
+        ; opcache.validate_timestamps=1
+        ; opcache.revalidate_freq=30
+        ; opcache.jit_buffer_size=256M
+        ; opcache.jit=1205
+        ; opcache.memory_consumption=1024M
+
+        post_max_size = 60M
+        upload_max_filesize = 50M
+        memory_limit=512M
+    invoice-ninja-php-cli.ini:
+      content: |
+        session.auto_start = Off
+        short_open_tag = Off
+
+        error_reporting = E_ALL & ~E_NOTICE & ~E_WARNING & ~E_STRICT & ~E_DEPRECATED
+
+        ; opcache.enable_cli=1
+        ; opcache.fast_shutdown=1
+        ; opcache.memory_consumption=256
+        ; opcache.interned_strings_buffer=8
+        ; opcache.max_accelerated_files=4000
+        ; opcache.revalidate_freq=60
+        ; # http://symfony.com/doc/current/performance.html
+        ; realpath_cache_size = 4096K
+        ; realpath_cache_ttl = 600
+
+        memory_limit = 2G
+        post_max_size = 60M
+        upload_max_filesize = 50M

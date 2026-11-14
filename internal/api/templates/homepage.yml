@@ -1,0 +1,127 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Homepage
+category: Productivity
+description: A modern, fully static, fast, secure fully proxied, highly customizable application dashboard
+website: https://gethomepage.dev/latest/
+tags:
+  - dashboard
+  - homepage
+logo: templates/homepage.webp
+featured: true
+env: |-
+  PORT=3000
+  HOMEPAGE_URL=http://{{host}}:${PORT}
+  HOMEPAGE_HOST={{host}}:${PORT}
+compose: |
+  services:
+    homepage:
+      image: ghcr.io/gethomepage/homepage:latest
+      restart: unless-stopped
+      environment:
+        - HOMEPAGE_VAR_BASE=${HOMEPAGE_URL}
+        - HOMEPAGE_ALLOWED_HOSTS=${HOMEPAGE_HOST}
+      volumes:
+        - ./images:/app/public/images
+      ports:
+        - ${PORT:-3000}:3000
+      configs:
+        - source: homepage-bookmarks.yaml
+          target: /app/config/bookmarks.yaml
+        - source: homepage-custom.css
+          target: /app/config/custom.css
+        - source: homepage-custom.js
+          target: /app/config/custom.js
+        - source: homepage-docker.yaml
+          target: /app/config/docker.yaml
+        - source: homepage-kubernetes.yaml
+          target: /app/config/kubernetes.yaml
+        - source: homepage-services.yaml
+          target: /app/config/services.yaml
+        - source: homepage-settings.yaml
+          target: /app/config/settings.yaml
+        - source: homepage-widgets.yaml
+          target: /app/config/widgets.yaml
+  configs:
+    homepage-bookmarks.yaml:
+      content: |
+        ---
+        # For configuration options and examples, please see:
+        # https://gethomepage.dev/configs/bookmarks
+
+        - Developer:
+            - Github:
+                - abbr: GH
+                  href: https://github.com/
+
+        - Social:
+            - Reddit:
+                - abbr: RE
+                  href: https://reddit.com/
+
+        - Entertainment:
+            - YouTube:
+                - abbr: YT
+                  href: https://youtube.com/
+    homepage-custom.css:
+      content: ""
+    homepage-custom.js:
+      content: ""
+    homepage-docker.yaml:
+      content: |
+        ---
+        # For configuration options and examples, please see:
+        # https://gethomepage.dev/configs/docker/
+
+        # my-docker:
+        #   host: 127.0.0.1
+        #   port: 2375
+
+        # my-docker:
+        #   socket: /var/run/docker.sock
+    homepage-kubernetes.yaml:
+      content: |
+        ---
+        # sample kubernetes config
+    homepage-services.yaml:
+      content: |
+        ---
+        # For configuration options and examples, please see:
+        # https://gethomepage.dev/configs/services
+
+        - My First Group:
+            - My First Service:
+                href: http://localhost/
+                description: Homepage is awesome
+
+        - My Second Group:
+            - My Second Service:
+                href: http://localhost/
+                description: Homepage is the best
+
+        - My Third Group:
+            - My Third Service:
+                href: http://localhost/
+                description: Homepage is 😎
+    homepage-settings.yaml:
+      content: |
+        ---
+        # For configuration options and examples, please see:
+        # https://gethomepage.dev/configs/settings
+
+        providers:
+          openweathermap: openweathermapapikey
+          weatherapi: weatherapiapikey
+    homepage-widgets.yaml:
+      content: |
+        ---
+        # For configuration options and examples, please see:
+        # https://gethomepage.dev/widgets/services
+
+        - resources:
+            cpu: true
+            memory: true
+            disk: /
+
+        - search:
+            provider: duckduckgo
+            target: _blank

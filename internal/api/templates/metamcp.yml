@@ -1,0 +1,67 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: MetaMCP
+category: AI
+description: MCP Aggregator, Orchestrator, Middleware, Gateway in one app
+website: https://github.com/metatool-ai/metamcp
+tags:
+  - mcp
+  - ai
+  - sse
+  - aggregator
+  - orchestrator
+  - middleware
+logo: templates/metamcp.webp
+env: |-
+  PORT=12008
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  METAMCP_URL=http://{{host}}:${PORT}
+  AUTH_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_HOST=postgres
+  POSTGRES_PORT=5432
+  POSTGRES_DB=metamcp_db
+  TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL=true
+compose: |
+  services:
+    app:
+      image: ghcr.io/metatool-ai/metamcp:2.4
+      restart: unless-stopped
+      environment:
+        - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+        - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-metamcp_db}
+        - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-metamcp_db}
+        - APP_URL=${METAMCP_URL}
+        - NEXT_PUBLIC_APP_URL=${METAMCP_URL}
+        - BETTER_AUTH_SECRET=${AUTH_PASSWORD}
+        - TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL=${TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL:-true}
+      depends_on:
+        postgres:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:12008/health]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      ports:
+        - ${PORT:-12008}:12008
+    postgres:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_DB=${POSTGRES_DB:-metamcp_db}
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-metamcp_db}"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+  volumes:
+    postgres_data:

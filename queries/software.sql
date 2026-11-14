@@ -53,11 +53,10 @@ SELECT * FROM software_installs WHERE server_id = @server_id AND recipe_id = @re
 -- name: BeginSoftwareInstall :one
 -- A run starts installing an app on a server: a new row, or the old one again.
 INSERT INTO software_installs (
-    workspace_id, server_id, recipe_id, name, kind, origin, status, params, secrets,
-    dir, project, error
+    workspace_id, server_id, recipe_id, name, kind, origin, status, params, secrets, error
 ) VALUES (
     @workspace_id, @server_id, @recipe_id, @name, @kind, 'morcheh', 'installing', @params,
-    @secrets, @dir, @project, ''
+    @secrets, ''
 )
 ON CONFLICT (server_id, recipe_id) DO UPDATE SET
     name = excluded.name,
@@ -66,8 +65,6 @@ ON CONFLICT (server_id, recipe_id) DO UPDATE SET
     status = 'installing',
     params = excluded.params,
     secrets = excluded.secrets,
-    dir = excluded.dir,
-    project = excluded.project,
     error = '',
     updated_at = now()
 RETURNING *;
@@ -83,10 +80,6 @@ UPDATE software_installs SET
     version = @version,
     latest = @latest,
     update_available = @update_available,
-    state = @state,
-    images = @images,
-    can_rollback = @can_rollback,
-    pinned = @pinned,
     checked_at = now(),
     installed_at = CASE WHEN @installed::boolean THEN now() ELSE installed_at END,
     updated_at = now()
@@ -99,21 +92,15 @@ DELETE FROM software_installs WHERE id = $1;
 -- What a scan found installed. A run in progress keeps its status.
 INSERT INTO software_installs (
     workspace_id, server_id, recipe_id, name, kind, origin, status, version, latest,
-    update_available, state, images, dir, project, can_rollback, pinned, checked_at, installed_at
+    update_available, checked_at, installed_at
 ) VALUES (
     @workspace_id, @server_id, @recipe_id, @name, @kind, @origin, 'installed', @version,
-    @latest, @update_available, @state, @images, @dir, @project, @can_rollback, @pinned, now(), NULL
+    @latest, @update_available, now(), NULL
 )
 ON CONFLICT (server_id, recipe_id) DO UPDATE SET
     version = excluded.version,
     latest = excluded.latest,
     update_available = excluded.update_available,
-    state = excluded.state,
-    can_rollback = excluded.can_rollback,
-    pinned = excluded.pinned,
-    images = CASE WHEN excluded.images = '[]'::jsonb THEN software_installs.images ELSE excluded.images END,
-    dir = CASE WHEN excluded.dir = '' THEN software_installs.dir ELSE excluded.dir END,
-    project = CASE WHEN excluded.project = '' THEN software_installs.project ELSE excluded.project END,
     status = CASE WHEN software_installs.status IN ('installing', 'updating', 'removing')
         THEN software_installs.status ELSE 'installed' END,
     error = CASE WHEN software_installs.status IN ('installing', 'updating', 'removing')
@@ -129,7 +116,7 @@ WHERE server_id = @server_id AND origin = 'found' AND NOT (recipe_id = ANY(@pres
 
 -- name: MarkMissingSoftware :exec
 -- A scan no longer finds an app Morche installed.
-UPDATE software_installs SET status = 'missing', state = '', checked_at = now(), updated_at = now()
+UPDATE software_installs SET status = 'missing', checked_at = now(), updated_at = now()
 WHERE server_id = @server_id AND origin = 'morcheh' AND NOT (recipe_id = ANY(@present::text[]))
   AND status = 'installed';
 

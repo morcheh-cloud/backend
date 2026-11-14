@@ -1,0 +1,60 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Directus
+category: Websites
+description: Directus wraps databases with a dynamic API, and provides an intuitive app for managing its content.
+website: https://directus.io
+tags:
+  - directus
+  - cms
+  - database
+  - sql
+logo: templates/directus.svg
+featured: true
+env: |-
+  PORT=8055
+  KEY_SECRET={{secret:64}}
+  SECRET_SECRET={{secret:64}}
+  ADMIN_PASSWORD={{secret}}
+
+  # Optional settings
+  ADMIN_EMAIL=admin@example.com
+  CORS_ENABLED=true
+  CORS_ORIGIN=
+  CORS_METHODS=GET,POST,PATCH,DELETE,OPTIONS
+  CORS_ALLOWED_HEADERS=Content-Type,Authorization
+  CORS_CREDENTIALS=true
+compose: |
+  services:
+    directus:
+      image: directus/directus:11
+      restart: unless-stopped
+      volumes:
+        - directus-database:/directus/database
+        - directus-uploads:/directus/uploads
+        - directus-extensions:/directus/extensions
+        - directus-templates:/directus/templates
+      environment:
+        - KEY=$KEY_SECRET
+        - SECRET=$SECRET_SECRET
+        - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+        - ADMIN_PASSWORD=$ADMIN_PASSWORD
+        - DB_CLIENT=sqlite3
+        - DB_FILENAME=/directus/database/data.db
+        - WEBSOCKETS_ENABLED=true
+        - CORS_ENABLED=${CORS_ENABLED:-true}
+        - CORS_ORIGIN=${CORS_ORIGIN}
+        - CORS_METHODS=${CORS_METHODS:-GET,POST,PATCH,DELETE,OPTIONS}
+        - CORS_ALLOWED_HEADERS=${CORS_ALLOWED_HEADERS:-Content-Type,Authorization}
+        - CORS_CREDENTIALS=${CORS_CREDENTIALS:-true}
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:8055/admin/login]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8055}:8055
+  volumes:
+    directus-database:
+    directus-uploads:
+    directus-extensions:
+    directus-templates:

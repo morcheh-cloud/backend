@@ -1,0 +1,36 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Rivet Engine
+category: Development
+description: Build and scale stateful workloads with long-lived processes
+website: https://www.rivet.dev/docs
+tags:
+  - stateful
+  - actors
+  - realtime
+  - backend
+  - serverless
+  - postgresql
+logo: templates/rivet.svg
+env: |-
+  PORT=6420
+  TOKEN_SECRET={{secret}}
+compose: |
+  services:
+    rivet-engine:
+      image: rivetdev/engine:2.2.0
+      restart: unless-stopped
+      environment:
+        - RIVET__FILE_SYSTEM__PATH=/data
+        - RIVET__AUTH__ADMIN_TOKEN=${TOKEN_SECRET}
+      volumes:
+        - rivet-data:/data
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:6420/health]
+        interval: 2s
+        timeout: 10s
+        retries: 10
+        start_period: 30s
+      ports:
+        - ${PORT:-6420}:6420
+  volumes:
+    rivet-data:

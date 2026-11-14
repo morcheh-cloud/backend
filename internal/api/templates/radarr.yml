@@ -1,0 +1,38 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Radarr
+category: Media
+description: Radarr⁠ - A fork of Sonarr to work with movies à la Couchpotato.
+website: https://hub.docker.com/r/linuxserver/radarr
+tags:
+  - media
+  - server
+  - movies
+logo: templates/radarr.svg
+featured: true
+env: |-
+  PORT=7878
+  RADARR_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  TZ=America/Toronto
+compose: |
+  services:
+    radarr:
+      image: lscr.io/linuxserver/radarr:latest
+      restart: unless-stopped
+      environment:
+        - _APP_URL=$RADARR_URL
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-America/Toronto}
+      volumes:
+        - radarr-config:/config
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:7878/ping]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-7878}:7878
+  volumes:
+    radarr-config:

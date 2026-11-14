@@ -1,0 +1,46 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Plex
+category: Media
+description: Plex organizes video, music and photos from personal media libraries and streams them to smart TVs, streaming boxes and mobile devices.
+website: https://docs.linuxserver.io/images/docker-plex/
+tags:
+  - media
+  - server
+  - movies
+  - tv
+  - music
+logo: templates/plex.svg
+featured: true
+env: |-
+  PORT=32400
+  PLEX_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  TZ=America/Toronto
+  PLEX_CLAIM=
+compose: |
+  services:
+    plex:
+      image: lscr.io/linuxserver/plex:latest
+      restart: unless-stopped
+      environment:
+        - _APP_URL=$PLEX_URL
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-America/Toronto}
+        - PLEX_CLAIM=${PLEX_CLAIM}
+      volumes:
+        - plex-config:/config
+        - plex-tv:/tv
+        - plex-movies:/movies
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:32400/identity]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-32400}:32400
+  volumes:
+    plex-config:
+    plex-tv:
+    plex-movies:

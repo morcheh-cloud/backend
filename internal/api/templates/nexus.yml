@@ -1,0 +1,40 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Sonatype Nexus
+category: Development
+description: "Open source Universal Repository Manager (x86_64 version, official), default credentials: admin/admin123"
+website: https://help.sonatype.com/en/sonatype-nexus-repository.html
+tags:
+  - repository
+  - manager
+  - open source
+  - docker
+  - docker
+  - registry
+  - container
+logo: templates/nexus.webp
+env: |-
+  PORT=8081
+
+  # Optional settings
+  NEXUS_SECURITY_RANDOMPASSWORD=false
+compose: |
+  services:
+    nexus:
+      image: sonatype/nexus3
+      restart: unless-stopped
+      platform: linux/amd64
+      environment:
+        - NEXUS_SECURITY_RANDOMPASSWORD=${NEXUS_SECURITY_RANDOMPASSWORD:-false}
+        - INSTALL4J_ADD_VM_PARAMS=-Xms2703m -Xmx2703m -XX:MaxDirectMemorySize=2703m -Djava.util.prefs.userRoot=/nexus-data/javaprefs
+      volumes:
+        - nexus_data:/nexus-data
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:8081/service/rest/v1/status]
+        interval: 10s
+        timeout: 10s
+        retries: 3
+        start_period: 60s
+      ports:
+        - ${PORT:-8081}:8081
+  volumes:
+    nexus_data:

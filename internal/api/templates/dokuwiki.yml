@@ -1,0 +1,32 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: DokuWiki
+category: Websites
+description: A lightweight and easy-to-use wiki platform for creating and managing documentation and knowledge bases.
+website: https://www.dokuwiki.org/
+tags:
+  - wiki
+  - documentation
+  - knowledge
+  - base
+logo: templates/dokuwiki.webp
+env: PORT=8080
+compose: |
+  services:
+    dokuwiki:
+      image: lscr.io/linuxserver/dokuwiki:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=Europe/Madrid
+      volumes:
+        - dokuwiki-config:/config
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    dokuwiki-config:

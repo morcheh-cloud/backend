@@ -149,6 +149,8 @@ type Sample struct {
 	ReadRate    float64
 	WriteRate   float64
 	Pids        int64
+	CPUTotal    uint64 // the container's CPU time so far (ns), for working out CPU from two readings
+	SystemTotal uint64 // the host's CPU time so far (ns)
 }
 
 type rawStats struct {
@@ -188,7 +190,10 @@ type rawStats struct {
 }
 
 func (r rawStats) sample() Sample {
-	s := Sample{Time: r.Read, CPUs: r.CPUStats.OnlineCPUs}
+	s := Sample{
+		Time: r.Read, CPUs: r.CPUStats.OnlineCPUs,
+		CPUTotal: r.CPUStats.CPUUsage.TotalUsage, SystemTotal: r.CPUStats.SystemUsage,
+	}
 	if s.CPUs == 0 {
 		s.CPUs = len(r.CPUStats.CPUUsage.PercpuUsage)
 	}
@@ -264,7 +269,11 @@ func (c *Client) Stats(ctx context.Context, id string, fn func(Sample) bool) err
 func (c *Client) StatsOnce(ctx context.Context, id string) (Sample, error) {
 	var r rawStats
 	err := c.Get(ctx, "/containers/"+PathEscape(id)+"/stats", url.Values{"stream": {"0"}, "one-shot": {"1"}}, &r)
-	return r.sample(), err
+	s := r.sample()
+	if s.Time.IsZero() || s.Time.Year() < 2000 {
+		s.Time = time.Now()
+	}
+	return s, err
 }
 
 // PullEvent is one progress message of a pull.

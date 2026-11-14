@@ -256,3 +256,46 @@ func TestTakeAndGiveBack(t *testing.T) {
 		t.Errorf("records should be gone: %q", out)
 	}
 }
+
+// Nginx Proxy Manager proxies through an include; the address is in variables.
+func TestParseSitesProxyManager(t *testing.T) {
+	dump := "# configuration file /data/nginx/proxy_host/1.conf:\n" +
+		"server {\n  set $forward_scheme http;\n  set $server         \"app\";\n  set $port           3000;\n\n" +
+		"  listen 80;\n  server_name example.com;\n" +
+		"  location /api { proxy_pass http://api:8080; }\n" +
+		"  location / { include conf.d/include/proxy.conf; }\n}\n"
+	sites := ParseSites(dump)
+	if len(sites) != 1 || sites[0].Upstream != "http://app:3000" {
+		t.Fatalf("sites = %+v", sites)
+	}
+}
+
+func TestFileTrafficProxyManager(t *testing.T) {
+	if _, err := exec.LookPath("awk"); err != nil {
+		t.Skip("no awk")
+	}
+	f := filepath.Join(t.TempDir(), "proxy-host-1_access.log")
+	log := `[14/Nov/2026:10:15:01 +0000] - 200 200 - GET https a.com "/" [Client 1.2.3.4] [Length 5120] [Gzip 3.2] [Sent-to app] "Mozilla/5.0" "-"
+[14/Nov/2026:10:15:09 +0000] - 502, 502 502 - POST https a.com "/api x" [Client 1.2.3.4] [Length 150] [Gzip -] [Sent-to app] "curl/8" "-"
+1.2.3.4 - - [14/Nov/2026:10:16:30 +0000] "GET / HTTP/1.1" 301 162 "-" "UA"
+`
+	if err := os.WriteFile(f, []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var d Driver
+	out, err := exec.Command("sh", "-c", d.FileTrafficScript(map[string]string{"m1": f}, nil)).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits, marks := d.ParseTraffic(string(out))
+	if marks["m1"].Size != int64(len(log)) {
+		t.Fatalf("mark %+v", marks["m1"])
+	}
+	got := map[int]proxy.Hit{}
+	for _, h := range hits {
+		got[h.Class] = h
+	}
+	if got[2].Bytes != 5120 || got[5].Bytes != 150 || got[3].Bytes != 162 || len(hits) != 3 {
+		t.Fatalf("hits %+v", hits)
+	}
+}

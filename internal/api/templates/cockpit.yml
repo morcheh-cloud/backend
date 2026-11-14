@@ -1,0 +1,33 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Cockpit
+category: Websites
+description: Cockpit is a headless content platform that is lightweight, fast and ready for takeoff.
+website: https://getcockpit.com/documentation/
+tags:
+  - cockpit
+  - headless
+  - cms
+  - database
+  - nosql
+logo: templates/cockpit.svg
+env: PORT=8080
+compose: |
+  services:
+    cockpit:
+      image: cockpithq/cockpit:core-latest
+      restart: unless-stopped
+      volumes:
+        - cockpit-config:/var/www/html/config
+        - cockpit-spaces:/var/www/html/.spaces
+        - cockpit-storage:/var/www/html/storage
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1/api/system/healthcheck]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    cockpit-config:
+    cockpit-spaces:
+    cockpit-storage:

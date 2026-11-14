@@ -1,0 +1,33 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Lidarr
+category: Tools
+description: ""
+env: |-
+  PORT=8686
+
+  # Optional settings
+  TZ=America/Toronto
+compose: |
+  services:
+    lidarr:
+      image: lscr.io/linuxserver/lidarr:3.1.0.4875-ls40
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-America/Toronto}
+      volumes:
+        - lidarr-config:/config
+        - lidarr-music:/music
+        - lidarr-downloads:/downloads
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:8686]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8686}:8686
+  volumes:
+    lidarr-config:
+    lidarr-music:
+    lidarr-downloads:

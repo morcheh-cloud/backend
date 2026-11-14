@@ -1,0 +1,30 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Proxyscotch
+category: Networking
+description: A simple proxy server created for https://hoppscotch.io - CORS proxy
+website: https://github.com/hoppscotch/proxyscotch
+tags:
+  - proxy
+  - hoppscotch
+  - cors
+logo: templates/hoppscotch.webp
+env: |-
+  PORT=9159
+  TOKEN_PASSWORD={{secret}}
+
+  # Optional settings
+  ALLOWED_ORIGINS="*"
+  BANNED_OUTPUTS=
+  BANNED_DESTS=
+compose: |
+  services:
+    proxyscotch:
+      image: hoppscotch/proxyscotch:v0.1.4
+      restart: unless-stopped
+      environment:
+        - PROXYSCOTCH_TOKEN=${TOKEN_PASSWORD}
+        - PROXYSCOTCH_ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+        - PROXYSCOTCH_BANNED_OUTPUTS=${BANNED_OUTPUTS}
+        - PROXYSCOTCH_BANNED_DESTS=${BANNED_DESTS}
+      ports:
+        - ${PORT:-9159}:9159

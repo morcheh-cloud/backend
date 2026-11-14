@@ -1,0 +1,61 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: NitroPage with PostgreSQL
+category: Websites
+description: Nitropage is an extensible, visual website builder, offering a growing library of versatile building blocks, focal-point image cropping and sovereign font management.
+website: https://nitropage.org
+tags:
+  - nitropage
+  - builder
+  - editor
+  - wysiwyg
+  - cms
+  - content
+  - management
+logo: templates/nitropage.svg
+env: |-
+  PORT=3000
+  SALT_SECRET={{secret}}
+  SESSION_PASSWORD={{secret:64}}
+  POSTGRESQL_USER={{user}}
+  POSTGRESQL_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRESQL_DATABASE=nitropage
+compose: |
+  services:
+    nitropage:
+      image: nitropage/nitropage
+      restart: unless-stopped
+      environment:
+        - NP_AUTH_SALT=${SALT_SECRET}
+        - NP_AUTH_PASSWORD=${SESSION_PASSWORD}
+        - DATABASE_URL=postgresql://${POSTGRESQL_USER}:${POSTGRESQL_PASSWORD}@postgresql:5432/${POSTGRESQL_DATABASE:-nitropage}
+      volumes:
+        - nitropage-data:/app/.data
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000/admin]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-3000}:3000
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - nitropage-postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRESQL_USER}
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-nitropage}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    nitropage-data:
+    nitropage-postgresql-data:

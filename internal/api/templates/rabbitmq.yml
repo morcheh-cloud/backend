@@ -1,0 +1,43 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: RabbitMQ
+category: Communication
+description: With tens of thousands of users, RabbitMQ is one of the most popular open source message brokers.
+website: https://www.rabbitmq.com/documentation.html
+tags:
+  - message broker
+  - message queue
+  - message-oriented middleware
+  - mom
+  - amqp
+  - mqtt
+  - stomp
+  - messaging
+logo: templates/rabbitmq.svg
+featured: true
+env: |-
+  PORT=15672
+  RABBITMQ_USER={{user}}
+  RABBITMQ_PASSWORD={{secret}}
+compose: |
+  services:
+    rabbitmq:
+      image: rabbitmq:3-management
+      restart: unless-stopped
+      hostname: rabbitmq
+      environment:
+        - RABBITMQ_DEFAULT_USER=$RABBITMQ_USER
+        - RABBITMQ_DEFAULT_PASS=$RABBITMQ_PASSWORD
+        - PORT=${PORT:-5672}
+      ports:
+        - ${PORT}:5672
+        - ${PORT:-15672}:15672
+      healthcheck:
+        test: rabbitmq-diagnostics -q check_port_connectivity
+        interval: 5s
+        timeout: 30s
+        retries: 20
+        start_period: 60s
+      volumes:
+        - rabbitmq-data:/var/lib/rabbitmq/
+  volumes:
+    rabbitmq-data:

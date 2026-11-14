@@ -1,0 +1,45 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Dozzle with login
+category: Development
+description: Dozzle is a simple and lightweight web UI for Docker logs.
+website: https://dozzle.dev/
+tags:
+  - dozzle
+  - docker
+  - logs
+  - web-ui
+logo: templates/dozzle.svg
+env: |-
+  PORT=8080
+
+  # Optional settings
+  viucCvFLlHWvBNOOI6uypuVU=
+compose: |
+  services:
+    dozzle:
+      image: amir20/dozzle:latest
+      restart: unless-stopped
+      environment:
+        - DOZZLE_AUTH_PROVIDER=simple
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+      healthcheck:
+        test: [CMD, /dozzle, healthcheck]
+        interval: 3s
+        timeout: 30s
+        retries: 5
+      ports:
+        - ${PORT:-8080}:8080
+      configs:
+        - source: dozzle-users.yml
+          target: /data/users.yml
+  configs:
+    dozzle-users.yml:
+      content: |
+        users:
+          # "admin" is the username
+          admin:
+            email: test@email.com
+            name: Admin
+            # A bcrypt hash of the password you want to use. Can be computed with "python3 -c 'import bcrypt;print(bcrypt.hashpw(b"your-password",bcrypt.gensalt(11)).decode())' ". Default password is "test".
+            password: $2a$11$viucCvFLlHWvBNOOI6uypuVU.D09UWb.zswRxEg0MkDPi1q/bKbdG

@@ -1,0 +1,43 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Lowcoder
+category: Productivity
+description: Lowcoder (forked from OpenBlocks) is a self-hosted, open-source, low-code platform for building internal tools.
+website: https://docs.lowcoder.cloud/
+tags:
+  - lowcoder
+  - openblocks
+  - low
+  - code
+  - platform
+  - open
+  - source
+  - low
+  - code
+logo: templates/lowcoder.svg
+env: |-
+  PORT=3000
+  ENCRYPTION_PASSWORD={{secret}}
+  SALT_PASSWORD={{secret}}
+
+  # Optional settings
+  LOWCODER_EMAIL_SIGNUP_ENABLED=true
+compose: |
+  services:
+    lowcoder:
+      image: lowcoderorg/lowcoder-ce
+      restart: unless-stopped
+      environment:
+        - LOWCODER_EMAIL_SIGNUP_ENABLED=${LOWCODER_EMAIL_SIGNUP_ENABLED:-true}
+        - LOWCODER_DB_ENCRYPTION_PASSWORD=${ENCRYPTION_PASSWORD}
+        - LOWCODER_DB_ENCRYPTION_SALT=${SALT_PASSWORD}
+      volumes:
+        - lowcoder_data:/lowcoder-stacks
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000/health]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-3000}:3000
+  volumes:
+    lowcoder_data:

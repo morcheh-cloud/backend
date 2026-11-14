@@ -1,0 +1,112 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Teable
+category: Productivity
+description: Teable is a powerful visual interface built on relational databases (PostgreSQL).
+website: https://help.teable.io/
+tags:
+  - airtable
+  - teable
+  - database
+  - visual
+  - interface
+  - relational
+  - postgresql
+logo: templates/teable.webp
+env: |-
+  PORT=3000
+  TEABLE_URL=http://{{host}}:${PORT}
+  POSTGRES_PASSWORD={{secret}}
+  SECRET_PASSWORD={{secret:64}}
+  POSTGRES_USER={{user}}
+  REDIS_PASSWORD={{secret}}
+
+  # Optional settings
+  TIMEZONE=
+  POSTGRES_PORT=
+  POSTGRES_DB=
+  BACKEND_MAIL_HOST=
+  BACKEND_MAIL_PORT=
+  BACKEND_MAIL_SECURE=
+  BACKEND_MAIL_SENDER=
+  BACKEND_MAIL_SENDER_NAME=
+  BACKEND_MAIL_AUTH_USER=
+  BACKEND_MAIL_AUTH_PASS=
+compose: |
+  services:
+    teable:
+      image: ghcr.io/teableio/teable:latest
+      restart: unless-stopped
+      volumes:
+        - teable_data:/app/.assets:rw
+      environment:
+        - PUBLIC_ORIGIN=${TEABLE_URL}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - SECRET_KEY=${SECRET_PASSWORD}
+        - TZ=${TIMEZONE}
+        - PRISMA_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@teable-db:${POSTGRES_PORT}/${POSTGRES_DB}
+        - NEXT_ENV_IMAGES_ALL_REMOTE=true
+        - PORT=3000
+        - REDIS_PASSWORD=${REDIS_PASSWORD}
+        - BACKEND_CACHE_PROVIDER=redis
+        - BACKEND_CACHE_REDIS_URI=redis://default:${REDIS_PASSWORD}@teable-cache:6379/0
+        - BACKEND_MAIL_HOST=${BACKEND_MAIL_HOST}
+        - BACKEND_MAIL_PORT=${BACKEND_MAIL_PORT}
+        - BACKEND_MAIL_SECURE=${BACKEND_MAIL_SECURE}
+        - BACKEND_MAIL_SENDER=${BACKEND_MAIL_SENDER}
+        - BACKEND_MAIL_SENDER_NAME=${BACKEND_MAIL_SENDER_NAME}
+        - BACKEND_MAIL_AUTH_USER=${BACKEND_MAIL_AUTH_USER}
+        - BACKEND_MAIL_AUTH_PASS=${BACKEND_MAIL_AUTH_PASS}
+      depends_on:
+        teable-cache:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-3000}:3000
+    teable-db:
+      image: postgres:15.4
+      restart: unless-stopped
+      volumes:
+        - teable_db_data:/var/lib/postgresql/data:rw
+      environment:
+        - TZ=${TIMEZONE}
+        - POSTGRES_DB=${POSTGRES_DB:-teable}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    teable-db-migrate:
+      image: ghcr.io/teableio/teable-db-migrate:latest
+      restart: no
+      environment:
+        - TZ=${TIMEZONE}
+        - PRISMA_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@teable-db:${POSTGRES_PORT}/${POSTGRES_DB}
+      depends_on:
+        teable-db:
+          condition: service_healthy
+    teable-cache:
+      image: redis:7.2.4
+      restart: unless-stopped
+      environment:
+        - REDIS_PORT=6379
+        - REDIS_DB=0
+        - REDIS_PASSWORD=${REDIS_PASSWORD}
+      volumes:
+        - teable_cache_data:/data:rw
+      command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+      healthcheck:
+        test: [CMD, redis-cli, --raw, incr, ping]
+        interval: 10s
+        timeout: 3s
+        retries: 3
+  volumes:
+    teable_data:
+    teable_db_data:
+    teable_cache_data:

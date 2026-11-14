@@ -1,0 +1,64 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: NodeBB
+category: Communication
+description: A next-generation discussion platform.
+website: https://docs.nodebb.org/
+tags:
+  - communication
+  - forums
+  - discussion
+logo: templates/nodebb.svg
+env: |-
+  PORT=4567
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+compose: |
+  services:
+    nodebb:
+      image: ghcr.io/nodebb/nodebb:latest
+      restart: unless-stopped
+      volumes:
+        - nodebb_build:/usr/src/app/build
+        - nodebb_uploads:/usr/src/app/public/uploads
+        - nodebb_config:/opt/config
+      command: |
+        /bin/bash -c " cat > /usr/src/app/setup.json <<EOL {
+            \"defaults\": {
+                \"postgres\": {
+                    \"host\": \"postgres\",
+                    \"port\": 5432,
+                    \"database\": \"nodebb\",
+                    \"username\": \"${POSTGRES_USER}\",
+                    \"password\": \"${POSTGRES_PASSWORD}\"
+                }
+            }
+        } EOL && tini -- entrypoint.sh "
+      depends_on:
+        postgres:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD-SHELL, "bash -c ':> /dev/tcp/127.0.0.1/4567' || exit 1"]
+        interval: 5s
+        timeout: 20s
+        retries: 3
+      ports:
+        - ${PORT:-4567}:4567
+    postgres:
+      image: postgres:17.2-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=nodebb
+      volumes:
+        - nodebb_postgres_data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    nodebb_build:
+    nodebb_uploads:
+    nodebb_config:
+    nodebb_postgres_data:

@@ -1,0 +1,41 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: 9Router
+category: AI
+description: Free AI coding gateway. Routes Claude Code, Codex, Cursor, Cline, Copilot requests to 40+ LLM providers with auto-fallback and token savings.
+website: https://github.com/decolua/9router
+tags:
+  - ai
+  - gateway
+  - routing
+  - coding
+  - llm
+  - providers
+logo: templates/9router.svg
+env: |-
+  PORT=20128
+  PASSWORD_PASSWORD={{secret}}
+  JWTSECRET_PASSWORD={{secret:64}}
+  KEYSECRET_PASSWORD={{secret}}
+  HMACSALT_HEX={{hex:64}}
+compose: |
+  services:
+    9router:
+      image: decolua/9router:0.5.65
+      restart: unless-stopped
+      volumes:
+        - 9router:/app/data
+      environment:
+        - DATA_DIR=/app/data
+        - INITIAL_PASSWORD=${PASSWORD_PASSWORD}
+        - JWT_SECRET=${JWTSECRET_PASSWORD}
+        - API_KEY_SECRET=${KEYSECRET_PASSWORD}
+        - MACHINE_ID_SALT=${HMACSALT_HEX}
+      healthcheck:
+        test: [CMD, wget, --spider, http://127.0.0.1:20128/]
+        interval: 5s
+        timeout: 10s
+        retries: 5
+      ports:
+        - ${PORT:-20128}:20128
+  volumes:
+    9router:

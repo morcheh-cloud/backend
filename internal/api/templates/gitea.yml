@@ -1,0 +1,24 @@
+name: Gitea
+category: Development
+description: A light Git service with its own SQLite database.
+logo: gitea
+featured: true
+env: |
+  HTTP_PORT=3000
+  SSH_PORT=2222
+compose: |
+  services:
+    gitea:
+      image: gitea/gitea:1
+      restart: unless-stopped
+      environment:
+        USER_UID: "1000"
+        USER_GID: "1000"
+      ports:
+        - "${HTTP_PORT:-3000}:3000"
+        - "${SSH_PORT:-2222}:22"
+      volumes:
+        - data:/data
+
+  volumes:
+    data:

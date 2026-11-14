@@ -1,0 +1,63 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Weaviate
+category: AI
+description: Weaviate is an open-source vector database that stores both objects and vectors, allowing for combining vector search with structured filtering.
+website: https://weaviate.io/developers/weaviate
+tags:
+  - ai
+  - vector-database
+  - semantic-search
+  - machine-learning
+  - bm25
+  - embeddings
+  - llm
+logo: templates/weaviate.webp
+env: |-
+  PORT=8080
+  APIKEYS_PASSWORD={{secret}}
+
+  # Optional settings
+  DISABLE_TELEMETRY=true
+  QUERY_DEFAULTS_LIMIT=1000
+  LOG_LEVEL=info
+  GOMEMLIMIT=1024MiB
+  GOMAXPROCS=2
+  AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=false
+  AUTHORIZATION_ADMINLIST_USERS=admin@example.com
+  AUTHENTICATION_APIKEY_USERS=admin@example.com
+  AUTHENTICATION_APIKEY_ENABLED=true
+  DEFAULT_VECTORIZER_MODULE=none
+  ENABLE_MODULES=text2vec-openai,generative-openai,qna-openai
+  CLUSTER_HOSTNAME=node1
+compose: |
+  services:
+    weaviate:
+      image: cr.weaviate.io/semitechnologies/weaviate:1.26.4
+      restart: unless-stopped
+      volumes:
+        - weaviate-data:/var/lib/weaviate
+      command: [--host, 0.0.0.0, --port, "8080", --scheme, http]
+      environment:
+        - DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-true}
+        - QUERY_DEFAULTS_LIMIT=${QUERY_DEFAULTS_LIMIT:-1000}
+        - LOG_LEVEL=${LOG_LEVEL:-info}
+        - GOMEMLIMIT=${GOMEMLIMIT:-1024MiB}
+        - GOMAXPROCS=${GOMAXPROCS:-2}
+        - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=${AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED:-false}
+        - AUTHORIZATION_ADMINLIST_USERS=${AUTHORIZATION_ADMINLIST_USERS:-admin@example.com}
+        - AUTHENTICATION_APIKEY_USERS=${AUTHENTICATION_APIKEY_USERS:-admin@example.com}
+        - AUTHENTICATION_APIKEY_ENABLED=${AUTHENTICATION_APIKEY_ENABLED:-true}
+        - AUTHENTICATION_APIKEY_ALLOWED_KEYS=${APIKEYS_PASSWORD}
+        - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+        - DEFAULT_VECTORIZER_MODULE=${DEFAULT_VECTORIZER_MODULE:-none}
+        - ENABLE_MODULES=${ENABLE_MODULES:-text2vec-openai,generative-openai,qna-openai}
+        - CLUSTER_HOSTNAME=${CLUSTER_HOSTNAME:-node1}
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://localhost:8080/v1/.well-known/ready]
+        interval: 5s
+        timeout: 30s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    weaviate-data:

@@ -1,0 +1,60 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Paperless-ngx
+category: Productivity
+description: Paperless-ngx is a community-supported open-source document management system that transforms your physical documents into a searchable online archive so you can keep, well, less paper.
+website: https://docs.paperless-ngx.com/configuration/
+logo: templates/paperless.svg
+featured: true
+env: |-
+  PORT=8000
+  PAPERLESS_URL=http://{{host}}:${PORT}
+  PAPERLESS_PASSWORD={{secret}}
+  PAPERLESS_USER={{user}}
+  PAPERLESS_KEY={{base64:64}}
+compose: |
+  services:
+    redis:
+      image: redis:7.4
+      restart: unless-stopped
+      volumes:
+        - paperless-redis:/data
+      healthcheck:
+        test: [CMD, redis-cli, ping]
+        timeout: 10s
+        retries: 3
+    paperless:
+      image: paperlessngx/paperless-ngx:latest
+      restart: unless-stopped
+      depends_on:
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -fs, -S, --max-time, "2", http://localhost:8000]
+        interval: 30s
+        timeout: 10s
+        retries: 5
+      volumes:
+        - paperless-data:/usr/src/paperless/data
+        - paperless-media:/usr/src/paperless/media
+        - type: bind
+          source: ./export
+          target: /usr/src/paperless/export
+          bind:
+            create_host_path: true
+        - type: bind
+          source: ./consume
+          target: /usr/src/paperless/consume
+          bind:
+            create_host_path: true
+      environment:
+        - PAPERLESS_URL=$PAPERLESS_URL
+        - PAPERLESS_ADMIN_PASSWORD=${PAPERLESS_PASSWORD}
+        - PAPERLESS_ADMIN_USER=${PAPERLESS_USER}
+        - PAPERLESS_REDIS=redis://redis:6379
+        - PAPERLESS_SECRET_KEY=${PAPERLESS_KEY}
+      ports:
+        - ${PORT:-8000}:8000
+  volumes:
+    paperless-redis:
+    paperless-data:
+    paperless-media:

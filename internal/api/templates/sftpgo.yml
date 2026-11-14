@@ -1,0 +1,63 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: SFTPGo
+category: Storage
+description: SFTPGo is an event-driven SFTP, FTP/S, HTTP/S and WebDAV server.
+website: https://docs.sftpgo.com/2.7/
+tags:
+  - sftpgo
+  - sftp
+  - ftp
+  - file
+  - webdav
+logo: templates/sftpgo.webp
+env: |-
+  PORT=8080
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret:64}}
+
+  # Optional settings
+  POSTGRES_DATABASE=sftpgo-db
+  PORT_SFTPGO=2222
+  LOG_LEVEL=info
+compose: |
+  services:
+    sftpgo:
+      image: ghcr.io/drakkan/sftpgo:v2.7-alpine
+      restart: unless-stopped
+      ports:
+        - 2222:2222
+        - ${PORT:-8080}:8080
+      environment:
+        - SFTPGO_DATA_PROVIDER__DRIVER=postgresql
+        - SFTPGO_DATA_PROVIDER__CONNECTION_STRING=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DATABASE:-sftpgo-db}
+        - SFTPGO_SFTPD__BINDINGS__0__PORT=${PORT_SFTPGO:-2222}
+        - SFTPGO_LOG_LEVEL=${LOG_LEVEL:-info}
+      healthcheck:
+        test: [CMD-SHELL, wget -qO- http://127.0.0.1:8080/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      volumes:
+        - sftpgo-data:/srv/sftpgo/data
+        - sftpgo-keys:/var/lib/sftpgo
+    postgresql:
+      image: postgres:17-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DATABASE:-sftpgo-db}
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 10s
+        retries: 20
+  volumes:
+    sftpgo-data:
+    sftpgo-keys:
+    postgresql-data:

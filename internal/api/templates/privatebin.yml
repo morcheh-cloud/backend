@@ -1,0 +1,26 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: PrivateBin
+category: Security
+description: PrivateBin is a minimalist, open source online pastebin where the server has zero knowledge of pasted data.
+website: https://github.com/PrivateBin/PrivateBin/blob/master/doc/README.md
+tags:
+  - text
+  - sharing
+logo: templates/privatebin.svg
+env: PORT=8080
+compose: |
+  services:
+    privatebin:
+      image: privatebin/nginx-fpm-alpine
+      restart: unless-stopped
+      volumes:
+        - privatebin_data:/srv/data
+      healthcheck:
+        test: [CMD-SHELL, wget -qO- http://127.0.0.1:8080/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    privatebin_data:

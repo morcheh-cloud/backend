@@ -1,0 +1,49 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Homebox
+category: Productivity
+description: Homebox is the inventory and organization system built for the Home User.
+website: https://github.com/sysadminsmedia/homebox
+tags:
+  - inventory
+  - home
+  - organize
+logo: templates/homebox.svg
+env: |-
+  PORT=7745
+
+  # Optional settings
+  HBOX_OPTIONS_ALLOW_REGISTRATION=false
+  HBOX_LOG_LEVEL=info
+  HBOX_LOG_FORMAT=text
+  HBOX_WEB_MAX_UPLOAD_SIZE=10
+  HBOX_MAILER_HOST=
+  HBOX_MAILER_PORT=587
+  HBOX_MAILER_USERNAME=
+  HBOX_MAILER_PASSWORD=
+  HBOX_MAILER_FROM=
+compose: |
+  services:
+    homebox:
+      image: ghcr.io/sysadminsmedia/homebox:latest
+      restart: unless-stopped
+      environment:
+        - HBOX_OPTIONS_ALLOW_REGISTRATION=${HBOX_OPTIONS_ALLOW_REGISTRATION:-false}
+        - HBOX_LOG_LEVEL=${HBOX_LOG_LEVEL:-info}
+        - HBOX_LOG_FORMAT=${HBOX_LOG_FORMAT:-text}
+        - HBOX_WEB_MAX_UPLOAD_SIZE=${HBOX_WEB_MAX_UPLOAD_SIZE:-10}
+        - HBOX_MAILER_HOST=${HBOX_MAILER_HOST}
+        - HBOX_MAILER_PORT=${HBOX_MAILER_PORT:-587}
+        - HBOX_MAILER_USERNAME=${HBOX_MAILER_USERNAME}
+        - HBOX_MAILER_PASSWORD=${HBOX_MAILER_PASSWORD}
+        - HBOX_MAILER_FROM=${HBOX_MAILER_FROM}
+      volumes:
+        - homebox-data:/data
+      healthcheck:
+        test: [CMD, sh, -c, "wget --method=GET -qO- http://localhost:7745/api/v1/status > /dev/null || exit 1"]
+        interval: 30s
+        timeout: 5s
+        retries: 10
+      ports:
+        - ${PORT:-7745}:7745
+  volumes:
+    homebox-data:

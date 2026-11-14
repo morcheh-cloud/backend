@@ -1,0 +1,64 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Tolgee
+category: Productivity
+description: Tolgee is a localization management platform for developers and translators.
+website: https://tolgee.io/
+tags:
+  - localization
+  - translation
+  - management
+  - platform
+logo: templates/tolgee.svg
+env: |-
+  PORT=8080
+  TOLGEE_PASSWORD={{secret}}
+  JWT_PASSWORD={{secret}}
+  POSTGRESQL_USER={{user}}
+  POSTGRESQL_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_DB=tolgee
+  POSTGRESQL_DATABASE=tolgee
+compose: |
+  services:
+    tolgee:
+      image: tolgee/tolgee
+      restart: unless-stopped
+      environment:
+        - TOLGEE_AUTHENTICATION_ENABLED=true
+        - TOLGEE_AUTHENTICATION_INITIAL_PASSWORD=$TOLGEE_PASSWORD
+        - TOLGEE_AUTHENTICATION_INITIAL_USERNAME=admin
+        - TOLGEE_AUTHENTICATION_JWT_SECRET=$JWT_PASSWORD
+        - TOLGEE_POSTGRES_AUTOSTART_ENABLED=false
+        - SPRING_DATASOURCE_URL=jdbc:postgresql://postgresql:5432/${POSTGRES_DB:-tolgee}
+        - SPRING_DATASOURCE_USERNAME=${POSTGRESQL_USER}
+        - SPRING_DATASOURCE_PASSWORD=${POSTGRESQL_PASSWORD}
+      volumes:
+        - tolgee-data:/data
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:8080]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      ports:
+        - ${PORT:-8080}:8080
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - tolgee-postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRESQL_USER}
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-tolgee}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    tolgee-data:
+    tolgee-postgresql-data:

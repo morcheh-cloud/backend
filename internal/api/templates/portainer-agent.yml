@@ -1,0 +1,18 @@
+name: Portainer Agent
+category: Containers
+description: 'Lets one Portainer manage this server''s Docker too (Environments › Add environment › Docker Standalone › Agent). Anyone who reaches the port controls Docker: let only your Portainer in.'
+logo: portainer
+featured: true
+env: |
+  PORT=9001
+compose: |
+  services:
+    agent:
+      image: portainer/agent:lts
+      restart: unless-stopped
+      ports:
+        - "${PORT:-9001}:9001"
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - /var/lib/docker/volumes:/var/lib/docker/volumes
+        - /:/host

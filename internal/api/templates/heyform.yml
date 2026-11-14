@@ -1,0 +1,77 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: HeyForm
+category: Productivity
+description: Allows anyone to create engaging conversational forms for surveys, questionnaires, quizzes, and polls. No coding skills required.
+website: https://docs.heyform.net/open-source/self-hosting
+tags:
+  - form
+  - builder
+  - forms
+  - survey
+  - quiz
+  - open source
+  - self-hosted
+  - docker
+logo: templates/heyform.svg
+env: |-
+  PORT=9157
+  HEYFORM_URL=http://{{host}}:${PORT}
+  SESSION_SECRET={{secret:64}}
+  FORM_SECRET={{secret:64}}
+  KEYDB_PASSWORD={{secret}}
+compose: |
+  services:
+    heyform:
+      image: heyform/community-edition:latest
+      restart: unless-stopped
+      volumes:
+        - heyform-assets:/app/static/upload
+      depends_on:
+        mongo:
+          condition: service_healthy
+        keydb:
+          condition: service_healthy
+      environment:
+        - APP_HOMEPAGE_URL=${HEYFORM_URL}
+        - SESSION_KEY=${SESSION_SECRET}
+        - FORM_ENCRYPTION_KEY=${FORM_SECRET}
+        - MONGO_URI=mongodb://mongo:27017/heyform
+        - REDIS_HOST=keydb
+        - REDIS_PORT=6379
+        - REDIS_PASSWORD=${KEYDB_PASSWORD}
+      healthcheck:
+        test: [CMD-SHELL, "wget -qO- http://127.0.0.1:9157 || exit 1"]
+        interval: 5s
+        timeout: 5s
+        retries: 3
+      ports:
+        - ${PORT:-9157}:9157
+    mongo:
+      image: percona/percona-server-mongodb:latest
+      restart: unless-stopped
+      volumes:
+        - heyform-mongo-data:/data/db
+      healthcheck:
+        test: [CMD-SHELL, "echo 'ok' > /dev/null 2>&1"]
+        interval: 5s
+        timeout: 5s
+        retries: 10
+        start_period: 5s
+    keydb:
+      image: eqalpha/keydb:latest
+      restart: unless-stopped
+      command: keydb-server --appendonly yes
+      environment:
+        - KEYDB_PASSWORD=${KEYDB_PASSWORD}
+      volumes:
+        - heyform-keydb-data:/data
+      healthcheck:
+        test: [CMD-SHELL, keydb-cli, --pass, "${KEYDB_PASSWORD}", ping]
+        interval: 5s
+        timeout: 5s
+        retries: 10
+        start_period: 5s
+  volumes:
+    heyform-assets:
+    heyform-mongo-data:
+    heyform-keydb-data:

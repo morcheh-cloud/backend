@@ -2,14 +2,11 @@ package api
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -26,9 +23,10 @@ import (
 	"github.com/morcheh/backend/internal/sshpool"
 )
 
-// Applications: a catalog of software (packages like Docker, Docker Compose
-// apps like Grafana) installed, updated and removed on servers from the
-// panel, plus what a scan finds already installed. Named "software" in code
+// Applications: a catalog of software (packages like Docker or Git, vendor
+// scripts like k3s) installed, updated and removed on servers from the
+// panel, plus what a scan finds already installed. Container apps aren't
+// here: they are Containers templates, deployed as compose projects. Named "software" in code
 // because "apps" are the team's web services (/services).
 
 const (
@@ -37,14 +35,6 @@ const (
 )
 
 // ---- API types ----
-
-type SoftwareImage struct {
-	Service string `json:"service"`
-	Image   string `json:"image"`
-	Version string `json:"version,omitempty"`
-	State   string `json:"state" doc:"The container's state: running, exited, restarting…"`
-	Update  bool   `json:"update,omitempty" doc:"The registry has a newer image under the same tag"`
-}
 
 type SoftwarePackage struct {
 	Name     string `json:"name"`
@@ -61,20 +51,14 @@ type SoftwareInstall struct {
 	ServerStatus    string            `json:"server_status"`
 	RecipeID        string            `json:"recipe_id"`
 	Name            string            `json:"name"`
-	Kind            string            `json:"kind" enum:"package,docker,script"`
+	Kind            string            `json:"kind" enum:"package,script"`
 	Origin          string            `json:"origin" enum:"morcheh,found" doc:"morcheh = installed from the panel; found = a scan found it"`
 	Status          string            `json:"status" enum:"installing,installed,updating,failed,removing,missing"`
 	Version         string            `json:"version"`
 	Latest          string            `json:"latest"`
 	UpdateAvailable bool              `json:"update_available"`
-	State           string            `json:"state" doc:"Docker apps: running, stopped or partial"`
 	Params          map[string]string `json:"params" doc:"The values it was installed with, without the secret ones"`
 	SecretParams    []string          `json:"secret_params" doc:"Names of the secret values kept for it (Owners can reveal them)"`
-	Dir             string            `json:"dir,omitempty"`
-	Project         string            `json:"project,omitempty"`
-	Images          []SoftwareImage   `json:"images"`
-	CanRollback     bool              `json:"can_rollback"`
-	Pinned          bool              `json:"pinned" doc:"Runs the version before its last update (rolled back)"`
 	Error           string            `json:"error"`
 	CheckedAt       *time.Time        `json:"checked_at"`
 	InstalledAt     *time.Time        `json:"installed_at"`
@@ -99,8 +83,6 @@ type SoftwareHost struct {
 type SoftwareRunOptions struct {
 	Parallel      int   `json:"parallel,omitempty" minimum:"0" maximum:"20" doc:"Servers at a time; 0 = 5 for install and uninstall, 1 for the rest"`
 	StopOnFailure *bool `json:"stop_on_failure,omitempty" doc:"Skip the servers not started yet once one fails. Default: on for updates, off for installs"`
-	Fresh         bool  `json:"fresh,omitempty" doc:"Install of a Docker app: delete data an earlier install left first"`
-	RemoveData    bool  `json:"remove_data,omitempty" doc:"Uninstall of a Docker app: delete its volumes and folder too"`
 	SecurityOnly  bool  `json:"security_only,omitempty" doc:"System upgrade: security updates only (apt, dnf, yum, zypper)"`
 	Full          bool  `json:"full,omitempty" doc:"System upgrade: apt full-upgrade / dist-upgrade, which may remove packages"`
 }
@@ -108,7 +90,7 @@ type SoftwareRunOptions struct {
 type SoftwareRun struct {
 	ID            string     `json:"id" format:"uuid"`
 	WorkspaceID   string     `json:"workspace_id" format:"uuid"`
-	Action        string     `json:"action" enum:"install,update,uninstall,rollback,upgrade-system"`
+	Action        string     `json:"action" enum:"install,update,uninstall,upgrade-system"`
 	Name          string     `json:"name"`
 	State         string     `json:"state" enum:"queued,running,succeeded,failed,canceled,interrupted"`
 	Error         string     `json:"error"`
@@ -148,9 +130,9 @@ type SoftwareRunDetail struct {
 }
 
 type startSoftwareRunBody struct {
-	Action    string             `json:"action" enum:"install,update,uninstall,rollback,upgrade-system"`
+	Action    string             `json:"action" enum:"install,update,uninstall,upgrade-system"`
 	ServerIDs []string           `json:"server_ids" minItems:"1" maxItems:"500"`
-	Recipes   []string           `json:"recipes,omitempty" maxItems:"100" doc:"Install: exactly one. Update, uninstall, rollback: the applications (\"system\" = the server's packages); empty for update = every one with an update. Ignored by upgrade-system"`
+	Recipes   []string           `json:"recipes,omitempty" maxItems:"100" doc:"Install: exactly one. Update, uninstall: the applications (\"system\" = the server's packages); empty for update = every one with an update. Ignored by upgrade-system"`
 	Params    map[string]string  `json:"params,omitempty" doc:"Install: the recipe's parameters. Empty generated ones are made for each server"`
 	Options   SoftwareRunOptions `json:"options,omitempty"`
 }
@@ -173,18 +155,16 @@ type SoftwarePreflight struct {
 // ---- Handler ----
 
 type softwareHandler struct {
-	q        *sqlc.Queries
-	servers  *serverHandler
-	authz    *authz
-	runner   *jobs.Runner
-	scripts  *scriptHandler
-	registry *software.Registry
+	q       *sqlc.Queries
+	servers *serverHandler
+	authz   *authz
+	runner  *jobs.Runner
+	scripts *scriptHandler
 }
 
 func newSoftwareHandler(servers *serverHandler, a *authz, scripts *scriptHandler) *softwareHandler {
 	h := &softwareHandler{
 		q: servers.q, servers: servers, authz: a, runner: servers.jobs, scripts: scripts,
-		registry: software.NewRegistry(),
 	}
 	ctx := context.Background()
 	if err := h.q.InterruptSoftwareRuns(ctx); err != nil {
@@ -239,16 +219,6 @@ func recipeOf(row sqlc.SoftwareRecipe) (software.Recipe, bool) {
 
 // ---- Conversions ----
 
-func softwareImages(raw []byte) []SoftwareImage {
-	var imgs []software.Image
-	decodeInto(raw, &imgs)
-	out := make([]SoftwareImage, len(imgs))
-	for i, img := range imgs {
-		out[i] = SoftwareImage{Service: img.Service, Image: img.Image, Version: img.Version, State: img.State, Update: img.Update}
-	}
-	return out
-}
-
 func (h *softwareHandler) toInstall(r sqlc.GetSoftwareInstallRow) SoftwareInstall {
 	params := map[string]string{}
 	decodeInto(r.Params, &params)
@@ -261,9 +231,7 @@ func (h *softwareHandler) toInstall(r sqlc.GetSoftwareInstallRow) SoftwareInstal
 		ID: r.ID.String(), WorkspaceID: r.WorkspaceID.String(), ServerID: r.ServerID.String(),
 		ServerName: r.ServerName, ServerStatus: r.ServerStatus, RecipeID: r.RecipeID, Name: r.Name,
 		Kind: r.Kind, Origin: r.Origin, Status: r.Status, Version: r.Version, Latest: r.Latest,
-		UpdateAvailable: r.UpdateAvailable, State: r.State, Params: params, SecretParams: secrets,
-		Dir: r.Dir, Project: r.Project, Images: softwareImages(r.Images), CanRollback: r.CanRollback,
-		Pinned: r.Pinned, Error: r.Error, CheckedAt: r.CheckedAt, InstalledAt: r.InstalledAt, UpdatedAt: r.UpdatedAt,
+		UpdateAvailable: r.UpdateAvailable, Params: params, SecretParams: secrets, Error: r.Error, CheckedAt: r.CheckedAt, InstalledAt: r.InstalledAt, UpdatedAt: r.UpdatedAt,
 	}
 }
 
@@ -467,8 +435,6 @@ func (h *softwareHandler) loadInstall(ctx context.Context, rawID string) (sqlc.G
 }
 
 // ---- Routes ----
-
-var composeServiceRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 
 func registerSoftware(api huma.API, h *softwareHandler) {
 	h.runner.Handle(softwareRunKind, h.runJob)
@@ -758,232 +724,6 @@ func registerSoftware(api huma.API, h *softwareHandler) {
 		return nil, nil
 	})
 
-	// ---- Docker apps ----
-
-	composeOf := func(r sqlc.GetSoftwareInstallRow) error {
-		if r.Kind != software.KindDocker {
-			return huma.Error422UnprocessableEntity("Only Docker apps can do this. Use the server's Services tab for the rest.")
-		}
-		if r.Project == "" {
-			return huma.Error422UnprocessableEntity("Morche doesn't know this app's compose project.")
-		}
-		return nil
-	}
-
-	huma.Register(api, huma.Operation{
-		OperationID: "software-install-action",
-		Method:      http.MethodPost,
-		Path:        "/software-installs/{id}/action",
-		Summary:     "Start, stop or restart a Docker app",
-		Description: "Operator. Answers the record after a fresh look at the app.",
-		Tags:        tags,
-	}, func(ctx context.Context, in *struct {
-		installPath
-		Body struct {
-			Action string `json:"action" enum:"start,stop,restart"`
-		}
-	}) (*installOutput, error) {
-		r, err := h.loadInstall(ctx, in.ID)
-		if err != nil {
-			return nil, err
-		}
-		if err := composeOf(r); err != nil {
-			return nil, err
-		}
-		args := in.Body.Action
-		if args == "start" && r.Origin == "morcheh" {
-			// up, not start: containers removed by hand come back too.
-			args = "up -d --remove-orphans"
-		}
-		script := software.ComposeAt(r.Dir, r.Project, args)
-		err = h.servers.withConn(ctx, r.ServerID.String(), func(c *sshConn) error {
-			sh, err := h.servers.rootShell(ctx, r.ServerID.String(), c)
-			if err != nil {
-				return err
-			}
-			_, err = runInput(ctx, c, wrapStdin(sh), stdinFor(sh, script), 3*time.Minute)
-			return err
-		})
-		if err != nil {
-			return nil, toProblem(err)
-		}
-		h.scanApp(ctx, r.ServerID, r.WorkspaceID, r.RecipeID, r.Origin)
-		if r, err = h.loadInstall(ctx, in.ID); err != nil {
-			return nil, err
-		}
-		return &installOutput{h.toInstall(r)}, nil
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID: "software-install-logs",
-		Method:      http.MethodGet,
-		Path:        "/software-installs/{id}/logs",
-		Summary:     "The last lines a Docker app's containers wrote",
-		Tags:        tags,
-	}, func(ctx context.Context, in *struct {
-		installPath
-		Lines   int    `query:"lines" minimum:"10" maximum:"5000" default:"300"`
-		Service string `query:"service" doc:"One compose service; empty = all"`
-	}) (*struct {
-		Body struct {
-			Text string `json:"text"`
-		}
-	}, error) {
-		r, err := h.loadInstall(ctx, in.ID)
-		if err != nil {
-			return nil, err
-		}
-		if err := composeOf(r); err != nil {
-			return nil, err
-		}
-		args := fmt.Sprintf("logs --no-color --timestamps --tail %d", in.Lines)
-		if in.Service != "" {
-			if !composeServiceRe.MatchString(in.Service) {
-				return nil, fieldError("query.service", "Not a service name.", in.Service)
-			}
-			args += " " + in.Service
-		}
-		script := software.ComposeAt(r.Dir, r.Project, args+" 2>&1")
-		var text string
-		err = h.servers.withConn(ctx, r.ServerID.String(), func(c *sshConn) error {
-			sh, err := h.servers.rootShell(ctx, r.ServerID.String(), c)
-			if err != nil {
-				return err
-			}
-			text, err = runInput(ctx, c, wrapStdin(sh), stdinFor(sh, script), time.Minute)
-			return err
-		})
-		if err != nil {
-			return nil, toProblem(err)
-		}
-		out := &struct {
-			Body struct {
-				Text string `json:"text"`
-			}
-		}{}
-		out.Body.Text = cleanOutput(text)
-		return out, nil
-	})
-
-	type composeOutput struct {
-		Body struct {
-			Content  string `json:"content"`
-			Revision string `json:"revision" doc:"Send it back when saving: a change made since is refused (409)"`
-		}
-	}
-	morchehApp := func(r sqlc.GetSoftwareInstallRow) error {
-		if err := composeOf(r); err != nil {
-			return err
-		}
-		if r.Origin != "morcheh" {
-			return huma.Error422UnprocessableEntity("Only apps installed from Morche can be edited here.")
-		}
-		return nil
-	}
-	readCompose := func(ctx context.Context, r sqlc.GetSoftwareInstallRow) (string, error) {
-		var text string
-		err := h.servers.withConn(ctx, r.ServerID.String(), func(c *sshConn) error {
-			sh, err := h.servers.rootShell(ctx, r.ServerID.String(), c)
-			if err != nil {
-				return err
-			}
-			text, err = runInput(ctx, c, wrapStdin(sh), stdinFor(sh, software.ReadComposeScript(r.RecipeID)), time.Minute)
-			return err
-		})
-		return text, toProblem(err)
-	}
-	revisionOf := func(s string) string {
-		sum := sha256.Sum256([]byte(s))
-		return hex.EncodeToString(sum[:])
-	}
-
-	huma.Register(api, huma.Operation{
-		OperationID: "get-software-compose",
-		Method:      http.MethodGet,
-		Path:        "/software-installs/{id}/compose",
-		Summary:     "A Docker app's compose file",
-		Tags:        tags,
-	}, func(ctx context.Context, in *installPath) (*composeOutput, error) {
-		r, err := h.loadInstall(ctx, in.ID)
-		if err != nil {
-			return nil, err
-		}
-		if err := morchehApp(r); err != nil {
-			return nil, err
-		}
-		text, err := readCompose(ctx, r)
-		if err != nil {
-			return nil, err
-		}
-		out := &composeOutput{}
-		out.Body.Content, out.Body.Revision = text, revisionOf(text)
-		return out, nil
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID: "save-software-compose",
-		Method:      http.MethodPut,
-		Path:        "/software-installs/{id}/compose",
-		Summary:     "Change a Docker app's compose file and apply it",
-		Description: "Checked with docker compose config first (422 with its words when wrong); the old file stays as compose.yml.previous.",
-		Tags:        tags,
-	}, func(ctx context.Context, in *struct {
-		installPath
-		Body struct {
-			Content  string `json:"content" minLength:"1" maxLength:"262144"`
-			Revision string `json:"revision"`
-		}
-	}) (*composeOutput, error) {
-		r, err := h.loadInstall(ctx, in.ID)
-		if err != nil {
-			return nil, err
-		}
-		if err := morchehApp(r); err != nil {
-			return nil, err
-		}
-		current, err := readCompose(ctx, r)
-		if err != nil {
-			return nil, err
-		}
-		if revisionOf(current) != in.Body.Revision {
-			return nil, huma.Error409Conflict("The compose file changed on the server since you opened it.")
-		}
-		out := &liveOutput{limit: 64 << 10}
-		var res *scriptResult
-		err = h.servers.withConn(ctx, r.ServerID.String(), func(c *sshConn) error {
-			sh, err := h.servers.rootShell(ctx, r.ServerID.String(), c)
-			if err != nil {
-				return err
-			}
-			if sh.priv == privUser {
-				return errors.New(noRootMessage)
-			}
-			res, _, err = execScript(ctx, sh, software.SaveComposeScript(r.RecipeID, in.Body.Content), 5*time.Minute, out)
-			return err
-		})
-		if err != nil {
-			return nil, toProblem(err)
-		}
-		raw, _, _ := out.snapshot()
-		text := strings.TrimSpace(cleanOutput(raw))
-		code := int32(-1)
-		if res.code != nil {
-			code = *res.code
-		}
-		switch {
-		case res.stopped:
-			return nil, huma.Error504GatewayTimeout("The server took too long")
-		case code == 3:
-			return nil, fieldError("body.content", "Docker Compose refused it: "+lastLines(text, 6), nil)
-		case code != 0:
-			return nil, huma.Error422UnprocessableEntity("It was saved, but the app didn't start: " + lastLines(text, 6))
-		}
-		h.scanApp(ctx, r.ServerID, r.WorkspaceID, r.RecipeID, r.Origin)
-		answer := &composeOutput{}
-		answer.Body.Content, answer.Body.Revision = in.Body.Content, revisionOf(in.Body.Content)
-		return answer, nil
-	})
-
 	// ---- Before an install ----
 
 	huma.Register(api, huma.Operation{
@@ -1043,7 +783,7 @@ func registerSoftware(api huma.API, h *softwareHandler) {
 		Method:        http.MethodPost,
 		Path:          "/software-runs",
 		Summary:       "Install, update, roll back or remove applications on servers",
-		Description:   "Queues a background job. Install, update, rollback and system upgrades need Engineer on every server, uninstall needs Owner. All servers must be in one workspace.",
+		Description:   "Queues a background job. Install, update and system upgrades need Engineer on every server, uninstall needs Owner. All servers must be in one workspace.",
 		Tags:          tags,
 		DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *struct{ Body startSoftwareRunBody }) (*startOutput, error) {
@@ -1349,8 +1089,6 @@ func (h *softwareHandler) preflightOne(ctx context.Context, r software.Recipe, l
 		switch {
 		case row.Status == "installing" || row.Status == "updating" || row.Status == "removing":
 			p.Problems = append(p.Problems, "It is being changed right now by another run.")
-		case row.Origin == "found" && r.Kind == software.KindDocker:
-			p.Warnings = append(p.Warnings, "It already runs here in containers Morche didn't start. Installing it again starts a second copy.")
 		case row.Status == "installed":
 			p.Warnings = append(p.Warnings, "It's already installed. Installing again keeps its data and applies the values you give now.")
 		}
@@ -1426,13 +1164,11 @@ func (h *softwareHandler) preflightOne(ctx context.Context, r software.Recipe, l
 	if len(p.First) > 0 {
 		p.Warnings = append(p.Warnings, strings.Join(p.First, " and ")+" will be installed first.")
 	}
-	if !(kv["here"] == "1") {
+	if !p.Installed {
+		// Installed already, it holds its own ports.
 		for _, port := range busy {
 			p.Problems = append(p.Problems, "Port "+port+" is already in use on the server. Choose another one.")
 		}
-	}
-	if kv["old_data"] == "1" && kv["here"] != "1" {
-		p.Warnings = append(p.Warnings, "Data from an earlier install is still on the server and will be used again (tick Start fresh to delete it).")
 	}
 	if p.FreeMB > 0 && p.FreeMB < 1024 {
 		p.Warnings = append(p.Warnings, fmt.Sprintf("Only %d MB free on the disk.", p.FreeMB))

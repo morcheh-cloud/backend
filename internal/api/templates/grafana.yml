@@ -1,0 +1,24 @@
+name: Grafana
+category: Monitoring
+description: Dashboards for Prometheus, Loki, databases and more.
+logo: grafana
+featured: true
+env: |
+  ADMIN_USER=admin
+  ADMIN_PASSWORD={{secret}}
+  PORT=3000
+compose: |
+  services:
+    grafana:
+      image: grafana/grafana-oss:latest
+      restart: unless-stopped
+      ports:
+        - "${PORT:-3000}:3000"
+      environment:
+        GF_SECURITY_ADMIN_USER: ${ADMIN_USER}
+        GF_SECURITY_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      volumes:
+        - data:/var/lib/grafana
+
+  volumes:
+    data:

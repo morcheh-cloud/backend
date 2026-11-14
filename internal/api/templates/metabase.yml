@@ -1,0 +1,56 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Metabase
+category: Analytics
+description: Fast analytics with the friendly UX and integrated tooling to let your company explore data on their own.
+website: https://www.metabase.com
+tags:
+  - analytics
+  - bi
+  - business
+  - intelligence
+logo: templates/metabase.svg
+featured: true
+env: |-
+  PORT=3000
+  POSTGRESQL_USER={{user}}
+  POSTGRESQL_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRESQL_DATABASE=metabase
+compose: |
+  services:
+    metabase:
+      image: metabase/metabase:latest
+      restart: unless-stopped
+      volumes:
+        - /dev/urandom:/dev/random:ro
+      environment:
+        - MB_DB_TYPE=postgres
+        - MB_DB_HOST=postgresql
+        - MB_DB_PORT=5432
+        - MB_DB_DBNAME=${POSTGRESQL_DATABASE:-metabase}
+        - MB_DB_USER=$POSTGRESQL_USER
+        - MB_DB_PASS=$POSTGRESQL_PASSWORD
+      healthcheck:
+        test: curl --fail -I http://127.0.0.1:3000/api/health || exit 1
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-3000}:3000
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - metabase-postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRESQL_USER}
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-metabase}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    metabase-postgresql-data:

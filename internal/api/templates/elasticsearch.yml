@@ -1,0 +1,39 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Elasticsearch
+category: Search
+description: Elasticsearch is free and Open Source, Distributed, RESTful Search Engine.
+website: https://www.elastic.co/products/elasticsearch
+tags:
+  - search
+  - engine
+  - fulltext
+  - full
+  - text
+  - elasticsearch
+logo: templates/elasticsearch.svg
+featured: true
+env: |-
+  PORT=9200
+  ELASTICSEARCH_PASSWORD={{secret}}
+compose: |
+  services:
+    elasticsearch:
+      image: docker.elastic.co/elasticsearch/elasticsearch-wolfi:8.19.0
+      restart: unless-stopped
+      environment:
+        - ELASTIC_PASSWORD=${ELASTICSEARCH_PASSWORD}
+        - ES_JAVA_OPTS=-Xms512m -Xmx512m
+        - discovery.type=single-node
+        - bootstrap.memory_lock=true
+        - xpack.security.http.ssl.enabled=false
+      volumes:
+        - elasticsearch-data:/usr/share/elasticsearch/data
+      healthcheck:
+        test: [CMD-SHELL, "curl --user elastic:${ELASTICSEARCH_PASSWORD} --silent --fail http://localhost:9200/_cluster/health"]
+        interval: 10s
+        timeout: 10s
+        retries: 24
+      ports:
+        - ${PORT:-9200}:9200
+  volumes:
+    elasticsearch-data:

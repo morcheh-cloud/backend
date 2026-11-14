@@ -1,0 +1,93 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Leantime
+category: Productivity
+description: Leantime is a goals focused project management system for non-project managers.
+website: https://leantime.io
+tags:
+  - project management
+  - productivity
+  - php
+  - mysql
+  - laravel
+  - open source
+logo: templates/leantime.svg
+env: |-
+  PORT=8080
+  LEANTIME_URL=http://{{host}}:${PORT}
+  MYSQLDB_USER={{user}}
+  MYSQLDB_PASSWORD={{secret}}
+  SALT_PASSWORD={{secret:64}}
+  MYSQLROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  DB_NAME=leantime-db
+  SESSION_EXPIRATION=28800
+  USE_REDIS=true
+  REDIS_PORT=6379
+  REDIS_SCHEME=tcp
+compose: |
+  services:
+    leantime:
+      image: leantime/leantime:latest
+      restart: unless-stopped
+      environment:
+        - LEAN_APP_URL=${LEANTIME_URL}
+        - LEAN_DB_HOST=mysql
+        - LEAN_DB_USER=${MYSQLDB_USER}
+        - LEAN_DB_PASSWORD=${MYSQLDB_PASSWORD}
+        - LEAN_DB_DATABASE=${DB_NAME:-leantime-db}
+        - LEAN_SESSION_PASSWORD=${SALT_PASSWORD}
+        - LEAN_SESSION_EXPIRATION=${SESSION_EXPIRATION:-28800}
+        - LEAN_USE_REDIS=${USE_REDIS:-true}
+        - LEAN_REDIS_HOST=redis
+        - LEAN_REDIS_PORT=${REDIS_PORT:-6379}
+        - LEAN_REDIS_SCHEME=${REDIS_SCHEME:-tcp}
+      depends_on:
+        mysql:
+          condition: service_healthy
+        redis:
+          condition: service_started
+      volumes:
+        - public-userfiles:/var/www/html/public/userfiles
+        - userfiles:/var/www/html/userfiles
+        - plugins:/var/www/html/app/Plugins
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8080]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+    mysql:
+      image: mysql:8.4
+      restart: unless-stopped
+      volumes:
+        - leantime_mysql_data:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=${MYSQLROOT_PASSWORD}
+        - MYSQL_USER=${MYSQLDB_USER}
+        - MYSQL_PASSWORD=${MYSQLDB_PASSWORD}
+        - MYSQL_DATABASE=${DB_NAME:-leantime-db}
+      command: --character-set-server=UTF8MB4 --collation-server=UTF8MB4_unicode_ci
+      healthcheck:
+        test: [CMD, mysqladmin, ping, -h, localhost]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+    redis:
+      image: redis:7-alpine
+      restart: unless-stopped
+      command: redis-server --appendonly yes
+      volumes:
+        - leantime_redis_data:/data
+      healthcheck:
+        test: [CMD, redis-cli, ping]
+        interval: 5s
+        timeout: 5s
+        retries: 3
+  volumes:
+    public-userfiles:
+    userfiles:
+    plugins:
+    leantime_mysql_data:
+    leantime_redis_data:

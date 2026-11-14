@@ -1,0 +1,41 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: EMQX Enterprise
+category: Networking
+description: Open-source MQTT broker for IoT, IIoT, and connected vehicles.
+website: https://www.emqx.io/docs/en/latest/deploy/install-docker.html
+tags:
+  - mqtt
+  - broker
+  - iot
+  - messaging
+  - emqx
+  - iiot
+logo: templates/emqx-enterprise.svg
+env: |-
+  PORT=18083
+  EMQX_PASSWORD={{secret}}
+compose: |
+  services:
+    emqx:
+      image: emqx/emqx-enterprise:6.2.2
+      restart: unless-stopped
+      environment:
+        - EMQX_DASHBOARD__DEFAULT_PASSWORD=${EMQX_PASSWORD}
+      ports:
+        - 1883:1883
+        - 8083:8083
+        - 8084:8084
+        - 8883:8883
+        - ${PORT:-18083}:18083
+      volumes:
+        - emqx_data:/opt/emqx/data
+        - emqx_log:/opt/emqx/log
+      healthcheck:
+        test: [CMD, /opt/emqx/bin/emqx, ctl, status]
+        interval: 10s
+        timeout: 30s
+        retries: 5
+        start_period: 30s
+  volumes:
+    emqx_data:
+    emqx_log:

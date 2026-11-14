@@ -1,0 +1,36 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Baby Buddy
+category: Productivity
+description: It helps parents track their baby's daily activities, growth, and health with ease.
+website: https://docs.baby-buddy.net
+tags:
+  - baby
+  - parents
+  - health
+  - growth
+  - activities
+logo: templates/babybuddy.webp
+env: |-
+  PORT=8000
+  BABYBUDDY_URL=http://{{host}}:${PORT}
+compose: |
+  services:
+    babybuddy:
+      image: lscr.io/linuxserver/babybuddy:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=Europe/Madrid
+        - CSRF_TRUSTED_ORIGINS=$BABYBUDDY_URL
+      volumes:
+        - babybuddy-config:/config
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8000]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8000}:8000
+  volumes:
+    babybuddy-config:

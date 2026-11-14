@@ -1,0 +1,28 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Vert
+category: Development
+description: The next-generation file converter. Open source, fully local and free forever.
+website: https://github.com/VERT-sh/VERT
+tags:
+  - converter
+  - file
+  - documents
+  - files
+  - ffmpeg
+  - wasm
+logo: templates/vert.webp
+env: |-
+  PORT=8080
+  VERT_URL=http://{{host}}:${PORT}
+compose: |
+  services:
+    vert:
+      image: ghcr.io/vert-sh/vert:latest
+      restart: unless-stopped
+      environment:
+        - PUB_VERT_URL=${VERT_URL}
+        - PUB_HOSTNAME=${VERT_URL}
+        - PUB_PORT=80
+        - PUB_ENV=production
+      ports:
+        - ${PORT:-8080}:80

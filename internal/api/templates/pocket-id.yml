@@ -1,0 +1,67 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Pocket ID
+category: Security
+description: A simple and secure OIDC provider with passkey authentication
+website: https://pocket-id.org/docs/setup/installation
+tags:
+  - identity
+  - oidc
+  - oauth
+  - passkey
+  - webauthn
+  - authentication
+  - sso
+  - openid
+logo: templates/pocketid-logo.webp
+env: |-
+  PORT=1411
+  POCKETID_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  TRUST_PROXY=true
+  MAXMIND_LICENSE_KEY=
+  SMTP_HOST=
+  SMTP_PORT=587
+  SMTP_FROM=
+  SMTP_USER=
+  SMTP_PASSWORD=
+  SMTP_TLS=starttls
+  SMTP_SKIP_CERT_VERIFY=false
+  EMAIL_LOGIN_NOTIFICATION_ENABLED=false
+  EMAIL_ONE_TIME_ACCESS_AS_ADMIN_ENABLED=false
+  EMAIL_API_KEY_EXPIRATION_ENABLED=false
+  PUID=1000
+  PGID=1000
+compose: |
+  services:
+    pocket-id:
+      image: ghcr.io/pocket-id/pocket-id:v1.13
+      restart: unless-stopped
+      environment:
+        - APP_URL=${POCKETID_URL}
+        - TRUST_PROXY=${TRUST_PROXY:-true}
+        - MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
+        - SMTP_HOST=${SMTP_HOST}
+        - SMTP_PORT=${SMTP_PORT:-587}
+        - SMTP_FROM=${SMTP_FROM}
+        - SMTP_USER=${SMTP_USER}
+        - SMTP_PASSWORD=${SMTP_PASSWORD}
+        - SMTP_TLS=${SMTP_TLS:-starttls}
+        - SMTP_SKIP_CERT_VERIFY=${SMTP_SKIP_CERT_VERIFY:-false}
+        - EMAIL_LOGIN_NOTIFICATION_ENABLED=${EMAIL_LOGIN_NOTIFICATION_ENABLED:-false}
+        - EMAIL_ONE_TIME_ACCESS_AS_ADMIN_ENABLED=${EMAIL_ONE_TIME_ACCESS_AS_ADMIN_ENABLED:-false}
+        - EMAIL_API_KEY_EXPIRATION_ENABLED=${EMAIL_API_KEY_EXPIRATION_ENABLED:-false}
+        - PUID=${PUID:-1000}
+        - PGID=${PGID:-1000}
+      volumes:
+        - pocket-id-data:/app/data
+      healthcheck:
+        test: [CMD, /app/pocket-id, healthcheck]
+        interval: 30s
+        timeout: 5s
+        retries: 3
+        start_period: 10s
+      ports:
+        - ${PORT:-1411}:1411
+  volumes:
+    pocket-id-data:

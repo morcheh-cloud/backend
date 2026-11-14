@@ -1,0 +1,50 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Campfire (ONCE)
+category: Communication
+description: Super simple group chat, without a subscription.
+website: https://github.com/basecamp/once-campfire
+tags:
+  - campfire
+  - chat
+  - communication
+  - rails
+  - once
+  - basecamp
+  - 37signals
+logo: templates/once-campfire.webp
+env: |-
+  PORT=8080
+  CAMPFIRE_SECRET={{secret:64}}
+
+  # Optional settings
+  TAG=main
+  VAPID_PUBLIC_KEY=
+  VAPID_PRIVATE_KEY=
+  DISABLE_SSL=true
+  SSL_DOMAIN=false
+  SKIP_TELEMETRY=true
+  SENTRY_DSN=
+compose: |
+  services:
+    campfire:
+      image: ghcr.io/basecamp/once-campfire:${TAG:-main}
+      restart: unless-stopped
+      volumes:
+        - campfire-storage:/rails/storage
+      environment:
+        - SECRET_KEY_BASE=${CAMPFIRE_SECRET}
+        - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
+        - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+        - DISABLE_SSL=${DISABLE_SSL:-true}
+        - SSL_DOMAIN=${SSL_DOMAIN:-false}
+        - SKIP_TELEMETRY=${SKIP_TELEMETRY:-true}
+        - SENTRY_DSN=${SENTRY_DSN}
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost/up]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    campfire-storage:

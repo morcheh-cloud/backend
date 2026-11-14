@@ -1,0 +1,33 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Mage AI
+category: Automation
+description: Build, run, and manage data pipelines for integrating and transforming data.
+website: https://docs.mage.ai
+tags:
+  - data
+  - dbt
+  - etl
+  - pipelines
+logo: templates/mage-ai.svg
+env: PORT=6789
+compose: |
+  services:
+    mage-ai:
+      image: mageai/mageai:0.9.78
+      command: mage start default_project
+      environment:
+        - PROJECT_NAME=default_project
+        - USER_CODE_PATH=/home/src/default_project
+        - ENV=production
+      volumes:
+        - mageai_data:/home/src/
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD, curl, -s, -f, -o, /dev/null, http://127.0.0.1:6789]
+        interval: 30s
+        timeout: 10s
+        retries: 5
+      ports:
+        - ${PORT:-6789}:6789
+  volumes:
+    mageai_data:

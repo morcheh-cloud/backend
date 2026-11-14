@@ -278,8 +278,10 @@ type serverHandler struct {
 	volClients volumeClients
 	// How each server's Docker engine is reached (docker_engine.go).
 	docker dockerEngines
-	jobs   *jobs.Runner
-	authz  *authz
+	// Each server's last `docker system df` (docker_disk_usage.go).
+	diskUsages diskUsageCache
+	jobs       *jobs.Runner
+	authz      *authz
 	// Set once the uptime handler exists; nil = no alert rules.
 	alerts *alertEngine
 }
@@ -290,6 +292,7 @@ func (h *serverHandler) forget(ids []uuid.UUID) {
 		h.terms.KillServer(id.String())
 		h.pool.Drop(id.String())
 		h.docker.drop(id.String())
+		h.diskUsages.drop(id.String())
 	}
 }
 

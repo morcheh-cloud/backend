@@ -1,0 +1,24 @@
+name: n8n
+category: Automation
+description: Workflow automation with its data in a named volume.
+logo: n8n
+featured: true
+env: |
+  HOST=localhost
+  TZ=UTC
+  PORT=5678
+compose: |
+  services:
+    n8n:
+      image: n8nio/n8n:latest
+      restart: unless-stopped
+      ports:
+        - "${PORT:-5678}:5678"
+      environment:
+        N8N_HOST: ${HOST}
+        GENERIC_TIMEZONE: ${TZ}
+      volumes:
+        - data:/home/node/.n8n
+
+  volumes:
+    data:

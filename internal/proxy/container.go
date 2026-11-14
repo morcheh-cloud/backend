@@ -182,7 +182,7 @@ type ContainerInfo struct {
 	Compose     string             `json:"compose,omitempty" doc:"The Compose project it belongs to"`
 	Service     string             `json:"service,omitempty" doc:"Its Compose service"`
 	ComposeDir  string             `json:"compose_dir,omitempty" doc:"The Compose project's folder on the server"`
-	Managed     string             `json:"managed,omitempty" doc:"The image is a proxy manager that writes nginx's config itself (Nginx Proxy Manager, nginx-proxy, SWAG): Morche doesn't take it over"`
+	Managed     string             `json:"managed,omitempty" doc:"The image is a proxy manager that writes nginx's config itself (Nginx Proxy Manager, nginx-proxy, SWAG): Morche only reads it"`
 }
 
 // HostNetwork: it shares the server's network (no publishing needed).

@@ -1,0 +1,124 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Alexandrie
+category: Productivity
+description: A powerful Markdown workspace designed for speed, clarity, and creativity.
+website: https://github.com/Smaug6739/Alexandrie/tree/main/docs
+tags:
+  - note-taking
+  - markdown
+  - knowledge-management
+  - personal-wiki
+  - productivity
+logo: templates/alexandrie.svg
+env: |-
+  FRONTEND_PORT=8200
+  BACKEND_PORT=8201
+  RUSTFS_PORT=9000
+  BACKEND_URL=http://{{host}}:${BACKEND_PORT}
+  RUSTFS_URL=http://{{host}}:${RUSTFS_PORT}
+  FRONTEND_URL=http://{{host}}:${FRONTEND_PORT}
+  JWT_PASSWORD={{secret}}
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+  RUSTFS_USER={{user}}
+  RUSTFS_PASSWORD={{secret}}
+  MYSQLROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  CONFIG_DISABLE_SIGNUP=false
+  CONFIG_DISABLE_LANDING=false
+  CDN_ENDPOINT=/alexandrie/
+  ALLOW_UNSECURE=false
+  MYSQL_DATABASE=alexandrie-db
+  MINIO_SECURE=false
+  MINIO_BUCKET=alexandrie
+  SMTP_HOST=
+  SMTP_MAIL=
+  SMTP_PASSWORD=
+  RUSTFS_CONSOLE_ENABLE=false
+  RUSTFS_LOG_LEVEL=info
+compose: |
+  services:
+    frontend:
+      image: ghcr.io/smaug6739/alexandrie-frontend:v8.10.0
+      restart: unless-stopped
+      environment:
+        - PORT=8200
+        - NUXT_PUBLIC_CONFIG_DISABLE_SIGNUP_PAGE=${CONFIG_DISABLE_SIGNUP:-false}
+        - NUXT_PUBLIC_CONFIG_DISABLE_LANDING_PAGE=${CONFIG_DISABLE_LANDING:-false}
+        - NUXT_PUBLIC_BASE_API=${BACKEND_URL}
+        - NUXT_PUBLIC_BASE_CDN=${RUSTFS_URL}
+        - NUXT_PUBLIC_CDN_ENDPOINT=${CDN_ENDPOINT:-/alexandrie/}
+        - NUXT_PUBLIC_BASE_URL=${FRONTEND_URL}
+      depends_on:
+        - backend
+      ports:
+        - ${FRONTEND_PORT:-8200}:8200
+    backend:
+      image: ghcr.io/smaug6739/alexandrie-backend:v8.10.0
+      restart: unless-stopped
+      environment:
+        - BACKEND_PORT=8201
+        - GIN_MODE=release
+        - JWT_SECRET=${JWT_PASSWORD}
+        - COOKIE_DOMAIN=${FRONTEND_URL}
+        - FRONTEND_URL=${FRONTEND_URL}
+        - ALLOW_UNSECURE=${ALLOW_UNSECURE:-false}
+        - DATABASE_HOST=mysql
+        - DATABASE_PORT=3306
+        - DATABASE_NAME=${MYSQL_DATABASE:-alexandrie-db}
+        - DATABASE_USER=${MYSQL_USER}
+        - DATABASE_PASSWORD=${MYSQL_PASSWORD}
+        - MINIO_ENDPOINT=rustfs:9000
+        - MINIO_PUBLIC_URL=${RUSTFS_URL}
+        - MINIO_SECURE=${MINIO_SECURE:-false}
+        - MINIO_ACCESSKEY=${RUSTFS_USER}
+        - MINIO_SECRETKEY=${RUSTFS_PASSWORD}
+        - MINIO_BUCKET=${MINIO_BUCKET:-alexandrie}
+        - SMTP_HOST=${SMTP_HOST:-}
+        - SMTP_MAIL=${SMTP_MAIL:-}
+        - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      depends_on:
+        mysql:
+          condition: service_healthy
+        rustfs:
+          condition: service_healthy
+      ports:
+        - ${BACKEND_PORT:-8201}:8201
+    mysql:
+      image: mysql:8.0
+      restart: unless-stopped
+      environment:
+        - MYSQL_ROOT_PASSWORD=${MYSQLROOT_PASSWORD}
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-alexandrie-db}
+      volumes:
+        - mysql-data:/var/lib/mysql
+      healthcheck:
+        test: [CMD, mysqladmin, ping, -h, localhost, -u, root, "-p${MYSQLROOT_PASSWORD}"]
+        timeout: 5s
+        interval: 10s
+        retries: 5
+    rustfs:
+      image: rustfs/rustfs:1.0.0-beta.8
+      restart: unless-stopped
+      environment:
+        - RUSTFS_ACCESS_KEY=${RUSTFS_USER}
+        - RUSTFS_SECRET_KEY=${RUSTFS_PASSWORD}
+        - RUSTFS_CONSOLE_ENABLE=${RUSTFS_CONSOLE_ENABLE:-false}
+        - RUSTFS_LOG_LEVEL=${RUSTFS_LOG_LEVEL:-info}
+      volumes:
+        - rustfs-data:/data
+        - rustfs-logs:/logs
+      healthcheck:
+        test: [CMD-SHELL, "nc -z localhost 9000 || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      ports:
+        - ${RUSTFS_PORT:-9000}:9000
+  volumes:
+    mysql-data:
+    rustfs-data:
+    rustfs-logs:

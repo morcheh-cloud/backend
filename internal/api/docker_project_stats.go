@@ -226,7 +226,7 @@ func (h *serverHandler) projectStats(ctx context.Context, id string, asked bool)
 			}
 		}
 		ins = inspectAll(ctx, e, cs)
-		samples = sampleRunning(ctx, e, cs)
+		samples = sampleRunning(ctx, id, e, cs)
 		return nil
 	})
 	if err != nil {
@@ -263,19 +263,120 @@ func inspectAll(ctx context.Context, e *dockerEngine, cs []docker.ContainerSumma
 	return out
 }
 
-func sampleRunning(ctx context.Context, e *dockerEngine, cs []docker.ContainerSummary) map[string]docker.Sample {
-	out := map[string]docker.Sample{}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
-	n := 0
+// cpuMark is a container's CPU counters at one reading. The next reading
+// works out the CPU from the difference, so a single quick request per
+// container is enough (the engine's own CPU figure needs it to wait about a
+// second per container). Shared by every caller on a server.
+type cpuMark struct {
+	at       time.Time
+	cpu, sys uint64
+	percent  float64
+}
+
+const (
+	cpuMarkMin   = 500 * time.Millisecond // closer readings reuse the last figure
+	cpuMarkMax   = 2 * time.Minute        // older ones are read twice instead
+	cpuMarkWait  = time.Second            // between two readings of an unknown container
+	sampleAtOnce = 16                     // stats requests in flight per server
+)
+
+var cpuMarks = struct {
+	sync.Mutex
+	m map[string]map[string]cpuMark // server → container → last reading
+}{m: map[string]map[string]cpuMark{}}
+
+// cpuFrom works a container's CPU (percent of one core) out of two readings.
+func cpuFrom(prev cpuMark, s docker.Sample) (float64, bool) {
+	if s.CPUTotal < prev.cpu || s.SystemTotal <= prev.sys || prev.sys == 0 {
+		return 0, false
+	}
+	return float64(s.CPUTotal-prev.cpu) / float64(s.SystemTotal-prev.sys) * float64(max(s.CPUs, 1)) * 100, true
+}
+
+// sampleRunning reads the running containers' resource use (up to
+// projectStatsMeasure of them): one quick reading each, the CPU from the
+// last reading this server kept. Containers without a usable one are read a
+// second time a moment later.
+func sampleRunning(ctx context.Context, server string, e *dockerEngine, cs []docker.ContainerSummary) map[string]docker.Sample {
+	var ids []string
 	for _, c := range cs {
 		if c.State != "running" {
 			continue
 		}
-		if n++; n > projectStatsMeasure {
+		if len(ids) == projectStatsMeasure {
 			break
 		}
+		ids = append(ids, c.ID)
+	}
+	out := readStats(ctx, e, ids)
+
+	now := time.Now()
+	cpuMarks.Lock()
+	marks := cpuMarks.m[server]
+	if marks == nil {
+		marks = map[string]cpuMark{}
+		cpuMarks.m[server] = marks
+	}
+	for id, m := range marks {
+		if now.Sub(m.at) > cpuMarkMax {
+			delete(marks, id)
+		}
+	}
+	first := map[string]docker.Sample{}
+	for id, s := range out {
+		prev, ok := marks[id]
+		age := now.Sub(prev.at)
+		switch {
+		case ok && age < cpuMarkMin:
+			s.CPUPercent = prev.percent
+		case ok:
+			if v, ok := cpuFrom(prev, s); ok {
+				s.CPUPercent = v
+				marks[id] = cpuMark{at: now, cpu: s.CPUTotal, sys: s.SystemTotal, percent: v}
+			} else {
+				marks[id] = cpuMark{at: now, cpu: s.CPUTotal, sys: s.SystemTotal, percent: s.CPUPercent}
+			}
+		default:
+			first[id] = s
+		}
+		out[id] = s
+	}
+	cpuMarks.Unlock()
+	if len(first) == 0 {
+		return out
+	}
+
+	// Unknown containers: read again a moment later.
+	select {
+	case <-ctx.Done():
+		return out
+	case <-time.After(cpuMarkWait):
+	}
+	again := make([]string, 0, len(first))
+	for id := range first {
+		again = append(again, id)
+	}
+	second := readStats(ctx, e, again)
+	now = time.Now()
+	cpuMarks.Lock()
+	for id, s := range second {
+		if v, ok := cpuFrom(cpuMark{cpu: first[id].CPUTotal, sys: first[id].SystemTotal}, s); ok {
+			s.CPUPercent = v
+		}
+		marks[id] = cpuMark{at: now, cpu: s.CPUTotal, sys: s.SystemTotal, percent: s.CPUPercent}
+		out[id] = s
+	}
+	cpuMarks.Unlock()
+	return out
+}
+
+// readStats takes one quick reading of each container, several at a time.
+func readStats(ctx context.Context, e *dockerEngine, ids []string) map[string]docker.Sample {
+	out := map[string]docker.Sample{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, sampleAtOnce)
+	for _, id := range ids {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -283,9 +384,9 @@ func sampleRunning(ctx context.Context, e *dockerEngine, cs []docker.ContainerSu
 			defer func() { <-sem }()
 			sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
-			if s, err := e.client.StatsNow(sctx, c.ID); err == nil {
+			if s, err := e.client.StatsOnce(sctx, id); err == nil {
 				mu.Lock()
-				out[c.ID] = s
+				out[id] = s
 				mu.Unlock()
 			}
 		}()

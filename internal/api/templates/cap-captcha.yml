@@ -1,0 +1,46 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Cap CAPTCHA
+category: Security
+description: The self-hosted CAPTCHA for the modern web.
+website: https://capjs.js.org/guide/
+tags:
+  - captcha
+  - security
+  - privacy
+  - proof-of-work
+logo: templates/cap-captcha.webp
+env: |-
+  PORT=3000
+  ADMIN_PASSWORD={{secret}}
+compose: |
+  services:
+    cap:
+      image: tiago2/cap:3.0.4
+      restart: unless-stopped
+      environment:
+        - ADMIN_KEY=$ADMIN_PASSWORD
+        - REDIS_URL=redis://valkey:6379
+      healthcheck:
+        test: [CMD, bun, -e, "fetch('http://localhost:3000').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+        interval: 30s
+        timeout: 5s
+        retries: 3
+        start_period: 5s
+      depends_on:
+        valkey:
+          condition: service_healthy
+      ports:
+        - ${PORT:-3000}:3000
+    valkey:
+      image: valkey/valkey:9-alpine
+      restart: unless-stopped
+      volumes:
+        - valkey-data:/data
+      command: valkey-server --save 60 1 --loglevel warning --maxmemory-policy noeviction
+      healthcheck:
+        test: [CMD, valkey-cli, ping]
+        interval: 5s
+        timeout: 3s
+        retries: 5
+  volumes:
+    valkey-data:

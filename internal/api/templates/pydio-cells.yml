@@ -1,0 +1,43 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Pydio Cells
+category: Tools
+description: ""
+env: |-
+  PORT=8080
+  CELLS_URL=http://{{host}}:${PORT}
+  MYSQLROOT_PASSWORD={{secret}}
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+
+  # Optional settings
+  MYSQL_DATABASE=cells
+compose: |
+  services:
+    cells:
+      image: pydio/cells:4.4
+      restart: unless-stopped
+      environment:
+        - CELLS_SITE_EXTERNAL=${CELLS_URL}
+        - CELLS_SITE_NO_TLS=1
+      volumes:
+        - cells_data:/var/cells
+      ports:
+        - ${PORT:-8080}:8080
+    mariadb:
+      image: mariadb:11
+      restart: unless-stopped
+      volumes:
+        - mysql_data:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=${MYSQLROOT_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-cells}
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 10s
+        timeout: 20s
+        retries: 5
+  volumes:
+    cells_data:
+    mysql_data:

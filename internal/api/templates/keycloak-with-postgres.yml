@@ -1,0 +1,93 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Keycloak with PostgreSQL
+category: Security
+description: Keycloak is an open-source Identity and Access Management tool.
+website: https://www.keycloak.org
+tags:
+  - keycloak
+  - identity
+  - access
+  - management
+  - iam
+  - authentication
+  - authorization
+  - security
+  - oauth2
+  - openid-connect
+  - sso
+  - single-sign-on
+logo: templates/keycloak.svg
+env: |-
+  PORT=8080
+  ADMIN_USER={{user}}
+  ADMIN_PASSWORD={{secret}}
+  DATABASE_USER={{user}}
+  DATABASE_PASSWORD={{secret:64}}
+  KEYCLOAK_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  TIMEZONE=UTC
+  POSTGRESQL_DATABASE=keycloak
+  KC_HTTP_ENABLED=true
+  KC_HEALTH_ENABLED=true
+  KC_PROXY_HEADERS=xforwarded
+compose: |
+  services:
+    keycloak:
+      image: quay.io/keycloak/keycloak:26.1
+      restart: unless-stopped
+      command: [start]
+      environment:
+        - TZ=${TIMEZONE:-UTC}
+        - KC_BOOTSTRAP_ADMIN_USERNAME=${ADMIN_USER}
+        - KC_BOOTSTRAP_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+        - KC_DB=postgres
+        - KC_DB_USERNAME=${DATABASE_USER}
+        - KC_DB_PASSWORD=${DATABASE_PASSWORD}
+        - KC_DB_URL_PORT=5432
+        - KC_DB_URL=jdbc:postgresql://postgres/${POSTGRESQL_DATABASE:-keycloak}
+        - KC_HOSTNAME=${KEYCLOAK_URL}
+        - KC_HTTP_ENABLED=${KC_HTTP_ENABLED:-true}
+        - KC_HEALTH_ENABLED=${KC_HEALTH_ENABLED:-true}
+        - KC_PROXY_HEADERS=${KC_PROXY_HEADERS:-xforwarded}
+      volumes:
+        - keycloak-data:/opt/keycloak/data
+      depends_on:
+        postgres:
+          condition: service_healthy
+      healthcheck:
+        test:
+          [
+            CMD-SHELL,
+            "exec 3<>/dev/tcp/127.0.0.1/9000; echo -e 'GET /health/ready HTTP/1.1\r
+
+              Host: localhost:9000\r
+
+              Connection: close\r
+
+              \r
+
+              ' >&3;cat <&3 | grep -q '\"status\": \"UP\"' && exit 0 || exit 1"
+          ]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+    postgres:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - keycloak-postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${DATABASE_USER}
+        - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-keycloak}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    keycloak-data:
+    keycloak-postgresql-data:

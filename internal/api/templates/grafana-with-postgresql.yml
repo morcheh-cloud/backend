@@ -1,0 +1,64 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Grafana with PostgreSQL
+category: Monitoring
+description: Grafana is the open source analytics & monitoring solution for every database.
+website: https://grafana.com
+tags:
+  - grafana
+  - analytics
+  - monitoring
+  - dashboard
+logo: templates/grafana.svg
+featured: true
+env: |-
+  PORT=3000
+  GRAFANA_URL=http://{{host}}:${PORT}
+  GRAFANA_HOST={{host}}:${PORT}
+  GRAFANA_PASSWORD={{secret}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_DB=grafana
+compose: |
+  services:
+    grafana:
+      image: grafana/grafana-oss
+      restart: unless-stopped
+      environment:
+        - GF_SERVER_ROOT_URL=${GRAFANA_URL}
+        - GF_SERVER_DOMAIN=${GRAFANA_HOST}
+        - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+        - GF_DATABASE_TYPE=postgres
+        - GF_DATABASE_HOST=postgresql
+        - GF_DATABASE_USER=$POSTGRES_USER
+        - GF_DATABASE_PASSWORD=$POSTGRES_PASSWORD
+        - GF_DATABASE_NAME=${POSTGRES_DB:-grafana}
+      volumes:
+        - grafana-data:/var/lib/grafana
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000/api/health]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      depends_on:
+        - postgresql
+      ports:
+        - ${PORT:-3000}:3000
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=${POSTGRES_DB:-grafana}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    grafana-data:
+    postgresql-data:

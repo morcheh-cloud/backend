@@ -1,0 +1,97 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: LimeSurvey
+category: Productivity
+description: Simple, quick and anonymous online survey tool that's bursting with juicy insights.
+website: https://www.limesurvey.org/manual/
+tags:
+  - online survey
+  - forms
+  - no code
+  - open source
+logo: templates/limesurvey.svg
+env: |-
+  PORT=8080
+  MYSQL_PASSWORD={{secret}}
+  MYSQL_USER={{user}}
+  ADMIN_PASSWORD={{secret}}
+  MYSQLROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  MYSQL_DATABASE=limesurvey-db
+  LIMESURVEY_ADMIN_USER=admin
+  LIMESURVEY_ADMIN_NAME=Admin
+  LIMESURVEY_ADMIN_EMAIL=admin@example.com
+  LIMESURVEY_FROM_EMAIL=
+  LIMESURVEY_SMTP_HOST=
+  LIMESURVEY_SMTP_USER=
+  LIMESURVEY_SMTP_PASSWORD=
+  LIMESURVEY_SMTP_SSL=
+  TZ=America/Jamaica
+compose: |
+  services:
+    limesurvey:
+      image: adamzammit/limesurvey:latest
+      restart: unless-stopped
+      environment:
+        - LIMESURVEY_DB_HOST=mariadb
+        - LIMESURVEY_DB_PASSWORD=${MYSQL_PASSWORD}
+        - LIMESURVEY_DB_USER=${MYSQL_USER}
+        - LIMESURVEY_DB_NAME=${MYSQL_DATABASE:-limesurvey-db}
+        - LIMESURVEY_ADMIN_USER=${LIMESURVEY_ADMIN_USER:-admin}
+        - LIMESURVEY_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+        - LIMESURVEY_ADMIN_NAME=${LIMESURVEY_ADMIN_NAME:-Admin}
+        - LIMESURVEY_ADMIN_EMAIL=${LIMESURVEY_ADMIN_EMAIL:-admin@example.com}
+        - LIMESURVEY_FROM_EMAIL=${LIMESURVEY_FROM_EMAIL}
+        - LIMESURVEY_SMTP_HOST=${LIMESURVEY_SMTP_HOST}
+        - LIMESURVEY_SMTP_USER=${LIMESURVEY_SMTP_USER}
+        - LIMESURVEY_SMTP_PASSWORD=${LIMESURVEY_SMTP_PASSWORD}
+        - LIMESURVEY_SMTP_SSL=${LIMESURVEY_SMTP_SSL}
+        - LIMESURVEY_PHP_SESSION_SAVE_HANDLER=redis
+        - LIMESURVEY_PHP_SESSION_SAVE_PATH=tcp://redis:6379
+        - TZ=${TZ:-America/Jamaica}
+      volumes:
+        - limesurvey_plugins_data:/var/www/html/plugins
+        - limesurvey_upload_data:/var/www/html/upload
+        - limesurvey_config_data:/var/www/html/application/config
+        - limesurvey_sessions_data:/var/lime/sessions
+      depends_on:
+        mariadb:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1]
+        interval: 2s
+        timeout: 10s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80
+    mariadb:
+      image: mariadb:11
+      restart: unless-stopped
+      environment:
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-limesurvey-db}
+        - MYSQL_ROOT_PASSWORD=${MYSQLROOT_PASSWORD}
+      volumes:
+        - limesurvey_mariadb_data:/var/lib/mysql
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    redis:
+      image: redis:7-alpine
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD, redis-cli, ping]
+        interval: 5s
+        timeout: 3s
+        retries: 3
+  volumes:
+    limesurvey_plugins_data:
+    limesurvey_upload_data:
+    limesurvey_config_data:
+    limesurvey_sessions_data:
+    limesurvey_mariadb_data:

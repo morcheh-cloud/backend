@@ -1,0 +1,35 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Unstructured
+category: AI
+description: Unstructured provides a platform and tools to ingest and process unstructured documents for Retrieval Augmented Generation (RAG) and model fine-tuning.
+website: https://github.com/Unstructured-IO/unstructured-api?tab=readme-ov-file#--general-pre-processing-pipeline-for-documents
+tags:
+  - workflow
+  - orchestration
+  - data-pipeline
+  - python
+  - data
+  - machine-learning
+  - data-science
+  - nlp
+  - unstructured
+  - ocr
+  - data-extraction
+logo: templates/unstructured.webp
+env: |-
+  PORT=8000
+  APIKEY_PASSWORD={{secret}}
+compose: |
+  services:
+    unstructured:
+      image: downloads.unstructured.io/unstructured-io/unstructured-api:latest
+      restart: unless-stopped
+      environment:
+        - UNSTRUCTURED_API_KEY=${APIKEY_PASSWORD}
+      healthcheck:
+        test: [CMD, wget, -qO-, http://0.0.0.0:8000/healthcheck]
+        interval: 5s
+        timeout: 30s
+        retries: 10
+      ports:
+        - ${PORT:-8000}:8000

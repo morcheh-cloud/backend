@@ -1,0 +1,66 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Mattermost
+category: Communication
+description: Mattermost is an open source, self-hosted Slack-alternative.
+website: https://docs.mattermost.com
+tags:
+  - mattermost
+  - slack
+  - alternative
+logo: templates/mattermost.svg
+featured: true
+env: |-
+  PORT=8065
+  MATTERMOST_URL=http://{{host}}:${PORT}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Optional settings
+  TZ=UTC
+  POSTGRES_DB="sslmode=disable&connect_timeout=10"
+compose: |
+  services:
+    mattermost:
+      image: mattermost/mattermost-team-edition:release-10
+      restart: unless-stopped
+      platform: linux/amd64
+      volumes:
+        - mattermost-data-config:/mattermost/config:rw
+        - mattermost-data-data:/mattermost/data:rw
+        - mattermost-data-logs:/mattermost/logs:rw
+        - mattermost-data-plugins:/mattermost/plugins:rw
+        - mattermost-data-client-plugins:/mattermost/client/plugins:rw
+        - mattermost-data-bleve-indexes:/mattermost/bleve-indexes:rw
+      environment:
+        - MM_SERVICESETTINGS_SITEURL=${MATTERMOST_URL}
+        - TZ=${TZ:-UTC}
+        - MM_SQLSETTINGS_DRIVERNAME=postgres
+        - MM_SQLSETTINGS_DATASOURCE=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/$POSTGRES_DB?sslmode=disable&connect_timeout=10
+        - MM_BLEVESETTINGS_INDEXDIR=/mattermost/bleve-indexes
+      depends_on:
+        postgres:
+          condition: service_healthy
+      ports:
+        - ${PORT:-8065}:8065
+    postgres:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=${POSTGRES_DB:-mattermost}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    mattermost-data-config:
+    mattermost-data-data:
+    mattermost-data-logs:
+    mattermost-data-plugins:
+    mattermost-data-client-plugins:
+    mattermost-data-bleve-indexes:
+    postgresql-data:

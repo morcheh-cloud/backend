@@ -1,0 +1,32 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: ImgCompress
+category: Media
+description: Offline image compression, conversion, and AI background removal for Docker homelabs.
+website: https://imgcompress.karimzouine.com
+tags:
+  - compress
+  - photo
+  - server
+  - metadata
+logo: templates/imgcompress.webp
+env: |-
+  PORT=5000
+
+  # Optional settings
+  DISABLE_LOGO=false
+  DISABLE_STORAGE_MANAGEMENT=false
+compose: |
+  services:
+    imgcompress:
+      image: karimz1/imgcompress:0.6.0
+      restart: unless-stopped
+      environment:
+        - DISABLE_LOGO=${DISABLE_LOGO:-false}
+        - DISABLE_STORAGE_MANAGEMENT=${DISABLE_STORAGE_MANAGEMENT:-false}
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:5000]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+      ports:
+        - ${PORT:-5000}:5000

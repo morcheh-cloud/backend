@@ -1,0 +1,68 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Rocket.Chat
+category: Communication
+description: Self-hosted, secure and highly customizable open-source communication platform for organizations with sophisticated security and privacy concerns.
+website: https://github.com/RocketChat/Rocket.Chat
+tags:
+  - rocketchat
+  - chat
+  - communication
+  - privacy
+  - mongodb
+  - open
+  - source
+logo: templates/rocketchat.svg
+featured: true
+env: |-
+  PORT=3000
+  ROCKETCHAT_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  MONGODB_ADVERTISED_HOSTNAME=mongodb
+  MONGODB_INITIAL_PRIMARY_PORT_NUMBER=27017
+  MONGODB_DATABASE=rocketchat
+  MONGODB_REPLICA_SET_NAME=rs0
+  REG_TOKEN=
+  MAIL_URL=test@example.com
+compose: |
+  services:
+    rocketchat:
+      image: registry.rocket.chat/rocketchat/rocket.chat:8.0.1
+      restart: unless-stopped
+      environment:
+        - MONGO_URL=mongodb://${MONGODB_ADVERTISED_HOSTNAME:-mongodb}:${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}/${MONGODB_DATABASE:-rocketchat}?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0}
+        - MONGO_OPLOG_URL=mongodb://${MONGODB_ADVERTISED_HOSTNAME:-mongodb}:${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}/local?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0}
+        - ROOT_URL=$ROCKETCHAT_URL
+        - DEPLOY_METHOD=docker
+        - REG_TOKEN=$REG_TOKEN
+        - MAIL_URL=${MAIL_URL:-test@example.com}
+      depends_on:
+        mongodb:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, node, --eval, "const http = require('http'); const options = { host: '0.0.0.0', port: 3000, timeout: 2000, path: '/health' }; const healthCheck = http.request(options, (res) => { console.log('HEALTHCHECK STATUS:', res.statusCode); if (res.statusCode == 200) { process.exit(0); } else { process.exit(1); } }); healthCheck.on('error', function (err) { console.error('ERROR'); process.exit(1); }); healthCheck.end();"]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-3000}:3000
+    mongodb:
+      image: mongo:7
+      restart: unless-stopped
+      volumes:
+        - mongodb_data:/data/db
+      command: |
+        sh -c "
+          mongod --replSet ${MONGODB_REPLICA_SET_NAME:-rs0} --bind_ip_all &
+          sleep 5 &&
+          mongosh --eval 'rs.initiate({_id:\"${MONGODB_REPLICA_SET_NAME:-rs0}\", members:[{_id:0, host:\"mongodb:27017\"}]})' ||
+          true &&
+          wait
+        "
+      healthcheck:
+        test: [CMD, mongosh, --quiet, --eval, "db.adminCommand('ping')"]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+  volumes:
+    mongodb_data:

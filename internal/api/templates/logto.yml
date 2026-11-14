@@ -1,0 +1,62 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Logto
+category: Security
+description: A comprehensive identity solution covering both the front and backend, complete with pre-built infrastructure and enterprise-grade solutions.
+website: https://docs.logto.io/docs/tutorials/get-started/#logto-oss-self-hosted
+tags:
+  - logto
+  - identity
+  - login
+  - authentication
+  - oauth
+  - oidc
+  - openid
+logo: templates/logto_dark.svg
+env: |-
+  PORT=3001
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Optional settings
+  TAG=latest
+  POSTGRES_DB=logto
+  LOGTO_ENDPOINT=
+  LOGTO_ADMIN_ENDPOINT=
+compose: |
+  services:
+    logto:
+      image: svhd/logto:${TAG-latest}
+      restart: unless-stopped
+      depends_on:
+        postgres:
+          condition: service_healthy
+      entrypoint: [sh, -c, "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
+      environment:
+        - TRUST_PROXY_HEADER=1
+        - DB_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-logto}
+        - ENDPOINT=$LOGTO_ENDPOINT
+        - ADMIN_ENDPOINT=$LOGTO_ADMIN_ENDPOINT
+      healthcheck:
+        test: [CMD-SHELL, exit 0]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-3001}:3001
+    postgres:
+      image: postgres:14-alpine
+      restart: unless-stopped
+      user: postgres
+      environment:
+        POSTGRES_USER: ${POSTGRES_USER}
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+        POSTGRES_DB: ${POSTGRES_DB:-logto}
+      volumes:
+        - logto-postgres-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD, pg_isready, -U, $POSTGRES_USER, -d, $POSTGRES_DB]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    logto-postgres-data:

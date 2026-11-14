@@ -1,0 +1,32 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Heimdall
+category: Productivity
+description: Heimdall is a dashboard for managing and organizing your server applications.
+website: https://github.com/linuxserver/Heimdall
+tags:
+  - dashboard
+  - server
+  - applications
+  - interface
+logo: templates/heimdall.svg
+env: PORT=8080
+compose: |
+  services:
+    heimdall:
+      image: lscr.io/linuxserver/heimdall:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=Europe/Madrid
+      volumes:
+        - heimdall-config:/config
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    heimdall-config:

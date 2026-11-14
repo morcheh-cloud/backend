@@ -1,0 +1,40 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Nextcloud
+category: Storage
+description: NextCloud is a self-hosted, open-source platform that provides file storage, collaboration, and communication tools for seamless data management.
+website: https://docs.nextcloud.com
+tags:
+  - cloud
+  - collaboration
+  - communication
+  - filestorage
+  - data
+logo: templates/nextcloud.svg
+featured: true
+env: |-
+  PORT=8080
+
+  # Optional settings
+  TZ=Europe/Madrid
+compose: |
+  services:
+    nextcloud:
+      image: lscr.io/linuxserver/nextcloud:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-Europe/Madrid}
+      volumes:
+        - nextcloud-config:/config
+        - nextcloud-data:/data
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80/status.php]
+        interval: 30s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    nextcloud-config:
+    nextcloud-data:

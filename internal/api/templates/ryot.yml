@@ -1,0 +1,59 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Ryot
+category: Productivity
+description: Roll your own tracker! Ryot is a self-hosted platform for tracking various aspects of life such as media consumption, fitness activities, and more.
+website: https://github.com/ignisda/ryot
+tags:
+  - rss
+  - reader
+  - self-hosted
+  - automation
+  - tracker
+  - media
+  - fitness
+logo: templates/ryot.svg
+env: |-
+  PORT=8000
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  RYOT_PASSWORD={{secret:64}}
+
+  # Optional settings
+  POSTGRES_DB=
+  TZ=Europe/Amsterdam
+compose: |
+  services:
+    ryot:
+      image: ignisda/ryot:v10.3.0
+      restart: unless-stopped
+      environment:
+        - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB}
+        - SERVER_ADMIN_ACCESS_TOKEN=${RYOT_PASSWORD}
+        - TZ=${TZ:-Europe/Amsterdam}
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8000/health]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8000}:8000
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - ryot_postgresql_data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-ryot-db}
+        - TZ=${TZ:-Europe/Amsterdam}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    ryot_postgresql_data:

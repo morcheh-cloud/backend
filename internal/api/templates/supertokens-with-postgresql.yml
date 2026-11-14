@@ -1,0 +1,61 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: SuperTokens with PostgreSQL
+category: Security
+description: An open-source authentication solution that simplifies the implementation of secure user authentication and session management for web and mobile applications.
+website: https://supertokens.com/docs/guides
+tags:
+  - supertokens
+  - login
+  - authentication
+  - authorization
+  - oauth
+  - user-management
+  - session-management
+  - access-control
+  - otp
+  - magic-link
+  - passwordless
+logo: templates/supertokens.svg
+env: |-
+  PORT=3567
+  POSTGRESQL_USER={{user}}
+  POSTGRESQL_PASSWORD={{secret}}
+
+  # Optional settings
+  API_KEYS=
+  POSTGRES_DB=supertokens
+compose: |
+  services:
+    supertokens:
+      image: registry.supertokens.io/supertokens/supertokens-postgresql:latest
+      restart: unless-stopped
+      depends_on:
+        postgres:
+          condition: service_healthy
+      environment:
+        - API_KEYS=${API_KEYS:-}
+        - POSTGRESQL_CONNECTION_URI="postgresql://$POSTGRESQL_USER:$POSTGRESQL_PASSWORD@postgres:5432/${POSTGRES_DB:-supertokens}"
+      healthcheck:
+        test: |
+          bash -c 'exec 3<>/dev/tcp/127.0.0.1/3567 && echo -e "GET /hello HTTP/1.1\r\nhost: 127.0.0.1:3567\r\nConnection: close\r\n\r\n" >&3 && cat <&3 | grep "Hello"'
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      ports:
+        - ${PORT:-3567}:3567
+    postgres:
+      image: postgres:16
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=$POSTGRESQL_USER
+        - POSTGRES_PASSWORD=$POSTGRESQL_PASSWORD
+        - POSTGRES_DB=${POSTGRES_DB:-supertokens}
+      volumes:
+        - supertokens-postgres-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD, pg_isready, -U, $POSTGRESQL_USER, -d, "${POSTGRES_DB:-supertokens}"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+  volumes:
+    supertokens-postgres-data:

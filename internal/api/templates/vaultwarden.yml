@@ -1,0 +1,26 @@
+name: Vaultwarden
+category: Security
+description: Password manager server for the Bitwarden apps. Put it behind Reverse proxy with HTTPS; turn sign-ups off once your people have accounts.
+logo: vaultwarden
+featured: true
+env: |
+  DOMAIN=http://localhost
+  ADMIN_TOKEN={{secret}}
+  SIGNUPS_ALLOWED=true
+  PORT=8222
+compose: |
+  services:
+    vaultwarden:
+      image: vaultwarden/server:latest
+      restart: unless-stopped
+      environment:
+        DOMAIN: ${DOMAIN}
+        ADMIN_TOKEN: ${ADMIN_TOKEN}
+        SIGNUPS_ALLOWED: ${SIGNUPS_ALLOWED:-true}
+      ports:
+        - "${PORT:-8222}:80"
+      volumes:
+        - data:/data
+
+  volumes:
+    data:

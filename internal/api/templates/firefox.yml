@@ -1,0 +1,27 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Firefox
+category: Productivity
+description: Fast, private, and self-hosted secure browser for browsing without limits.
+website: https://github.com/jlesage/docker-firefox
+tags:
+  - browser
+  - web
+  - privacy
+logo: templates/firefox.svg
+env: PORT=5800
+compose: |
+  services:
+    firefox:
+      image: jlesage/firefox
+      restart: unless-stopped
+      volumes:
+        - firefox_config:/config
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:5800/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-5800}:5800
+  volumes:
+    firefox_config:

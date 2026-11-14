@@ -1,0 +1,42 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Pi-hole
+category: Networking
+description: Network-wide Ad Blocking
+website: https://pi-hole.net/
+tags:
+  - ad-block
+  - dns
+  - sinkhole
+  - ntp
+  - dhcp
+logo: templates/pihole.svg
+featured: true
+env: |-
+  PORT=8080
+  PIHOLE_PASSWORD={{secret}}
+
+  # Optional settings
+  TZ=Europe/London
+  FTLCONF_dns_listeningMode=all
+compose: |
+  services:
+    pihole:
+      image: pihole/pihole:latest
+      restart: unless-stopped
+      ports:
+        - 53:53/tcp
+        - 53:53/udp
+        - 67:67/udp
+        - 123:123/udp
+        - ${PORT:-8080}:80
+      environment:
+        - TZ=${TZ:-Europe/London}
+        - FTLCONF_webserver_api_password=${PIHOLE_PASSWORD}
+        - FTLCONF_dns_listeningMode=${FTLCONF_dns_listeningMode:-all}
+      volumes:
+        - pihole-data:/etc/pihole
+      cap_add:
+        - NET_ADMIN
+        - SYS_TIME
+  volumes:
+    pihole-data:

@@ -1,0 +1,145 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Pterodactyl Panel
+category: Media
+description: Pterodactyl is a free, open-source game server management panel
+website: https://pterodactyl.io/
+tags:
+  - game
+  - game server
+  - management
+  - panel
+  - minecraft
+logo: templates/pterodactyl.webp
+env: |-
+  PORT=8080
+  MYSQLROOT_PASSWORD={{secret}}
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+  HASHIDS_PASSWORD={{secret}}
+  ADMIN_USER={{user}}
+  ADMIN_PASSWORD={{secret}}
+  PTERODACTYL_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  ADMIN_EMAIL=
+  USER_EXISTS=
+  ADMIN_USERNAME=
+  ADMIN_FIRSTNAME=
+  ADMIN_LASTNAME=
+  PTERODACTYL_HTTPS=false
+  TIMEZONE=UTC
+  APP_SERVICE_AUTHOR=author@example.com
+  LOG_LEVEL=debug
+  MAIL_FROM=
+  MAIL_DRIVER=
+  MAIL_HOST=
+  MAIL_PORT=
+  MAIL_USERNAME=
+  MAIL_PASSWORD=
+  MAIL_ENCRYPTION=
+compose: |
+  services:
+    mariadb:
+      image: mariadb:11.8
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD-SHELL, "healthcheck.sh --connect --innodb_initialized || exit 1"]
+        start_period: 10s
+        interval: 10s
+        timeout: 1s
+        retries: 3
+      environment:
+        - MYSQL_ROOT_PASSWORD=$MYSQLROOT_PASSWORD
+        - MYSQL_DATABASE=pterodactyl-db
+        - MYSQL_USER=$MYSQL_USER
+        - MYSQL_PASSWORD=$MYSQL_PASSWORD
+      volumes:
+        - pterodactyl-db:/var/lib/mysql
+    redis:
+      image: redis:alpine
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD-SHELL, "redis-cli ping || exit 1"]
+        interval: 10s
+        timeout: 1s
+        retries: 3
+    pterodactyl:
+      image: ghcr.io/pterodactyl/panel:v1.15.2
+      restart: unless-stopped
+      volumes:
+        - panel-var:/app/var/
+        - panel-nginx:/etc/nginx/http.d/
+        - panel-certs:/etc/letsencrypt/
+      command: [/entrypoint.sh]
+      healthcheck:
+        test: [CMD-SHELL, "curl -sf http://localhost:80 || exit 1"]
+        interval: 10s
+        timeout: 1s
+        retries: 3
+      environment:
+        - HASHIDS_SALT=$HASHIDS_PASSWORD
+        - HASHIDS_LENGTH=8
+        - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+        - ADMIN_USERNAME=${ADMIN_USER}
+        - ADMIN_FIRSTNAME=${ADMIN_FIRSTNAME:-Admin}
+        - ADMIN_LASTNAME=${ADMIN_LASTNAME:-User}
+        - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+        - PTERODACTYL_HTTPS=${PTERODACTYL_HTTPS:-false}
+        - APP_ENV=production
+        - APP_ENVIRONMENT_ONLY=false
+        - APP_URL=$PTERODACTYL_URL
+        - APP_TIMEZONE=${TIMEZONE:-UTC}
+        - APP_SERVICE_AUTHOR=${APP_SERVICE_AUTHOR:-author@example.com}
+        - LOG_LEVEL=${LOG_LEVEL:-debug}
+        - CACHE_DRIVER=redis
+        - SESSION_DRIVER=redis
+        - QUEUE_DRIVER=redis
+        - REDIS_HOST=redis
+        - DB_DATABASE=pterodactyl-db
+        - DB_USERNAME=$MYSQL_USER
+        - DB_HOST=mariadb
+        - DB_PORT=3306
+        - DB_PASSWORD=$MYSQL_PASSWORD
+        - MAIL_FROM=$MAIL_FROM
+        - MAIL_DRIVER=$MAIL_DRIVER
+        - MAIL_HOST=$MAIL_HOST
+        - MAIL_PORT=$MAIL_PORT
+        - MAIL_USERNAME=$MAIL_USERNAME
+        - MAIL_PASSWORD=$MAIL_PASSWORD
+        - MAIL_ENCRYPTION=$MAIL_ENCRYPTION
+      ports:
+        - ${PORT:-8080}:80
+      configs:
+        - source: pterodactyl-entrypoint.sh
+          target: /entrypoint.sh
+  volumes:
+    pterodactyl-db:
+    panel-var:
+    panel-nginx:
+    panel-certs:
+  configs:
+    pterodactyl-entrypoint.sh:
+      content: |
+        #!/bin/sh
+        set -e
+
+         echo "Setting logs permissions..."
+         chown -R nginx: /app/storage/logs/
+
+         USER_EXISTS=$(php artisan tinker --no-ansi --execute='echo \Pterodactyl\Models\User::where("email", "'"$ADMIN_EMAIL"'")->exists() ? "1" : "0";')
+
+         if [ "$USER_EXISTS" = "0" ]; then
+           echo "Admin User does not exist, creating user now."
+           php artisan p:user:make --no-interaction \
+             --admin=1 \
+             --email="$ADMIN_EMAIL" \
+             --username="$ADMIN_USERNAME" \
+             --name-first="$ADMIN_FIRSTNAME" \
+             --name-last="$ADMIN_LASTNAME" \
+             --password="$ADMIN_PASSWORD"
+           echo "Admin user created successfully!"
+         else
+           echo "Admin User already exists, skipping creation."
+         fi
+
+         exec supervisord --nodaemon

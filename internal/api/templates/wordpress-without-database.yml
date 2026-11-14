@@ -1,0 +1,28 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: WordPress (no database)
+category: Websites
+description: WordPress is open source software you can use to create a beautiful website, blog, or app.
+website: https://wordpress.org
+tags:
+  - cms
+  - blog
+  - content
+  - management
+logo: templates/wordpress.svg
+env: PORT=8080
+compose: |
+  services:
+    wordpress:
+      image: wordpress:latest
+      restart: unless-stopped
+      volumes:
+        - wordpress-files:/var/www/html
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1]
+        interval: 2s
+        timeout: 10s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    wordpress-files:

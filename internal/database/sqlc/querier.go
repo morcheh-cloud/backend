@@ -52,6 +52,8 @@ type Querier interface {
 	ClaimLogArchiveRestore(ctx context.Context, id uuid.UUID) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
 	ClaimSchedule(ctx context.Context, arg ClaimScheduleParams) (int64, error)
+	// Moves next_run_at on, only if nobody else did first.
+	ClaimStorageSync(ctx context.Context, arg ClaimStorageSyncParams) (int64, error)
 	ClearAlertRuleChannels(ctx context.Context, ruleID uuid.UUID) error
 	ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error
 	ClearMonitorChannels(ctx context.Context, monitorID uuid.UUID) error
@@ -93,6 +95,7 @@ type Querier interface {
 	CreateBackup(ctx context.Context, arg CreateBackupParams) (DatabaseBackup, error)
 	CreateBackupCopy(ctx context.Context, arg CreateBackupCopyParams) error
 	CreateBackupPlan(ctx context.Context, arg CreateBackupPlanParams) (DatabaseBackupPlan, error)
+	CreateCloudAccount(ctx context.Context, arg CreateCloudAccountParams) (CloudAccount, error)
 	CreateDNSServer(ctx context.Context, arg CreateDNSServerParams) (DnsServer, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
 	CreateDockerAutoUpdate(ctx context.Context, arg CreateDockerAutoUpdateParams) (DockerAutoUpdate, error)
@@ -124,6 +127,8 @@ type Querier interface {
 	CreateSoftwareRun(ctx context.Context, arg CreateSoftwareRunParams) (SoftwareRun, error)
 	CreateSoftwareRunTarget(ctx context.Context, arg CreateSoftwareRunTargetParams) error
 	CreateStorage(ctx context.Context, arg CreateStorageParams) (Storage, error)
+	CreateStorageSync(ctx context.Context, arg CreateStorageSyncParams) (StorageSync, error)
+	CreateStorageSyncRun(ctx context.Context, arg CreateStorageSyncRunParams) (StorageSyncRun, error)
 	CreateTerminalRecording(ctx context.Context, arg CreateTerminalRecordingParams) (uuid.UUID, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error)
@@ -152,6 +157,7 @@ type Querier interface {
 	DeleteAppLogo(ctx context.Context, arg DeleteAppLogoParams) error
 	DeleteBackup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteBackupPlan(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteCloudAccount(ctx context.Context, id uuid.UUID) error
 	DeleteDNSServer(ctx context.Context, id uuid.UUID) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDockerAutoUpdate(ctx context.Context, arg DeleteDockerAutoUpdateParams) (int64, error)
@@ -197,6 +203,7 @@ type Querier interface {
 	DeleteSoftwareRecipe(ctx context.Context, id uuid.UUID) error
 	DeleteSoftwareRun(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteStorage(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteStorageSync(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteTerminalRecording(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUser(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
@@ -241,6 +248,8 @@ type Querier interface {
 	// the run and whatever on it hadn't finished.
 	EndScriptRun(ctx context.Context, arg EndScriptRunParams) error
 	EndSoftwareRun(ctx context.Context, arg EndSoftwareRunParams) error
+	// Ends a run that's still queued or running, keeping what it recorded.
+	EndStorageSyncRun(ctx context.Context, arg EndStorageSyncRunParams) error
 	EndTerminalRecording(ctx context.Context, arg EndTerminalRecordingParams) error
 	ExpiredLogArchiveHolds(ctx context.Context) ([]LogArchive, error)
 	// Files older than their policy keeps them (never one whose rows are back).
@@ -263,6 +272,7 @@ type Querier interface {
 	FinishSoftwareInstall(ctx context.Context, arg FinishSoftwareInstallParams) error
 	FinishSoftwareRun(ctx context.Context, arg FinishSoftwareRunParams) error
 	FinishSoftwareTarget(ctx context.Context, arg FinishSoftwareTargetParams) error
+	FinishStorageSyncRun(ctx context.Context, arg FinishStorageSyncRunParams) error
 	FirstDockerProjectStat(ctx context.Context, arg FirstDockerProjectStatParams) (time.Time, error)
 	// Whether candidate is folder_id itself or one of its descendants; moving a
 	// folder under such a candidate would make a cycle.
@@ -283,6 +293,8 @@ type Querier interface {
 	GetBackupDatabase(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetBackupPlan(ctx context.Context, id uuid.UUID) (DatabaseBackupPlan, error)
 	GetBackupPlanDatabase(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetCloudAccount(ctx context.Context, id uuid.UUID) (CloudAccount, error)
+	GetCloudAccountWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetCommandLog(ctx context.Context, id uuid.UUID) (CommandLog, error)
 	GetCommandLogOutput(ctx context.Context, id uuid.UUID) (CommandLogOutput, error)
 	GetCommandLogSettings(ctx context.Context, workspaceID uuid.UUID) (CommandLogSetting, error)
@@ -353,6 +365,10 @@ type Querier interface {
 	GetSoftwareRecipeWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetSoftwareRun(ctx context.Context, id uuid.UUID) (SoftwareRun, error)
 	GetStorage(ctx context.Context, id uuid.UUID) (Storage, error)
+	GetStorageSync(ctx context.Context, id uuid.UUID) (StorageSync, error)
+	GetStorageSyncRun(ctx context.Context, id uuid.UUID) (StorageSyncRun, error)
+	GetStorageSyncRunWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetStorageSyncWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetStorageWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetTerminalRecordingData(ctx context.Context, id uuid.UUID) (GetTerminalRecordingDataRow, error)
 	GetTerminalRecordingInfo(ctx context.Context, id uuid.UUID) (GetTerminalRecordingInfoRow, error)
@@ -414,6 +430,7 @@ type Querier interface {
 	ListActiveBackups(ctx context.Context, planID *uuid.UUID) ([]DatabaseBackup, error)
 	ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error)
 	ListActiveScheduleRuns(ctx context.Context, scheduleID *uuid.UUID) ([]ScheduleRun, error)
+	ListActiveStorageSyncRuns(ctx context.Context, syncID uuid.UUID) ([]StorageSyncRun, error)
 	ListAlertChannels(ctx context.Context, workspaceID uuid.UUID) ([]AlertChannel, error)
 	ListAlertEvents(ctx context.Context, arg ListAlertEventsParams) ([]AlertEvent, error)
 	// Mutes that are on now or start later.
@@ -445,6 +462,10 @@ type Querier interface {
 	// what the caller reaches.
 	ListBackupProblems(ctx context.Context, arg ListBackupProblemsParams) ([]ListBackupProblemsRow, error)
 	ListBackups(ctx context.Context, arg ListBackupsParams) ([]DatabaseBackup, error)
+	ListCloudAccounts(ctx context.Context, arg ListCloudAccountsParams) ([]CloudAccount, error)
+	// Accounts whose last check is older than @before (or never checked), the
+	// longest waiting first.
+	ListCloudAccountsDueForCheck(ctx context.Context, before time.Time) ([]CloudAccount, error)
 	// Newest first, a page after the (before_at, before_id) cursor.
 	ListCommandLog(ctx context.Context, arg ListCommandLogParams) ([]CommandLog, error)
 	ListDNSServers(ctx context.Context, arg ListDNSServersParams) ([]DnsServer, error)
@@ -473,6 +494,7 @@ type Querier interface {
 	ListDueBackupPlans(ctx context.Context, now *time.Time) ([]DatabaseBackupPlan, error)
 	ListDueMonitors(ctx context.Context, lim int32) ([]Monitor, error)
 	ListDueSchedules(ctx context.Context, now *time.Time) ([]Schedule, error)
+	ListDueStorageSyncs(ctx context.Context, now *time.Time) ([]StorageSync, error)
 	ListEnabledSchedulesWithoutNext(ctx context.Context) ([]Schedule, error)
 	ListFirewallChanges(ctx context.Context, serverID uuid.UUID) ([]ListFirewallChangesRow, error)
 	// server_count counts only the folder's own servers the caller can see; the
@@ -545,6 +567,9 @@ type Querier interface {
 	// combine with OR. A folder filter includes its subfolders unless direct_only
 	// is set. total is the match count before LIMIT/OFFSET.
 	ListServers(ctx context.Context, arg ListServersParams) ([]ListServersRow, error)
+	// Panel servers at any of @hosts that the caller can see, to show which
+	// cloud servers are already in Morche.
+	ListServersByHost(ctx context.Context, arg ListServersByHostParams) ([]ListServersByHostRow, error)
 	// Servers whose last check is older than @before (or that were never checked),
 	// the longest waiting first.
 	ListServersDueForCheck(ctx context.Context, before time.Time) ([]Server, error)
@@ -558,6 +583,9 @@ type Querier interface {
 	ListSoftwareRecipes(ctx context.Context, workspaceID uuid.UUID) ([]SoftwareRecipe, error)
 	ListSoftwareRunTargets(ctx context.Context, runID uuid.UUID) ([]SoftwareRunTarget, error)
 	ListSoftwareRuns(ctx context.Context, arg ListSoftwareRunsParams) ([]ListSoftwareRunsRow, error)
+	ListStorageSyncRuns(ctx context.Context, arg ListStorageSyncRunsParams) ([]StorageSyncRun, error)
+	// With each one's newest run (skipped ones aside), for the list.
+	ListStorageSyncs(ctx context.Context, arg ListStorageSyncsParams) ([]ListStorageSyncsRow, error)
 	ListStorageWorkspaces(ctx context.Context, ids []uuid.UUID) ([]ListStorageWorkspacesRow, error)
 	ListStorages(ctx context.Context, arg ListStoragesParams) ([]Storage, error)
 	// Storages whose last check is older than @before (or that were never
@@ -637,6 +665,7 @@ type Querier interface {
 	PruneServerSamples(ctx context.Context, before time.Time) (int64, error)
 	PruneServerStatusChanges(ctx context.Context, before time.Time) (int64, error)
 	PruneStorageChecks(ctx context.Context, before time.Time) (int64, error)
+	PruneStorageSyncRuns(ctx context.Context, arg PruneStorageSyncRunsParams) error
 	PruneStorageUsage(ctx context.Context, before time.Time) (int64, error)
 	// Past each workspace's keep_days (90 without settings). Live ones stay.
 	PruneTerminalRecordings(ctx context.Context) (int64, error)
@@ -650,6 +679,8 @@ type Querier interface {
 	RecentMonitorChecks(ctx context.Context, arg RecentMonitorChecksParams) ([]RecentMonitorChecksRow, error)
 	RecordAlertDelivery(ctx context.Context, arg RecordAlertDeliveryParams) error
 	RecordChannelSend(ctx context.Context, arg RecordChannelSendParams) error
+	// The counts keep their last value while an account can't be read.
+	RecordCloudAccountCheck(ctx context.Context, arg RecordCloudAccountCheckParams) (CloudAccount, error)
 	// Version and domain keep their last known value while a server is away.
 	RecordDNSServerCheck(ctx context.Context, arg RecordDNSServerCheckParams) (DnsServer, error)
 	RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseCheckParams) (Database, error)
@@ -695,6 +726,8 @@ type Querier interface {
 	SaveSoftwareHost(ctx context.Context, arg SaveSoftwareHostParams) error
 	SaveSoftwareHostError(ctx context.Context, arg SaveSoftwareHostErrorParams) error
 	SaveSoftwareTargetOutput(ctx context.Context, arg SaveSoftwareTargetOutputParams) error
+	// While it runs, so the page shows where it is.
+	SaveStorageSyncRun(ctx context.Context, arg SaveStorageSyncRunParams) error
 	SaveTerminalRecording(ctx context.Context, arg SaveTerminalRecordingParams) error
 	// A kind of logs' default policy, unless it already has one.
 	SeedLogArchivePolicy(ctx context.Context, arg SeedLogArchivePolicyParams) error
@@ -728,6 +761,7 @@ type Querier interface {
 	SetBackupPlanNext(ctx context.Context, arg SetBackupPlanNextParams) error
 	SetBackupPlanStorages(ctx context.Context, arg SetBackupPlanStoragesParams) error
 	SetBackupVerified(ctx context.Context, arg SetBackupVerifiedParams) error
+	SetCloudAccountFavorite(ctx context.Context, arg SetCloudAccountFavoriteParams) (CloudAccount, error)
 	SetCommandLogSettings(ctx context.Context, arg SetCommandLogSettingsParams) (CommandLogSetting, error)
 	SetDNSServerFavorite(ctx context.Context, arg SetDNSServerFavoriteParams) (DnsServer, error)
 	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
@@ -764,6 +798,12 @@ type Querier interface {
 	SetSoftwareInstallStatus(ctx context.Context, arg SetSoftwareInstallStatusParams) error
 	SetSoftwareRunJob(ctx context.Context, arg SetSoftwareRunJobParams) error
 	SetStorageFavorite(ctx context.Context, arg SetStorageFavoriteParams) (Storage, error)
+	SetStorageSyncHeld(ctx context.Context, arg SetStorageSyncHeldParams) error
+	SetStorageSyncNative(ctx context.Context, arg SetStorageSyncNativeParams) error
+	SetStorageSyncNext(ctx context.Context, arg SetStorageSyncNextParams) error
+	// Pausing and resuming don't change whose access it runs with.
+	SetStorageSyncPaused(ctx context.Context, arg SetStorageSyncPausedParams) (StorageSync, error)
+	SetStorageSyncRunJob(ctx context.Context, arg SetStorageSyncRunJobParams) error
 	SetTerminalRecordingSettings(ctx context.Context, arg SetTerminalRecordingSettingsParams) (TerminalRecordingSetting, error)
 	// Replaces the groups of one user (approving someone, editing them).
 	SetUserGroups(ctx context.Context, arg SetUserGroupsParams) error
@@ -787,6 +827,7 @@ type Querier interface {
 	StartScriptTarget(ctx context.Context, arg StartScriptTargetParams) error
 	StartSoftwareRun(ctx context.Context, id uuid.UUID) error
 	StartSoftwareTarget(ctx context.Context, arg StartSoftwareTargetParams) error
+	StartStorageSyncRun(ctx context.Context, id uuid.UUID) error
 	// The same activity, totalled per storage (a transfer between two storages
 	// counts for both).
 	StorageActivityByStorage(ctx context.Context, arg StorageActivityByStorageParams) ([]StorageActivityByStorageRow, error)
@@ -811,6 +852,8 @@ type Querier interface {
 	UpdateAppAccount(ctx context.Context, arg UpdateAppAccountParams) (AppAccount, error)
 	UpdateAppCategory(ctx context.Context, arg UpdateAppCategoryParams) (AppCategory, error)
 	UpdateBackupPlan(ctx context.Context, arg UpdateBackupPlanParams) (DatabaseBackupPlan, error)
+	// Full replace of the editable fields; the handler resolves the key first.
+	UpdateCloudAccount(ctx context.Context, arg UpdateCloudAccountParams) (CloudAccount, error)
 	// Full replace of the editable fields; the handler resolves the token first.
 	UpdateDNSServer(ctx context.Context, arg UpdateDNSServerParams) (DnsServer, error)
 	// Full replace of the editable fields; the handler resolves the password first.
@@ -837,6 +880,7 @@ type Querier interface {
 	UpdateSoftwareRecipe(ctx context.Context, arg UpdateSoftwareRecipeParams) (SoftwareRecipe, error)
 	// Full replace of the editable fields; the handler resolves secrets first.
 	UpdateStorage(ctx context.Context, arg UpdateStorageParams) (Storage, error)
+	UpdateStorageSync(ctx context.Context, arg UpdateStorageSyncParams) (StorageSync, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
 	UpsertAlertState(ctx context.Context, arg UpsertAlertStateParams) error

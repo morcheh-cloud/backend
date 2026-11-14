@@ -1,0 +1,90 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Paymenter
+category: Finance
+description: Open-Source Billing, Built for Hosting
+website: https://paymenter.org/docs/guides/docker
+tags:
+  - automation
+  - billing
+  - open source
+logo: templates/paymenter.svg
+env: |-
+  PORT=8080
+  PAYMENTER_URL=http://{{host}}:${PORT}
+  MYSQL_PASSWORD={{secret}}
+  MYSQL_USER={{user}}
+  REDIS_PASSWORD={{secret:64}}
+  KEY_SECRET={{secret}}
+  MYSQLROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  MYSQL_DATABASE=paymenter-db
+compose: |
+  services:
+    paymenter:
+      image: ghcr.io/paymenter/paymenter:v1.5.9
+      restart: unless-stopped
+      volumes:
+        - app_logs:/app/storage/logs
+        - extenstions:/app/extensions
+        - themes:/app/themes
+        - app_storage:/app/storage/app
+        - app_public_storage:/app/storage/app/public
+      environment:
+        SERVICE_URL_PAYMENTER: ${PAYMENTER_URL}
+        DB_DATABASE: ${MYSQL_DATABASE:-paymenter-db}
+        DB_PASSWORD: ${MYSQL_PASSWORD}
+        DB_USERNAME: ${MYSQL_USER}
+        APP_ENV: production
+        CACHE_STORE: redis
+        SESSION_DRIVER: redis
+        QUEUE_CONNECTION: redis
+        REDIS_HOST: redis
+        REDIS_USERNAME: default
+        REDIS_PASSWORD: ${REDIS_PASSWORD}
+        DB_CONNECTION: mariadb
+        DB_HOST: mariadb
+        DB_PORT: 3306
+        APP_KEY: ${KEY_SECRET}
+      depends_on:
+        mariadb:
+          condition: service_healthy
+        redis:
+          condition: service_started
+      healthcheck:
+        test: [CMD-SHELL, "curl -sf http://localhost:80 || exit 1"]
+        interval: 10s
+        timeout: 1s
+        retries: 3
+      ports:
+        - ${PORT:-8080}:80
+    mariadb:
+      image: mariadb:11.8
+      restart: unless-stopped
+      volumes:
+        - paymenter_mariadb_data:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=${MYSQLROOT_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-paymenter-db}
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    redis:
+      image: redis:alpine
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD-SHELL, "redis-cli ping || exit 1"]
+        interval: 10s
+        timeout: 1s
+        retries: 3
+  volumes:
+    app_logs:
+    extenstions:
+    themes:
+    app_storage:
+    app_public_storage:
+    paymenter_mariadb_data:

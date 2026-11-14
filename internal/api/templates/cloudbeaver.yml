@@ -1,0 +1,33 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: CloudBeaver
+category: Development
+description: CloudBeaver is a lightweight web application designed for comprehensive data management.
+website: https://dbeaver.com/docs/cloudbeaver/
+tags:
+  - dbeaver
+  - data management
+  - data
+  - database
+  - mysql
+  - postgres
+  - sqlite
+  - sql
+  - mongodb
+logo: templates/cloudbeaver.svg
+env: PORT=8978
+compose: |
+  services:
+    cloudbeaver:
+      image: dbeaver/cloudbeaver:24
+      restart: unless-stopped
+      volumes:
+        - cloudbeaver-data:/opt/cloudbeaver/workspace
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:8978/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8978}:8978
+  volumes:
+    cloudbeaver-data:

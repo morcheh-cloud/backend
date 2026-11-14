@@ -1,0 +1,43 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Terraria Server
+category: Games
+description: Docker multi-arch Image for Terraria Server.
+website: https://github.com/hexlo/terraria-server-docker
+tags:
+  - terraria
+logo: templates/terraria.webp
+env: |-
+  TERRARIA_PASSWORD={{secret}}
+
+  # Optional settings
+  WORLDPATH=/root/.local/share/Terraria/Worlds
+  AUTOCREATE=2
+  WORLD=world1.wld
+  DIFFICULTY=1
+  MAXPLAYERS=8
+  MOTD="Welcome to the server!"
+  LANGUAGE=en/US
+  SECURE=1
+compose: |
+  services:
+    terraria-server:
+      image: hexlo/terraria-server-docker:1.4.5.0
+      restart: unless-stopped
+      stdin_open: true
+      tty: true
+      ports:
+        - 7777:7777
+      volumes:
+        - terraria-server:/root/.local/share/Terraria/Worlds
+      environment:
+        - worldpath=${WORLDPATH:-/root/.local/share/Terraria/Worlds}
+        - autocreate=${AUTOCREATE:-2}
+        - world=${WORLD:-world1.wld}
+        - difficulty=${DIFFICULTY:-1}
+        - maxplayers=${MAXPLAYERS:-8}
+        - password=${TERRARIA_PASSWORD}
+        - motd=${MOTD:-Welcome to the server!}
+        - language=${LANGUAGE:-en/US}
+        - secure=${SECURE:-1}
+  volumes:
+    terraria-server:

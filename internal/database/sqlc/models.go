@@ -221,6 +221,27 @@ type AppSetting struct {
 	AlertFailedSignIns bool        `json:"alert_failed_sign_ins"`
 }
 
+type CloudAccount struct {
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	Provider      string     `json:"provider"`
+	Name          string     `json:"name"`
+	ApiKeyEnc     []byte     `json:"api_key_enc"`
+	KeyHint       string     `json:"key_hint"`
+	Description   string     `json:"description"`
+	Favorite      bool       `json:"favorite"`
+	AllowChanges  bool       `json:"allow_changes"`
+	Status        string     `json:"status"`
+	StatusMessage string     `json:"status_message"`
+	ServerCount   int32      `json:"server_count"`
+	RunningCount  int32      `json:"running_count"`
+	LatencyMs     *int32     `json:"latency_ms"`
+	LastCheckedAt *time.Time `json:"last_checked_at"`
+	LastOnlineAt  *time.Time `json:"last_online_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
 type CommandLog struct {
 	ID          uuid.UUID  `json:"id"`
 	WorkspaceID uuid.UUID  `json:"workspace_id"`
@@ -962,6 +983,7 @@ type Proxy struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 	Runtime       string     `json:"runtime"`
 	Container     string     `json:"container"`
+	Manager       string     `json:"manager"`
 }
 
 type ProxyChange struct {
@@ -1253,14 +1275,8 @@ type SoftwareInstall struct {
 	Version         string     `json:"version"`
 	Latest          string     `json:"latest"`
 	UpdateAvailable bool       `json:"update_available"`
-	State           string     `json:"state"`
 	Params          []byte     `json:"params"`
 	Secrets         []byte     `json:"secrets"`
-	Dir             string     `json:"dir"`
-	Project         string     `json:"project"`
-	Images          []byte     `json:"images"`
-	CanRollback     bool       `json:"can_rollback"`
-	Pinned          bool       `json:"pinned"`
 	Error           string     `json:"error"`
 	CheckedAt       *time.Time `json:"checked_at"`
 	InstalledAt     *time.Time `json:"installed_at"`
@@ -1353,6 +1369,53 @@ type StorageCheck struct {
 	Status    string    `json:"status"`
 	LatencyMs *int32    `json:"latency_ms"`
 	Message   string    `json:"message"`
+}
+
+type StorageSync struct {
+	ID              uuid.UUID  `json:"id"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	Kind            string     `json:"kind"`
+	Name            string     `json:"name"`
+	SourceStorageID uuid.UUID  `json:"source_storage_id"`
+	SourcePath      string     `json:"source_path"`
+	DestStorageID   uuid.UUID  `json:"dest_storage_id"`
+	DestPath        string     `json:"dest_path"`
+	Engine          string     `json:"engine"`
+	Mode            string     `json:"mode"`
+	Trigger         string     `json:"trigger"`
+	Cron            string     `json:"cron"`
+	Timezone        string     `json:"timezone"`
+	IntervalMinutes int32      `json:"interval_minutes"`
+	Options         []byte     `json:"options"`
+	Paused          bool       `json:"paused"`
+	NextRunAt       *time.Time `json:"next_run_at"`
+	Held            []byte     `json:"held"`
+	Native          []byte     `json:"native"`
+	Problem         string     `json:"problem"`
+	CreatedBy       *uuid.UUID `json:"created_by"`
+	UpdatedBy       *uuid.UUID `json:"updated_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type StorageSyncRun struct {
+	ID            uuid.UUID  `json:"id"`
+	SyncID        uuid.UUID  `json:"sync_id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	Trigger       string     `json:"trigger"`
+	DryRun        bool       `json:"dry_run"`
+	State         string     `json:"state"`
+	Phase         string     `json:"phase"`
+	Error         string     `json:"error"`
+	Result        []byte     `json:"result"`
+	Files         int32      `json:"files"`
+	Bytes         int64      `json:"bytes"`
+	JobID         *uuid.UUID `json:"job_id"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
 }
 
 type StorageUsage struct {

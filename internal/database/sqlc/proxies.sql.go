@@ -37,7 +37,7 @@ func (q *Queries) AddProxyChange(ctx context.Context, arg AddProxyChangeParams) 
 }
 
 const createProxy = `-- name: CreateProxy :one
-INSERT INTO proxies (server_id, kind, runtime, container) VALUES ($1, $2, $3, $4) RETURNING id, server_id, kind, status, status_message, version, host_problems, last_checked_at, created_at, updated_at, runtime, container
+INSERT INTO proxies (server_id, kind, runtime, container, manager) VALUES ($1, $2, $3, $4, $5) RETURNING id, server_id, kind, status, status_message, version, host_problems, last_checked_at, created_at, updated_at, runtime, container, manager
 `
 
 type CreateProxyParams struct {
@@ -45,6 +45,7 @@ type CreateProxyParams struct {
 	Kind      string    `json:"kind"`
 	Runtime   string    `json:"runtime"`
 	Container string    `json:"container"`
+	Manager   string    `json:"manager"`
 }
 
 func (q *Queries) CreateProxy(ctx context.Context, arg CreateProxyParams) (Proxy, error) {
@@ -53,6 +54,7 @@ func (q *Queries) CreateProxy(ctx context.Context, arg CreateProxyParams) (Proxy
 		arg.Kind,
 		arg.Runtime,
 		arg.Container,
+		arg.Manager,
 	)
 	var i Proxy
 	err := row.Scan(
@@ -68,6 +70,7 @@ func (q *Queries) CreateProxy(ctx context.Context, arg CreateProxyParams) (Proxy
 		&i.UpdatedAt,
 		&i.Runtime,
 		&i.Container,
+		&i.Manager,
 	)
 	return i, err
 }
@@ -145,7 +148,7 @@ func (q *Queries) DeleteProxyHosts(ctx context.Context, proxyID uuid.UUID) error
 }
 
 const getProxy = `-- name: GetProxy :one
-SELECT p.id, p.server_id, p.kind, p.status, p.status_message, p.version, p.host_problems, p.last_checked_at, p.created_at, p.updated_at, p.runtime, p.container, s.name AS server_name, s.host AS server_host, s.workspace_id, s.status AS server_status,
+SELECT p.id, p.server_id, p.kind, p.status, p.status_message, p.version, p.host_problems, p.last_checked_at, p.created_at, p.updated_at, p.runtime, p.container, p.manager, s.name AS server_name, s.host AS server_host, s.workspace_id, s.status AS server_status,
        (SELECT count(*) FROM proxy_hosts h WHERE h.proxy_id = p.id)::int AS host_count
 FROM proxies p
 JOIN servers s ON s.id = p.server_id
@@ -177,6 +180,7 @@ func (q *Queries) GetProxy(ctx context.Context, id uuid.UUID) (GetProxyRow, erro
 		&i.Proxy.UpdatedAt,
 		&i.Proxy.Runtime,
 		&i.Proxy.Container,
+		&i.Proxy.Manager,
 		&i.ServerName,
 		&i.ServerHost,
 		&i.WorkspaceID,
@@ -257,7 +261,7 @@ func (q *Queries) GetProxyServer(ctx context.Context, id uuid.UUID) (GetProxySer
 }
 
 const listProxies = `-- name: ListProxies :many
-SELECT p.id, p.server_id, p.kind, p.status, p.status_message, p.version, p.host_problems, p.last_checked_at, p.created_at, p.updated_at, p.runtime, p.container, s.name AS server_name, s.host AS server_host, s.workspace_id, s.status AS server_status,
+SELECT p.id, p.server_id, p.kind, p.status, p.status_message, p.version, p.host_problems, p.last_checked_at, p.created_at, p.updated_at, p.runtime, p.container, p.manager, s.name AS server_name, s.host AS server_host, s.workspace_id, s.status AS server_status,
        (SELECT count(*) FROM proxy_hosts h WHERE h.proxy_id = p.id)::int AS host_count
 FROM proxies p
 JOIN servers s ON s.id = p.server_id
@@ -312,6 +316,7 @@ func (q *Queries) ListProxies(ctx context.Context, arg ListProxiesParams) ([]Lis
 			&i.Proxy.UpdatedAt,
 			&i.Proxy.Runtime,
 			&i.Proxy.Container,
+			&i.Proxy.Manager,
 			&i.ServerName,
 			&i.ServerHost,
 			&i.WorkspaceID,
@@ -329,7 +334,7 @@ func (q *Queries) ListProxies(ctx context.Context, arg ListProxiesParams) ([]Lis
 }
 
 const listProxiesDueForCheck = `-- name: ListProxiesDueForCheck :many
-SELECT p.id, p.server_id, p.kind, p.status, p.status_message, p.version, p.host_problems, p.last_checked_at, p.created_at, p.updated_at, p.runtime, p.container FROM proxies p
+SELECT p.id, p.server_id, p.kind, p.status, p.status_message, p.version, p.host_problems, p.last_checked_at, p.created_at, p.updated_at, p.runtime, p.container, p.manager FROM proxies p
 JOIN servers s ON s.id = p.server_id
 WHERE p.last_checked_at IS NULL OR p.last_checked_at < $1::timestamptz
 ORDER BY p.last_checked_at NULLS FIRST
@@ -357,6 +362,7 @@ func (q *Queries) ListProxiesDueForCheck(ctx context.Context, before time.Time) 
 			&i.UpdatedAt,
 			&i.Runtime,
 			&i.Container,
+			&i.Manager,
 		); err != nil {
 			return nil, err
 		}

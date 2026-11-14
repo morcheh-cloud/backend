@@ -1,0 +1,81 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Nextcloud with MariaDB
+category: Storage
+description: NextCloud is a self-hosted, open-source platform that provides file storage, collaboration, and communication tools for seamless data management.
+website: https://docs.nextcloud.com
+tags:
+  - cloud
+  - collaboration
+  - communication
+  - filestorage
+  - data
+logo: templates/nextcloud.svg
+env: |-
+  PORT=8080
+  MARIADB_USER={{user}}
+  MARIADB_PASSWORD={{secret}}
+  ROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  TZ=Europe/Paris
+  MARIADB_DATABASE=nextcloud
+compose: |
+  services:
+    nextcloud:
+      image: lscr.io/linuxserver/nextcloud:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-Europe/Paris}
+        - MYSQL_DATABASE=${MARIADB_DATABASE:-nextcloud}
+        - MYSQL_USER=${MARIADB_USER}
+        - MYSQL_PASSWORD=${MARIADB_PASSWORD}
+        - MYSQL_HOST=nextcloud-db
+        - REDIS_HOST=redis
+        - REDIS_PORT=6379
+      volumes:
+        - nextcloud-config:/config
+        - nextcloud-data:/data
+      depends_on:
+        nextcloud-db:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80/status.php]
+        interval: 30s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8080}:80
+    nextcloud-db:
+      image: mariadb:11
+      restart: unless-stopped
+      volumes:
+        - nextcloud-mariadb-data:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=${ROOT_PASSWORD}
+        - MYSQL_DATABASE=${MARIADB_DATABASE:-nextcloud}
+        - MYSQL_USER=${MARIADB_USER}
+        - MYSQL_PASSWORD=${MARIADB_PASSWORD}
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    redis:
+      image: redis:7.4-alpine
+      restart: unless-stopped
+      volumes:
+        - nextcloud-redis-data:/data
+      healthcheck:
+        test: [CMD, redis-cli, PING]
+        interval: 5s
+        timeout: 10s
+        retries: 20
+  volumes:
+    nextcloud-config:
+    nextcloud-data:
+    nextcloud-mariadb-data:
+    nextcloud-redis-data:

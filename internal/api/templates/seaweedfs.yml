@@ -1,0 +1,104 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: SeaweedFS
+category: Storage
+description: SeaweedFS is a simple and highly scalable distributed file system. Compatible with S3, with an admin web interface.
+website: https://github.com/seaweedfs/seaweedfs
+tags:
+  - object
+  - storage
+  - server
+  - s3
+  - api
+logo: templates/seaweedfs.webp
+env: |-
+  S3_PORT=8333
+  ADMIN_PORT=23646
+  S3_USER={{user}}
+  S3_PASSWORD={{secret}}
+  ADMIN_USER={{user}}
+  ADMIN_PASSWORD={{secret}}
+
+  # Optional settings
+  AWS_ACCESS_KEY_ID=
+  AWS_SECRET_ACCESS_KEY=
+  SEAWEED_USER_ADMIN=
+  SEAWEED_PASSWORD_ADMIN=
+compose: |
+  services:
+    seaweedfs-master:
+      image: chrislusf/seaweedfs:4.41
+      restart: unless-stopped
+      environment:
+        - AWS_ACCESS_KEY_ID=${S3_USER}
+        - AWS_SECRET_ACCESS_KEY=${S3_PASSWORD}
+      volumes:
+        - seaweedfs-s3-data:/data
+      entrypoint: |
+        sh -c '\
+        sed "s/env:AWS_ACCESS_KEY_ID/$AWS_ACCESS_KEY_ID/g" /base-config.json > /base1-config.json; \
+        sed "s/env:AWS_SECRET_ACCESS_KEY/$AWS_SECRET_ACCESS_KEY/g" /base1-config.json > /config.json; \
+        weed server -dir=/data -master.port=9333 -s3 -s3.port=8333 -s3.config=/config.json\
+        '
+      healthcheck:
+        test: [CMD-SHELL, "wget --spider -q http://0.0.0.0:8333; [ $$? -le 8 ]"]
+        interval: 10s
+        timeout: 5s
+        retries: 10
+      ports:
+        - ${S3_PORT:-8333}:8333
+      configs:
+        - source: seaweedfs-master-base-config.json
+          target: /base-config.json
+    seaweedfs-admin:
+      image: chrislusf/seaweedfs:4.41
+      restart: unless-stopped
+      environment:
+        - SEAWEED_USER_ADMIN=${ADMIN_USER}
+        - SEAWEED_PASSWORD_ADMIN=${ADMIN_PASSWORD}
+      command: [admin, -master=seaweedfs-master:9333, "-adminUser=${SEAWEED_USER_ADMIN}", "-adminPassword=${SEAWEED_PASSWORD_ADMIN}", -port=23646, -dataDir=/data]
+      volumes:
+        - seaweedfs-admin-data:/data
+      healthcheck:
+        test: [CMD-SHELL, "wget --spider -q http://0.0.0.0:23646; [ $$? -le 8 ]"]
+        interval: 10s
+        timeout: 5s
+        retries: 10
+      depends_on:
+        seaweedfs-master:
+          condition: service_healthy
+      ports:
+        - ${ADMIN_PORT:-23646}:23646
+  volumes:
+    seaweedfs-s3-data:
+    seaweedfs-admin-data:
+  configs:
+    seaweedfs-master-base-config.json:
+      content: |
+        {
+          "identities": [
+            {
+              "name": "anonymous",
+              "actions": [
+                "Read"
+              ]
+            },
+            {
+              "name": "admin",
+              "credentials": [
+                {
+                  "accessKey": "env:AWS_ACCESS_KEY_ID",
+                  "secretKey": "env:AWS_SECRET_ACCESS_KEY"
+                }
+              ],
+              "actions": [
+                "Admin",
+                "Read",
+                "ReadAcp",
+                "List",
+                "Tagging",
+                "Write",
+                "WriteAcp"
+              ]
+            }
+          ]
+        }

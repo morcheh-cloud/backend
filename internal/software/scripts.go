@@ -1,7 +1,6 @@
 package software
 
 import (
-	"encoding/base64"
 	"fmt"
 	"sort"
 	"strings"
@@ -146,51 +145,7 @@ pkg_have() {
 need_root() {
   if [ "$(id -u)" != 0 ]; then echo "This needs root: the login user can't use sudo." >&2; exit 1; fi
 }
-need_compose() {
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker isn't installed on this server. Install Docker first (it's in Applications)." >&2; exit 1
-  fi
-  if ! docker compose version >/dev/null 2>&1; then
-    echo "Docker's compose plugin isn't installed on this server. Install or update Docker from Applications." >&2; exit 1
-  fi
-  if ! docker info >/dev/null 2>&1; then
-    echo "Docker is installed but not running (or can't be reached)." >&2; exit 1
-  fi
-}
-# wait_up waits for every container of the project in this folder to be
-# running (not restarting) twice in a row, and shows the logs if not.
-wait_up() {
-  i=0; ok=0
-  while [ "$i" -lt "${1:-90}" ]; do
-    sleep 3; i=$((i + 3))
-    all=$(docker compose ps -a -q 2>/dev/null | wc -l)
-    up=$(docker compose ps -q --status running 2>/dev/null | wc -l)
-    bad=$(docker compose ps -q --status restarting 2>/dev/null | wc -l)
-    if [ "$all" -gt 0 ] && [ "$up" -eq "$all" ] && [ "$bad" -eq 0 ]; then
-      ok=$((ok + 1))
-      if [ "$ok" -ge 2 ]; then echo "All containers are running."; return 0; fi
-    else
-      ok=0
-    fi
-  done
-  echo "Not every container came up in ${1:-90} seconds:" >&2
-  docker compose ps -a >&2
-  echo "Last log lines:" >&2
-  docker compose logs --no-color --tail 40 >&2
-  return 1
-}
 `
-
-// b64 writes content to a file through base64, so nothing in it is read by
-// the shell.
-func writeFile(b *strings.Builder, path, content, mode string) {
-	enc := base64.StdEncoding.EncodeToString([]byte(content))
-	fmt.Fprintf(b, "printf '%%s' '%s' | base64 -d > %s.new\n", enc, path)
-	if mode != "" {
-		fmt.Fprintf(b, "chmod %s %s.new\n", mode, path)
-	}
-	fmt.Fprintf(b, "mv -f %s.new %s\n", path, path)
-}
 
 // pkgsCase sets PKGS to the recipe's packages for the server's manager.
 func pkgsCase(r Recipe) string {
@@ -237,195 +192,78 @@ func osGuard(r Recipe) string {
 	return b.String()
 }
 
-// Env renders values as a compose .env file.
-func Env(values map[string]string) string {
-	names := make([]string, 0, len(values))
-	for n := range values {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	var b strings.Builder
-	b.WriteString("# Written by Morche. Change the settings from the panel.\n")
-	for _, n := range names {
-		fmt.Fprintf(&b, "%s='%s'\n", n, values[n])
-	}
-	return b.String()
-}
-
-// InstallOptions change an install.
-type InstallOptions struct {
-	// Docker apps: remove volumes left by an earlier install first.
-	Fresh bool
-}
-
-// InstallScript installs r. Package and script recipes read values from the
-// environment; a Docker app gets them in its .env file.
-func InstallScript(r Recipe, values map[string]string, opt InstallOptions) string {
+// InstallScript installs r. Its scripts read the values from the
+// environment.
+func InstallScript(r Recipe) string {
 	var b strings.Builder
 	b.WriteString("set -e\n")
 	b.WriteString(lib)
 	b.WriteString("need_root\n")
-	switch r.Kind {
-	case KindDocker:
-		dir, proj := Dir(r.ID), Project(r.ID)
-		b.WriteString("need_compose\n")
-		fmt.Fprintf(&b, "mkdir -p %s && chmod 700 %s && cd %s\n", dir, dir, dir)
-		fmt.Fprintf(&b, "export COMPOSE_PROJECT_NAME=%s\n", proj)
-		if opt.Fresh {
-			b.WriteString("echo 'Removing data left by an earlier install…'\n")
-			b.WriteString("docker compose down -v --remove-orphans >/dev/null 2>&1 || true\n")
-			fmt.Fprintf(&b, "docker volume ls -q --filter label=com.docker.compose.project=%s | xargs -r docker volume rm >/dev/null 2>&1 || true\n", proj)
-		}
-		b.WriteString("rm -f compose.override.yml compose.rollback.yml\n")
-		writeFile(&b, "compose.yml", r.Compose, "600")
-		writeFile(&b, ".env", Env(values), "600")
-		b.WriteString("echo 'Checking the compose file…'\n")
-		b.WriteString("docker compose config -q\n")
-		b.WriteString("echo 'Pulling images…'\n")
-		b.WriteString("docker compose pull --quiet 2>&1 || docker compose pull\n")
-		b.WriteString("echo 'Starting…'\n")
-		b.WriteString("docker compose up -d --remove-orphans\n")
-		b.WriteString("wait_up 120\n")
-	default:
-		if r.Kind == KindPackage {
-			b.WriteString(pkgsCase(r))
-		}
-		b.WriteString(osGuard(r))
-		if r.Install != "" {
-			b.WriteString(r.Install)
-			b.WriteString("\n")
-		} else {
-			b.WriteString("echo \"Installing $PKGS with $PM…\"\n")
-			b.WriteString("pkg_refresh\n")
-			b.WriteString("# shellcheck disable=SC2086\npkg_install $PKGS\n")
-		}
+	if r.Kind == KindPackage {
+		b.WriteString(pkgsCase(r))
+	}
+	b.WriteString(osGuard(r))
+	if r.Install != "" {
+		b.WriteString(r.Install)
+		b.WriteString("\n")
+	} else {
+		b.WriteString("echo \"Installing $PKGS with $PM…\"\n")
+		b.WriteString("pkg_refresh\n")
+		b.WriteString("# shellcheck disable=SC2086\npkg_install $PKGS\n")
 	}
 	return b.String()
 }
 
-// UpdateScript updates r to its newest version. A Docker app keeps the
-// images it ran as morcheh-rollback/<project>-<service>:previous, with a
-// compose.rollback.yml that runs them.
+// UpdateScript updates r to its newest version.
 func UpdateScript(r Recipe) string {
 	var b strings.Builder
 	b.WriteString("set -e\n")
 	b.WriteString(lib)
 	b.WriteString("need_root\n")
-	switch r.Kind {
-	case KindDocker:
-		dir, proj := Dir(r.ID), Project(r.ID)
-		b.WriteString("need_compose\n")
-		fmt.Fprintf(&b, "cd %s\n", dir)
-		fmt.Fprintf(&b, "export COMPOSE_PROJECT_NAME=%s\n", proj)
-		b.WriteString("rm -f compose.override.yml\n")
-		b.WriteString("echo 'Keeping the current images to go back to…'\n")
-		b.WriteString("services=''\n")
-		b.WriteString("for svc in $(docker compose config --services); do\n")
-		b.WriteString("  cid=$(docker compose ps -a -q \"$svc\" | head -n1)\n")
-		b.WriteString("  [ -n \"$cid\" ] || continue\n")
-		b.WriteString("  img=$(docker inspect --format '{{.Image}}' \"$cid\")\n")
-		fmt.Fprintf(&b, "  tag=\"morcheh-rollback/$(echo %s-$svc | tr 'A-Z_' 'a-z-'):previous\"\n", proj)
-		b.WriteString("  docker tag \"$img\" \"$tag\" && services=\"$services $svc=$tag\"\n")
-		b.WriteString("done\n")
-		b.WriteString("if [ -n \"$services\" ]; then\n")
-		b.WriteString("  { echo 'services:'; for s in $services; do printf '  %s:\\n    image: %s\\n    pull_policy: never\\n' \"${s%%=*}\" \"${s#*=}\"; done; } > compose.rollback.yml.new\n")
-		b.WriteString("  chmod 600 compose.rollback.yml.new && mv -f compose.rollback.yml.new compose.rollback.yml\n")
-		b.WriteString("fi\n")
-		b.WriteString("echo 'Pulling new images…'\n")
-		b.WriteString("docker compose pull --quiet 2>&1 || docker compose pull\n")
-		b.WriteString("echo 'Starting…'\n")
-		b.WriteString("docker compose up -d --remove-orphans\n")
-		b.WriteString("wait_up 120\n")
-		b.WriteString("docker image prune -f >/dev/null 2>&1 || true\n")
+	if r.Kind == KindPackage {
+		b.WriteString(pkgsCase(r))
+	}
+	b.WriteString(osGuard(r))
+	switch {
+	case r.Update != "":
+		b.WriteString(r.Update)
+		b.WriteString("\n")
+	case r.Kind == KindPackage:
+		// Only what is installed: the server may have the distro's
+		// build (ALSO) or just some of the packages.
+		b.WriteString("if [ -z \"$PKGS$ALSO\" ]; then echo 'There is no package to update on this server.' >&2; exit 1; fi\n")
+		b.WriteString("# shellcheck disable=SC2086\nHAVE=$(pkg_have $PKGS $ALSO)\n")
+		b.WriteString("if [ -z \"$HAVE\" ]; then echo \"None of its packages ($PKGS $ALSO) is installed with $PM here, so $PM can't update it. It may have been installed another way (a snap, a static binary…).\" >&2; exit 1; fi\n")
+		b.WriteString("echo \"Updating $HAVE with $PM…\"\n")
+		b.WriteString("pkg_refresh\n")
+		b.WriteString("# shellcheck disable=SC2086\npkg_upgrade $HAVE\n")
 	default:
-		if r.Kind == KindPackage {
-			b.WriteString(pkgsCase(r))
-		}
-		b.WriteString(osGuard(r))
-		switch {
-		case r.Update != "":
-			b.WriteString(r.Update)
-			b.WriteString("\n")
-		case r.Kind == KindPackage:
-			// Only what is installed: the server may have the distro's
-			// build (ALSO) or just some of the packages.
-			b.WriteString("if [ -z \"$PKGS$ALSO\" ]; then echo 'There is no package to update on this server.' >&2; exit 1; fi\n")
-			b.WriteString("# shellcheck disable=SC2086\nHAVE=$(pkg_have $PKGS $ALSO)\n")
-			b.WriteString("if [ -z \"$HAVE\" ]; then echo \"None of its packages ($PKGS $ALSO) is installed with $PM here, so $PM can't update it. It may have been installed another way (a snap, a static binary…).\" >&2; exit 1; fi\n")
-			b.WriteString("echo \"Updating $HAVE with $PM…\"\n")
-			b.WriteString("pkg_refresh\n")
-			b.WriteString("# shellcheck disable=SC2086\npkg_upgrade $HAVE\n")
-		default:
-			b.WriteString("echo 'This app has no update script.' >&2; exit 1\n")
-		}
+		b.WriteString("echo 'This app has no update script.' >&2; exit 1\n")
 	}
 	return b.String()
 }
 
-// RollbackScript runs a Docker app on the images it had before its last
-// update, until the next update.
-func RollbackScript(r Recipe) string {
-	var b strings.Builder
-	b.WriteString("set -e\n")
-	b.WriteString(lib)
-	b.WriteString("need_root\nneed_compose\n")
-	fmt.Fprintf(&b, "cd %s\n", Dir(r.ID))
-	fmt.Fprintf(&b, "export COMPOSE_PROJECT_NAME=%s\n", Project(r.ID))
-	b.WriteString("if [ ! -f compose.rollback.yml ]; then echo 'There is no earlier version to go back to.' >&2; exit 1; fi\n")
-	b.WriteString("cp compose.rollback.yml compose.override.yml\n")
-	b.WriteString("echo 'Starting the earlier version…'\n")
-	b.WriteString("docker compose up -d --remove-orphans\n")
-	b.WriteString("wait_up 120\n")
-	return b.String()
-}
-
-// UninstallOptions change an uninstall.
-type UninstallOptions struct {
-	// Docker apps: remove its volumes and folder too.
-	RemoveData bool
-}
-
 // UninstallScript removes r.
-func UninstallScript(r Recipe, opt UninstallOptions) string {
+func UninstallScript(r Recipe) string {
 	var b strings.Builder
 	b.WriteString("set -e\n")
 	b.WriteString(lib)
 	b.WriteString("need_root\n")
-	switch r.Kind {
-	case KindDocker:
-		dir, proj := Dir(r.ID), Project(r.ID)
-		b.WriteString("need_compose\n")
-		fmt.Fprintf(&b, "export COMPOSE_PROJECT_NAME=%s\n", proj)
-		fmt.Fprintf(&b, "if [ -d %s ]; then cd %s; fi\n", dir, dir)
-		if opt.RemoveData {
-			b.WriteString("echo 'Stopping and removing the containers and their data…'\n")
-			b.WriteString("if [ -f compose.yml ]; then docker compose down -v --remove-orphans; fi\n")
-			fmt.Fprintf(&b, "docker volume ls -q --filter label=com.docker.compose.project=%s | xargs -r docker volume rm >/dev/null 2>&1 || true\n", proj)
-			fmt.Fprintf(&b, "docker images -q 'morcheh-rollback/%s-*' | xargs -r docker rmi -f >/dev/null 2>&1 || true\n", proj)
-			fmt.Fprintf(&b, "cd / && rm -rf %s\n", dir)
-		} else {
-			b.WriteString("echo 'Stopping and removing the containers (the data stays)…'\n")
-			b.WriteString("if [ -f compose.yml ]; then docker compose down --remove-orphans; fi\n")
-			b.WriteString("rm -f compose.yml compose.override.yml compose.rollback.yml .env\n")
-			fmt.Fprintf(&b, "echo 'Its volumes stay on the server: docker volume ls --filter label=com.docker.compose.project=%s'\n", proj)
-		}
+	if r.Kind == KindPackage {
+		b.WriteString(pkgsCase(r))
+	}
+	switch {
+	case r.Uninstall != "":
+		b.WriteString(r.Uninstall)
+		b.WriteString("\n")
+	case r.Kind == KindPackage:
+		b.WriteString("if [ -z \"$PKGS$ALSO\" ]; then echo 'There is no package to remove on this server.' >&2; exit 1; fi\n")
+		b.WriteString("# shellcheck disable=SC2086\nHAVE=$(pkg_have $PKGS $ALSO)\n")
+		b.WriteString("if [ -z \"$HAVE\" ]; then echo 'None of its packages is installed here; nothing to remove.'; exit 0; fi\n")
+		b.WriteString("echo \"Removing $HAVE…\"\n")
+		b.WriteString("# shellcheck disable=SC2086\npkg_remove $HAVE\n")
 	default:
-		if r.Kind == KindPackage {
-			b.WriteString(pkgsCase(r))
-		}
-		switch {
-		case r.Uninstall != "":
-			b.WriteString(r.Uninstall)
-			b.WriteString("\n")
-		case r.Kind == KindPackage:
-			b.WriteString("if [ -z \"$PKGS$ALSO\" ]; then echo 'There is no package to remove on this server.' >&2; exit 1; fi\n")
-			b.WriteString("# shellcheck disable=SC2086\nHAVE=$(pkg_have $PKGS $ALSO)\n")
-			b.WriteString("if [ -z \"$HAVE\" ]; then echo 'None of its packages is installed here; nothing to remove.'; exit 0; fi\n")
-			b.WriteString("echo \"Removing $HAVE…\"\n")
-			b.WriteString("# shellcheck disable=SC2086\npkg_remove $HAVE\n")
-		default:
-			b.WriteString("echo 'This app has no uninstall script.' >&2; exit 1\n")
-		}
+		b.WriteString("echo 'This app has no uninstall script.' >&2; exit 1\n")
 	}
 	return b.String()
 }
@@ -476,70 +314,6 @@ func SystemUpgradeScript(opt SystemOptions) string {
 	return b.String()
 }
 
-// ComposeScript runs a compose command in a Docker app's folder.
-func ComposeScript(id, args string) string {
-	return ComposeAt(Dir(id), Project(id), args)
-}
-
-// ComposeAt runs a compose command for any compose project: one Morche
-// installed, or one found on the server (its folder from the labels).
-func ComposeAt(dir, project, args string) string {
-	var b strings.Builder
-	b.WriteString(lib)
-	b.WriteString("need_compose\n")
-	if dir != "" {
-		fmt.Fprintf(&b, "cd %s || { echo 'Its folder is gone from the server.' >&2; exit 1; }\n", shellQuote(dir))
-	}
-	fmt.Fprintf(&b, "docker compose -p %s %s\n", shellQuote(project), args)
-	return b.String()
-}
-
-// UpdateFoundScript pulls and restarts a compose project Morche didn't
-// install, in its own folder. There's no going back for these.
-func UpdateFoundScript(dir, project string) string {
-	var b strings.Builder
-	b.WriteString("set -e\n")
-	b.WriteString(lib)
-	b.WriteString("need_root\nneed_compose\n")
-	fmt.Fprintf(&b, "cd %s || { echo 'Its compose folder is gone from the server.' >&2; exit 1; }\n", shellQuote(dir))
-	fmt.Fprintf(&b, "export COMPOSE_PROJECT_NAME=%s\n", shellQuote(project))
-	b.WriteString("echo 'Pulling new images…'\n")
-	b.WriteString("docker compose pull --quiet 2>&1 || docker compose pull\n")
-	b.WriteString("echo 'Starting…'\n")
-	b.WriteString("docker compose up -d\n")
-	b.WriteString("wait_up 120\n")
-	return b.String()
-}
-
-// shellQuote quotes s for sh.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// SaveComposeScript checks a new compose file, then puts it in place and
-// applies it. The old one comes back if the check fails.
-func SaveComposeScript(id, content string) string {
-	var b strings.Builder
-	b.WriteString("set -e\n")
-	b.WriteString(lib)
-	b.WriteString("need_root\nneed_compose\n")
-	fmt.Fprintf(&b, "cd %s\n", Dir(id))
-	fmt.Fprintf(&b, "export COMPOSE_PROJECT_NAME=%s\n", Project(id))
-	enc := base64.StdEncoding.EncodeToString([]byte(content))
-	fmt.Fprintf(&b, "printf '%%s' '%s' | base64 -d > compose.check.yml\n", enc)
-	b.WriteString("chmod 600 compose.check.yml\n")
-	b.WriteString("if ! docker compose -f compose.check.yml config -q; then rm -f compose.check.yml; exit 3; fi\n")
-	b.WriteString("cp compose.yml compose.yml.previous && mv -f compose.check.yml compose.yml\n")
-	b.WriteString("docker compose up -d --remove-orphans\n")
-	b.WriteString("wait_up 90\n")
-	return b.String()
-}
-
-// ReadComposeScript prints a Docker app's compose file.
-func ReadComposeScript(id string) string {
-	return fmt.Sprintf("cat %s/compose.yml\n", Dir(id))
-}
-
 // PreflightScript reports what an install needs to know about a server.
 func PreflightScript(r Recipe, ports []int) string {
 	var b strings.Builder
@@ -553,10 +327,6 @@ func PreflightScript(r Recipe, ports []int) string {
 	b.WriteString("echo \"free_kb=$(df -Pk \"$d\" 2>/dev/null | awk 'NR==2{print $4}')\"\n")
 	for _, p := range ports {
 		fmt.Fprintf(&b, "if command -v ss >/dev/null 2>&1; then ss -Hltnu \"sport = :%d\" 2>/dev/null | grep -q . && echo \"busy=%d\"; fi\n", p, p)
-	}
-	if r.Kind == KindDocker {
-		fmt.Fprintf(&b, "[ -f %s/compose.yml ] && echo 'here=1'\n", Dir(r.ID))
-		fmt.Fprintf(&b, "n=$(docker volume ls -q --filter label=com.docker.compose.project=%s 2>/dev/null | wc -l); [ \"$n\" -gt 0 ] && echo 'old_data=1'\n", Project(r.ID))
 	}
 	b.WriteString("exit 0\n")
 	return b.String()

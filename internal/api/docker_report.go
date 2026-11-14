@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"slices"
@@ -25,10 +26,12 @@ import (
 // the TCP tables of each container's network namespace).
 
 const (
-	reportFresh   = 8 * time.Second // a report this young is reused
-	reportPoints  = 120             // live history points kept
-	reportGap     = 9 * time.Second // closest two history points
-	reportSpark   = 30              // CPU points kept per container
+	reportFresh   = 8 * time.Second  // a report this young is reused as is
+	reportStale   = 60 * time.Second // one this young is answered while a new one is taken
+	reportTimeout = time.Minute      // a measurement taken in the background
+	reportPoints  = 120              // live history points kept
+	reportGap     = 9 * time.Second  // closest two history points
+	reportSpark   = 30               // CPU points kept per container
 	reportIdle    = 15 * time.Minute
 	reportSockets = 6000 // TCP lines read per container
 	reportPeers   = 5    // outside addresses listed per link
@@ -175,6 +178,25 @@ func (h *serverHandler) dockerReport(ctx context.Context, id string) (DockerRepo
 	ps.asked = time.Now()
 	ps.mu.Unlock()
 
+	r.mu.Lock()
+	last := r.last
+	r.mu.Unlock()
+	if last != nil && time.Since(last.At) < reportStale {
+		// Answer the last report at once; a new one is taken behind it, so
+		// the page never waits for every container to be measured.
+		if time.Since(last.At) >= reportFresh && r.run.TryLock() {
+			go func() {
+				defer r.run.Unlock()
+				bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
+				defer cancel()
+				if _, err := h.measureReport(bg, id, r); err != nil {
+					slog.Debug("docker report: measure", "server", id, "error", err)
+				}
+			}()
+		}
+		return *last, nil
+	}
+
 	r.run.Lock()
 	defer r.run.Unlock()
 	r.mu.Lock()
@@ -184,7 +206,12 @@ func (h *serverHandler) dockerReport(ctx context.Context, id string) (DockerRepo
 		return out, nil
 	}
 	r.mu.Unlock()
+	return h.measureReport(ctx, id, r)
+}
 
+// measureReport reads the server's containers and keeps the result; the
+// caller holds r.run.
+func (h *serverHandler) measureReport(ctx context.Context, id string, r *serverReport) (DockerReport, error) {
 	var cs []docker.ContainerSummary
 	var nets []docker.Network
 	var ins map[string]docker.ContainerInspect
@@ -201,7 +228,7 @@ func (h *serverHandler) dockerReport(ctx context.Context, id string) (DockerRepo
 		}
 		ins = inspectAll(ctx, e, cs)
 		var wg sync.WaitGroup
-		wg.Go(func() { samples = sampleRunning(ctx, e, cs) })
+		wg.Go(func() { samples = sampleRunning(ctx, id, e, cs) })
 		wg.Go(func() { socks = h.scanSockets(ctx, id, e, cs, ins) })
 		wg.Wait()
 		return nil

@@ -1,0 +1,35 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: LobeChat
+category: AI
+description: An open-source, modern-design AI chat framework.
+website: https://github.com/lobehub/lobe-chat?tab=readme-ov-file#b-deploying-with-docker
+tags:
+  - ai
+  - chat
+  - openai
+  - llm
+  - chatbot
+logo: templates/lobe-chat.webp
+env: |-
+  PORT=3210
+  ACCESSCODE_PASSWORD={{secret}}
+
+  # Optional settings
+  OPENAI_API_KEY=
+  OPENAI_BASE_URL=https://api.openai.com/v1
+compose: |
+  services:
+    lobe-chat:
+      image: lobehub/lobe-chat:1.135.5
+      restart: unless-stopped
+      environment:
+        - OPENAI_API_KEY=${OPENAI_API_KEY}
+        - OPENAI_PROXY_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+        - ACCESS_CODE=${ACCESSCODE_PASSWORD}
+      healthcheck:
+        test: [CMD-SHELL, "wget -qO- http://localhost:3210/ || exit 1"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-3210}:3210

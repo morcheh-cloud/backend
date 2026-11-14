@@ -1,0 +1,41 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Meilisearch
+category: Search
+description: MeiliSearch is a powerful, fast, easy to use and deploy search engine.
+website: https://www.meilisearch.com
+tags:
+  - search
+  - engine
+  - fulltext
+  - full
+  - text
+  - meilisearch
+logo: templates/meilisearch.svg
+featured: true
+env: |-
+  PORT=7700
+  MEILISEARCH_PASSWORD={{secret}}
+
+  # Optional settings
+  MEILI_NO_ANALYTICS=true
+  MEILI_ENV=production
+compose: |
+  services:
+    meilisearch:
+      image: getmeili/meilisearch:latest
+      restart: unless-stopped
+      environment:
+        - MEILI_NO_ANALYTICS=${MEILI_NO_ANALYTICS:-true}
+        - MEILI_ENV=${MEILI_ENV:-production}
+        - MEILI_MASTER_KEY=${MEILISEARCH_PASSWORD}
+      volumes:
+        - meilisearch-data:/meili_data
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:7700/health]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-7700}:7700
+  volumes:
+    meilisearch-data:

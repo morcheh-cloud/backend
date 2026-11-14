@@ -1,0 +1,33 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Marimo
+category: Development
+description: An open-source reactive notebook for Python — reproducible, git-friendly, SQL built-in, executable as a script, and shareable as an app.
+website: https://marimo.io/
+tags:
+  - notebook
+  - python
+  - data
+  - analysis
+logo: templates/marimo.svg
+env: |-
+  PORT=8080
+  MARIMO_PASSWORD={{secret}}
+compose: |
+  services:
+    marimo:
+      image: ghcr.io/marimo-team/marimo:latest-sql
+      restart: unless-stopped
+      environment:
+        - TOKEN_PASSWORD=$MARIMO_PASSWORD
+      volumes:
+        - marimo:/app
+      command: [marimo, edit, --token-password, "${MARIMO_PASSWORD}", --port, "8080", --host, 0.0.0.0]
+      healthcheck:
+        test: [CMD, uvx, --with, "httpx[cli]", httpx, http://localhost:8080/health]
+        interval: 5s
+        timeout: 5s
+        retries: 3
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    marimo:

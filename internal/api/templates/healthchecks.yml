@@ -1,0 +1,58 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Healthchecks
+category: Monitoring
+description: Healthchecks is a cron job monitoring service. It listens for HTTP requests and email messages from your cron jobs and scheduled tasks.
+website: https://healthchecks.io/docs
+tags:
+  - monitoring
+  - status
+  - performance
+  - web
+  - services
+  - applications
+  - real-time
+logo: templates/healthchecks.webp
+env: |-
+  PORT=8000
+  HEALTHCHECKS_URL=http://{{host}}:${PORT}
+
+  # Fill these in before starting
+  SECRET_KEY=
+
+  # Optional settings
+  ALLOWED_HOSTS="*"
+  REGISTRATION_OPEN=True
+  DEBUG=False
+  DEFAULT_FROM_EMAIL=fixme-email-address-here
+  EMAIL_HOST=my-smtp-server-here.com
+  EMAIL_PORT=465
+  EMAIL_HOST_USER=my_username
+  EMAIL_HOST_PASSWORD=mypassword
+  EMAIL_USE_SSL=True
+  EMAIL_USE_TLS=False
+compose: |
+  services:
+    healthchecks:
+      image: healthchecks/healthchecks:v4.2
+      restart: unless-stopped
+      environment:
+        - DB=sqlite
+        - DB_NAME=/data/hc.sqlite
+        - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
+        - REGISTRATION_OPEN=${REGISTRATION_OPEN:-True}
+        - DEBUG=${DEBUG:-False}
+        - SECRET_KEY=${SECRET_KEY:?${SERVICE_PASSWORD_64_HEALTHCHECKS}}
+        - SITE_ROOT=${HEALTHCHECKS_URL}
+        - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL:-fixme-email-address-here}
+        - EMAIL_HOST=${EMAIL_HOST:-my-smtp-server-here.com}
+        - EMAIL_PORT=${EMAIL_PORT:-465}
+        - EMAIL_HOST_USER=${EMAIL_HOST_USER:-my_username}
+        - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD:-mypassword}
+        - EMAIL_USE_SSL=${EMAIL_USE_SSL:-True}
+        - EMAIL_USE_TLS=${EMAIL_USE_TLS:-False}
+      volumes:
+        - healthchecks-data:/data
+      ports:
+        - ${PORT:-8000}:8000
+  volumes:
+    healthchecks-data:

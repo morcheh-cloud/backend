@@ -1,0 +1,62 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Home Assistant
+category: Automation
+description: Open source home automation that puts local control and privacy first.
+website: https://www.home-assistant.io/installation/linux#docker-compose
+tags:
+  - home-automation
+  - iot
+  - smart-home
+  - automation
+  - domotics
+  - mqtt
+  - zigbee
+  - zwave
+logo: templates/home-assistant.svg
+featured: true
+env: |-
+  PORT=8123
+
+  # Optional settings
+  TZ=UTC
+  DISABLE_JEMALLOC=false
+compose: |
+  services:
+    homeassistant:
+      image: ghcr.io/home-assistant/home-assistant:2025.10.2
+      restart: unless-stopped
+      environment:
+        - TZ=${TZ:-UTC}
+        - DISABLE_JEMALLOC=${DISABLE_JEMALLOC:-false}
+      volumes:
+        - homeassistant-config:/config
+        - /run/dbus:/run/dbus:ro
+      privileged: true
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:8123]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+        start_period: 60s
+      ports:
+        - ${PORT:-8123}:8123
+      configs:
+        - source: homeassistant-configuration.yaml
+          target: /config/configuration.yaml
+  volumes:
+    homeassistant-config:
+  configs:
+    homeassistant-configuration.yaml:
+      content: |
+        # Loads default set of integrations. Do not remove.
+        default_config:
+
+        # Configuration for reverse proxy support (required for Coolify)
+        http:
+          use_x_forwarded_for: true
+          trusted_proxies:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+          ip_ban_enabled: true
+          login_attempts_threshold: 5

@@ -1,0 +1,59 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Odoo
+category: Productivity
+description: Odoo is a suite of open-source business apps that cover all your company needs.
+website: https://www.odoo.com/
+tags:
+  - business
+  - apps
+  - crm
+  - ecommerce
+  - accounting
+  - inventory
+  - point of sale
+  - project management
+  - open-source
+logo: templates/odoo.svg
+featured: true
+env: |-
+  PORT=8069
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+compose: |
+  services:
+    odoo:
+      image: odoo:18
+      restart: unless-stopped
+      command: --proxy-mode
+      environment:
+        - HOST=postgresql
+        - USER=$POSTGRES_USER
+        - PASSWORD=$POSTGRES_PASSWORD
+      volumes:
+        - odoo-web-data:/var/lib/odoo
+        - odoo-extra-addons:/mnt/extra-addons
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8069]
+        interval: 2s
+        timeout: 10s
+        retries: 30
+      ports:
+        - ${PORT:-8069}:8069
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=postgres
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d postgres"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    odoo-web-data:
+    odoo-extra-addons:
+    postgresql-data:

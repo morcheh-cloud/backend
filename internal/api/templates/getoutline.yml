@@ -1,0 +1,172 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Outline
+category: Productivity
+description: Your team’s knowledge base
+website: https://docs.getoutline.com/s/hosting/doc/hosting-outline-nipGaCRBDu
+tags:
+  - knowledge base
+  - documentation
+logo: templates/getoutline.webp
+featured: true
+env: |-
+  PORT=3000
+  OUTLINE_HEX={{hex:64}}
+  OUTLINE_PASSWORD={{secret:64}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret:64}}
+  REDIS_PASSWORD={{secret:64}}
+  OUTLINE_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  POSTGRES_DATABASE=outline
+  OUTLINE_PORT=3000
+  FILE_STORAGE=local
+  FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+  FILE_STORAGE_UPLOAD_MAX_SIZE=2000
+  FILE_STORAGE_IMPORT_MAX_SIZE=100
+  FILE_STORAGE_WORKSPACE_IMPORT_MAX_SIZE=
+  AWS_ACCESS_KEY_ID=
+  AWS_SECRET_ACCESS_KEY=
+  AWS_REGION=
+  AWS_S3_ACCELERATE_URL=
+  AWS_S3_UPLOAD_BUCKET_URL=
+  AWS_S3_UPLOAD_BUCKET_NAME=
+  AWS_S3_FORCE_PATH_STYLE=true
+  AWS_S3_ACL=private
+  SLACK_CLIENT_ID=
+  SLACK_CLIENT_SECRET=
+  GOOGLE_CLIENT_ID=
+  GOOGLE_CLIENT_SECRET=
+  AZURE_CLIENT_ID=
+  AZURE_CLIENT_SECRET=
+  AZURE_RESOURCE_APP_ID=
+  OIDC_CLIENT_ID=
+  OIDC_CLIENT_SECRET=
+  OIDC_AUTH_URI=
+  OIDC_TOKEN_URI=
+  OIDC_USERINFO_URI=
+  OIDC_LOGOUT_URI=
+  OIDC_USERNAME_CLAIM=
+  OIDC_DISPLAY_NAME=
+  OIDC_SCOPES=
+  GITHUB_CLIENT_ID=
+  GITHUB_CLIENT_SECRET=
+  GITHUB_APP_NAME=
+  GITHUB_APP_ID=
+  GITHUB_APP_PRIVATE_KEY=
+  DISCORD_CLIENT_ID=
+  DISCORD_CLIENT_SECRET=
+  DISCORD_SERVER_ID=
+  DISCORD_SERVER_ROLES=
+  PGSSLMODE=disable
+  FORCE_HTTPS=true
+  SMTP_HOST=
+  SMTP_PORT=
+  SMTP_USERNAME=
+  SMTP_PASSWORD=
+  SMTP_FROM_EMAIL=
+  SMTP_REPLY_EMAIL=
+  SMTP_TLS_CIPHERS=
+  SMTP_SECURE=
+  SMTP_NAME=
+compose: |
+  services:
+    outline:
+      image: docker.getoutline.com/outlinewiki/outline:latest
+      restart: unless-stopped
+      volumes:
+        - storage-data:/var/lib/outline/data
+      depends_on:
+        postgres:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      environment:
+        - NODE_ENV=production
+        - SECRET_KEY=${OUTLINE_HEX}
+        - UTILS_SECRET=${OUTLINE_PASSWORD}
+        - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DATABASE:-outline}
+        - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+        - URL=${OUTLINE_URL}
+        - PORT=${OUTLINE_PORT:-3000}
+        - FILE_STORAGE=${FILE_STORAGE:-local}
+        - FILE_STORAGE_LOCAL_ROOT_DIR=${FILE_STORAGE_LOCAL_ROOT_DIR:-/var/lib/outline/data}
+        - FILE_STORAGE_UPLOAD_MAX_SIZE=${FILE_STORAGE_UPLOAD_MAX_SIZE:-2000}
+        - FILE_STORAGE_IMPORT_MAX_SIZE=${FILE_STORAGE_IMPORT_MAX_SIZE:-100}
+        - FILE_STORAGE_WORKSPACE_IMPORT_MAX_SIZE=${FILE_STORAGE_WORKSPACE_IMPORT_MAX_SIZE}
+        - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+        - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+        - AWS_REGION=${AWS_REGION}
+        - AWS_S3_ACCELERATE_URL=${AWS_S3_ACCELERATE_URL}
+        - AWS_S3_UPLOAD_BUCKET_URL=${AWS_S3_UPLOAD_BUCKET_URL}
+        - AWS_S3_UPLOAD_BUCKET_NAME=${AWS_S3_UPLOAD_BUCKET_NAME}
+        - AWS_S3_FORCE_PATH_STYLE=${AWS_S3_FORCE_PATH_STYLE:-true}
+        - AWS_S3_ACL=${AWS_S3_ACL:-private}
+        - SLACK_CLIENT_ID=${SLACK_CLIENT_ID}
+        - SLACK_CLIENT_SECRET=${SLACK_CLIENT_SECRET}
+        - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+        - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+        - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+        - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+        - AZURE_RESOURCE_APP_ID=${AZURE_RESOURCE_APP_ID}
+        - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+        - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+        - OIDC_AUTH_URI=${OIDC_AUTH_URI}
+        - OIDC_TOKEN_URI=${OIDC_TOKEN_URI}
+        - OIDC_USERINFO_URI=${OIDC_USERINFO_URI}
+        - OIDC_LOGOUT_URI=${OIDC_LOGOUT_URI}
+        - OIDC_USERNAME_CLAIM=${OIDC_USERNAME_CLAIM}
+        - OIDC_DISPLAY_NAME=${OIDC_DISPLAY_NAME}
+        - OIDC_SCOPES=${OIDC_SCOPES}
+        - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+        - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+        - GITHUB_APP_NAME=${GITHUB_APP_NAME}
+        - GITHUB_APP_ID=${GITHUB_APP_ID}
+        - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY}
+        - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+        - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+        - DISCORD_SERVER_ID=${DISCORD_SERVER_ID}
+        - DISCORD_SERVER_ROLES=${DISCORD_SERVER_ROLES}
+        - PGSSLMODE=${PGSSLMODE:-disable}
+        - FORCE_HTTPS=${FORCE_HTTPS:-true}
+        - SMTP_HOST=${SMTP_HOST}
+        - SMTP_PORT=${SMTP_PORT}
+        - SMTP_USERNAME=${SMTP_USERNAME}
+        - SMTP_PASSWORD=${SMTP_PASSWORD}
+        - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
+        - SMTP_REPLY_EMAIL=${SMTP_REPLY_EMAIL}
+        - SMTP_TLS_CIPHERS=${SMTP_TLS_CIPHERS}
+        - SMTP_SECURE=${SMTP_SECURE}
+        - SMTP_NAME=${SMTP_NAME}
+      healthcheck:
+        disable: true
+      ports:
+        - ${PORT:-3000}:3000
+    redis:
+      image: redis:alpine
+      restart: unless-stopped
+      environment:
+        - REDIS_PASSWORD=${REDIS_PASSWORD}
+      command: [redis-server, --requirepass, "${REDIS_PASSWORD}"]
+      healthcheck:
+        test: [CMD, redis-cli, -a, "${REDIS_PASSWORD}", PING]
+        interval: 10s
+        timeout: 30s
+        retries: 3
+    postgres:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - database-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DATABASE:-outline}
+      healthcheck:
+        test: [CMD, pg_isready, -U, "${POSTGRES_USER}", -d, "${POSTGRES_DATABASE:-outline}"]
+        interval: 30s
+        timeout: 20s
+        retries: 3
+  volumes:
+    storage-data:
+    database-data:

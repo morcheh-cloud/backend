@@ -540,7 +540,10 @@ type DockerTemplate struct {
 	Compose     string    `json:"compose"`
 	Env         string    `json:"env"`
 	Builtin     bool      `json:"builtin" doc:"Comes with Morche; can't be changed (copy it instead)"`
-	Logo        string    `json:"logo,omitempty" doc:"Logo slug, for built-in templates"`
+	Logo        string    `json:"logo,omitempty" doc:"Logo file under /apps/, for built-in templates (e.g. nginx or templates/ghost.svg)"`
+	Website     string    `json:"website,omitempty" doc:"The app's own site, for built-in templates"`
+	Tags        []string  `json:"tags,omitempty" doc:"Search words, for built-in templates"`
+	Featured    bool      `json:"featured,omitempty" doc:"A popular built-in template, listed first"`
 	CreatedBy   string    `json:"created_by,omitempty"`
 	UpdatedBy   string    `json:"updated_by,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at,omitzero"`

@@ -49,6 +49,26 @@ services:
       timeout: 3s
       retries: 10
 
+  # A second MinIO, to test MinIO replication between two storages
+  # (Storage > Syncs, engine replication). The first MinIO reaches it at
+  # http://test-minio-2:9000 (the sync's "MinIO reaches it at" field).
+  test-minio-2:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: morcheh
+      MINIO_ROOT_PASSWORD: morcheh-secret
+    ports:
+      - "127.0.0.1:9110:9000"
+      - "127.0.0.1:9111:9001"
+    volumes:
+      - minio2data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # Local FTP target for testing (ant / colony).
   # Passive data ports need the same numbers inside and out.
   test-ftp:
@@ -234,10 +254,20 @@ services:
     volumes:
       - testpvedata:/data
 
+  # Fake ArvanCloud API for the Cloud section (cmd/fakearvan). Backend env:
+  # ARVAN_FAKE_URL=http://127.0.0.1:8091/%s/v3; key fake-arvan-0000-4000-8000-000000000000.
+  test-arvan:
+    build:
+      context: .
+      dockerfile: dev/fakearvan/Dockerfile
+    ports:
+      - "127.0.0.1:8091:8091"
+
 volumes:
   pgdata:
   redisdata:
   miniodata:
+  minio2data:
   ftpdata:
   webdavdata:
   testpgdata:

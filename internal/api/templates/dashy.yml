@@ -1,0 +1,33 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Dashy
+category: Productivity
+description: A self-hostable personal dashboard built for you. Includes status-checking, widgets, themes, icon packs, a UI editor and tons more!
+website: https://dashy.to/docs
+tags:
+  - dashboard
+  - personal
+  - self-hostable
+logo: templates/dashy.webp
+env: |-
+  PORT=8080
+
+  # Optional settings
+  TIMEZONE=UTC
+compose: |
+  services:
+    dashy:
+      image: lissy93/dashy
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TIMEZONE:-UTC}
+      volumes:
+        - ./dashy/conf.yml:/app/public/conf.yml
+      healthcheck:
+        test: [CMD-SHELL, wget -qO- http://127.0.0.1:8080/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080

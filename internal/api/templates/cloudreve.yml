@@ -1,0 +1,76 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Cloudreve
+category: Storage
+description: A self-hosted file management and sharing system.
+website: https://docs.cloudreve.org/
+tags:
+  - file sharing
+  - cloud storage
+  - self-hosted
+  - open-source
+logo: templates/cloudreve.webp
+env: |-
+  PORT=5212
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  REDIS_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_DB=cloudreve-db
+compose: |
+  services:
+    cloudreve:
+      image: cloudreve/cloudreve:4.10.1
+      restart: unless-stopped
+      environment:
+        - CR_CONF_Database.Type=postgres
+        - CR_CONF_Database.Host=postgres
+        - CR_CONF_Database.User=${POSTGRES_USER}
+        - CR_CONF_Database.Password=${POSTGRES_PASSWORD}
+        - CR_CONF_Database.Name=${POSTGRES_DB:-cloudreve-db}
+        - CR_CONF_Database.Port=5432
+        - CR_CONF_Redis.Server=redis:6379
+        - CR_CONF_Redis.Password=${REDIS_PASSWORD}
+      volumes:
+        - cloudreve-data:/cloudreve/data
+      healthcheck:
+        test: [CMD, nc, -z, localhost, "5212"]
+        interval: 20s
+        timeout: 10s
+        retries: 3
+      depends_on:
+        postgres:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      ports:
+        - ${PORT:-5212}:5212
+    postgres:
+      image: postgres:18-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-cloudreve-db}
+      volumes:
+        - postgres-data:/var/lib/postgresql
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+    redis:
+      image: redis:7-alpine
+      restart: unless-stopped
+      command: redis-server --requirepass ${REDIS_PASSWORD}
+      volumes:
+        - redis-data:/data
+      healthcheck:
+        test: [CMD, redis-cli, -a, "${REDIS_PASSWORD}", ping]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+  volumes:
+    cloudreve-data:
+    postgres-data:
+    redis-data:

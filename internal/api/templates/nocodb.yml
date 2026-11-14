@@ -1,0 +1,32 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: NocoDB
+category: Productivity
+description: NocoDB is an open source Airtable alternative. Turns any MySQL, PostgreSQL, SQL Server, SQLite & MariaDB into a smart-spreadsheet.
+website: https://nocodb.com/
+tags:
+  - nocodb
+  - airtable
+  - mysql
+  - postgresql
+  - sqlserver
+  - sqlite
+  - mariadb
+logo: templates/nocodb.svg
+featured: true
+env: PORT=8080
+compose: |
+  services:
+    nocodb:
+      image: nocodb/nocodb
+      restart: unless-stopped
+      volumes:
+        - nocodb-data:/usr/app/data/
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/api/v1/health]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    nocodb-data:

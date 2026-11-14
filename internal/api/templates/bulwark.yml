@@ -1,0 +1,39 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Bulwark
+category: Email
+description: Modern webmail platform
+website: https://bulwarkmail.org/docs
+tags:
+  - mail
+  - webmail
+  - jmap
+  - email
+  - messaging
+env: |-
+  PORT=3000
+  BULWARK_HEX={{hex:64}}
+
+  # Fill these in before starting
+  JMAP_SERVER_URL=
+compose: |
+  services:
+    bulwark:
+      image: ghcr.io/bulwarkmail/webmail:v1.8.1
+      restart: unless-stopped
+      environment:
+        - JMAP_SERVER_URL=${JMAP_SERVER_URL:?}
+        - SESSION_SECRET=${BULWARK_HEX}
+      volumes:
+        - bulwark-config:/app/data/admin
+        - bulwark-state:/app/data/admin-state
+      healthcheck:
+        test: [CMD, wget, --no-verbose, --tries=1, --spider, http://127.0.0.1:3000/api/health]
+        interval: 30s
+        timeout: 5s
+        retries: 3
+        start_period: 10s
+      ports:
+        - ${PORT:-3000}:3000
+  volumes:
+    bulwark-config:
+    bulwark-state:

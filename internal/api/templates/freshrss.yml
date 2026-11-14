@@ -1,0 +1,35 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: FreshRSS
+category: News & RSS
+description: A free, self-hostable feed aggregator.
+website: https://freshrss.org/index.html
+tags:
+  - rss
+  - feed
+logo: templates/freshrss.webp
+featured: true
+env: |-
+  PORT=8080
+
+  # Optional settings
+  CRON_MIN=1,31
+compose: |
+  services:
+    freshrss:
+      image: freshrss/freshrss:latest
+      restart: unless-stopped
+      environment:
+        - CRON_MIN=${CRON_MIN:-1,31}
+      volumes:
+        - freshrss-data:/var/www/FreshRSS/data
+        - freshrss-extensions:/var/www/FreshRSS/extensions
+      healthcheck:
+        test: [CMD-SHELL, "bash -c ':> /dev/tcp/127.0.0.1/80' || exit 1"]
+        interval: 5s
+        timeout: 20s
+        retries: 3
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    freshrss-data:
+    freshrss-extensions:

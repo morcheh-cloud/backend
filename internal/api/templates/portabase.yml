@@ -1,0 +1,92 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Portabase
+category: Tools
+description: Self-hosted database backup & monitoring platform
+website: https://portabase.io/docs
+tags:
+  - backup
+  - database
+  - monitoring
+  - open-source
+env: |-
+  PORT=8080
+  PORTABASE_URL=http://{{host}}:${PORT}
+  PORTABASE_PASSWORD={{secret:64}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_DB=portabase
+  PROJECT_NAME=Portabase
+  TZ=Europe/Paris
+  LOG_LEVEL=info
+  RETENTION_CRON="0 7 * * *"
+  STALE_BACKUP_THRESHOLD_HOURS=6
+  BACKUP_FOLDER_NAME=backups
+  TELEMETRY=true
+  SKIP_ONBOARDING=false
+  API_ENABLED=false
+  OPENAPI_ENABLED=false
+  MCP_ENABLED=false
+  SMTP_HOST=
+  SMTP_PORT=
+  SMTP_USER=
+  SMTP_PASSWORD=
+  SMTP_FROM=
+  SMTP_SECURE=false
+compose: |
+  services:
+    portabase:
+      image: portabase/portabase:1.28.1
+      restart: always
+      environment:
+        - PROJECT_URL=$PORTABASE_URL
+        - PROJECT_SECRET=$PORTABASE_PASSWORD
+        - DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/${POSTGRES_DB:-portabase}?schema=public
+        - PROJECT_NAME=${PROJECT_NAME:-Portabase}
+        - TZ=${TZ:-Europe/Paris}
+        - LOG_LEVEL=${LOG_LEVEL:-info}
+        - RETENTION_CRON=${RETENTION_CRON:-0 7 * * *}
+        - STALE_BACKUP_THRESHOLD_HOURS=${STALE_BACKUP_THRESHOLD_HOURS:-6}
+        - BACKUP_FOLDER_NAME=${BACKUP_FOLDER_NAME:-backups}
+        - TELEMETRY=${TELEMETRY:-true}
+        - SKIP_ONBOARDING=${SKIP_ONBOARDING:-false}
+        - API_ENABLED=${API_ENABLED:-false}
+        - OPENAPI_ENABLED=${OPENAPI_ENABLED:-false}
+        - MCP_ENABLED=${MCP_ENABLED:-false}
+        - SMTP_HOST=${SMTP_HOST}
+        - SMTP_PORT=${SMTP_PORT}
+        - SMTP_USER=${SMTP_USER}
+        - SMTP_PASSWORD=${SMTP_PASSWORD}
+        - SMTP_FROM=${SMTP_FROM}
+        - SMTP_SECURE=${SMTP_SECURE:-false}
+      volumes:
+        - portabase-data:/data
+      depends_on:
+        postgres:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD-SHELL, curl -f http://localhost/api/health]
+        interval: 30s
+        timeout: 5s
+        retries: 3
+        start_period: 60s
+      ports:
+        - ${PORT:-8080}:80
+    postgres:
+      image: postgres:18-alpine
+      restart: unless-stopped
+      volumes:
+        - postgres-data:/var/lib/postgresql
+      environment:
+        - POSTGRES_DB=${POSTGRES_DB:-portabase}
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $POSTGRES_USER -d ${POSTGRES_DB}"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+  volumes:
+    portabase-data:
+    postgres-data:

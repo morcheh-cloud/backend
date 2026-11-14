@@ -1,0 +1,33 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Actual Budget
+category: Finance
+description: A local-first personal finance app.
+website: https://actualbudget.org/docs/install/docker
+tags:
+  - budgeting
+  - actual
+  - finance
+  - budget
+  - money
+  - expenses
+  - income
+logo: templates/actualbudget.webp
+env: PORT=5006
+compose: |
+  services:
+    actual_server:
+      image: actualbudget/actual-server:latest
+      restart: unless-stopped
+      environment:
+        - ACTUAL_LOGIN_METHOD=password
+      volumes:
+        - actual_data:/data
+      healthcheck:
+        test: [CMD-SHELL, "bash -c ':> /dev/tcp/127.0.0.1/5006' || exit 1"]
+        interval: 5s
+        timeout: 20s
+        retries: 3
+      ports:
+        - ${PORT:-5006}:5006
+  volumes:
+    actual_data:

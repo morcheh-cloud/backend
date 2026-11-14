@@ -1,0 +1,16 @@
+name: Nginx
+category: Websites
+description: A web server serving the html folder next to the compose file.
+logo: nginx
+featured: true
+env: |
+  PORT=8080
+compose: |
+  services:
+    web:
+      image: nginx:stable-alpine
+      restart: unless-stopped
+      ports:
+        - "${PORT:-8080}:80"
+      volumes:
+        - ./html:/usr/share/nginx/html:ro

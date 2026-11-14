@@ -1,0 +1,132 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Grist
+category: Productivity
+description: Grist is a modern relational spreadsheet. It combines the flexibility of a spreadsheet with the robustness of a database.
+website: https://support.getgrist.com/
+tags:
+  - lowcode
+  - nocode
+  - spreadsheet
+  - database
+  - relational
+logo: templates/grist.svg
+env: |-
+  PORT=8484
+  GRIST_URL=http://{{host}}:${PORT}
+  GRIST_HOST={{host}}:${PORT}
+  APP_KEY={{base64:128}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Fill these in before starting
+  OIDC_IDP_ISSUER=
+  OIDC_IDP_CLIENT_ID=
+  OIDC_IDP_CLIENT_SECRET=
+
+  # Optional settings
+  TZ=UTC
+  SUPPORT_ANON=false
+  FORCE_LOGIN=true
+  COOKIE_MAX_AGE=86400000
+  PAGE_TITLE_SUFFIX=" - Suffix"
+  HIDE_UI_ELEMENTS=billing,sendToDrive,supportGrist,multiAccounts,tutorials
+  UI_FEATURES=helpCenter,billing,templates,createSite,multiSite,sendToDrive,tutorials,supportGrist
+  DEFAULT_EMAIL="?"
+  ORG_IN_PATH=true
+  OIDC_IDP_SCOPES="openid profile email"
+  OIDC_IDP_SKIP_END_SESSION_ENDPOINT=false
+  HOME_INCLUDE_STATIC=true
+  SANDBOX_FLAVOR=gvisor
+  ALLOWED_WEBHOOK_DOMAINS=
+  COMMENTS=true
+  TYPEORM_TYPE=postgres
+  POSTGRES_DATABASE=grist-db
+  TYPEORM_HOST=postgres
+  TYPEORM_PORT=5432
+  TYPEORM_LOGGING=false
+  REDIS_URL=redis://redis:6379
+  FREE_COACHING_CALL_URL=
+  CONTACT_SUPPORT_URL=
+compose: |
+  services:
+    grist:
+      image: gristlabs/grist:latest
+      restart: unless-stopped
+      environment:
+        - APP_HOME_URL=${GRIST_URL}
+        - APP_DOC_URL=${GRIST_URL}
+        - GRIST_DOMAIN=${GRIST_HOST}
+        - TZ=${TZ:-UTC}
+        - GRIST_SUPPORT_ANON=${SUPPORT_ANON:-false}
+        - GRIST_FORCE_LOGIN=${FORCE_LOGIN:-true}
+        - COOKIE_MAX_AGE=${COOKIE_MAX_AGE:-86400000}
+        - GRIST_PAGE_TITLE_SUFFIX=${PAGE_TITLE_SUFFIX:- - Suffix}
+        - GRIST_HIDE_UI_ELEMENTS=${HIDE_UI_ELEMENTS:-billing,sendToDrive,supportGrist,multiAccounts,tutorials}
+        - GRIST_UI_FEATURES=${UI_FEATURES:-helpCenter,billing,templates,createSite,multiSite,sendToDrive,tutorials,supportGrist}
+        - GRIST_DEFAULT_EMAIL=${DEFAULT_EMAIL:-?}
+        - GRIST_ORG_IN_PATH=${ORG_IN_PATH:-true}
+        - GRIST_OIDC_SP_HOST=${GRIST_URL}
+        - GRIST_OIDC_IDP_SCOPES=${OIDC_IDP_SCOPES:-openid profile email}
+        - GRIST_OIDC_IDP_SKIP_END_SESSION_ENDPOINT=${OIDC_IDP_SKIP_END_SESSION_ENDPOINT:-false}
+        - GRIST_OIDC_IDP_ISSUER=${OIDC_IDP_ISSUER:?}
+        - GRIST_OIDC_IDP_CLIENT_ID=${OIDC_IDP_CLIENT_ID:?}
+        - GRIST_OIDC_IDP_CLIENT_SECRET=${OIDC_IDP_CLIENT_SECRET:?}
+        - GRIST_SESSION_SECRET=${APP_KEY}
+        - GRIST_HOME_INCLUDE_STATIC=${HOME_INCLUDE_STATIC:-true}
+        - GRIST_SANDBOX_FLAVOR=${SANDBOX_FLAVOR:-gvisor}
+        - ALLOWED_WEBHOOK_DOMAINS=${ALLOWED_WEBHOOK_DOMAINS}
+        - COMMENTS=${COMMENTS:-true}
+        - TYPEORM_TYPE=${TYPEORM_TYPE:-postgres}
+        - TYPEORM_DATABASE=${POSTGRES_DATABASE:-grist-db}
+        - TYPEORM_USERNAME=${POSTGRES_USER}
+        - TYPEORM_PASSWORD=${POSTGRES_PASSWORD}
+        - TYPEORM_HOST=${TYPEORM_HOST:-postgres}
+        - TYPEORM_PORT=${TYPEORM_PORT:-5432}
+        - TYPEORM_LOGGING=${TYPEORM_LOGGING:-false}
+        - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+        - GRIST_HELP_CENTER=${GRIST_URL}/help
+        - GRIST_TERMS_OF_SERVICE_URL=${GRIST_URL}/terms
+        - FREE_COACHING_CALL_URL=${FREE_COACHING_CALL_URL}
+        - GRIST_CONTACT_SUPPORT_URL=${CONTACT_SUPPORT_URL}
+      volumes:
+        - grist-data:/persist
+      depends_on:
+        postgres:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, node, -e, "require('http').get('http://localhost:8484/status', res => process.exit(res.statusCode === 200 ? 0 : 1))", "> /dev/null 2>&1"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8484}:8484
+    postgres:
+      image: postgres:16
+      restart: unless-stopped
+      environment:
+        - POSTGRES_DB=${POSTGRES_DATABASE:-grist-db}
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      volumes:
+        - grist_postgres_data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 10s
+        retries: 20
+    redis:
+      image: redis:7
+      restart: unless-stopped
+      volumes:
+        - grist_redis_data:/data
+      healthcheck:
+        test: [CMD, redis-cli, PING]
+        interval: 5s
+        timeout: 10s
+        retries: 20
+  volumes:
+    grist-data:
+    grist_postgres_data:
+    grist_redis_data:

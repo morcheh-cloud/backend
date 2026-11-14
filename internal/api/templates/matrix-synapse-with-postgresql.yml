@@ -1,0 +1,214 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Matrix Synapse with PostgreSQL
+category: Communication
+description: Chat securely with your family, friends, community, or build great apps with Matrix!
+website: https://element-hq.github.io/synapse/latest/welcome_and_overview.html
+tags:
+  - chat
+  - slack
+  - discord
+  - voip
+  - video
+  - call
+  - matrix
+  - synapse
+  - postgresql
+logo: templates/matrix.svg
+env: |-
+  PORT=8008
+  ADMIN_USER={{user}}
+  ADMIN_PASSWORD={{secret}}
+  POSTGRESQL_USER={{user}}
+  POSTGRESQL_PASSWORD={{secret}}
+  SYNAPSE_URL=http://{{host}}:${PORT}
+
+  # Fill these in before starting
+  SYNAPSE_SERVER_NAME=
+
+  # Optional settings
+  SYNAPSE_REPORT_STATS=no
+  ENABLE_REGISTRATION=false
+  POSTGRES_DB=synapse-db
+compose: |
+  services:
+    synapse:
+      image: matrixdotorg/synapse:latest
+      restart: unless-stopped
+      environment:
+        - SYNAPSE_SERVER_NAME=${SYNAPSE_SERVER_NAME:?}
+        - SYNAPSE_REPORT_STATS=${SYNAPSE_REPORT_STATS:-no}
+        - ENABLE_REGISTRATION=${ENABLE_REGISTRATION:-false}
+        - SERVICE_USER_ADMIN=${ADMIN_USER}
+        - SERVICE_PASSWORD_ADMIN=${ADMIN_PASSWORD}
+        - SERVICE_USER_POSTGRESQL=${POSTGRESQL_USER}
+        - SERVICE_PASSWORD_POSTGRESQL=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-synapse-db}
+      volumes:
+        - synapse-data:/data
+      entrypoint:
+        [
+          /bin/bash,
+          -c,
+          "! test -f /data/homeserver.yaml && /start.py generate
+
+
+            # Extract secrets from generated config
+
+            grep \"registration_shared_secret\" /data/homeserver.yaml \\
+
+            | awk '{print $2}' > ./registration_shared_secret
+
+
+            grep \"macaroon_secret_key\" /data/homeserver.yaml \\
+
+            | awk '{print $2}' > ./macaroon_secret_key
+
+
+            grep \"form_secret\" /data/homeserver.yaml \\
+
+            | awk '{print $2}' > ./form_secret
+
+
+            # Create homeserver.yaml with PostgreSQL
+
+            cat <<EOF > /data/homeserver.yaml
+
+            server_name: \"${SYNAPSE_SERVER_NAME}\"
+
+            pid_file: /data/homeserver.pid
+
+            public_baseurl: \"${SYNAPSE_URL}/\"
+
+
+            listeners:
+
+            \  - port: 8008
+
+            \    tls: false
+
+            \    type: http
+
+            \    x_forwarded: true
+
+            \    bind_addresses: ['0.0.0.0']
+
+            \    resources:
+
+            \      - names: [client, federation]
+
+            \        compress: false
+
+
+            database:
+
+            \  name: psycopg2
+
+            \  args:
+
+            \    user: ${POSTGRESQL_USER}
+
+            \    password: ${POSTGRESQL_PASSWORD}
+
+            \    database: ${POSTGRES_DB:-synapse-db}
+
+            \    host: postgres
+
+            \    port: 5432
+
+            \    cp_min: 5
+
+            \    cp_max: 10
+
+
+            log_config: \"/data/${SYNAPSE_SERVER_NAME}.log.config\"
+
+            media_store_path: /data/media_store
+
+            report_stats: ${SYNAPSE_REPORT_STATS}
+
+
+            registration_shared_secret: $(<./registration_shared_secret)
+
+            macaroon_secret_key: $(<./macaroon_secret_key)
+
+            form_secret: $(<./form_secret)
+
+            signing_key_path: \"/data/${SYNAPSE_SERVER_NAME}.signing.key\"
+
+
+            trusted_key_servers:
+
+            \  - server_name: \"matrix.org\"
+
+            EOF
+
+
+            [ \"${ENABLE_REGISTRATION}\" = \"true\" ] && ! grep \"#registration\" /data/homeserver.yaml &>/dev/null \\
+
+            && echo >> /data/homeserver.yaml \\
+
+            && cat <<EOF >> /data/homeserver.yaml
+
+            enable_registration: true
+
+            EOF
+
+
+            # Register admin user if provided
+
+            register_admin(){
+
+            \  while ! curl -sf http://localhost:8008/health > /dev/null; do
+
+            \    sleep 2
+
+            \  done
+
+            \  register_new_matrix_user \\
+
+            \    -a \\
+
+            \    -u ${ADMIN_USER} \\
+
+            \    -p ${ADMIN_PASSWORD} \\
+
+            \    -c /data/homeserver.yaml \\
+
+            \    http://localhost:8008 &>/dev/null
+
+            }
+
+            [ -n \"${ADMIN_USER}\" ] && register_admin &
+
+
+            /start.py\n"
+        ]
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:8008/health]
+        interval: 10s
+        timeout: 5s
+        retries: 10
+        start_period: 10s
+      depends_on:
+        postgres:
+          condition: service_healthy
+      ports:
+        - ${PORT:-8008}:8008
+    postgres:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRESQL_USER}
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-synapse-db}
+        - POSTGRES_INITDB_ARGS=--encoding=UTF8 --lc-collate=C --lc-ctype=C
+      volumes:
+        - postgres-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB:-synapse-db}"]
+        interval: 5s
+        timeout: 5s
+        retries: 10
+  volumes:
+    synapse-data:
+    postgres-data:

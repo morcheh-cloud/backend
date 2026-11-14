@@ -51,8 +51,6 @@ func softwareActionVerb(action string) string {
 		return "Install"
 	case "uninstall":
 		return "Remove"
-	case "rollback":
-		return "Roll back"
 	case "upgrade-system":
 		return "Upgrade the system packages"
 	}
@@ -107,16 +105,9 @@ func (h *softwareHandler) plan(ctx context.Context, b startSoftwareRunBody, ws u
 		}
 		return st.installs[i], true
 	}
-	// recipeFor is the recipe of an install record; a Docker app found on
-	// the server without a recipe still gets one, to update it.
+	// recipeFor is the recipe of an install record.
 	recipeFor := func(row sqlc.ListServerSoftwareInstallsRow) (software.Recipe, bool) {
-		if r, ok := software.Find(list, row.RecipeID); ok {
-			return r, true
-		}
-		if row.Kind == software.KindDocker {
-			return software.Recipe{ID: row.RecipeID, Name: row.Name, Kind: software.KindDocker}, true
-		}
-		return software.Recipe{}, false
+		return software.Find(list, row.RecipeID)
 	}
 	add := func(s sqlc.Server, r software.Recipe, before string, values map[string]string) {
 		p.steps = append(p.steps, softwareStep{server: s, recipe: r, before: before, values: values})
@@ -154,15 +145,9 @@ func (h *softwareHandler) plan(ctx context.Context, b startSoftwareRunBody, ws u
 			}
 			for _, needID := range r.Requires {
 				missing := false
-				if needID == "docker" {
-					// Docker apps need the engine and its compose plugin; the
-					// docker recipe adds only the plugin when the engine is there.
-					if st.host != nil {
-						missing = st.host.Docker == "" || st.host.Compose == ""
-					} else {
-						row, ok := rowOf(st, "docker")
-						missing = !ok || row.Status != "installed"
-					}
+				if needID == "docker" && st.host != nil {
+					// The engine counts however it was installed.
+					missing = st.host.Docker == ""
 				} else if row, ok := rowOf(st, needID); !ok || row.Status != "installed" {
 					missing = true
 				}
@@ -197,7 +182,7 @@ func (h *softwareHandler) plan(ctx context.Context, b startSoftwareRunBody, ws u
 			add(s, systemRecipe, "", nil)
 		}
 
-	case "update", "uninstall", "rollback":
+	case "update", "uninstall":
 		if b.Action != "update" && len(recipes) == 0 {
 			return p, fieldError("body.recipes", "Choose the applications.", nil)
 		}
@@ -235,23 +220,6 @@ func (h *softwareHandler) plan(ctx context.Context, b startSoftwareRunBody, ws u
 					skipped = append(skipped, row.Name)
 					continue
 				}
-				docker, found := row.Kind == software.KindDocker, row.Origin == "found"
-				switch b.Action {
-				case "update":
-					if docker && found && (row.Dir == "" || row.Project == "") {
-						skipped = append(skipped, row.Name+" on "+s.Name)
-						continue
-					}
-				case "uninstall":
-					if docker && found {
-						return p, fieldError("body.recipes", fmt.Sprintf("Morche didn't install %s on %s, so it doesn't remove it. Stop or remove it on the server.", row.Name, s.Name), id)
-					}
-				case "rollback":
-					if !docker || found || !row.CanRollback {
-						skipped = append(skipped, row.Name+" on "+s.Name)
-						continue
-					}
-				}
 				add(s, r, row.Version, nil)
 			}
 		}
@@ -259,12 +227,10 @@ func (h *softwareHandler) plan(ctx context.Context, b startSoftwareRunBody, ws u
 		case "update":
 			p.nothing = "Nothing to update: the chosen applications are up to date or not on these servers."
 			if len(skipped) > 0 {
-				p.nothing = "Nothing Morche can update: " + strings.Join(skipped, ", ") + " (Morche doesn't know their compose folder or recipe)."
+				p.nothing = "Nothing Morche can update: " + strings.Join(skipped, ", ") + " (they are no longer in the catalog)."
 			}
 		case "uninstall":
 			p.nothing = "None of the chosen applications is on these servers."
-		case "rollback":
-			p.nothing = "Nothing to roll back: only Docker apps installed from Morche go back, after an update."
 		}
 		if len(p.steps) > 0 {
 			main = p.steps[0].recipe
@@ -363,13 +329,9 @@ func (h *softwareHandler) create(ctx context.Context, plan softwarePlan) (sqlc.S
 		}
 		plain, secret := splitSecret(st.recipe, st.values)
 		raw, _ := json.Marshal(plain)
-		dir, project := "", ""
-		if st.recipe.Kind == software.KindDocker {
-			dir, project = software.Dir(st.recipe.ID), software.Project(st.recipe.ID)
-		}
 		if _, err := h.q.BeginSoftwareInstall(ctx, sqlc.BeginSoftwareInstallParams{
 			WorkspaceID: plan.ws, ServerID: id, RecipeID: st.recipe.ID, Name: st.recipe.Name, Kind: st.recipe.Kind,
-			Params: raw, Secrets: h.sealSecrets(secret), Dir: dir, Project: project,
+			Params: raw, Secrets: h.sealSecrets(secret),
 		}); err != nil {
 			return fail(err)
 		}
@@ -438,8 +400,6 @@ func softwareTimeout(action string) time.Duration {
 		return time.Hour
 	case "uninstall":
 		return 15 * time.Minute
-	case "rollback":
-		return 10 * time.Minute
 	}
 	return 30 * time.Minute
 }
@@ -675,10 +635,7 @@ func (h *softwareHandler) runStep(ctx context.Context, t *jobs.Task, run sqlc.So
 		}
 		var ok bool
 		if r, ok = software.Find(list, tg.RecipeID); !ok {
-			if row.Kind != software.KindDocker || run.Action != "update" {
-				return finish(sqlc.FinishSoftwareTargetParams{State: jobs.Failed, Error: "Its recipe was removed from the catalog."})
-			}
-			r = software.Recipe{ID: row.RecipeID, Name: row.Name, Kind: software.KindDocker}
+			return finish(sqlc.FinishSoftwareTargetParams{State: jobs.Failed, Error: "Its recipe was removed from the catalog."})
 		}
 	}
 	values := map[string]string{}
@@ -686,33 +643,23 @@ func (h *softwareHandler) runStep(ctx context.Context, t *jobs.Task, run sqlc.So
 	for k, v := range h.openSecrets(row.Secrets) {
 		values[k] = v
 	}
-	docker := r.Kind == software.KindDocker
 
 	var script string
 	switch run.Action {
 	case "install":
-		script = software.InstallScript(r, values, software.InstallOptions{Fresh: opts.Fresh})
+		script = software.InstallScript(r)
 	case "update":
-		switch {
-		case r.ID == software.System:
+		if r.ID == software.System {
 			script = software.SystemUpgradeScript(software.SystemOptions{SecurityOnly: opts.SecurityOnly, Full: opts.Full})
-		case docker && row.Origin == "found":
-			script = software.UpdateFoundScript(row.Dir, row.Project)
-		default:
+		} else {
 			script = software.UpdateScript(r)
 		}
 	case "upgrade-system":
 		script = software.SystemUpgradeScript(software.SystemOptions{SecurityOnly: opts.SecurityOnly, Full: opts.Full})
-	case "rollback":
-		script = software.RollbackScript(r)
 	case "uninstall":
-		script = software.UninstallScript(r, software.UninstallOptions{RemoveData: opts.RemoveData})
+		script = software.UninstallScript(r)
 	}
-	env := values
-	if docker {
-		env = nil
-	}
-	wrapped, err := wrapScript("sh", script, env)
+	wrapped, err := wrapScript("sh", script, values)
 	if err != nil {
 		return finish(sqlc.FinishSoftwareTargetParams{State: jobs.Failed, Error: err.Error()})
 	}
@@ -726,7 +673,7 @@ func (h *softwareHandler) runStep(ctx context.Context, t *jobs.Task, run sqlc.So
 		}
 	}
 	switch run.Action {
-	case "update", "rollback":
+	case "update":
 		setStatus("updating", "")
 	case "uninstall":
 		setStatus("removing", "")
@@ -791,7 +738,7 @@ func (h *softwareHandler) runStep(ctx context.Context, t *jobs.Task, run sqlc.So
 		switch run.Action {
 		case "install":
 			setStatus("failed", why)
-		case "update", "rollback":
+		case "update":
 			setStatus("installed", "The last update failed: "+why)
 		case "uninstall":
 			setStatus("installed", "Removing it failed: "+why)
@@ -810,9 +757,6 @@ func (h *softwareHandler) runStep(ctx context.Context, t *jobs.Task, run sqlc.So
 		return finish(p)
 	}
 	opt := software.ScanOptions{Full: r.ID == software.System || r.ID == "docker"}
-	if docker {
-		opt.Apps = []string{r.ID}
-	}
 	scan, err := h.scanServer(bg, sid, opt)
 	if err != nil {
 		t.Logf("%s on %s: the look afterwards failed: %s", r.Name, tg.ServerName, problemText(err))
@@ -822,21 +766,15 @@ func (h *softwareHandler) runStep(ctx context.Context, t *jobs.Task, run sqlc.So
 	}
 	if f, ok := foundOf(scan, r.ID); ok {
 		p.VersionAfter = f.Version
-		imgs, _ := json.Marshal(f.Images)
 		if err := h.q.FinishSoftwareInstall(bg, sqlc.FinishSoftwareInstallParams{
 			ID: row.ID, Status: "installed", Version: f.Version, Latest: f.Latest, UpdateAvailable: f.UpdateAvailable,
-			State: f.State, Images: imgs, CanRollback: f.CanRollback, Pinned: f.Pinned, Installed: run.Action == "install",
+			Installed: run.Action == "install",
 		}); err != nil {
 			slog.Warn("finish an application's record", "id", row.ID, "error", err)
 		}
 	} else {
-		imgs := row.Images
-		if len(imgs) == 0 {
-			imgs = []byte("[]")
-		}
 		_ = h.q.FinishSoftwareInstall(bg, sqlc.FinishSoftwareInstallParams{
-			ID: row.ID, Status: "installed", Version: row.Version, Latest: row.Latest, State: row.State, Images: imgs,
-			CanRollback: row.CanRollback, Pinned: row.Pinned, Installed: run.Action == "install",
+			ID: row.ID, Status: "installed", Version: row.Version, Latest: row.Latest, Installed: run.Action == "install",
 		})
 	}
 	return finish(p)
@@ -871,7 +809,7 @@ func (h *softwareHandler) scanServer(ctx context.Context, id uuid.UUID, opt soft
 	// it was installed before, so it isn't newly "found" anywhere else.
 	if before, err := h.q.ListServerSoftwareInstalls(ctx, id); err == nil {
 		list = slices.DeleteFunc(list, func(r software.Recipe) bool {
-			return r.Retired && r.Kind != software.KindDocker &&
+			return r.Retired &&
 				!slices.ContainsFunc(before, func(row sqlc.ListServerSoftwareInstallsRow) bool { return row.RecipeID == r.ID })
 		})
 	}
@@ -890,14 +828,7 @@ func (h *softwareHandler) scanServer(ctx context.Context, id uuid.UUID, opt soft
 		}
 		return scan, err
 	}
-	scan = software.ParseScan(text, list, opt)
-
-	for i := range scan.Software {
-		f := &scan.Software[i]
-		if f.Kind == software.KindDocker && len(f.Images) > 0 && h.registry.CheckImages(ctx, f.Images) {
-			f.UpdateAvailable = true
-		}
-	}
+	scan = software.ParseScan(text, list)
 	if opt.Full {
 		hs := scan.Host
 		if err := h.q.SaveSoftwareHost(ctx, sqlc.SaveSoftwareHostParams{
@@ -912,9 +843,7 @@ func (h *softwareHandler) scanServer(ctx context.Context, id uuid.UUID, opt soft
 		present = append(present, f.RecipeID)
 		if err := h.q.SaveScannedSoftware(ctx, sqlc.SaveScannedSoftwareParams{
 			WorkspaceID: s.WorkspaceID, ServerID: id, RecipeID: f.RecipeID, Name: f.Name, Kind: f.Kind,
-			Origin: f.Origin, Version: f.Version, Latest: f.Latest, UpdateAvailable: f.UpdateAvailable, State: f.State,
-			Images: software.MarshalImages(f.Images), Dir: f.Dir, Project: f.Project, CanRollback: f.CanRollback,
-			Pinned: f.Pinned,
+			Origin: f.Origin, Version: f.Version, Latest: f.Latest, UpdateAvailable: f.UpdateAvailable,
 		}); err != nil {
 			slog.Warn("save a found application", "server", id, "recipe", f.RecipeID, "error", err)
 		}
@@ -931,13 +860,6 @@ func (h *softwareHandler) scanServer(ctx context.Context, id uuid.UUID, opt soft
 		_ = h.q.MarkMissingSoftware(ctx, sqlc.MarkMissingSoftwareParams{ServerID: id, Present: present})
 	}
 	return scan, nil
-}
-
-// scanApp refreshes one app's record after a change made from the panel.
-func (h *softwareHandler) scanApp(ctx context.Context, server, _ uuid.UUID, recipeID, _ string) {
-	if _, err := h.scanServer(context.WithoutCancel(ctx), server, software.ScanOptions{Apps: []string{recipeID}}); err != nil {
-		slog.Warn("look at an application again", "server", server, "recipe", recipeID, "error", err)
-	}
 }
 
 type softwareScanParams struct {

@@ -1,0 +1,76 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Linkwarden
+category: Productivity
+description: A self-hostable collaborative bookmark manager to collect, organize, and preserve web pages.
+website: https://docs.linkwarden.app/self-hosting/setup
+tags:
+  - bookmarks
+  - collaboration
+  - archive
+  - links
+  - self-hosted
+logo: templates/linkwarden.svg
+env: |-
+  PORT=3000
+  LINKWARDEN_URL=http://{{host}}:${PORT}
+  LINKWARDENNEXTAUTH_PASSWORD={{secret}}
+  MEILI_PASSWORD={{secret}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_DB=linkwarden
+compose: |
+  services:
+    linkwarden:
+      image: ghcr.io/linkwarden/linkwarden:v2.16.1
+      restart: unless-stopped
+      environment:
+        - NEXTAUTH_URL=${LINKWARDEN_URL}/api/v1/auth
+        - NEXTAUTH_SECRET=${LINKWARDENNEXTAUTH_PASSWORD}
+        - MEILI_MASTER_KEY=${MEILI_PASSWORD}
+        - DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@postgresql:5432/${POSTGRES_DB:-linkwarden}
+      volumes:
+        - linkwarden-data:/data/data
+      depends_on:
+        postgresql:
+          condition: service_healthy
+        meilisearch:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000]
+        interval: 10s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-3000}:3000
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=${POSTGRES_DB:-linkwarden}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    meilisearch:
+      image: getmeili/meilisearch:v1.12.8
+      restart: unless-stopped
+      environment:
+        - MEILI_MASTER_KEY=${MEILI_PASSWORD}
+      volumes:
+        - meilisearch-data:/meili_data
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:7700/health]
+        interval: 5s
+        timeout: 10s
+        retries: 10
+  volumes:
+    linkwarden-data:
+    postgresql-data:
+    meilisearch-data:

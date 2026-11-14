@@ -1,0 +1,41 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Jellyfin
+category: Media
+description: Jellyfin is a media server for hosting and streaming your media collection.
+website: https://jellyfin.org
+tags:
+  - media
+  - server
+  - movies
+  - tv
+  - music
+logo: templates/jellyfin.svg
+featured: true
+env: |-
+  PORT=8096
+  JELLYFIN_URL=http://{{host}}:${PORT}
+compose: |
+  services:
+    jellyfin:
+      image: lscr.io/linuxserver/jellyfin:10.11.8
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=Europe/Madrid
+        - JELLYFIN_PublishedServerUrl=$JELLYFIN_URL
+      volumes:
+        - jellyfin-config:/config
+        - jellyfin-tvshows:/data/tvshows
+        - jellyfin-movies:/data/movies
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8096]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8096}:8096
+  volumes:
+    jellyfin-config:
+    jellyfin-tvshows:
+    jellyfin-movies:

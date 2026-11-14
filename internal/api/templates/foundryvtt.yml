@@ -1,0 +1,71 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Foundry VTT
+category: Games
+description: Foundry Virtual Tabletop is a self-hosted & modern roleplaying platform
+website: https://foundryvtt.com/kb/
+tags:
+  - foundryvtt
+  - foundry
+  - vtt
+  - ttrpg
+  - roleplaying
+logo: templates/foundryvtt.webp
+env: |-
+  PORT=30000
+
+  # Optional settings
+  FOUNDRY_USERNAME=
+  FOUNDRY_PASSWORD=
+  FOUNDRY_RELEASE_URL=
+  FOUNDRY_LICENSE_KEY=
+  FOUNDRY_ADMIN=atropos
+  FOUNDRY_HOSTNAME=
+  FOUNDRY_ROUTE_PREFIX=
+  FOUNDRY_PROXY_PORT=80
+  FOUNDRY_PROXY_SSL=true
+  FOUNDRY_AWS_CONFIG=
+  FOUNDRY_LANGUAGE=en.core
+  FOUNDRY_CSS_THEME=foundry
+  FOUNDRY_MINIFY_STATIC_FILES=true
+  FOUNDRY_WORLD=
+  FOUNDRY_TELEMETRY=false
+  TIMEZONE=UTC
+  FOUNDRY_DATA=/data/foundryvtt
+compose: |
+  services:
+    foundryvtt:
+      image: felddy/foundryvtt:release
+      restart: unless-stopped
+      expose:
+        - 30000
+      environment:
+        - FOUNDRY_USERNAME=${FOUNDRY_USERNAME}
+        - FOUNDRY_PASSWORD=${FOUNDRY_PASSWORD}
+        - FOUNDRY_RELEASE_URL=${FOUNDRY_RELEASE_URL}
+        - FOUNDRY_LICENSE_KEY=${FOUNDRY_LICENSE_KEY}
+        - FOUNDRY_ADMIN_KEY=${FOUNDRY_ADMIN:-atropos}
+        - FOUNDRY_HOSTNAME=${FOUNDRY_HOSTNAME}
+        - FOUNDRY_ROUTE_PREFIX=${FOUNDRY_ROUTE_PREFIX}
+        - FOUNDRY_PROXY_PORT=${FOUNDRY_PROXY_PORT:-80}
+        - FOUNDRY_PROXY_SSL=${FOUNDRY_PROXY_SSL:-true}
+        - FOUNDRY_AWS_CONFIG=${FOUNDRY_AWS_CONFIG}
+        - FOUNDRY_LANGUAGE=${FOUNDRY_LANGUAGE:-en.core}
+        - FOUNDRY_CSS_THEME=${FOUNDRY_CSS_THEME:-foundry}
+        - FOUNDRY_MINIFY_STATIC_FILES=${FOUNDRY_MINIFY_STATIC_FILES:-true}
+        - FOUNDRY_WORLD=${FOUNDRY_WORLD}
+        - FOUNDRY_TELEMETRY=${FOUNDRY_TELEMETRY:-false}
+        - TIMEZONE=${TIMEZONE:-UTC}
+        - CONTAINER_CACHE=/data/container_cache
+      volumes:
+        - type: bind
+          source: ${FOUNDRY_DATA:-/data/foundryvtt}
+          target: /data
+          bind:
+            create_host_path: true
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:30000]
+        timeout: 5s
+        interval: 30s
+        retries: 3
+      ports:
+        - ${PORT:-30000}:30000

@@ -1,0 +1,84 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Castopod
+category: Media
+description: Castopod is a free & open-source hosting platform made for podcasters who want engage and interact with their audience.
+website: https://docs.castopod.org/main/en/
+tags:
+  - podcast
+  - media
+  - audio
+  - video
+  - streaming
+  - hosting
+  - platform
+  - castopod
+logo: templates/castopod.svg
+env: |-
+  PORT=8080
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+  CASTOPOD_URL=http://{{host}}:${PORT}
+  SALT_KEY={{base64:64}}
+  REDIS_PASSWORD={{secret}}
+
+  # Optional settings
+  CP_DISABLE_HTTPS=1
+compose: |
+  services:
+    castopod:
+      image: castopod/castopod:1.15.6
+      restart: unless-stopped
+      volumes:
+        - castopod-media:/var/www/castopod/public/media
+      environment:
+        - MYSQL_DATABASE=castopod
+        - MYSQL_USER=$MYSQL_USER
+        - MYSQL_PASSWORD=$MYSQL_PASSWORD
+        - CP_DISABLE_HTTPS=${CP_DISABLE_HTTPS:-1}
+        - CP_BASEURL=$CASTOPOD_URL
+        - CP_ANALYTICS_SALT=$SALT_KEY
+        - CP_CACHE_HANDLER=redis
+        - CP_REDIS_HOST=redis
+        - CP_REDIS_PASSWORD=$REDIS_PASSWORD
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:8080/health]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      depends_on:
+        mariadb:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      ports:
+        - ${PORT:-8080}:8080
+    mariadb:
+      image: mariadb:11.2
+      restart: unless-stopped
+      volumes:
+        - castopod-db:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=$MYSQL_PASSWORD
+        - MYSQL_DATABASE=castopod
+        - MYSQL_USER=$MYSQL_USER
+        - MYSQL_PASSWORD=$MYSQL_PASSWORD
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    redis:
+      image: redis:7.2-alpine
+      restart: unless-stopped
+      command: --requirepass $REDIS_PASSWORD
+      volumes:
+        - castopod-cache:/data
+      healthcheck:
+        test: [CMD-SHELL, "redis-cli -a $REDIS_PASSWORD ping | grep PONG"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    castopod-media:
+    castopod-db:
+    castopod-cache:

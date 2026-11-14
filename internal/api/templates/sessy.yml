@@ -1,0 +1,36 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Sessy
+category: Monitoring
+description: Email observability platform for monitoring and analyzing email systems.
+website: https://github.com/marckohlbrugge/sessy/blob/main/docs/docker-deployment.md
+tags:
+  - email
+  - observability
+  - monitoring
+  - analytics
+logo: templates/sessy.svg
+env: |-
+  PORT=8080
+  SESSYSECRET_HEX={{hex:64}}
+  SESSY_USER={{user}}
+  SESSY_PASSWORD={{secret}}
+compose: |
+  services:
+    sessy:
+      image: ghcr.io/marckohlbrugge/sessy:main
+      restart: unless-stopped
+      environment:
+        - SECRET_KEY_BASE=$SESSYSECRET_HEX
+        - HTTP_AUTH_USERNAME=$SESSY_USER
+        - HTTP_AUTH_PASSWORD=$SESSY_PASSWORD
+      volumes:
+        - sessy-data:/rails/storage
+      healthcheck:
+        test: [CMD-SHELL, "curl -sf http://127.0.0.1:80 || [ $? -eq 22 ]"]
+        interval: 5s
+        timeout: 10s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    sessy-data:

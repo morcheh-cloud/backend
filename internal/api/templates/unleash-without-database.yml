@@ -1,0 +1,42 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Unleash (no database)
+category: Development
+description: Open source feature flag management for enterprises.
+website: https://docs.getunleash.io
+tags:
+  - unleash
+  - feature flags
+  - feature toggles
+  - ab testing
+  - open source
+logo: templates/unleash.svg
+env: |-
+  PORT=4242
+  UNLEASH_URL=http://{{host}}:${PORT}
+  UNLEASH_PASSWORD={{secret}}
+
+  # Optional settings
+  DATABASE_URL=
+  DATABASE_SSL=false
+compose: |
+  services:
+    unleash:
+      image: unleashorg/unleash-server:latest
+      restart: unless-stopped
+      environment:
+        - UNLEASH_URL=${UNLEASH_URL}
+        - UNLEASH_DEFAULT_ADMIN_PASSWORD=${UNLEASH_PASSWORD}
+        - DATABASE_URL=${DATABASE_URL}
+        - DATABASE_SSL=${DATABASE_SSL:-false}
+        - LOG_LEVEL=warn
+        - INIT_FRONTEND_API_TOKENS=default:default:development.unleash-insecure-frontend-api-token
+        - INIT_CLIENT_API_TOKENS=default:development.unleash-insecure-api-token
+      command: [node, index.js]
+      healthcheck:
+        test: wget --no-verbose --tries=1 --spider http://127.0.0.1:4242/health || exit 1
+        interval: 1s
+        timeout: 1m
+        retries: 5
+        start_period: 15s
+      ports:
+        - ${PORT:-4242}:4242

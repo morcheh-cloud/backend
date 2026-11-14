@@ -22,7 +22,7 @@ JOIN servers s ON s.id = p.server_id
 WHERE p.id = $1;
 
 -- name: CreateProxy :one
-INSERT INTO proxies (server_id, kind, runtime, container) VALUES (@server_id, @kind, @runtime, @container) RETURNING *;
+INSERT INTO proxies (server_id, kind, runtime, container, manager) VALUES (@server_id, @kind, @runtime, @container, @manager) RETURNING *;
 
 -- name: DeleteProxy :exec
 DELETE FROM proxies WHERE id = $1;

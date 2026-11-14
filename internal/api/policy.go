@@ -29,6 +29,9 @@ const (
 	// A workspace level, on the workspace of the cron job or run in {id}.
 	kindSchedule
 	kindScheduleRun
+	// A workspace level, on the workspace of the storage sync or run in {id}.
+	kindStorageSync
+	kindStorageSyncRun
 	// A workspace level, on the workspace of the DNS server in {id}.
 	kindDNSServer
 	// A workspace level, on the workspace of the saved script in {id}.
@@ -49,6 +52,8 @@ const (
 	kindAlertRule
 	// A workspace level, on the workspace of the Proxmox cluster in {id}.
 	kindPVECluster
+	// A workspace level, on the workspace of the cloud account in {id}.
+	kindCloudAccount
 )
 
 type policy struct {
@@ -67,10 +72,15 @@ func onPlaybook(l auth.Level) policy    { return policy{kindPlaybook, l} }
 func onAnsibleRun(l auth.Level) policy  { return policy{kindAnsibleRun, l} }
 func onSchedule(l auth.Level) policy    { return policy{kindSchedule, l} }
 func onScheduleRun(l auth.Level) policy { return policy{kindScheduleRun, l} }
-func onDNSServer(l auth.Level) policy   { return policy{kindDNSServer, l} }
-func onPVECluster(l auth.Level) policy  { return policy{kindPVECluster, l} }
-func onScript(l auth.Level) policy      { return policy{kindScript, l} }
-func onProxy(l auth.Level) policy       { return policy{kindProxy, l} }
+func onStorageSync(l auth.Level) policy { return policy{kindStorageSync, l} }
+func onStorageSyncRun(l auth.Level) policy {
+	return policy{kindStorageSyncRun, l}
+}
+func onDNSServer(l auth.Level) policy    { return policy{kindDNSServer, l} }
+func onPVECluster(l auth.Level) policy   { return policy{kindPVECluster, l} }
+func onCloudAccount(l auth.Level) policy { return policy{kindCloudAccount, l} }
+func onScript(l auth.Level) policy       { return policy{kindScript, l} }
+func onProxy(l auth.Level) policy        { return policy{kindProxy, l} }
 func onSoftwareRecipe(l auth.Level) policy {
 	return policy{kindSoftwareRecipe, l}
 }
@@ -288,6 +298,8 @@ var policies = map[string]policy{
 	"add-firewall-forward":     onServer(auth.Engineer),
 	"update-firewall-forward":  onServer(auth.Engineer),
 	"delete-firewall-forwards": onServer(auth.Engineer),
+	"get-container-access":     onServer(auth.Viewer),
+	"set-container-access":     onServer(auth.Engineer),
 	"firewall-history":         onServer(auth.Operator),
 	"firewall-change":          onServer(auth.Operator),
 	"restore-firewall-change":  onServer(auth.Engineer),
@@ -478,10 +490,6 @@ var policies = map[string]policy{
 	"get-software-install":    onSoftwareInstall(auth.Viewer),
 	"reveal-software-secrets": onSoftwareInstall(auth.Owner),
 	"forget-software-install": onSoftwareInstall(auth.Engineer),
-	"software-install-action": onSoftwareInstall(auth.Operator),
-	"software-install-logs":   onSoftwareInstall(auth.Operator),
-	"get-software-compose":    onSoftwareInstall(auth.Engineer),
-	"save-software-compose":   onSoftwareInstall(auth.Engineer),
 	"software-preflight":      active,
 	"start-software-run":      active,
 	"list-software-runs":      onWorkspace(auth.Operator),
@@ -601,6 +609,19 @@ var policies = map[string]policy{
 	"test-pve-connection":            active,
 	"list-pve-guests-everywhere":     active,
 	"list-pve-infrastructure":        active,
+	"list-cloud-accounts":            active,
+	"create-cloud-account":           active,
+	"test-cloud-account":             active,
+	"list-cloud-servers":             active,
+	"get-cloud-account":              onCloudAccount(auth.Viewer),
+	"set-cloud-account-favorite":     onCloudAccount(auth.Viewer),
+	"get-cloud-server":               onCloudAccount(auth.Viewer),
+	"get-cloud-account-resources":    onCloudAccount(auth.Viewer),
+	"check-cloud-account":            onCloudAccount(auth.Operator),
+	"power-cloud-server":             onCloudAccount(auth.Operator),
+	"rename-cloud-server":            onCloudAccount(auth.Engineer),
+	"update-cloud-account":           onCloudAccount(auth.Owner),
+	"delete-cloud-account":           onCloudAccount(auth.Owner),
 	"get-pve-cluster":                onPVECluster(auth.Viewer),
 	"list-pve-guests":                onPVECluster(auth.Viewer),
 	"get-pve-guest":                  onPVECluster(auth.Viewer),
@@ -764,6 +785,22 @@ var policies = map[string]policy{
 	"get-schedule-run":     onScheduleRun(auth.Viewer),
 	"cancel-schedule-run":  onScheduleRun(auth.Operator),
 	"delete-schedule-run":  onScheduleRun(auth.Engineer),
+
+	// Storage migrations and syncs. Saving one also needs Operator on the
+	// source and Engineer on the destination (Owner on both for MinIO
+	// replication), checked in the handler.
+	"list-storage-syncs":              onWorkspace(auth.Viewer),
+	"create-storage-sync":             onWorkspace(auth.Engineer),
+	"get-storage-sync":                onStorageSync(auth.Viewer),
+	"update-storage-sync":             onStorageSync(auth.Engineer),
+	"pause-storage-sync":              onStorageSync(auth.Engineer),
+	"delete-storage-sync":             onStorageSync(auth.Engineer),
+	"run-storage-sync":                onStorageSync(auth.Operator),
+	"list-storage-sync-runs":          onStorageSync(auth.Viewer),
+	"get-storage-sync-replication":    onStorageSync(auth.Viewer),
+	"resync-storage-sync-replication": onStorageSync(auth.Operator),
+	"get-storage-sync-run":            onStorageSyncRun(auth.Viewer),
+	"cancel-storage-sync-run":         onStorageSyncRun(auth.Operator),
 
 	"get-job":     active,
 	"cancel-job":  active,

@@ -1,0 +1,65 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Reactive Resume
+category: Productivity
+description: A one-of-a-kind resume builder that keeps your privacy in mind.
+website: https://docs.rxresu.me/self-hosting/docker
+tags:
+  - reactive-resume
+  - resume-builder
+  - open-source
+  - 2fa
+logo: templates/rxresume.svg
+env: |-
+  PORT=3000
+  REACTIVERESUME_URL=http://{{host}}:${PORT}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  AUTHSECRET_PASSWORD={{secret:64}}
+  ENCRYPTIONSECRET_PASSWORD={{secret:64}}
+
+  # Optional settings
+  POSTGRES_DB=reactive_resume
+  FLAG_DISABLE_SIGNUPS=false
+  FLAG_DISABLE_EMAIL_AUTH=false
+compose: |
+  services:
+    reactive-resume:
+      image: amruthpillai/reactive-resume:v6
+      restart: unless-stopped
+      environment:
+        - APP_URL=${REACTIVERESUME_URL}
+        - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-reactive_resume}
+        - AUTH_SECRET=${AUTHSECRET_PASSWORD}
+        - ENCRYPTION_SECRET=${ENCRYPTIONSECRET_PASSWORD}
+        - FLAG_DISABLE_SIGNUPS=${FLAG_DISABLE_SIGNUPS:-false}
+        - FLAG_DISABLE_EMAIL_AUTH=${FLAG_DISABLE_EMAIL_AUTH:-false}
+      volumes:
+        - reactive-resume-data:/app/data
+      depends_on:
+        postgres:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+        interval: 10s
+        timeout: 5s
+        retries: 10
+        start_period: 30s
+      ports:
+        - ${PORT:-3000}:3000
+    postgres:
+      image: postgres:18-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_DB=${POSTGRES_DB:-reactive_resume}
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      volumes:
+        - postgres-data:/var/lib/postgresql
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    reactive-resume-data:
+    postgres-data:

@@ -1,0 +1,19 @@
+name: Uptime Kuma
+category: Monitoring
+description: A self-hosted status page and uptime monitor.
+logo: uptimekuma
+featured: true
+env: |
+  PORT=3001
+compose: |
+  services:
+    kuma:
+      image: louislam/uptime-kuma:1
+      restart: unless-stopped
+      ports:
+        - "${PORT:-3001}:3001"
+      volumes:
+        - data:/app/data
+
+  volumes:
+    data:

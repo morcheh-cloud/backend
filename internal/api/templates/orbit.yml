@@ -1,0 +1,48 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Orbit
+category: Productivity
+description: Self-hosted workspace for teams with tasks, docs, chat, and an MCP server for AI clients.
+website: https://github.com/coollabsio/orbit/blob/main/docs/operations.md
+tags:
+  - orbit
+  - tasks
+  - docs
+  - wiki
+  - chat
+  - project-management
+  - kanban
+  - mcp
+  - ai
+  - coollabs
+logo: templates/orbit.svg
+env: |-
+  PORT=8080
+  ORBIT_URL=http://{{host}}:${PORT}
+  APPKEY_KEY={{base64:32}}
+
+  # Optional settings
+  ORBIT_TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+compose: |
+  services:
+    orbit:
+      image: ghcr.io/coollabsio/orbit:0.2.0
+      restart: unless-stopped
+      environment:
+        - ORBIT_ENV=production
+        - ORBIT_PUBLIC_ORIGIN=${ORBIT_URL}
+        - ORBIT_TRUSTED_PROXIES=${ORBIT_TRUSTED_PROXIES:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+        - ORBIT_APP_KEY=${APPKEY_KEY}
+      volumes:
+        - orbit-data:/var/lib/orbit
+        - orbit-backups:/var/backups/orbit
+      stop_grace_period: 40s
+      healthcheck:
+        test: [CMD, /orbit, healthcheck]
+        interval: 5s
+        timeout: 3s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    orbit-data:
+    orbit-backups:

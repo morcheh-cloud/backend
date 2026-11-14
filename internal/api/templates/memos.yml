@@ -1,0 +1,21 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Memos
+category: Productivity
+description: An open-source, lightweight note-taking solution. The pain-less way to create your meaningful notes. Your Notes, Your Way.
+website: https://github.com/usememos/memos
+tags:
+  - note-taking
+  - microblog
+  - social-network
+  - markdown
+logo: templates/memos.webp
+env: PORT=5230
+compose: |
+  services:
+    memos:
+      image: neosmemo/memos:stable
+      restart: unless-stopped
+      volumes:
+        - ./memos:/var/opt/memos
+      ports:
+        - ${PORT:-5230}:5230

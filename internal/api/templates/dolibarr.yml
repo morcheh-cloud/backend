@@ -1,0 +1,73 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Dolibarr
+category: Productivity
+description: Dolibarr is a modern software package to manage your organization's activity (contacts, quotes, invoices, orders, stocks, agenda, hr, expense reports, accountancy, ecm, manufacturing, ...).
+website: https://www.dolibarr.org/documentation-home.php
+tags:
+  - crm
+  - erp
+logo: templates/dolibarr.webp
+env: |-
+  PORT=8080
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+  DOLIBARR_URL=http://{{host}}:${PORT}
+  DOLIBARR_USER={{user}}
+  DOLIBARR_PASSWORD={{secret}}
+  ROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  WWW_USER_ID=1000
+  WWW_GROUP_ID=1000
+  MYSQL_DATABASE=dolibarr-db
+  DOLI_CRON=0
+  DOLI_INIT_DEMO=0
+  DOLI_COMPANY_NAME=MyBigCompany
+compose: |
+  services:
+    dolibarr:
+      image: dolibarr/dolibarr:latest
+      restart: unless-stopped
+      environment:
+        - WWW_USER_ID=${WWW_USER_ID:-1000}
+        - WWW_GROUP_ID=${WWW_GROUP_ID:-1000}
+        - DOLI_DB_HOST=mariadb
+        - DOLI_DB_NAME=${MYSQL_DATABASE:-dolibarr-db}
+        - DOLI_DB_USER=${MYSQL_USER}
+        - DOLI_DB_PASSWORD=${MYSQL_PASSWORD}
+        - DOLI_URL_ROOT=${DOLIBARR_URL}
+        - DOLI_ADMIN_LOGIN=${DOLIBARR_USER}
+        - DOLI_ADMIN_PASSWORD=${DOLIBARR_PASSWORD}
+        - DOLI_CRON=${DOLI_CRON:-0}
+        - DOLI_INIT_DEMO=${DOLI_INIT_DEMO:-0}
+        - DOLI_COMPANY_NAME=${DOLI_COMPANY_NAME:-MyBigCompany}
+      volumes:
+        - dolibarr_docs:/var/www/documents
+        - dolibarr_custom:/var/www/html/custom
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80]
+        start_period: 120s
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8080}:80
+    mariadb:
+      image: mariadb:latest
+      restart: unless-stopped
+      environment:
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-dolibarr-db}
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+        - MYSQL_ROOT_PASSWORD=${ROOT_PASSWORD}
+      volumes:
+        - dolibarr_mariadb_data:/var/lib/mysql
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    dolibarr_docs:
+    dolibarr_custom:
+    dolibarr_mariadb_data:

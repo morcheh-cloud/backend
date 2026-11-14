@@ -1,0 +1,127 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Seafile
+category: Storage
+description: Open source cloud storage system for file sync, share and document collaboration
+website: https://manual.seafile.com
+tags:
+  - file-manager
+  - file-sharing
+  - storage
+logo: templates/seafile.svg
+featured: true
+env: |-
+  SEAFILE_PORT=8080
+  SEADOC_PORT=8081
+  SEAFILE_HOST={{host}}:${SEAFILE_PORT}
+  MYSQLROOT_PASSWORD={{secret}}
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+  ADMIN_PASSWORD={{secret}}
+  JWT_PASSWORD={{secret:64}}
+  SEAFILE_URL=http://{{host}}:${SEAFILE_PORT}
+  SEADOC_URL=http://{{host}}:${SEADOC_PORT}
+
+  # Optional settings
+  SEAFILE_MYSQL_DB_CCNET_DB_NAME=ccnet_db
+  SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=seafile_db
+  SEAFILE_MYSQL_DB_SEAHUB_DB_NAME=seahub_db
+  TIME_ZONE=UTC
+  INIT_SEAFILE_ADMIN_EMAIL=test@example.com
+  SITE_ROOT=/
+  NON_ROOT=false
+  SEAFILE_LOG_TO_STDOUT=true
+  ENABLE_SEADOC=true
+  MYSQL_DATABASE=seafile-db
+compose: |
+  services:
+    seafile:
+      image: seafileltd/seafile-mc:12.0-latest
+      restart: unless-stopped
+      volumes:
+        - seafile-data:/shared
+      environment:
+        - SEAFILE_SERVER_HOSTNAME=${SEAFILE_HOST}
+        - DB_HOST=mariadb
+        - DB_PORT=3306
+        - DB_ROOT_PASSWD=${MYSQLROOT_PASSWORD}
+        - DB_USER=${MYSQL_USER}
+        - DB_PASSWORD=${MYSQL_PASSWORD}
+        - SEAFILE_MYSQL_DB_CCNET_DB_NAME=${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+        - SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+        - SEAFILE_MYSQL_DB_SEAHUB_DB_NAME=${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
+        - TIME_ZONE=${TIME_ZONE:-UTC}
+        - INIT_SEAFILE_ADMIN_EMAIL=${INIT_SEAFILE_ADMIN_EMAIL:-test@example.com}
+        - INIT_SEAFILE_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+        - SEAFILE_SERVER_PROTOCOL=https
+        - SITE_ROOT=${SITE_ROOT:-/}
+        - NON_ROOT=${NON_ROOT:-false}
+        - JWT_PRIVATE_KEY=${JWT_PASSWORD}
+        - SEAFILE_LOG_TO_STDOUT=${SEAFILE_LOG_TO_STDOUT:-true}
+        - FILE_SERVER_ROOT=${SEAFILE_URL}/seafhttp
+        - ENABLE_SEADOC=${ENABLE_SEADOC:-true}
+        - SEADOC_SERVER_URL=${SEADOC_URL}
+      depends_on:
+        mariadb:
+          condition: service_healthy
+        memcached:
+          condition: service_started
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80/api2/ping]
+        interval: 10s
+        timeout: 20s
+        retries: 5
+      ports:
+        - ${SEAFILE_PORT:-8080}:80
+    seadoc:
+      image: seafileltd/sdoc-server:1.0-latest
+      restart: unless-stopped
+      volumes:
+        - seadoc-data:/shared
+      environment:
+        - DB_HOST=mariadb
+        - DB_PORT=3306
+        - DB_USER=${MYSQL_USER}
+        - DB_PASSWORD=${MYSQL_PASSWORD}
+        - DB_NAME=${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
+        - TIME_ZONE=${TIME_ZONE:-UTC}
+        - JWT_PRIVATE_KEY=${JWT_PASSWORD}
+        - NON_ROOT=${NON_ROOT:-false}
+        - SEAHUB_SERVICE_URL=http://seafile
+      depends_on:
+        mariadb:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80/ping]
+        interval: 10s
+        timeout: 20s
+        retries: 5
+      ports:
+        - ${SEADOC_PORT:-8081}:80
+    mariadb:
+      image: mariadb:11
+      restart: unless-stopped
+      volumes:
+        - seafile_mariadb_data:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=${MYSQLROOT_PASSWORD}
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-seafile-db}
+      healthcheck:
+        test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+        interval: 10s
+        timeout: 20s
+        retries: 5
+    memcached:
+      image: memcached:latest
+      restart: unless-stopped
+      entrypoint: memcached -m 256
+      healthcheck:
+        test: [CMD-SHELL, "bash -c \"echo version | (exec 3<>/dev/tcp/localhost/11211; cat >&3; timeout 0.5 cat <&3; exec 3<&-)\""]
+        interval: 10s
+        timeout: 20s
+        retries: 5
+  volumes:
+    seafile-data:
+    seadoc-data:
+    seafile_mariadb_data:

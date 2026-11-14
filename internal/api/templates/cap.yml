@@ -1,0 +1,79 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Cap
+category: Media
+description: Cap is the open source alternative to Loom. Lightweight, powerful, and cross-platform. Record and share in seconds.
+website: https://cap.so
+tags:
+  - cap
+  - loom
+  - open
+  - source
+  - low
+  - code
+logo: templates/cap.svg
+env: |-
+  PORT=3000
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+  CAP_URL=http://{{host}}:${PORT}
+  DATABASEENCRYPTIONKEY_PASSWORD={{secret:64}}
+  NEXTAUTHSECRET_PASSWORD={{secret:64}}
+  MYSQLROOT_PASSWORD={{secret}}
+
+  # Fill these in before starting
+  CAP_AWS_ACCESS_KEY=
+  CAP_AWS_SECRET_KEY=
+  CAP_AWS_BUCKET=
+  CAP_AWS_REGION=
+  S3_PUBLIC_ENDPOINT=
+  S3_INTERNAL_ENDPOINT=
+  CAP_AWS_ENDPOINT=
+
+  # Optional settings
+  MYSQL_DATABASE=planetscale
+  S3_PATH_STYLE=true
+  MYSQL_ALLOW_EMPTY_PASSWORD=yes
+compose: |
+  services:
+    cap-web:
+      image: ghcr.io/capsoftware/cap-web:latest
+      restart: unless-stopped
+      environment:
+        - DATABASE_URL=mysql://$MYSQL_USER:$MYSQL_PASSWORD@cap-db:3306/${MYSQL_DATABASE:-planetscale}
+        - WEB_URL=${CAP_URL}
+        - NEXTAUTH_URL=${CAP_URL}
+        - DATABASE_ENCRYPTION_KEY=${DATABASEENCRYPTIONKEY_PASSWORD}
+        - NEXTAUTH_SECRET=${NEXTAUTHSECRET_PASSWORD}
+        - CAP_AWS_ACCESS_KEY=${CAP_AWS_ACCESS_KEY:?}
+        - CAP_AWS_SECRET_KEY=${CAP_AWS_SECRET_KEY:?}
+        - CAP_AWS_BUCKET=${CAP_AWS_BUCKET:?}
+        - CAP_AWS_REGION=${CAP_AWS_REGION:?}
+        - S3_PUBLIC_ENDPOINT=${S3_PUBLIC_ENDPOINT:?}
+        - S3_INTERNAL_ENDPOINT=${S3_INTERNAL_ENDPOINT:?}
+        - NEXT_RUNTIME=nodejs
+        - S3_PATH_STYLE=${S3_PATH_STYLE:-true}
+        - CAP_AWS_ENDPOINT=${CAP_AWS_ENDPOINT:?}
+      depends_on:
+        cap-db:
+          condition: service_healthy
+      ports:
+        - ${PORT:-3000}:3000
+    cap-db:
+      image: mysql:8.0
+      restart: unless-stopped
+      environment:
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-planetscale}
+        - MYSQL_ROOT_PASSWORD=${MYSQLROOT_PASSWORD}
+        - MYSQL_ALLOW_EMPTY_PASSWORD=${MYSQL_ALLOW_EMPTY_PASSWORD:-yes}
+      command: [--max_connections=1000, --default-authentication-plugin=mysql_native_password]
+      healthcheck:
+        test: [CMD, mysqladmin, ping, -h, 127.0.0.1]
+        interval: 10s
+        timeout: 10s
+        retries: 5
+      volumes:
+        - cap_db:/var/lib/mysql
+  volumes:
+    cap_db:

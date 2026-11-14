@@ -1,0 +1,29 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Drizzle Gateway
+category: Development
+description: Free self-hosted Drizzle Studio on steroids
+website: https://gateway.drizzle.team/
+tags:
+  - drizzle
+  - gateway
+  - self-hosted
+  - open-source
+  - low-code
+logo: templates/drizzle.webp
+env: |-
+  PORT=4983
+  DRIZZLE_PASSWORD={{secret}}
+compose: |
+  services:
+    drizzle-gateway:
+      image: ghcr.io/drizzle-team/gateway:latest
+      restart: unless-stopped
+      environment:
+        - STORE_PATH=/app
+        - MASTERPASS=$DRIZZLE_PASSWORD
+      volumes:
+        - drizzle-gateway-data:/app
+      ports:
+        - ${PORT:-4983}:4983
+  volumes:
+    drizzle-gateway-data:

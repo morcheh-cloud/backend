@@ -1,0 +1,67 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Kimai
+category: Productivity
+description: Open source time-tracking app.
+website: https://www.kimai.org/
+tags:
+  - time-tracking
+  - open-source
+logo: templates/kimai.svg
+env: |-
+  PORT=8001
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+  ROOT_PASSWORD={{secret}}
+  APPSECRET_PASSWORD={{secret}}
+  ADMINPASS_PASSWORD={{secret}}
+
+  # Optional settings
+  MYSQL_DATABASE=kimai
+  MAILER_FROM=kimai@example.com
+  MAILER_URL=null://null
+  ADMINMAIL=admin@kimai.local
+  TRUSTED_HOSTS=
+compose: |
+  services:
+    mysql:
+      image: mysql:8
+      restart: unless-stopped
+      volumes:
+        - kimai-mysql-data:/var/lib/mysql
+      environment:
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-kimai}
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+        - MYSQL_ROOT_PASSWORD=${ROOT_PASSWORD}
+      command: --default-storage-engine innodb
+      healthcheck:
+        test: [CMD, mysqladmin, ping, -h, 127.0.0.1]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    kimai:
+      image: kimai/kimai2:apache
+      restart: unless-stopped
+      depends_on:
+        mysql:
+          condition: service_healthy
+      volumes:
+        - kimai-data:/opt/kimai/var/data
+      environment:
+        - APP_SECRET=${APPSECRET_PASSWORD}
+        - MAILER_FROM=${MAILER_FROM:-kimai@example.com}
+        - MAILER_URL=${MAILER_URL:-null://null}
+        - ADMINMAIL=${ADMINMAIL:-admin@kimai.local}
+        - ADMINPASS=${ADMINPASS_PASSWORD}
+        - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql/${MYSQL_DATABASE:-kimai}?charset=utf8mb4&serverVersion=8.3.0
+        - TRUSTED_HOSTS=${TRUSTED_HOSTS}|localhost|127.0.0.1
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8001]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8001}:8001
+  volumes:
+    kimai-mysql-data:
+    kimai-data:

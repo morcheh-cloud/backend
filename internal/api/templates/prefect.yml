@@ -1,0 +1,88 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Prefect
+category: Automation
+description: Prefect is an orchestration and observability platform that empowers developers to build and scale workflows quickly.
+website: https://www.prefect.io/
+tags:
+  - workflow
+  - orchestration
+  - data-pipeline
+  - python
+  - automation
+  - data-processing
+  - data-integration
+  - etl
+logo: templates/prefect.webp
+env: |-
+  PORT=4200
+  PREFECT_URL=http://{{host}}:${PORT}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  APIKEY_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_DB=prefect
+  PREFECT_EXPERIMENTAL_WARN=false
+  PREFECT_EXPERIMENTAL_ENABLE_SCHEDULE_CONCURRENCY=false
+  PREFECT_RUNNER_SERVER_ENABLE=false
+  DEFAULT_POOL_NAME=default
+  DEFAULT_WORKER_NAME=
+  DEFAULT_POOL_LIMIT=
+compose: |
+  services:
+    prefect:
+      image: prefecthq/prefect:3-latest
+      restart: unless-stopped
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      environment:
+        - PREFECT_API_URL=${PREFECT_URL}/api
+        - PREFECT_API_DATABASE_CONNECTION_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-prefect}
+        - PREFECT_API_KEY=${APIKEY_PASSWORD}
+        - PREFECT_EXPERIMENTAL_WARN=${PREFECT_EXPERIMENTAL_WARN:-false}
+        - PREFECT_EXPERIMENTAL_ENABLE_SCHEDULE_CONCURRENCY=${PREFECT_EXPERIMENTAL_ENABLE_SCHEDULE_CONCURRENCY:-false}
+        - PREFECT_RUNNER_SERVER_ENABLE=${PREFECT_RUNNER_SERVER_ENABLE:-false}
+        - PREFECT_DEFAULT_WORK_POOL_NAME=${DEFAULT_POOL_NAME:-default}
+      command: [prefect, server, start, --host, 0.0.0.0, --port, "4200"]
+      healthcheck:
+        test: [CMD, python, -c, "import requests as r;r.get('http://127.0.0.1:4200/api/health').raise_for_status()"]
+        interval: 5s
+        timeout: 5s
+        retries: 3
+      ports:
+        - ${PORT:-4200}:4200
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - pg-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=${POSTGRES_DB:-prefect}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 5s
+        retries: 3
+    agent:
+      image: prefecthq/prefect:3-python3.12
+      restart: unless-stopped
+      depends_on:
+        prefect:
+          condition: service_healthy
+      entrypoint: [/opt/prefect/entrypoint.sh, prefect, worker, start, "--pool=${DEFAULT_POOL_NAME}", --with-healthcheck, "--name=${DEFAULT_WORKER_NAME}", "--limit=${DEFAULT_POOL_LIMIT}"]
+      environment:
+        - PREFECT_API_URL=http://prefect:4200/api
+        - PREFECT_API_KEY=${APIKEY_PASSWORD}
+        - DEFAULT_POOL_NAME=${DEFAULT_POOL_NAME:-default}
+        - DEFAULT_POOL_LIMIT=${DEFAULT_POOL_LIMIT:-1}
+        - DEFAULT_WORKER_NAME=${DEFAULT_WORKER_NAME:-worker1}
+      healthcheck:
+        test: [CMD-SHELL, pwd]
+        interval: 5s
+        timeout: 5s
+        retries: 3
+  volumes:
+    pg-data:

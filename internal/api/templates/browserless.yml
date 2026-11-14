@@ -1,0 +1,30 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Browserless
+category: Development
+description: A headless Chrome browser as a service.
+website: https://docs.browserless.io/
+tags:
+  - chrome
+  - headless
+  - browser
+  - service
+logo: templates/browserless.svg
+env: |-
+  PORT=3000
+  BROWSERLESS_PASSWORD={{secret}}
+compose: |
+  services:
+    browserless:
+      image: ghcr.io/browserless/chromium
+      restart: unless-stopped
+      environment:
+        - TOKEN=$BROWSERLESS_PASSWORD
+      expose:
+        - 3000
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000/docs]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-3000}:3000

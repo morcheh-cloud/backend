@@ -1,0 +1,44 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Redis Insight
+category: Databases
+description: Redis Insight lets you do both GUI- and CLI-based interactions in a fully-featured desktop GUI client.
+website: https://redis.io/docs/latest/operate/redisinsight/
+tags:
+  - redis
+  - gui
+  - database
+  - monitoring
+  - analytics
+logo: templates/redisinsight.webp
+env: |-
+  PORT=5540
+  RI_ENCRYPTION_KEY_PASSWORD={{secret}}
+
+  # Optional settings
+  RI_LOG_LEVEL=info
+  RI_FILES_LOGGER=true
+  RI_STDOUT_LOGGER=true
+compose: |
+  services:
+    redisinsight:
+      image: redis/redisinsight:2.70
+      restart: unless-stopped
+      environment:
+        - RI_APP_HOST=0.0.0.0
+        - RI_APP_PORT=5540
+        - RI_ENCRYPTION_KEY=${RI_ENCRYPTION_KEY_PASSWORD}
+        - RI_LOG_LEVEL=${RI_LOG_LEVEL:-info}
+        - RI_FILES_LOGGER=${RI_FILES_LOGGER:-true}
+        - RI_STDOUT_LOGGER=${RI_STDOUT_LOGGER:-true}
+      volumes:
+        - redis_insight_data:/data
+      healthcheck:
+        test: [CMD, wget, --spider, http://0.0.0.0:5540/api/health]
+        interval: 10s
+        retries: 3
+        timeout: 10s
+        start_period: 10s
+      ports:
+        - ${PORT:-5540}:5540
+  volumes:
+    redis_insight_data:

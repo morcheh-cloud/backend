@@ -1,0 +1,19 @@
+name: Node Exporter
+category: Monitoring
+description: Server metrics (CPU, memory, disks, network) for Prometheus, on the host's network at /metrics.
+logo: prometheus
+featured: true
+env: |
+  PORT=9100
+compose: |
+  services:
+    node-exporter:
+      image: prom/node-exporter:latest
+      restart: unless-stopped
+      network_mode: host
+      pid: host
+      command:
+        - --path.rootfs=/host
+        - --web.listen-address=:${PORT:-9100}
+      volumes:
+        - /:/host:ro,rslave

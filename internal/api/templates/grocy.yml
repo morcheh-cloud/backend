@@ -1,0 +1,33 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Grocy
+category: Productivity
+description: Grocy is a web-based household management and grocery list application.
+website: https://github.com/grocy/grocy
+tags:
+  - groceries
+  - household
+  - management
+  - grocery
+  - shopping
+logo: templates/grocy.svg
+env: PORT=8080
+compose: |
+  services:
+    grocy:
+      image: lscr.io/linuxserver/grocy:4.7.1
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=Europe/Madrid
+      volumes:
+        - grocy-config:/config
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    grocy-config:

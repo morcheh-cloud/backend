@@ -1,0 +1,121 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Strapi
+category: Backend
+description: Open-source headless CMS to build powerful APIs with built-in content management.
+website: https://docs.strapi.io/
+tags:
+  - cms
+  - headless
+  - mysql
+  - api
+logo: templates/strapi.svg
+featured: true
+env: |-
+  PORT=1337
+  STRAPI_HOST={{host}}:${PORT}
+  POSTGRESQL_USER={{user}}
+  POSTGRESQL_PASSWORD={{secret}}
+  SECRET_SECRET={{secret:64}}
+  KEY_SECRET={{secret:64}}
+
+  # Optional settings
+  POSTGRESQL_DATABASE=strapi
+  STRAPI_TELEMETRY_DISABLED=true
+  STRAPI_LICENSE=
+  NODE_ENV=development
+  BROWSER=true
+  STRAPI_PLUGIN_I18N_INIT_LOCALE_CODE=en
+  STRAPI_ENFORCE_SOURCEMAPS=false
+  FAST_REFRESH=true
+compose: |
+  services:
+    strapi:
+      image: elestio/strapi-production:v5.33.4
+      restart: unless-stopped
+      entrypoint: /bin/sh
+      command:
+        [
+          -c,
+          "cat > /opt/app/src/admin/vite.config.js << 'EOFVITE'
+
+            const { mergeConfig } = require('vite');
+
+            module.exports = (config) => {
+
+            \  return mergeConfig(config, {
+
+            \    resolve: {
+
+            \      alias: {
+
+            \        '@': '/src',
+
+            \      },
+
+            \    },
+
+            \    server: {
+
+            \      allowedHosts: ['$STRAPI_HOST']
+
+            \    }
+
+            \  });
+
+            };
+
+            EOFVITE
+
+            exec npm run develop\n"
+        ]
+      environment:
+        - DATABASE_CLIENT=postgres
+        - DATABASE_HOST=postgresql
+        - DATABASE_PORT=5432
+        - DATABASE_NAME=${POSTGRESQL_DATABASE:-strapi}
+        - DATABASE_USERNAME=$POSTGRESQL_USER
+        - DATABASE_PASSWORD=$POSTGRESQL_PASSWORD
+        - JWT_SECRET=$SECRET_SECRET
+        - ADMIN_JWT_SECRET=$SECRET_SECRET
+        - APP_KEYS=$KEY_SECRET
+        - STRAPI_TELEMETRY_DISABLED=${STRAPI_TELEMETRY_DISABLED:-true}
+        - STRAPI_LICENSE=${STRAPI_LICENSE}
+        - NODE_ENV=${NODE_ENV:-development}
+        - BROWSER=${BROWSER:-true}
+        - STRAPI_PLUGIN_I18N_INIT_LOCALE_CODE=${STRAPI_PLUGIN_I18N_INIT_LOCALE_CODE:-en}
+        - STRAPI_ENFORCE_SOURCEMAPS=${STRAPI_ENFORCE_SOURCEMAPS:-false}
+        - FAST_REFRESH=${FAST_REFRESH:-true}
+      volumes:
+        - strapi-config:/opt/app/config
+        - strapi-src:/opt/app/src
+        - strapi-uploads:/opt/app/public/uploads
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:1337/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      ports:
+        - ${PORT:-1337}:1337
+    postgresql:
+      image: elestio/postgres:latest
+      restart: unless-stopped
+      environment:
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-strapi}
+        - POSTGRES_USER=$POSTGRESQL_USER
+        - POSTGRES_PASSWORD=$POSTGRESQL_PASSWORD
+        - PGDATA=/var/lib/postgresql/data
+      volumes:
+        - strapi-postgresql-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    strapi-config:
+    strapi-src:
+    strapi-uploads:
+    strapi-postgresql-data:

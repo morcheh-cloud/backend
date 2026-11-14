@@ -1,0 +1,102 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Infisical
+category: Security
+description: Infisical is the open source secret management platform that developers use to centralize their application configuration and secrets like API keys and database credentials.
+website: https://infisical.com/docs/documentation/getting-started/introduction
+tags:
+  - security
+  - environment
+  - secrets
+  - infisical
+  - database
+  - configuration
+  - secret
+  - api
+  - keys
+  - auth
+  - encryption
+logo: templates/infisical.webp
+env: |-
+  PORT=8080
+  BACKEND_URL=http://{{host}}:${PORT}
+  ENCRYPTIONKEY_PASSWORD={{secret}}
+  AUTHSECRET_KEY={{base64:64}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Optional settings
+  NODE_ENV=production
+  SMTP_HOST=
+  SMTP_USERNAME=
+  SMTP_PASSWORD=
+  SMTP_PORT=
+  SMTP_FROM_ADDRESS=
+  SMTP_FROM_NAME=
+  INF_APP_CONNECTION_GITHUB_APP_CLIENT_ID=
+  INF_APP_CONNECTION_GITHUB_APP_CLIENT_SECRET=
+  INF_APP_CONNECTION_GITHUB_APP_SLUG=
+  INF_APP_CONNECTION_GITHUB_APP_ID=
+  INF_APP_CONNECTION_GITHUB_APP_PRIVATE_KEY=
+  POSTGRES_DB=
+  ALLOW_EMPTY_PASSWORD=yes
+compose: |
+  services:
+    backend:
+      image: infisical/infisical:v0.154.6
+      restart: unless-stopped
+      environment:
+        - SITE_URL=${BACKEND_URL}
+        - NODE_ENV=${NODE_ENV:-production}
+        - ENCRYPTION_KEY=${ENCRYPTIONKEY_PASSWORD}
+        - AUTH_SECRET=${AUTHSECRET_KEY}
+        - SMTP_HOST=${SMTP_HOST}
+        - SMTP_USERNAME=${SMTP_USERNAME}
+        - SMTP_PASSWORD=${SMTP_PASSWORD}
+        - SMTP_PORT=${SMTP_PORT}
+        - SMTP_FROM_ADDRESS=${SMTP_FROM_ADDRESS}
+        - SMTP_FROM_NAME=${SMTP_FROM_NAME}
+        - INF_APP_CONNECTION_GITHUB_APP_CLIENT_ID=${INF_APP_CONNECTION_GITHUB_APP_CLIENT_ID}
+        - INF_APP_CONNECTION_GITHUB_APP_CLIENT_SECRET=${INF_APP_CONNECTION_GITHUB_APP_CLIENT_SECRET}
+        - INF_APP_CONNECTION_GITHUB_APP_SLUG=${INF_APP_CONNECTION_GITHUB_APP_SLUG}
+        - INF_APP_CONNECTION_GITHUB_APP_ID=${INF_APP_CONNECTION_GITHUB_APP_ID}
+        - INF_APP_CONNECTION_GITHUB_APP_PRIVATE_KEY=${INF_APP_CONNECTION_GITHUB_APP_PRIVATE_KEY}
+        - DB_CONNECTION_URI=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+        - REDIS_URL=redis://redis:6379
+      healthcheck:
+        test: [CMD-SHELL, "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/api/status || exit 1"]
+      depends_on:
+        redis:
+          condition: service_healthy
+        db:
+          condition: service_healthy
+      ports:
+        - ${PORT:-8080}:8080
+    redis:
+      image: redis:7
+      restart: unless-stopped
+      volumes:
+        - redis-data:/data
+      environment:
+        - ALLOW_EMPTY_PASSWORD=${ALLOW_EMPTY_PASSWORD:-yes}
+      healthcheck:
+        test: [CMD-SHELL, redis-cli -h localhost -p 6379 ping]
+        interval: 5s
+        timeout: 5s
+        retries: 3
+    db:
+      image: postgres:14-alpine
+      restart: unless-stopped
+      volumes:
+        - pg_data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-infisical}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -h localhost -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 10s
+        retries: 10
+  volumes:
+    redis-data:
+    pg_data:

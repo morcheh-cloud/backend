@@ -1,0 +1,45 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Calibre-Web
+category: Media
+description: Calibre-web is a web app providing a clean interface for browsing, reading and downloading eBooks.
+website: https://github.com/linuxserver/docker-calibre-web
+tags:
+  - calibre
+  - calibre-web
+  - ebook
+  - library
+  - epub
+  - ereader
+  - kindle
+  - book
+  - reader
+logo: templates/calibre-web.svg
+env: |-
+  PORT=8083
+
+  # Optional settings
+  TZ=Etc/UTC
+  DOCKER_MODS=linuxserver/mods:universal-calibre
+compose: |
+  services:
+    calibre-web:
+      image: lscr.io/linuxserver/calibre-web:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-Etc/UTC}
+        - DOCKER_MODS=${DOCKER_MODS:-linuxserver/mods:universal-calibre}
+      volumes:
+        - calibre_web_data:/config
+        - calibre_library:/books
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8083]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8083}:8083
+  volumes:
+    calibre_web_data:
+    calibre_library:

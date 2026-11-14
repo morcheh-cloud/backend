@@ -1,0 +1,62 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Vikunja with PostgreSQL
+category: Productivity
+description: The open-source, self-hostable to-do app. Organize everything, on all platforms.
+website: https://vikunja.io
+tags:
+  - productivity
+  - todo
+logo: templates/vikunja.svg
+env: |-
+  PORT=3456
+  VIKUNJA_URL=http://{{host}}:${PORT}
+  JWTSECRET_PASSWORD={{secret}}
+  POSTGRESQL_PASSWORD={{secret}}
+  POSTGRESQL_USER={{user}}
+
+  # Optional settings
+  POSTGRESQL_DATABASE=
+compose: |
+  services:
+    vikunja:
+      image: vikunja/vikunja
+      restart: unless-stopped
+      environment:
+        - VIKUNJA_SERVICE_PUBLICURL=$VIKUNJA_URL
+        - VIKUNJA_SERVICE_SECRET=$JWTSECRET_PASSWORD
+        - VIKUNJA_SERVICE_ENABLEREGISTRATION=true
+        - VIKUNJA_DATABASE_TYPE=postgres
+        - VIKUNJA_DATABASE_HOST=postgresql
+        - VIKUNJA_DATABASE_PASSWORD=${POSTGRESQL_PASSWORD}
+        - VIKUNJA_DATABASE_USER=${POSTGRESQL_USER}
+        - VIKUNJA_DATABASE_DATABASE=${POSTGRESQL_DATABASE}
+      volumes:
+        - vikunja-data:/app/vikunja/
+      healthcheck:
+        test: [CMD, /app/vikunja/vikunja, healthcheck]
+        interval: 30s
+        timeout: 5s
+        retries: 3
+        start_period: 15s
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      ports:
+        - ${PORT:-3456}:3456
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - vikunja-postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRESQL_USER}
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    vikunja-data:
+    vikunja-postgresql-data:

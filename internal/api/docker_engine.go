@@ -393,6 +393,7 @@ func (h *serverHandler) dockerDo(ctx context.Context, id, text string, fn func(e
 		end := h.dockerLog(ctx, id, e, text)
 		err := fn(e)
 		end(err)
+		h.diskUsages.changed(id)
 		return err
 	})
 }

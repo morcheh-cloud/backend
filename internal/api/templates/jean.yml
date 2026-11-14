@@ -1,0 +1,54 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Jean
+category: Development
+description: Open-source desktop and server client for orchestrating AI coding agents.
+website: https://github.com/coollabsio/jean/blob/main/docs/headless-server.md
+tags:
+  - jean
+  - ai
+  - coding
+  - agents
+  - development
+  - git
+  - worktrees
+logo: templates/jean.webp
+env: |-
+  PORT=3456
+  JEAN_PASSWORD={{secret:64}}
+
+  # Optional settings
+  JEAN_VERSION=latest
+  JEAN_HEADLESS=1
+  JEAN_HOST=0.0.0.0
+  JEAN_PORT=3456
+  JEAN_NO_TOKEN=0
+  JEAN_ALLOW_UNSAFE_NO_TOKEN=0
+  JEAN_ALLOW_NATIVE_OPEN=0
+  JEAN_ALLOWED_ORIGINS=
+compose: |
+  services:
+    jean:
+      image: ghcr.io/coollabsio/jean-server:${JEAN_VERSION:-latest}
+      restart: unless-stopped
+      environment:
+        - JEAN_HEADLESS=${JEAN_HEADLESS:-1}
+        - JEAN_HOST=${JEAN_HOST:-0.0.0.0}
+        - JEAN_PORT=${JEAN_PORT:-3456}
+        - JEAN_TOKEN=${JEAN_PASSWORD}
+        - JEAN_NO_TOKEN=${JEAN_NO_TOKEN:-0}
+        - JEAN_ALLOW_UNSAFE_NO_TOKEN=${JEAN_ALLOW_UNSAFE_NO_TOKEN:-0}
+        - JEAN_ALLOW_NATIVE_OPEN=${JEAN_ALLOW_NATIVE_OPEN:-0}
+        - JEAN_ALLOWED_ORIGINS=${JEAN_ALLOWED_ORIGINS:-}
+        - JEAN_DATA_DIR=/home/jean/.local/share/com.jean.desktop
+      volumes:
+        - jean-data:/home/jean/.local/share/com.jean.desktop
+      healthcheck:
+        test: [CMD-SHELL, "curl -fsS http://127.0.0.1:3456/readyz >/dev/null || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 12
+        start_period: 15s
+      ports:
+        - ${PORT:-3456}:3456
+  volumes:
+    jean-data:

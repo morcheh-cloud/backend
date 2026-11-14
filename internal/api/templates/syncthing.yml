@@ -1,0 +1,43 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Syncthing
+category: Storage
+description: Syncthing synchronizes files between two or more computers in real time.
+website: https://syncthing.net/
+tags:
+  - filestorage
+  - data
+  - synchronization
+logo: templates/syncthing.svg
+featured: true
+env: |-
+  PORT=8384
+
+  # Optional settings
+  TZ=Etc/UTC
+compose: |
+  services:
+    syncthing:
+      image: lscr.io/linuxserver/syncthing:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-Etc/UTC}
+      volumes:
+        - syncthing_config:/config
+        - syncthing_data1:/data1
+        - syncthing_data2:/data2
+      ports:
+        - 22000:22000/tcp
+        - 22000:22000/udp
+        - 21027:21027/udp
+        - ${PORT:-8384}:8384
+      healthcheck:
+        test: [CMD-SHELL, wget -qO- http://127.0.0.1:8384/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    syncthing_config:
+    syncthing_data1:
+    syncthing_data2:

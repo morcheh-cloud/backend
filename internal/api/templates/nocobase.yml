@@ -1,0 +1,56 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: NocoBase
+category: Development
+description: NocoBase is the most extensible AI-powered no-code/low-code platform.
+website: https://docs.nocobase.com/
+tags:
+  - nocode
+  - lowcode
+  - database
+  - builder
+logo: templates/nocobase.webp
+env: |-
+  PORT=13000
+  APPKEY_SECRET={{secret:64}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_DB=nocobase-db
+compose: |
+  services:
+    nocobase:
+      image: nocobase/nocobase:1.9.33
+      restart: unless-stopped
+      environment:
+        - APP_KEY=${APPKEY_SECRET}
+        - DB_DIALECT=postgres
+        - DB_HOST=postgres
+        - DB_PORT=5432
+        - DB_DATABASE=${POSTGRES_DB:-nocobase-db}
+        - DB_USER=$POSTGRES_USER
+        - DB_PASSWORD=$POSTGRES_PASSWORD
+      volumes:
+        - nocobase-storage:/app/nocobase/storage
+      depends_on:
+        postgres:
+          condition: service_healthy
+      ports:
+        - ${PORT:-13000}:13000
+    postgres:
+      image: postgres:17-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-nocobase-db}
+      volumes:
+        - postgres-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    nocobase-storage:
+    postgres-data:

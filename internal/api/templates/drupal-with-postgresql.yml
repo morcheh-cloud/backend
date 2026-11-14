@@ -1,0 +1,64 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Drupal with PostgreSQL
+category: Websites
+description: Drupal is a free and open-source web content management system written in PHP and distributed under the GNU General Public License.
+website: https://www.drupal.org/about
+tags:
+  - cms
+  - blog
+  - content
+  - management
+  - postgresql
+logo: templates/drupal.svg
+env: |-
+  PORT=8080
+  POSTGRES_PASSWORD={{secret}}
+compose: |
+  services:
+    drupal:
+      image: drupal:10-apache
+      restart: unless-stopped
+      environment:
+        - DB_HOST=postgres
+        - DB_NAME=postgres
+        - DB_USER=postgres
+        - DB_PASSWORD=$POSTGRES_PASSWORD
+      volumes:
+        - type: volume
+          source: drupal_modules
+          target: /var/www/html/modules
+        - type: volume
+          source: drupal_profiles
+          target: /var/www/html/profiles
+        - type: volume
+          source: drupal_themes
+          target: /var/www/html/themes
+        - type: volume
+          source: drupal_sites
+          target: /var/www/html/sites
+      depends_on:
+        - postgres
+      healthcheck:
+        test: [CMD-SHELL, "curl -f http://localhost:80 || exit 1"]
+        interval: 30s
+        timeout: 10s
+        retries: 5
+      ports:
+        - ${PORT:-8080}:80
+    postgres:
+      image: postgres:16
+      restart: unless-stopped
+      environment:
+        - POSTGRES_DB=postgres
+        - POSTGRES_USER=postgres
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 10s
+        retries: 20
+  volumes:
+    drupal_modules:
+    drupal_profiles:
+    drupal_themes:
+    drupal_sites:

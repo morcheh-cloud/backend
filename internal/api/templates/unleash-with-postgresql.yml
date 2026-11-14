@@ -1,0 +1,59 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Unleash with PostgreSQL
+category: Development
+description: Open source feature flag management for enterprises.
+website: https://docs.getunleash.io
+tags:
+  - unleash
+  - feature flags
+  - feature toggles
+  - ab testing
+  - open source
+logo: templates/unleash.svg
+env: |-
+  PORT=4242
+  UNLEASH_URL=http://{{host}}:${PORT}
+  UNLEASH_PASSWORD={{secret}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+compose: |
+  services:
+    unleash:
+      image: unleashorg/unleash-server:latest
+      restart: unless-stopped
+      environment:
+        - UNLEASH_URL=${UNLEASH_URL}
+        - UNLEASH_DEFAULT_ADMIN_PASSWORD=${UNLEASH_PASSWORD}
+        - DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres/db
+        - DATABASE_SSL=false
+        - LOG_LEVEL=warn
+        - INIT_FRONTEND_API_TOKENS=default:default:development.unleash-insecure-frontend-api-token
+        - INIT_CLIENT_API_TOKENS=default:development.unleash-insecure-api-token
+      depends_on:
+        postgres:
+          condition: service_healthy
+      healthcheck:
+        test: wget --no-verbose --tries=1 --spider http://127.0.0.1:4242/health || exit 1
+        interval: 1s
+        timeout: 1m
+        retries: 5
+        start_period: 15s
+      ports:
+        - ${PORT:-4242}:4242
+    postgres:
+      image: postgres:15
+      restart: unless-stopped
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=db
+      healthcheck:
+        test: [CMD, pg_isready, --username=$POSTGRES_USER, --host=127.0.0.1, --port=5432, --dbname=db]
+        interval: 2s
+        timeout: 1m
+        retries: 5
+        start_period: 10s
+  volumes:
+    postgresql-data:

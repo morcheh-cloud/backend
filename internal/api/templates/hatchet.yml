@@ -1,0 +1,141 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Hatchet
+category: Automation
+description: Hatchet allows you to run background tasks at scale with a high-throughput, low-latency computing service built on an open-source, fault-tolerant queue.
+website: https://docs.hatchet.run/self-hosting/docker-compose
+tags:
+  - ai-agents
+  - background-tasks
+  - data-pipelines
+  - scheduling
+logo: templates/hatchet.svg
+env: |-
+  HATCHET_PORT=8080
+  RABBITMQ_PORT=15672
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  RABBITMQ_USER={{user}}
+  RABBITMQ_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_DB=hatchet
+  SERVER_AUTH_SET_EMAIL_VERIFIED=true
+  SERVER_GRPC_BIND_ADDRESS=0.0.0.0
+  SERVER_GRPC_INSECURE=t
+  SERVER_AUTH_COOKIE_DOMAIN=localhost:8080
+  SERVER_AUTH_COOKIE_INSECURE=t
+  SERVER_GRPC_BROADCAST_ADDRESS=localhost:7077
+  SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS=hatchet-engine:7077
+compose: |
+  services:
+    hatchet-dashboard:
+      image: ghcr.io/hatchet-dev/hatchet/hatchet-dashboard:latest
+      restart: unless-stopped
+      command: sh ./entrypoint.sh --config /hatchet/config
+      environment:
+        - DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/${POSTGRES_DB:-hatchet}
+        - SERVER_AUTH_SET_EMAIL_VERIFIED=${SERVER_AUTH_SET_EMAIL_VERIFIED:-true}
+      depends_on:
+        postgres:
+          condition: service_healthy
+        rabbitmq:
+          condition: service_healthy
+        setup-config:
+          condition: service_completed_successfully
+        migration:
+          condition: service_completed_successfully
+      volumes:
+        - hatchet-certs:/hatchet/certs
+        - hatchet-config:/hatchet/config
+      ports:
+        - ${HATCHET_PORT:-8080}:80
+    hatchet-engine:
+      image: ghcr.io/hatchet-dev/hatchet/hatchet-engine:latest
+      command: /hatchet/hatchet-engine --config /hatchet/config
+      restart: on-failure
+      depends_on:
+        postgres:
+          condition: service_healthy
+        rabbitmq:
+          condition: service_healthy
+        setup-config:
+          condition: service_completed_successfully
+        migration:
+          condition: service_completed_successfully
+      environment:
+        - DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/${POSTGRES_DB:-hatchet}
+        - SERVER_GRPC_BIND_ADDRESS=${SERVER_GRPC_BIND_ADDRESS:-0.0.0.0}
+        - SERVER_GRPC_INSECURE=${SERVER_GRPC_INSECURE:-t}
+      volumes:
+        - hatchet-certs:/hatchet/certs
+        - hatchet-config:/hatchet/config
+    postgres:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=${POSTGRES_DB:-hatchet}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    rabbitmq:
+      image: rabbitmq:3-management
+      restart: unless-stopped
+      hostname: rabbitmq
+      environment:
+        - RABBITMQ_DEFAULT_USER=$RABBITMQ_USER
+        - RABBITMQ_DEFAULT_PASS=$RABBITMQ_PASSWORD
+        - PORT=${RABBITMQ_PORT:-5672}
+      healthcheck:
+        test: rabbitmq-diagnostics -q check_port_connectivity
+        interval: 5s
+        timeout: 30s
+        retries: 20
+        start_period: 60s
+      volumes:
+        - rabbitmq-data:/var/lib/rabbitmq/
+      ports:
+        - ${RABBITMQ_PORT:-15672}:15672
+    migration:
+      image: ghcr.io/hatchet-dev/hatchet/hatchet-migrate:latest
+      command: /hatchet/hatchet-migrate
+      restart: no
+      environment:
+        - DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/${POSTGRES_DB:-hatchet}
+      depends_on:
+        postgres:
+          condition: service_healthy
+    setup-config:
+      image: ghcr.io/hatchet-dev/hatchet/hatchet-admin:latest
+      command: /hatchet/hatchet-admin quickstart --skip certs --generated-config-dir /hatchet/config --overwrite=false
+      restart: no
+      environment:
+        - DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/${POSTGRES_DB:-hatchet}
+        - SERVER_TASKQUEUE_RABBITMQ_URL=amqp://$RABBITMQ_USER:$RABBITMQ_PASSWORD@rabbitmq:5672/
+        - SERVER_AUTH_COOKIE_DOMAIN=${SERVER_AUTH_COOKIE_DOMAIN:-localhost:8080}
+        - SERVER_AUTH_COOKIE_INSECURE=${SERVER_AUTH_COOKIE_INSECURE:-t}
+        - SERVER_GRPC_BIND_ADDRESS=${SERVER_GRPC_BIND_ADDRESS:-0.0.0.0}
+        - SERVER_GRPC_INSECURE=${SERVER_GRPC_INSECURE:-t}
+        - SERVER_GRPC_BROADCAST_ADDRESS=${SERVER_GRPC_BROADCAST_ADDRESS:-localhost:7077}
+        - SERVER_DEFAULT_ENGINE_VERSION=V1
+        - SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS=${SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS:-hatchet-engine:7077}
+      volumes:
+        - hatchet-certs:/hatchet/certs
+        - hatchet-config:/hatchet/config
+      depends_on:
+        migration:
+          condition: service_completed_successfully
+        rabbitmq:
+          condition: service_healthy
+        postgres:
+          condition: service_healthy
+  volumes:
+    hatchet-certs:
+    hatchet-config:
+    postgresql-data:
+    rabbitmq-data:

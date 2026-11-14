@@ -1,0 +1,30 @@
+name: PostgreSQL
+category: Databases
+description: PostgreSQL with its data in a named volume, listening on localhost only.
+logo: postgresql
+featured: true
+env: |
+  POSTGRES_USER=app
+  POSTGRES_PASSWORD={{secret}}
+  POSTGRES_DB=app
+  PORT=5432
+compose: |
+  services:
+    db:
+      image: postgres:17-alpine
+      restart: unless-stopped
+      environment:
+        POSTGRES_USER: ${POSTGRES_USER}
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+        POSTGRES_DB: ${POSTGRES_DB}
+      ports:
+        - "127.0.0.1:${PORT:-5432}:5432"
+      volumes:
+        - data:/var/lib/postgresql/data
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+        interval: 10s
+        retries: 5
+
+  volumes:
+    data:

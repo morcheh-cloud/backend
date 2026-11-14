@@ -1,0 +1,27 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: PocketBase
+category: Backend
+description: Open Source backend for your next SaaS and Mobile app in 1 file
+website: https://pocketbase.io/docs/
+tags:
+  - pocketbase
+  - backend
+  - saas
+  - mobile
+  - api
+logo: templates/pocketbase.svg
+featured: true
+env: PORT=8080
+compose: |
+  services:
+    pocketbase:
+      image: ghcr.io/coollabsio/pocketbase:latest
+      restart: unless-stopped
+      volumes:
+        - pocketbase-data:/app/pb_data
+        - pocketbase-hooks:/app/pb_hooks
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    pocketbase-data:
+    pocketbase-hooks:

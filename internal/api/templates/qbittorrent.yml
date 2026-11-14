@@ -1,0 +1,59 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: qBittorrent
+category: Media
+description: The qBittorrent project aims to provide an open-source software alternative to μTorrent.
+website: https://docs.linuxserver.io/images/docker-qbittorrent/
+tags:
+  - torrent
+  - streaming
+  - webui
+logo: templates/qbittorrent.svg
+featured: true
+env: |-
+  PORT=8080
+  QBITORRENT_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  WEBUI_PORT=8080
+  RELEASE_TYPE=stable
+  UPDATE_VT_CRON="\"0 * * * *\""
+compose: |
+  services:
+    qbit:
+      image: lscr.io/linuxserver/qbittorrent:latest
+      restart: unless-stopped
+      environment:
+        - WEBUI_PORT=${WEBUI_PORT:-8080}
+        - PUID=1000
+        - PGID=1000
+      volumes:
+        - qbittorrent-config:/config
+        - qbittorrent-downloads:/downloads
+        - qbittorrent-torrents:/torrents
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    vuetorrent-backend:
+      image: ghcr.io/vuetorrent/vuetorrent-backend:latest
+      restart: unless-stopped
+      environment:
+        - PORT=${WEBUI_PORT:-8080}
+        - QBIT_BASE=${QBITORRENT_URL}
+        - RELEASE_TYPE=${RELEASE_TYPE:-stable}
+        - UPDATE_VT_CRON=${UPDATE_VT_CRON:-"0 * * * *"}
+      volumes:
+        - vuetorrent-config:/config
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    qbittorrent-config:
+    qbittorrent-downloads:
+    qbittorrent-torrents:
+    vuetorrent-config:

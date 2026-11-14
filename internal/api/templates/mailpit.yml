@@ -1,0 +1,41 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Mailpit
+category: Email
+description: Email & SMTP testing tool with API for developers
+website: https://mailpit.axllent.org/docs/
+tags:
+  - mailpit
+  - email
+  - testing
+  - smtp
+logo: templates/mailpit.svg
+env: PORT=8025
+compose: |
+  services:
+    mailpit:
+      image: axllent/mailpit
+      restart: unless-stopped
+      ports:
+        - 1025:1025
+        - ${PORT:-8025}:8025
+      volumes:
+        - mailpit-data:/data
+      environment:
+        - MP_MAX_MESSAGES=5000
+        - MP_DATABASE=/data/mailpit.db
+        - MP_SMTP_AUTH_ACCEPT_ANY=1
+        - MP_SMTP_AUTH_ALLOW_INSECURE=1
+        - MP_UI_AUTH_FILE=/data/htpasswd
+      healthcheck:
+        test: [CMD, /mailpit, readyz]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      configs:
+        - source: mailpit-htpasswd
+          target: /data/htpasswd
+  volumes:
+    mailpit-data:
+  configs:
+    mailpit-htpasswd:
+      content: ""

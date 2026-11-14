@@ -47,11 +47,10 @@ func (q *Queries) ActiveSoftwareRunsOn(ctx context.Context, serverIds []uuid.UUI
 
 const beginSoftwareInstall = `-- name: BeginSoftwareInstall :one
 INSERT INTO software_installs (
-    workspace_id, server_id, recipe_id, name, kind, origin, status, params, secrets,
-    dir, project, error
+    workspace_id, server_id, recipe_id, name, kind, origin, status, params, secrets, error
 ) VALUES (
     $1, $2, $3, $4, $5, 'morcheh', 'installing', $6,
-    $7, $8, $9, ''
+    $7, ''
 )
 ON CONFLICT (server_id, recipe_id) DO UPDATE SET
     name = excluded.name,
@@ -60,11 +59,9 @@ ON CONFLICT (server_id, recipe_id) DO UPDATE SET
     status = 'installing',
     params = excluded.params,
     secrets = excluded.secrets,
-    dir = excluded.dir,
-    project = excluded.project,
     error = '',
     updated_at = now()
-RETURNING id, workspace_id, server_id, recipe_id, name, kind, origin, status, version, latest, update_available, state, params, secrets, dir, project, images, can_rollback, pinned, error, checked_at, installed_at, created_at, updated_at
+RETURNING id, workspace_id, server_id, recipe_id, name, kind, origin, status, version, latest, update_available, params, secrets, error, checked_at, installed_at, created_at, updated_at
 `
 
 type BeginSoftwareInstallParams struct {
@@ -75,8 +72,6 @@ type BeginSoftwareInstallParams struct {
 	Kind        string    `json:"kind"`
 	Params      []byte    `json:"params"`
 	Secrets     []byte    `json:"secrets"`
-	Dir         string    `json:"dir"`
-	Project     string    `json:"project"`
 }
 
 // A run starts installing an app on a server: a new row, or the old one again.
@@ -89,8 +84,6 @@ func (q *Queries) BeginSoftwareInstall(ctx context.Context, arg BeginSoftwareIns
 		arg.Kind,
 		arg.Params,
 		arg.Secrets,
-		arg.Dir,
-		arg.Project,
 	)
 	var i SoftwareInstall
 	err := row.Scan(
@@ -105,14 +98,8 @@ func (q *Queries) BeginSoftwareInstall(ctx context.Context, arg BeginSoftwareIns
 		&i.Version,
 		&i.Latest,
 		&i.UpdateAvailable,
-		&i.State,
 		&i.Params,
 		&i.Secrets,
-		&i.Dir,
-		&i.Project,
-		&i.Images,
-		&i.CanRollback,
-		&i.Pinned,
 		&i.Error,
 		&i.CheckedAt,
 		&i.InstalledAt,
@@ -354,14 +341,10 @@ UPDATE software_installs SET
     version = $3,
     latest = $4,
     update_available = $5,
-    state = $6,
-    images = $7,
-    can_rollback = $8,
-    pinned = $9,
     checked_at = now(),
-    installed_at = CASE WHEN $10::boolean THEN now() ELSE installed_at END,
+    installed_at = CASE WHEN $6::boolean THEN now() ELSE installed_at END,
     updated_at = now()
-WHERE id = $11
+WHERE id = $7
 `
 
 type FinishSoftwareInstallParams struct {
@@ -370,10 +353,6 @@ type FinishSoftwareInstallParams struct {
 	Version         string    `json:"version"`
 	Latest          string    `json:"latest"`
 	UpdateAvailable bool      `json:"update_available"`
-	State           string    `json:"state"`
-	Images          []byte    `json:"images"`
-	CanRollback     bool      `json:"can_rollback"`
-	Pinned          bool      `json:"pinned"`
 	Installed       bool      `json:"installed"`
 	ID              uuid.UUID `json:"id"`
 }
@@ -386,10 +365,6 @@ func (q *Queries) FinishSoftwareInstall(ctx context.Context, arg FinishSoftwareI
 		arg.Version,
 		arg.Latest,
 		arg.UpdateAvailable,
-		arg.State,
-		arg.Images,
-		arg.CanRollback,
-		arg.Pinned,
 		arg.Installed,
 		arg.ID,
 	)
@@ -469,7 +444,7 @@ func (q *Queries) GetSoftwareHost(ctx context.Context, serverID uuid.UUID) (Soft
 }
 
 const getSoftwareInstall = `-- name: GetSoftwareInstall :one
-SELECT i.id, i.workspace_id, i.server_id, i.recipe_id, i.name, i.kind, i.origin, i.status, i.version, i.latest, i.update_available, i.state, i.params, i.secrets, i.dir, i.project, i.images, i.can_rollback, i.pinned, i.error, i.checked_at, i.installed_at, i.created_at, i.updated_at, s.name AS server_name, s.status AS server_status
+SELECT i.id, i.workspace_id, i.server_id, i.recipe_id, i.name, i.kind, i.origin, i.status, i.version, i.latest, i.update_available, i.params, i.secrets, i.error, i.checked_at, i.installed_at, i.created_at, i.updated_at, s.name AS server_name, s.status AS server_status
 FROM software_installs i
 JOIN servers s ON s.id = i.server_id
 WHERE i.id = $1
@@ -487,14 +462,8 @@ type GetSoftwareInstallRow struct {
 	Version         string     `json:"version"`
 	Latest          string     `json:"latest"`
 	UpdateAvailable bool       `json:"update_available"`
-	State           string     `json:"state"`
 	Params          []byte     `json:"params"`
 	Secrets         []byte     `json:"secrets"`
-	Dir             string     `json:"dir"`
-	Project         string     `json:"project"`
-	Images          []byte     `json:"images"`
-	CanRollback     bool       `json:"can_rollback"`
-	Pinned          bool       `json:"pinned"`
 	Error           string     `json:"error"`
 	CheckedAt       *time.Time `json:"checked_at"`
 	InstalledAt     *time.Time `json:"installed_at"`
@@ -519,14 +488,8 @@ func (q *Queries) GetSoftwareInstall(ctx context.Context, id uuid.UUID) (GetSoft
 		&i.Version,
 		&i.Latest,
 		&i.UpdateAvailable,
-		&i.State,
 		&i.Params,
 		&i.Secrets,
-		&i.Dir,
-		&i.Project,
-		&i.Images,
-		&i.CanRollback,
-		&i.Pinned,
 		&i.Error,
 		&i.CheckedAt,
 		&i.InstalledAt,
@@ -539,7 +502,7 @@ func (q *Queries) GetSoftwareInstall(ctx context.Context, id uuid.UUID) (GetSoft
 }
 
 const getSoftwareInstallByRecipe = `-- name: GetSoftwareInstallByRecipe :one
-SELECT id, workspace_id, server_id, recipe_id, name, kind, origin, status, version, latest, update_available, state, params, secrets, dir, project, images, can_rollback, pinned, error, checked_at, installed_at, created_at, updated_at FROM software_installs WHERE server_id = $1 AND recipe_id = $2
+SELECT id, workspace_id, server_id, recipe_id, name, kind, origin, status, version, latest, update_available, params, secrets, error, checked_at, installed_at, created_at, updated_at FROM software_installs WHERE server_id = $1 AND recipe_id = $2
 `
 
 type GetSoftwareInstallByRecipeParams struct {
@@ -562,14 +525,8 @@ func (q *Queries) GetSoftwareInstallByRecipe(ctx context.Context, arg GetSoftwar
 		&i.Version,
 		&i.Latest,
 		&i.UpdateAvailable,
-		&i.State,
 		&i.Params,
 		&i.Secrets,
-		&i.Dir,
-		&i.Project,
-		&i.Images,
-		&i.CanRollback,
-		&i.Pinned,
 		&i.Error,
 		&i.CheckedAt,
 		&i.InstalledAt,
@@ -694,7 +651,7 @@ func (q *Queries) InterruptSoftwareRuns(ctx context.Context) error {
 }
 
 const listServerSoftwareInstalls = `-- name: ListServerSoftwareInstalls :many
-SELECT i.id, i.workspace_id, i.server_id, i.recipe_id, i.name, i.kind, i.origin, i.status, i.version, i.latest, i.update_available, i.state, i.params, i.secrets, i.dir, i.project, i.images, i.can_rollback, i.pinned, i.error, i.checked_at, i.installed_at, i.created_at, i.updated_at, s.name AS server_name, s.status AS server_status
+SELECT i.id, i.workspace_id, i.server_id, i.recipe_id, i.name, i.kind, i.origin, i.status, i.version, i.latest, i.update_available, i.params, i.secrets, i.error, i.checked_at, i.installed_at, i.created_at, i.updated_at, s.name AS server_name, s.status AS server_status
 FROM software_installs i
 JOIN servers s ON s.id = i.server_id
 WHERE i.server_id = $1
@@ -713,14 +670,8 @@ type ListServerSoftwareInstallsRow struct {
 	Version         string     `json:"version"`
 	Latest          string     `json:"latest"`
 	UpdateAvailable bool       `json:"update_available"`
-	State           string     `json:"state"`
 	Params          []byte     `json:"params"`
 	Secrets         []byte     `json:"secrets"`
-	Dir             string     `json:"dir"`
-	Project         string     `json:"project"`
-	Images          []byte     `json:"images"`
-	CanRollback     bool       `json:"can_rollback"`
-	Pinned          bool       `json:"pinned"`
 	Error           string     `json:"error"`
 	CheckedAt       *time.Time `json:"checked_at"`
 	InstalledAt     *time.Time `json:"installed_at"`
@@ -751,14 +702,8 @@ func (q *Queries) ListServerSoftwareInstalls(ctx context.Context, serverID uuid.
 			&i.Version,
 			&i.Latest,
 			&i.UpdateAvailable,
-			&i.State,
 			&i.Params,
 			&i.Secrets,
-			&i.Dir,
-			&i.Project,
-			&i.Images,
-			&i.CanRollback,
-			&i.Pinned,
 			&i.Error,
 			&i.CheckedAt,
 			&i.InstalledAt,
@@ -834,7 +779,7 @@ func (q *Queries) ListSoftwareHosts(ctx context.Context, workspaceID uuid.UUID) 
 }
 
 const listSoftwareInstalls = `-- name: ListSoftwareInstalls :many
-SELECT i.id, i.workspace_id, i.server_id, i.recipe_id, i.name, i.kind, i.origin, i.status, i.version, i.latest, i.update_available, i.state, i.params, i.secrets, i.dir, i.project, i.images, i.can_rollback, i.pinned, i.error, i.checked_at, i.installed_at, i.created_at, i.updated_at, s.name AS server_name, s.status AS server_status
+SELECT i.id, i.workspace_id, i.server_id, i.recipe_id, i.name, i.kind, i.origin, i.status, i.version, i.latest, i.update_available, i.params, i.secrets, i.error, i.checked_at, i.installed_at, i.created_at, i.updated_at, s.name AS server_name, s.status AS server_status
 FROM software_installs i
 JOIN servers s ON s.id = i.server_id
 WHERE i.workspace_id = $1
@@ -853,14 +798,8 @@ type ListSoftwareInstallsRow struct {
 	Version         string     `json:"version"`
 	Latest          string     `json:"latest"`
 	UpdateAvailable bool       `json:"update_available"`
-	State           string     `json:"state"`
 	Params          []byte     `json:"params"`
 	Secrets         []byte     `json:"secrets"`
-	Dir             string     `json:"dir"`
-	Project         string     `json:"project"`
-	Images          []byte     `json:"images"`
-	CanRollback     bool       `json:"can_rollback"`
-	Pinned          bool       `json:"pinned"`
 	Error           string     `json:"error"`
 	CheckedAt       *time.Time `json:"checked_at"`
 	InstalledAt     *time.Time `json:"installed_at"`
@@ -892,14 +831,8 @@ func (q *Queries) ListSoftwareInstalls(ctx context.Context, workspaceID uuid.UUI
 			&i.Version,
 			&i.Latest,
 			&i.UpdateAvailable,
-			&i.State,
 			&i.Params,
 			&i.Secrets,
-			&i.Dir,
-			&i.Project,
-			&i.Images,
-			&i.CanRollback,
-			&i.Pinned,
 			&i.Error,
 			&i.CheckedAt,
 			&i.InstalledAt,
@@ -1090,7 +1023,7 @@ func (q *Queries) ListSoftwareRuns(ctx context.Context, arg ListSoftwareRunsPara
 }
 
 const markMissingSoftware = `-- name: MarkMissingSoftware :exec
-UPDATE software_installs SET status = 'missing', state = '', checked_at = now(), updated_at = now()
+UPDATE software_installs SET status = 'missing', checked_at = now(), updated_at = now()
 WHERE server_id = $1 AND origin = 'morcheh' AND NOT (recipe_id = ANY($2::text[]))
   AND status = 'installed'
 `
@@ -1120,21 +1053,15 @@ func (q *Queries) ResetStuckSoftwareInstalls(ctx context.Context) error {
 const saveScannedSoftware = `-- name: SaveScannedSoftware :exec
 INSERT INTO software_installs (
     workspace_id, server_id, recipe_id, name, kind, origin, status, version, latest,
-    update_available, state, images, dir, project, can_rollback, pinned, checked_at, installed_at
+    update_available, checked_at, installed_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, 'installed', $7,
-    $8, $9, $10, $11, $12, $13, $14, $15, now(), NULL
+    $8, $9, now(), NULL
 )
 ON CONFLICT (server_id, recipe_id) DO UPDATE SET
     version = excluded.version,
     latest = excluded.latest,
     update_available = excluded.update_available,
-    state = excluded.state,
-    can_rollback = excluded.can_rollback,
-    pinned = excluded.pinned,
-    images = CASE WHEN excluded.images = '[]'::jsonb THEN software_installs.images ELSE excluded.images END,
-    dir = CASE WHEN excluded.dir = '' THEN software_installs.dir ELSE excluded.dir END,
-    project = CASE WHEN excluded.project = '' THEN software_installs.project ELSE excluded.project END,
     status = CASE WHEN software_installs.status IN ('installing', 'updating', 'removing')
         THEN software_installs.status ELSE 'installed' END,
     error = CASE WHEN software_installs.status IN ('installing', 'updating', 'removing')
@@ -1153,12 +1080,6 @@ type SaveScannedSoftwareParams struct {
 	Version         string    `json:"version"`
 	Latest          string    `json:"latest"`
 	UpdateAvailable bool      `json:"update_available"`
-	State           string    `json:"state"`
-	Images          []byte    `json:"images"`
-	Dir             string    `json:"dir"`
-	Project         string    `json:"project"`
-	CanRollback     bool      `json:"can_rollback"`
-	Pinned          bool      `json:"pinned"`
 }
 
 // What a scan found installed. A run in progress keeps its status.
@@ -1173,12 +1094,6 @@ func (q *Queries) SaveScannedSoftware(ctx context.Context, arg SaveScannedSoftwa
 		arg.Version,
 		arg.Latest,
 		arg.UpdateAvailable,
-		arg.State,
-		arg.Images,
-		arg.Dir,
-		arg.Project,
-		arg.CanRollback,
-		arg.Pinned,
 	)
 	return err
 }

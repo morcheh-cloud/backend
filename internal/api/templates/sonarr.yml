@@ -1,0 +1,38 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Sonarr
+category: Media
+description: Sonarr⁠ (formerly NZBdrone) is a PVR for usenet and bittorrent users. It can monitor multiple RSS feeds for new episodes of your favorite shows and will grab, sort and rename them. It can also be configured to automatically upgrade the quality of files already downloaded when a better quality format becomes available.
+website: https://hub.docker.com/r/linuxserver/sonarr
+tags:
+  - media
+  - server
+  - tv
+logo: templates/sonarr.svg
+featured: true
+env: |-
+  PORT=8989
+  SONARR_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  TZ=America/Toronto
+compose: |
+  services:
+    sonarr:
+      image: lscr.io/linuxserver/sonarr:latest
+      restart: unless-stopped
+      environment:
+        - _APP_URL=$SONARR_URL
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-America/Toronto}
+      volumes:
+        - sonarr-config:/config
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:8989/ping]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8989}:8989
+  volumes:
+    sonarr-config:

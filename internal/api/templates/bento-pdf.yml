@@ -1,0 +1,24 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: BentoPDF
+category: Productivity
+description: Process PDFs entirely in your browser. No uploads. No servers. Complete privacy.
+website: https://bentopdf.com/docs
+tags:
+  - pdf
+  - manipulation
+  - web
+  - tool
+logo: templates/bento-pdf.webp
+env: PORT=8080
+compose: |
+  services:
+    bento-pdf:
+      image: ghcr.io/alam00000/bentopdf:v1.16.1
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:8080]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080

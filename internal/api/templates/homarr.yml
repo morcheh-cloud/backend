@@ -1,0 +1,30 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Homarr
+category: Productivity
+description: Homarr is a self-hosted homepage for your services.
+website: https://homarr.dev
+tags:
+  - homarr
+  - self-hosted
+  - homepage
+logo: templates/homarr.svg
+env: |-
+  PORT=7575
+  HOMARR_HEX={{hex:64}}
+compose: |
+  services:
+    homarr:
+      image: ghcr.io/homarr-labs/homarr:v1.74.0
+      restart: unless-stopped
+      environment:
+        - SECRET_ENCRYPTION_KEY=${HOMARR_HEX}
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - ./homarr/appdata:/appdata
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:7575]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-7575}:7575

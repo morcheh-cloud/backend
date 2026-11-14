@@ -1,6 +1,7 @@
 package nginx
 
 import (
+	"net"
 	"path"
 	"regexp"
 	"strings"
@@ -299,10 +300,18 @@ func siteOf(file string, d *directive, lines []string) proxy.Site {
 	if d.line >= 1 && d.end >= d.line && d.end <= len(lines) {
 		s.Text = dedent(lines[d.line-1 : d.end])
 	}
+	// Nginx Proxy Manager names the app in variables and proxies to it from
+	// an include (proxy_pass $forward_scheme://$server:$port), which isn't
+	// in this block.
+	vars := map[string]string{}
 	var walk func(ds []*directive, top bool)
 	walk = func(ds []*directive, top bool) {
 		for _, c := range ds {
 			switch c.name {
+			case "set":
+				if top && len(c.args) == 2 {
+					vars[c.args[0]] = strings.Trim(c.args[1], `"'`)
+				}
 			case "server_name":
 				if top {
 					for _, a := range c.args {
@@ -341,6 +350,20 @@ func siteOf(file string, d *directive, lines []string) proxy.Site {
 		}
 	}
 	walk(d.children, true)
+	// Only for that shape: a site's own proxy_pass to a fixed address wins.
+	host := vars["$server"]
+	if host != "" && (s.Upstream == "" || vars["$forward_scheme"] != "" ||
+		strings.Contains(s.Upstream, "$")) {
+		up := host
+		if port := vars["$port"]; port != "" {
+			up = net.JoinHostPort(host, port)
+		}
+		scheme := vars["$forward_scheme"]
+		if scheme == "" {
+			scheme = "http"
+		}
+		s.Upstream = scheme + "://" + up
+	}
 	return s
 }
 

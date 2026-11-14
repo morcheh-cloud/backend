@@ -1,0 +1,37 @@
+name: WordPress
+category: Websites
+description: WordPress with its own MariaDB.
+logo: wordpress
+featured: true
+env: |
+  DB_PASSWORD={{secret}}
+  PORT=8080
+compose: |
+  services:
+    wordpress:
+      image: wordpress:6-apache
+      restart: unless-stopped
+      depends_on: [db]
+      ports:
+        - "${PORT:-8080}:80"
+      environment:
+        WORDPRESS_DB_HOST: db
+        WORDPRESS_DB_USER: wordpress
+        WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
+        WORDPRESS_DB_NAME: wordpress
+      volumes:
+        - site:/var/www/html
+    db:
+      image: mariadb:11
+      restart: unless-stopped
+      environment:
+        MARIADB_DATABASE: wordpress
+        MARIADB_USER: wordpress
+        MARIADB_PASSWORD: ${DB_PASSWORD}
+        MARIADB_RANDOM_ROOT_PASSWORD: "1"
+      volumes:
+        - db:/var/lib/mysql
+
+  volumes:
+    site:
+    db:

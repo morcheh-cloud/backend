@@ -1,0 +1,40 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Soketi
+category: Communication
+description: Soketi is your simple, fast, and resilient open-source WebSockets server.
+website: https://docs.soketi.app
+tags:
+  - websockets
+  - open
+  - source
+  - messaging
+logo: templates/soketi.webp
+env: |-
+  PORT=6001
+  SOKETI_USER={{user}}
+  SOKETIKEY_KEY={{base64:64}}
+  SOKETISECRET_KEY={{base64:64}}
+
+  # Optional settings
+  DEBUG=0
+  SOKETI_PUSHER_SCHEME=https
+  DEFAULT_APP_ENABLE_CLIENT_MESSAGES=
+compose: |
+  services:
+    soketi:
+      image: quay.io/soketi/soketi:1.6-16-debian
+      restart: unless-stopped
+      environment:
+        - SOKETI_DEBUG=${DEBUG:-0}
+        - SOKETI_DEFAULT_APP_ID=${SOKETI_USER}
+        - SOKETI_DEFAULT_APP_KEY=${SOKETIKEY_KEY}
+        - SOKETI_DEFAULT_APP_SECRET=${SOKETISECRET_KEY}
+        - SOKETI_PUSHER_SCHEME=${SOKETI_PUSHER_SCHEME:-https}
+        - SOKETI_DEFAULT_APP_ENABLE_CLIENT_MESSAGES=${DEFAULT_APP_ENABLE_CLIENT_MESSAGES}
+      healthcheck:
+        test: [CMD-SHELL, "bash -c ':> /dev/tcp/127.0.0.1/6001' || exit 1"]
+        interval: 5s
+        timeout: 20s
+        retries: 3
+      ports:
+        - ${PORT:-6001}:6001

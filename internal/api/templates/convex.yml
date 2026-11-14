@@ -1,0 +1,108 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Convex
+category: Backend
+description: Convex is the open-source reactive database for app developers.
+website: https://github.com/convex/convex-backend/blob/main/self-hosted/README.md
+tags:
+  - database
+  - reactive
+  - database
+  - ai
+  - agents
+  - chatbot
+  - api
+  - team
+  - bot
+  - flows
+logo: templates/convex.svg
+env: |-
+  BACKEND_PORT=3210
+  SITE_PORT=3211
+  DASHBOARD_PORT=6791
+  SECRET_HEX={{hex:64}}
+  BACKEND_URL=http://{{host}}:${BACKEND_PORT}
+  SITE_URL=http://{{host}}:${SITE_PORT}
+
+  # Optional settings
+  INSTANCE_NAME=self-hosted-convex
+  CONVEX_RELEASE_VERSION_DEV=
+  ACTIONS_USER_TIMEOUT_SECS=
+  DATABASE_URL=
+  DISABLE_BEACON=false
+  REDACT_LOGS_TO_CLIENT=false
+  DO_NOT_REQUIRE_SSL=true
+  POSTGRES_URL=
+  MYSQL_URL=
+  RUST_LOG=info
+  RUST_BACKTRACE=
+  AWS_REGION=
+  AWS_ACCESS_KEY_ID=
+  AWS_SECRET_ACCESS_KEY=
+  AWS_SESSION_TOKEN=
+  AWS_S3_FORCE_PATH_STYLE=
+  AWS_S3_DISABLE_SSE=
+  AWS_S3_DISABLE_CHECKSUMS=
+  S3_STORAGE_EXPORTS_BUCKET=
+  S3_STORAGE_SNAPSHOT_IMPORTS_BUCKET=
+  S3_STORAGE_MODULES_BUCKET=
+  S3_STORAGE_FILES_BUCKET=
+  S3_STORAGE_SEARCH_BUCKET=
+  S3_ENDPOINT_URL=
+compose: |
+  services:
+    backend:
+      image: ghcr.io/convex/convex-backend:a9a760ca10399ed42e1b4bb87c78539a235488c7
+      restart: unless-stopped
+      volumes:
+        - data:/convex/data
+      environment:
+        - INSTANCE_NAME=${INSTANCE_NAME:-self-hosted-convex}
+        - INSTANCE_SECRET=${SECRET_HEX}
+        - CONVEX_RELEASE_VERSION_DEV=${CONVEX_RELEASE_VERSION_DEV:-}
+        - ACTIONS_USER_TIMEOUT_SECS=${ACTIONS_USER_TIMEOUT_SECS:-}
+        - CONVEX_CLOUD_ORIGIN=${BACKEND_URL}
+        - CONVEX_SITE_ORIGIN=${SITE_URL}
+        - DATABASE_URL=${DATABASE_URL:-}
+        - DISABLE_BEACON=${DISABLE_BEACON:?false}
+        - REDACT_LOGS_TO_CLIENT=${REDACT_LOGS_TO_CLIENT:?false}
+        - DO_NOT_REQUIRE_SSL=${DO_NOT_REQUIRE_SSL:?true}
+        - POSTGRES_URL=${POSTGRES_URL:-}
+        - MYSQL_URL=${MYSQL_URL:-}
+        - RUST_LOG=${RUST_LOG:-info}
+        - RUST_BACKTRACE=${RUST_BACKTRACE:-}
+        - AWS_REGION=${AWS_REGION:-}
+        - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+        - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+        - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN:-}
+        - AWS_S3_FORCE_PATH_STYLE=${AWS_S3_FORCE_PATH_STYLE:-}
+        - AWS_S3_DISABLE_SSE=${AWS_S3_DISABLE_SSE:-}
+        - AWS_S3_DISABLE_CHECKSUMS=${AWS_S3_DISABLE_CHECKSUMS:-}
+        - S3_STORAGE_EXPORTS_BUCKET=${S3_STORAGE_EXPORTS_BUCKET:-}
+        - S3_STORAGE_SNAPSHOT_IMPORTS_BUCKET=${S3_STORAGE_SNAPSHOT_IMPORTS_BUCKET:-}
+        - S3_STORAGE_MODULES_BUCKET=${S3_STORAGE_MODULES_BUCKET:-}
+        - S3_STORAGE_FILES_BUCKET=${S3_STORAGE_FILES_BUCKET:-}
+        - S3_STORAGE_SEARCH_BUCKET=${S3_STORAGE_SEARCH_BUCKET:-}
+        - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-}
+      healthcheck:
+        test: curl -f http://127.0.0.1:3210/version
+        interval: 5s
+        start_period: 10s
+      ports:
+        - ${BACKEND_PORT:-3210}:3210
+        - ${SITE_PORT:-3211}:3211
+    dashboard:
+      image: ghcr.io/convex/convex-dashboard:a9a760ca10399ed42e1b4bb87c78539a235488c7
+      restart: unless-stopped
+      environment:
+        - NEXT_PUBLIC_DEPLOYMENT_URL=${BACKEND_URL}
+      depends_on:
+        backend:
+          condition: service_healthy
+      healthcheck:
+        test: curl -f http://127.0.0.1:6791/
+        interval: 5s
+        start_period: 5s
+      ports:
+        - ${DASHBOARD_PORT:-6791}:6791
+  volumes:
+    data:

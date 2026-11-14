@@ -1,0 +1,51 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: PG Back Web
+category: Development
+description: Effortless PostgreSQL backups with a user-friendly web interface!
+website: https://github.com/eduardolat/pgbackweb
+tags:
+  - backup
+  - postgresql
+  - web-interface
+env: |-
+  PORT=8085
+  PGBACKWEB_PASSWORD={{secret:64}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRES_DB=pgbackweb-db
+  TIME_ZONE=UTC
+compose: |
+  services:
+    pgbackweb:
+      image: eduardolat/pgbackweb:latest
+      restart: unless-stopped
+      volumes:
+        - pgbackweb_backups:/backups
+      environment:
+        - PBW_ENCRYPTION_KEY=${PGBACKWEB_PASSWORD}
+        - PBW_POSTGRES_CONN_STRING=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pgbackweb-db}?sslmode=disable
+        - TZ=${TIME_ZONE:-UTC}
+      depends_on:
+        postgres:
+          condition: service_healthy
+      ports:
+        - ${PORT:-8085}:8085
+    postgres:
+      image: postgres:17
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-pgbackweb-db}
+      volumes:
+        - pgbackweb_postgres_data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U ${POSTGRES_USER} -d pgbackweb"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+  volumes:
+    pgbackweb_backups:
+    pgbackweb_postgres_data:

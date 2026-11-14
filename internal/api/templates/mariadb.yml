@@ -1,0 +1,23 @@
+name: MariaDB
+category: Databases
+description: MySQL-compatible database with its data in a named volume, listening on localhost only. Add it under Databases (through this server, 127.0.0.1) to monitor and back it up.
+logo: mariadb
+featured: true
+env: |
+  ROOT_PASSWORD={{secret}}
+  BIND=127.0.0.1
+  PORT=3306
+compose: |
+  services:
+    mariadb:
+      image: mariadb:11
+      restart: unless-stopped
+      environment:
+        MARIADB_ROOT_PASSWORD: ${ROOT_PASSWORD}
+      ports:
+        - "${BIND:-127.0.0.1}:${PORT:-3306}:3306"
+      volumes:
+        - data:/var/lib/mysql
+
+  volumes:
+    data:

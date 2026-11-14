@@ -1,0 +1,39 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: code-server
+category: Development
+description: Code-Server is a web-based code editor that enables remote coding and collaboration from any device, anywhere.
+website: https://coder.com/docs/code-server/latest
+tags:
+  - code
+  - editor
+  - remote
+  - collaboration
+logo: templates/code-server.svg
+featured: true
+env: |-
+  PORT=8443
+  PASSWORDCODESERVER_PASSWORD={{secret:64}}
+  SUDOCODESERVER_PASSWORD={{secret}}
+compose: |
+  services:
+    code-server:
+      image: lscr.io/linuxserver/code-server:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=Europe/Madrid
+        - PASSWORD=$PASSWORDCODESERVER_PASSWORD
+        - SUDO_PASSWORD=$SUDOCODESERVER_PASSWORD
+        - DEFAULT_WORKSPACE=/config/workspace
+      volumes:
+        - code-server-config:/config
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8443]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8443}:8443
+  volumes:
+    code-server-config:

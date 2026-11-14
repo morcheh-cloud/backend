@@ -43,6 +43,13 @@ type Config struct {
 	DNSCheckInterval time.Duration `env:"DNS_CHECK_INTERVAL" envDefault:"30s"`
 	// Same for Proxmox clusters (and their alert rules). 0 = off.
 	PVECheckInterval time.Duration `env:"PVE_CHECK_INTERVAL" envDefault:"30s"`
+	// Same for cloud accounts (each check lists the servers in every region).
+	// 0 = off.
+	CloudCheckInterval time.Duration `env:"CLOUD_CHECK_INTERVAL" envDefault:"5m"`
+	// ArvanFakeURL points ArvanCloud accounts whose key starts with "fake-"
+	// at a fake API (cmd/fakearvan), like http://127.0.0.1:8091/%s/v3.
+	// Development only; unset in production.
+	ArvanFakeURL string `env:"ARVAN_FAKE_URL"`
 	// PanelURL is where the panel is served, for links in alerts. Default:
 	// the first CORS origin.
 	PanelURL string `env:"PANEL_URL"`

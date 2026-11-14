@@ -20,19 +20,6 @@ type Package struct {
 	Security bool   `json:"security,omitempty"`
 }
 
-// Image is one container of a Docker app.
-type Image struct {
-	Service string `json:"service"`
-	Image   string `json:"image"`
-	// The image's repo digests (sha256:…), as the server has them.
-	Digests []string `json:"digests,omitempty"`
-	Version string   `json:"version,omitempty"`
-	State   string   `json:"state"`
-	// What the registry has under the same tag; empty if unknown.
-	LatestDigest string `json:"latest_digest,omitempty"`
-	Update       bool   `json:"update,omitempty"`
-}
-
 // Host is what a scan says about the server as a whole.
 type Host struct {
 	PM             string
@@ -50,19 +37,12 @@ type Found struct {
 	RecipeID string
 	Name     string
 	Kind     string
-	// "morcheh" when Morche installed it (a Docker app in AppsDir), else
-	// "found".
+	// "found": the scan saw it on the server (Morche's own installs are
+	// "morcheh").
 	Origin          string
 	Version         string
 	Latest          string
 	UpdateAvailable bool
-	// Docker apps: running | stopped | partial.
-	State       string
-	Images      []Image
-	Dir         string
-	Project     string
-	CanRollback bool
-	Pinned      bool
 }
 
 // Scan is a parsed scan.
@@ -76,10 +56,8 @@ type Scan struct {
 
 // ScanOptions say what a scan looks at.
 type ScanOptions struct {
-	// The host's packages, every Docker app folder and every container.
+	// The host's packages too, not just the recipes.
 	Full bool
-	// Only these Docker apps (when not Full).
-	Apps []string
 }
 
 // ScanScript lists what of recipes is on the server. It runs as root when
@@ -89,7 +67,6 @@ func ScanScript(recipes []Recipe, opt ScanOptions) string {
 	b.WriteString(lib)
 	b.WriteString("set +e\n")
 	b.WriteString("ROOT=0; [ \"$(id -u)\" = 0 ] && ROOT=1\n")
-	b.WriteString("DOCKER=0; docker info >/dev/null 2>&1 && DOCKER=1\n")
 	if opt.Full {
 		b.WriteString("echo '@@ host'\n")
 		b.WriteString("echo \"pm=$PM\"\necho \"root=$ROOT\"\n")
@@ -122,9 +99,6 @@ esac | head -n 5000
 `)
 	}
 	for _, r := range recipes {
-		if r.Kind == KindDocker {
-			continue
-		}
 		fmt.Fprintf(&b, "echo '@@ recipe:%s'\n(\n", r.ID)
 		if r.Kind == KindPackage {
 			b.WriteString(pkgsCase(r))
@@ -141,42 +115,12 @@ esac | head -n 5000
 		}
 		b.WriteString(")\n")
 	}
-	// Docker apps: every folder in AppsDir (or just the asked ones).
-	b.WriteString("if [ \"$DOCKER\" = 1 ]; then\n")
-	if opt.Full {
-		fmt.Fprintf(&b, "  apps=$(ls -1 %s 2>/dev/null)\n", AppsDir)
-	} else {
-		fmt.Fprintf(&b, "  apps=%q\n", strings.Join(opt.Apps, " "))
-	}
-	fmt.Fprintf(&b, `  for id in $apps; do
-    d=%s/$id
-    [ -f "$d/compose.yml" ] || continue
-    echo "@@ app:$id"
-    [ -f "$d/compose.rollback.yml" ] && echo rollback=1
-    [ -f "$d/compose.override.yml" ] && echo pinned=1
-    echo "services=$(cd "$d" && COMPOSE_PROJECT_NAME=morcheh-$id docker compose config --services 2>/dev/null | tr '\n' ' ')"
-    for c in $(docker ps -a -q --filter "label=com.docker.compose.project=morcheh-$id"); do
-      line=$(docker inspect --format '{{.Image}}	{{index .Config.Labels "com.docker.compose.service"}}	{{.Config.Image}}	{{.State.Status}}' "$c" 2>/dev/null) || continue
-      info=$(docker image inspect --format '{{join .RepoDigests ","}}	{{index .Config.Labels "org.opencontainers.image.version"}}' "${line%%%%	*}" 2>/dev/null)
-      printf 'c\t%%s\t%%s\n' "$line" "$info"
-    done
-  done
-`, AppsDir)
-	if opt.Full {
-		b.WriteString(`  echo '@@ containers'
-  docker ps -a --format '{{.ID}}	{{.Image}}	{{.State}}	{{.Label "com.docker.compose.project"}}	{{.Label "com.docker.compose.service"}}	{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | while IFS= read -r line; do
-    case "$line" in *"	morcheh-"*) continue ;; esac
-    info=$(docker image inspect --format '{{join .RepoDigests ","}}	{{index .Config.Labels "org.opencontainers.image.version"}}' "$(docker inspect --format '{{.Image}}' "${line%%	*}" 2>/dev/null)" 2>/dev/null)
-    printf '%s\t%s\n' "$line" "$info"
-  done
-`)
-	}
-	b.WriteString("fi\nexit 0\n")
+	b.WriteString("exit 0\n")
 	return b.String()
 }
 
 // ParseScan reads ScanScript's output.
-func ParseScan(out string, recipes []Recipe, opt ScanOptions) Scan {
+func ParseScan(out string, recipes []Recipe) Scan {
 	var s Scan
 	sections := splitSections(out)
 	if h, ok := sections["host"]; ok {
@@ -205,12 +149,6 @@ func ParseScan(out string, recipes []Recipe, opt ScanOptions) Scan {
 		s.Host.Packages = pkgs
 	}
 	for _, r := range recipes {
-		if r.Kind == KindDocker {
-			if opt.Full || slices.Contains(opt.Apps, r.ID) {
-				s.Looked = append(s.Looked, r.ID)
-			}
-			continue
-		}
 		s.Looked = append(s.Looked, r.ID)
 		body, ok := sections["recipe:"+r.ID]
 		if !ok {
@@ -241,20 +179,6 @@ func ParseScan(out string, recipes []Recipe, opt ScanOptions) Scan {
 			f.Latest = version
 		}
 		s.Software = append(s.Software, f)
-	}
-	for name, body := range sections {
-		id, ok := strings.CutPrefix(name, "app:")
-		if !ok {
-			continue
-		}
-		f := parseApp(id, body, recipes)
-		if !slices.Contains(s.Looked, id) {
-			s.Looked = append(s.Looked, id)
-		}
-		s.Software = append(s.Software, f)
-	}
-	if c, ok := sections["containers"]; ok {
-		s.Software = append(s.Software, foundContainers(c, recipes, s.Software)...)
 	}
 	slices.SortFunc(s.Software, func(a, b Found) int { return strings.Compare(a.RecipeID, b.RecipeID) })
 	return s
@@ -342,161 +266,6 @@ func parsePackages(pm string, lines []string) []Package {
 	return out
 }
 
-func parseApp(id string, lines []string, recipes []Recipe) Found {
-	kv := keyValues(lines)
-	f := Found{
-		RecipeID:    id,
-		Name:        id,
-		Kind:        KindDocker,
-		Origin:      "morcheh",
-		Dir:         Dir(id),
-		Project:     Project(id),
-		CanRollback: kv["rollback"] == "1",
-		Pinned:      kv["pinned"] == "1",
-	}
-	if r, ok := Find(recipes, id); ok {
-		f.Name = r.Name
-	}
-	for _, l := range lines {
-		rest, ok := strings.CutPrefix(l, "c\t")
-		if !ok {
-			continue
-		}
-		// image id, service, image, state, digests, version
-		p := strings.Split(rest, "\t")
-		for len(p) < 6 {
-			p = append(p, "")
-		}
-		f.Images = append(f.Images, Image{
-			Service: p[1], Image: p[2], State: p[3],
-			Digests: splitDigests(p[4]), Version: strings.TrimSpace(p[5]),
-		})
-	}
-	services := strings.Fields(kv["services"])
-	f.State = appState(f.Images, len(services))
-	f.Version = appVersion(f.Images)
-	f.Latest = f.Version
-	return f
-}
-
-func appState(images []Image, services int) string {
-	running := 0
-	for _, i := range images {
-		if i.State == "running" {
-			running++
-		}
-	}
-	total := max(services, len(images))
-	switch {
-	case total == 0 || running == 0:
-		return "stopped"
-	case running >= total:
-		return "running"
-	default:
-		return "partial"
-	}
-}
-
-// appVersion is the first image's version label, else its tag.
-func appVersion(images []Image) string {
-	for _, i := range images {
-		if i.Version != "" {
-			return i.Version
-		}
-	}
-	for _, i := range images {
-		if _, tag := splitTag(i.Image); tag != "" {
-			return tag
-		}
-	}
-	return ""
-}
-
-func splitDigests(s string) []string {
-	var out []string
-	for d := range strings.SplitSeq(s, ",") {
-		if _, h, ok := strings.Cut(strings.TrimSpace(d), "@"); ok && h != "" {
-			out = append(out, h)
-		}
-	}
-	return out
-}
-
-// foundContainers are containers Morche didn't start whose image is one of
-// a recipe's, grouped by compose project (or by container).
-func foundContainers(lines []string, recipes []Recipe, have []Found) []Found {
-	byRepo := map[string]Recipe{}
-	for _, r := range recipes {
-		if r.Kind != KindDocker {
-			continue
-		}
-		for _, img := range r.Images() {
-			repo, _ := splitTag(img)
-			byRepo[NormalizeRepo(repo)] = r
-		}
-	}
-	var out []Found
-	for _, l := range lines {
-		p := strings.Split(l, "\t")
-		for len(p) < 8 {
-			p = append(p, "")
-		}
-		// id, image, state, project, service, dir, digests, version
-		img, state, proj, svc, dir := p[1], p[2], p[3], p[4], p[5]
-		repo, _ := splitTag(img)
-		r, ok := byRepo[NormalizeRepo(repo)]
-		if !ok {
-			continue
-		}
-		if slices.ContainsFunc(have, func(f Found) bool { return f.RecipeID == r.ID }) ||
-			slices.ContainsFunc(out, func(f Found) bool { return f.RecipeID == r.ID && f.Project != proj }) {
-			// One record per recipe and server: the first one wins.
-			continue
-		}
-		image := Image{Service: cmpOr(svc, r.ID), Image: img, State: state, Digests: splitDigests(p[6]), Version: strings.TrimSpace(p[7])}
-		if i := slices.IndexFunc(out, func(f Found) bool { return f.RecipeID == r.ID }); i >= 0 {
-			out[i].Images = append(out[i].Images, image)
-			continue
-		}
-		out = append(out, Found{
-			RecipeID: r.ID, Name: r.Name, Kind: KindDocker, Origin: "found",
-			Dir: dir, Project: proj, Images: []Image{image},
-		})
-	}
-	for i := range out {
-		out[i].State = appState(out[i].Images, 0)
-		out[i].Version = appVersion(out[i].Images)
-		out[i].Latest = out[i].Version
-	}
-	return out
-}
-
-// splitTag splits "repo:tag" (a registry port isn't a tag).
-func splitTag(ref string) (string, string) {
-	if i := strings.Index(ref, "@"); i >= 0 {
-		ref = ref[:i]
-	}
-	slash := strings.LastIndex(ref, "/")
-	if i := strings.LastIndex(ref, ":"); i > slash {
-		return ref[:i], ref[i+1:]
-	}
-	return ref, ""
-}
-
-// NormalizeRepo makes "grafana/grafana", "docker.io/grafana/grafana" and
-// "registry-1.docker.io/grafana/grafana" the same, and "redis" the same as
-// "library/redis".
-func NormalizeRepo(repo string) string {
-	repo = strings.ToLower(repo)
-	for _, p := range []string{"docker.io/", "index.docker.io/", "registry-1.docker.io/"} {
-		repo = strings.TrimPrefix(repo, p)
-	}
-	if !strings.Contains(repo, "/") {
-		repo = "library/" + repo
-	}
-	return repo
-}
-
 var (
 	epochRe    = regexp.MustCompile(`^[0-9]+:`)
 	revisionRe = regexp.MustCompile(`-[^-]*$`)
@@ -518,15 +287,6 @@ func prettyVersion(v string) string {
 
 func normVersion(v string) string {
 	return epochRe.ReplaceAllString(strings.TrimSpace(v), "")
-}
-
-// MarshalImages is the images column.
-func MarshalImages(images []Image) []byte {
-	if images == nil {
-		images = []Image{}
-	}
-	b, _ := json.Marshal(images)
-	return b
 }
 
 // MarshalPackages is the packages column.

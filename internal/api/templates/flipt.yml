@@ -1,0 +1,28 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Flipt
+category: Backend
+description: Flipt is a fully managed feature flag solution that enables you to keep your feature flags and remote config next to your code in Git.
+website: https://docs.flipt.io/cloud/overview
+tags:
+  - feature flags
+  - devops
+  - ci
+  - cd
+logo: templates/flipt.svg
+env: PORT=8080
+compose: |
+  services:
+    flipt:
+      image: docker.flipt.io/flipt/flipt:latest
+      restart: unless-stopped
+      volumes:
+        - flipt-data:/var/opt/flipt
+      healthcheck:
+        test: [CMD, wget, --spider, --quiet, http://127.0.0.1:8080]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    flipt-data:

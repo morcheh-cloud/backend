@@ -1,0 +1,30 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: MeTube
+category: Media
+description: A web GUI for youtube-dl with playlist support. It enables you to effortlessly download videos from YouTube and dozens of other sites.
+website: https://github.com/alexta69/metube
+tags:
+  - youtube
+  - download
+  - videos
+  - playlist
+env: PORT=8081
+compose: |
+  services:
+    metube:
+      image: ghcr.io/alexta69/metube:latest
+      restart: unless-stopped
+      environment:
+        - UID=1000
+        - GID=1000
+      volumes:
+        - metube-downloads:/downloads
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8081]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8081}:8081
+  volumes:
+    metube-downloads:

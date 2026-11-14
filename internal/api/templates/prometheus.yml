@@ -1,0 +1,24 @@
+name: Prometheus
+category: Monitoring
+description: 'Metrics database that scrapes your services. It scrapes only itself at first: mount a prometheus.yml to add targets.'
+logo: prometheus
+featured: true
+env: |
+  PORT=9090
+  RETENTION=15d
+compose: |
+  services:
+    prometheus:
+      image: prom/prometheus:latest
+      restart: unless-stopped
+      command:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --storage.tsdb.retention.time=${RETENTION:-15d}
+      ports:
+        - "${PORT:-9090}:9090"
+      volumes:
+        - data:/prometheus
+
+  volumes:
+    data:

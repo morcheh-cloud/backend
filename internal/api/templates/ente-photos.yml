@@ -1,0 +1,146 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Ente Photos
+category: Media
+description: Ente Photos is a fully open source, End to End Encrypted alternative to Google Photos and Apple Photos.
+website: https://help.ente.io/self-hosting/installation/compose
+tags:
+  - photos
+  - gallery
+  - backup
+  - encryption
+  - privacy
+  - self-hosted
+  - google-photos
+  - alternative
+logo: templates/ente-photos.svg
+env: |-
+  MUSEUM_PORT=8080
+  WEB_PORT=3000
+  ALBUMS_PORT=3002
+  ALBUMS_URL=http://{{host}}:${ALBUMS_PORT}
+  WEB_URL=http://{{host}}:${WEB_PORT}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  ENCRYPTION_KEY={{base64:32}}
+  HASH_KEY={{base64:64}}
+  JWT_PASSWORD={{secret:64}}
+  MUSEUM_URL=http://{{host}}:${MUSEUM_PORT}
+
+  # Fill these in before starting
+  S3_STORAGE_KEY=
+  S3_STORAGE_SECRET=
+  S3_STORAGE_ENDPOINT=
+  S3_STORAGE_BUCKET=
+
+  # Optional settings
+  ENTE_HTTP_USE_TLS=false
+  ENTE_DB_HOST=postgres
+  ENTE_DB_PORT=5432
+  ENTE_DB_NAME=ente_db
+  ENTE_INTERNAL_ADMIN=1580559962386438
+  ENTE_INTERNAL_DISABLE_REGISTRATION=false
+  PRIMARY_STORAGE_ARE_LOCAL_BUCKETS=false
+  PRIMARY_STORAGE_USE_PATH_STYLE_URLS=true
+  S3_STORAGE_REGION=us-east-1
+  ENTE_SMTP_HOST=
+  ENTE_SMTP_PORT=
+  ENTE_SMTP_USERNAME=
+  ENTE_SMTP_PASSWORD=
+  ENTE_SMTP_EMAIL=
+  ENTE_SMTP_SENDER_NAME=
+  ENTE_SMTP_ENCRYPTION=
+  SERVICE_DB_NAME=ente_db
+  POSTGRES_DB=
+compose: |
+  services:
+    museum:
+      image: ghcr.io/ente/server:latest
+      restart: unless-stopped
+      environment:
+        - ENTE_HTTP_USE_TLS=${ENTE_HTTP_USE_TLS:-false}
+        - ENTE_APPS_PUBLIC_ALBUMS=${ALBUMS_URL}
+        - ENTE_APPS_CAST=${WEB_URL}
+        - ENTE_APPS_ACCOUNTS=${WEB_URL}
+        - ENTE_PHOTOS_ORIGIN=${WEB_URL}
+        - ENTE_DB_HOST=${ENTE_DB_HOST:-postgres}
+        - ENTE_DB_PORT=${ENTE_DB_PORT:-5432}
+        - ENTE_DB_NAME=${ENTE_DB_NAME:-ente_db}
+        - ENTE_DB_USER=${POSTGRES_USER:-pguser}
+        - ENTE_DB_PASSWORD=${POSTGRES_PASSWORD}
+        - ENTE_KEY_ENCRYPTION=${ENCRYPTION_KEY}
+        - ENTE_KEY_HASH=${HASH_KEY}
+        - ENTE_JWT_SECRET=${JWT_PASSWORD}
+        - ENTE_INTERNAL_ADMIN=${ENTE_INTERNAL_ADMIN:-1580559962386438}
+        - ENTE_INTERNAL_DISABLE_REGISTRATION=${ENTE_INTERNAL_DISABLE_REGISTRATION:-false}
+        - ENTE_S3_B2_EU_CEN_ARE_LOCAL_BUCKETS=${PRIMARY_STORAGE_ARE_LOCAL_BUCKETS:-false}
+        - ENTE_S3_B2_EU_CEN_USE_PATH_STYLE_URLS=${PRIMARY_STORAGE_USE_PATH_STYLE_URLS:-true}
+        - ENTE_S3_B2_EU_CEN_KEY=${S3_STORAGE_KEY:?}
+        - ENTE_S3_B2_EU_CEN_SECRET=${S3_STORAGE_SECRET:?}
+        - ENTE_S3_B2_EU_CEN_ENDPOINT=${S3_STORAGE_ENDPOINT:?}
+        - ENTE_S3_B2_EU_CEN_REGION=${S3_STORAGE_REGION:-us-east-1}
+        - ENTE_S3_B2_EU_CEN_BUCKET=${S3_STORAGE_BUCKET:?}
+        - ENTE_SMTP_HOST=${ENTE_SMTP_HOST}
+        - ENTE_SMTP_PORT=${ENTE_SMTP_PORT}
+        - ENTE_SMTP_USERNAME=${ENTE_SMTP_USERNAME}
+        - ENTE_SMTP_PASSWORD=${ENTE_SMTP_PASSWORD}
+        - ENTE_SMTP_EMAIL=${ENTE_SMTP_EMAIL}
+        - ENTE_SMTP_SENDER_NAME=${ENTE_SMTP_SENDER_NAME}
+        - ENTE_SMTP_ENCRYPTION=${ENTE_SMTP_ENCRYPTION}
+      depends_on:
+        postgres:
+          condition: service_healthy
+      volumes:
+        - museum-data:/data
+        - museum-config:/config
+      healthcheck:
+        test: [CMD, wget, -qO-, http://127.0.0.1:8080/ping]
+        interval: 5s
+        timeout: 5s
+        retries: 10
+      ports:
+        - ${MUSEUM_PORT:-8080}:8080
+    web:
+      image: ghcr.io/ente/web
+      restart: unless-stopped
+      environment:
+        - ENTE_API_ORIGIN=${MUSEUM_URL}
+        - ENTE_ALBUMS_ORIGIN=${ALBUMS_URL}
+      healthcheck:
+        test: [CMD, curl, --fail, http://127.0.0.1:3000]
+        interval: 5s
+        timeout: 5s
+        retries: 10
+      ports:
+        - ${WEB_PORT:-3000}:3000
+    albums:
+      image: ghcr.io/ente/web
+      restart: unless-stopped
+      environment:
+        - ENTE_API_ORIGIN=${MUSEUM_URL}
+        - ENTE_ALBUMS_ORIGIN=${ALBUMS_URL}
+        - ENTE_PHOTOS_ORIGIN=${WEB_URL}
+      healthcheck:
+        test: [CMD, curl, --fail, http://127.0.0.1:3002]
+        interval: 5s
+        timeout: 5s
+        retries: 10
+      ports:
+        - ${ALBUMS_PORT:-3002}:3002
+    postgres:
+      image: postgres:15
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER:-pguser}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${SERVICE_DB_NAME:-ente_db}
+      volumes:
+        - postgres-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 5s
+        retries: 10
+  volumes:
+    museum-data:
+    museum-config:
+    postgres-data:

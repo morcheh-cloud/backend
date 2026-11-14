@@ -1,0 +1,45 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Mealie
+category: Productivity
+description: A recipe manager and meal planner.
+website: https://docs.mealie.io/
+tags:
+  - recipe manager
+  - meal planner
+  - cooking
+  - food
+logo: templates/mealie.webp
+featured: true
+env: |-
+  PORT=9000
+
+  # Optional settings
+  ALLOW_SIGNUP=true
+  PUID=1000
+  PGID=1000
+  TZ=Europe/Berlin
+  MAX_WORKERS=1
+  WEB_CONCURRENCY=1
+compose: |
+  services:
+    mealie:
+      image: ghcr.io/mealie-recipes/mealie:3.17.0
+      restart: unless-stopped
+      environment:
+        - ALLOW_SIGNUP=${ALLOW_SIGNUP:-true}
+        - PUID=${PUID:-1000}
+        - PGID=${PGID:-1000}
+        - TZ=${TZ:-Europe/Berlin}
+        - MAX_WORKERS=${MAX_WORKERS:-1}
+        - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
+      volumes:
+        - mealie_data:/app/data
+      healthcheck:
+        test: [CMD-SHELL, "bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1"]
+        interval: 5s
+        timeout: 10s
+        retries: 5
+      ports:
+        - ${PORT:-9000}:9000
+  volumes:
+    mealie_data:

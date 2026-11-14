@@ -1,0 +1,40 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Duplicati
+category: Storage
+description: Duplicati is a backup solution, allowing you to make scheduled backups with encryption.
+website: https://duplicati.readthedocs.io
+tags:
+  - backup
+  - encryption
+logo: templates/duplicati.webp
+env: |-
+  PORT=8200
+  ENCRYPT_PASSWORD={{secret}}
+  WEB_PASSWORD={{secret}}
+
+  # Optional settings
+  TZ=Europe/London
+compose: |
+  services:
+    duplicati:
+      image: lscr.io/linuxserver/duplicati:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-Europe/London}
+        - SETTINGS_ENCRYPTION_KEY=${ENCRYPT_PASSWORD}
+        - DUPLICATI__WEBSERVICE_PASSWORD=${WEB_PASSWORD}
+      volumes:
+        - duplicati-config:/config
+        - duplicati-backups:/backups
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8200]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8200}:8200
+  volumes:
+    duplicati-config:
+    duplicati-backups:

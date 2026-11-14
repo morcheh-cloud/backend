@@ -1,0 +1,39 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: LibreOffice
+category: Productivity
+description: LibreOffice is a free and powerful office suite.
+website: https://docs.linuxserver.io/images/docker-libreoffice/
+tags:
+  - office
+  - document
+  - spreadsheet
+  - presentation
+  - open-source
+logo: templates/libreoffice.svg
+env: |-
+  PORT=3000
+
+  # Optional settings
+  PUID=1000
+  PGID=1000
+  TZ=Etc/UTC
+compose: |
+  services:
+    libreoffice:
+      image: lscr.io/linuxserver/libreoffice:latest
+      restart: unless-stopped
+      environment:
+        - PUID=${PUID:-1000}
+        - PGID=${PGID:-1000}
+        - TZ=${TZ:-Etc/UTC}
+      volumes:
+        - libreoffice-config:/config
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://localhost:3000]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+      ports:
+        - ${PORT:-3000}:3000
+  volumes:
+    libreoffice-config:

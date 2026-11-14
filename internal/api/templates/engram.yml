@@ -1,0 +1,59 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Engram
+category: AI
+description: Persistent memory sync server for AI coding agents (MCP).
+website: https://github.com/Gentleman-Programming/engram
+tags:
+  - ai
+  - memory
+  - mcp
+  - agents
+  - self-hosted
+  - postgres
+logo: templates/engram.webp
+env: |-
+  PORT=8080
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  JWTSECRET_SECRET={{secret:64}}
+  CLOUDTOKEN_PASSWORD={{secret:64}}
+  ADMIN_PASSWORD={{secret:64}}
+
+  # Optional settings
+  POSTGRES_DB=
+  ENGRAM_CLOUD_ALLOWED_PROJECTS="*"
+compose: |
+  services:
+    engram:
+      image: ghcr.io/gentleman-programming/engram:1.20.0
+      restart: unless-stopped
+      command: [cloud, serve]
+      environment:
+        - ENGRAM_CLOUD_HOST=0.0.0.0
+        - ENGRAM_PORT=8080
+        - ENGRAM_DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB}?sslmode=disable
+        - ENGRAM_JWT_SECRET=${JWTSECRET_SECRET}
+        - ENGRAM_CLOUD_TOKEN=${CLOUDTOKEN_PASSWORD}
+        - ENGRAM_CLOUD_ADMIN=${ADMIN_PASSWORD}
+        - ENGRAM_CLOUD_ALLOWED_PROJECTS=${ENGRAM_CLOUD_ALLOWED_PROJECTS:-*}
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      ports:
+        - ${PORT:-8080}:8080
+    postgresql:
+      image: postgres:18-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-engram-db}
+      volumes:
+        - engram-postgresql-data:/var/lib/postgresql
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    engram-postgresql-data:

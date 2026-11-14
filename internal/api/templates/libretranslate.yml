@@ -1,0 +1,35 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: LibreTranslate
+category: AI
+description: Free and open-source machine translation API, entirely self-hosted.
+website: https://libretranslate.com/docs/
+tags:
+  - translate
+  - api
+logo: templates/libretranslate.svg
+env: |-
+  PORT=5000
+
+  # Optional settings
+  LT_SSL=true
+  LT_UPDATE_MODELS=true
+  LT_LOAD_ONLY=en,es,fr,de,ja
+compose: |
+  services:
+    libretranslate:
+      image: libretranslate/libretranslate:latest
+      restart: unless-stopped
+      environment:
+        - LT_SSL=${LT_SSL:-true}
+        - LT_UPDATE_MODELS=${LT_UPDATE_MODELS:-true}
+        - LT_LOAD_ONLY=${LT_LOAD_ONLY:-en,es,fr,de,ja}
+      volumes:
+        - libretranslate-api-keys:/app/db
+        - libretranslate-models:/home/libretranslate/.local
+      healthcheck:
+        test: [CMD-SHELL, ./venv/bin/python scripts/healthcheck.py]
+      ports:
+        - ${PORT:-5000}:5000
+  volumes:
+    libretranslate-api-keys:
+    libretranslate-models:

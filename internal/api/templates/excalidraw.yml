@@ -1,0 +1,26 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Excalidraw
+category: Productivity
+description: Virtual whiteboard for sketching hand-drawn like diagrams
+website: https://docs.excalidraw.com/docs
+tags:
+  - canvas
+  - diagrams
+  - drawing
+  - productivity
+  - whiteboard
+logo: templates/excalidraw.svg
+featured: true
+env: PORT=8080
+compose: |
+  services:
+    excalidraw:
+      image: excalidraw/excalidraw:latest
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD, wget, --spider, --quiet, http://localhost]
+        interval: 10s
+        timeout: 5s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80

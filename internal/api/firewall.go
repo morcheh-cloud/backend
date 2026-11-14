@@ -351,6 +351,7 @@ func registerFirewall(api huma.API, h *serverHandler) {
 	registerFirewallForwards(api, h, base)
 	registerFirewallHistory(api, h, base)
 	registerFirewallApply(api, h)
+	registerFirewallContainers(api, h, base)
 }
 
 // ---- Reading ----

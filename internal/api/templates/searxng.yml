@@ -1,0 +1,89 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: SearXNG
+category: Search
+description: SearXNG is a free internet metasearch engine which aggregates results from more than 70 search services.
+website: https://docs.searxng.org
+tags:
+  - search
+  - google
+  - engine
+  - images
+  - documents
+  - rss
+  - proxy
+  - news
+  - web
+  - api
+logo: templates/searxng.svg
+featured: true
+env: |-
+  PORT=8080
+  SEARXNG_URL=http://{{host}}:${PORT}
+  SEARXNGSECRET_PASSWORD={{secret}}
+
+  # Optional settings
+  INSTANCE_NAME=coolify
+  SEARXNG_BIND_ADDRESS=0.0.0.0
+compose: |
+  services:
+    searxng:
+      image: searxng/searxng
+      restart: unless-stopped
+      depends_on:
+        redis:
+          condition: service_healthy
+      environment:
+        - INSTANCE_NAME=${INSTANCE_NAME:-coolify}
+        - BASE_URL=${SEARXNG_URL}
+        - SEARXNG_URL=${SEARXNG_URL}
+        - SEARXNG_BIND_ADDRESS=${SEARXNG_BIND_ADDRESS:-0.0.0.0}
+        - SEARXNG_SECRET=${SEARXNGSECRET_PASSWORD}
+        - SEARXNG_REDIS_URL=redis://redis:6379/0
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/healthz]
+        interval: 5s
+        timeout: 5s
+        retries: 3
+      ports:
+        - ${PORT:-8080}:8080
+      configs:
+        - source: searxng-settings.yml
+          target: /etc/searxng/settings.yml
+        - source: searxng-limiter.toml
+          target: /etc/searxng/limiter.toml
+    redis:
+      image: redis:7
+      restart: always
+      volumes:
+        - redis-data:/data
+      healthcheck:
+        test: [CMD, redis-cli, ping]
+        interval: 5s
+        timeout: 5s
+        retries: 3
+  volumes:
+    redis-data:
+  configs:
+    searxng-settings.yml:
+      content: |
+        # see https://docs.searxng.org/admin/settings/settings.html#settings-use-default-settings
+        use_default_settings: true
+        server:
+          limiter: false
+          image_proxy: true
+        search:
+          formats:
+            - html
+            - csv
+            - json
+            - rss
+        ui:
+          static_use_hash: true
+    searxng-limiter.toml:
+      content: |
+        # This configuration file updates the default configuration file
+        # See https://github.com/searxng/searxng/blob/master/searx/botdetection/limiter.toml
+
+        [botdetection.ip_limit]
+        # activate link_token method in the ip_limit method
+        link_token = true

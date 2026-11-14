@@ -1,0 +1,44 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Stalwart Mail
+category: Email
+description: Modern mail server platform
+website: https://stalw.art/docs/
+tags:
+  - mail
+  - smtp
+  - imap
+  - pop3
+  - jmap
+  - email
+  - sieve
+  - messaging
+env: PORT=8080
+compose: |
+  services:
+    stalwart:
+      image: stalwartlabs/stalwart:v0.16.13
+      restart: unless-stopped
+      expose:
+        - "8080"
+      ports:
+        - 25:25
+        - 465:465
+        - 587:587
+        - 993:993
+        - 995:995
+        - 143:143
+        - 110:110
+        - 4190:4190
+        - ${PORT:-8080}:8080
+      volumes:
+        - stalwart-mail:/etc/stalwart
+        - stalwart-data:/var/lib/stalwart
+        - /etc/localtime:/etc/localtime:ro
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost:8080/]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+  volumes:
+    stalwart-mail:
+    stalwart-data:

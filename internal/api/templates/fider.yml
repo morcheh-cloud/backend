@@ -1,0 +1,74 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Fider
+category: Productivity
+description: Fider is a feedback platform for collecting and managing user feedback.
+website: https://fider.io
+tags:
+  - feedback
+  - user-feedback
+logo: templates/fider.svg
+env: |-
+  PORT=3000
+  FIDER_URL=http://{{host}}:${PORT}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  FIDER_PASSWORD={{secret:64}}
+
+  # Optional settings
+  EMAIL_NOREPLY=noreply@example.com
+  EMAIL_MAILGUN_API=
+  EMAIL_MAILGUN_DOMAIN=
+  EMAIL_MAILGUN_REGION=
+  EMAIL_SMTP_HOST=smtp.mailgun.com
+  EMAIL_SMTP_PORT=587
+  EMAIL_SMTP_USERNAME=postmaster@mailgun.com
+  EMAIL_SMTP_PASSWORD=
+  EMAIL_SMTP_ENABLE_STARTTLS=
+  EMAIL_AWSSES_REGION=
+  EMAIL_AWSSES_ACCESS_KEY_ID=
+  EMAIL_AWSSES_SECRET_ACCESS_KEY=
+  POSTGRES_DB=fider
+compose: |
+  services:
+    fider:
+      image: getfider/fider:stable
+      restart: unless-stopped
+      environment:
+        - BASE_URL=$FIDER_URL
+        - DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@database:5432/fider?sslmode=disable
+        - JWT_SECRET=$FIDER_PASSWORD
+        - EMAIL_NOREPLY=${EMAIL_NOREPLY:-noreply@example.com}
+        - EMAIL_MAILGUN_API=$EMAIL_MAILGUN_API
+        - EMAIL_MAILGUN_DOMAIN=$EMAIL_MAILGUN_DOMAIN
+        - EMAIL_MAILGUN_REGION=$EMAIL_MAILGUN_REGION
+        - EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-smtp.mailgun.com}
+        - EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+        - EMAIL_SMTP_USERNAME=${EMAIL_SMTP_USERNAME:-postmaster@mailgun.com}
+        - EMAIL_SMTP_PASSWORD=$EMAIL_SMTP_PASSWORD
+        - EMAIL_SMTP_ENABLE_STARTTLS=$EMAIL_SMTP_ENABLE_STARTTLS
+        - EMAIL_AWSSES_REGION=$EMAIL_AWSSES_REGION
+        - EMAIL_AWSSES_ACCESS_KEY_ID=$EMAIL_AWSSES_ACCESS_KEY_ID
+        - EMAIL_AWSSES_SECRET_ACCESS_KEY=$EMAIL_AWSSES_SECRET_ACCESS_KEY
+      healthcheck:
+        test: [CMD, /app/fider, ping]
+        interval: 2s
+        timeout: 10s
+        retries: 10
+      ports:
+        - ${PORT:-3000}:3000
+    database:
+      image: postgres:12
+      restart: unless-stopped
+      volumes:
+        - pg_data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=${POSTGRES_DB:-fider}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    pg_data:

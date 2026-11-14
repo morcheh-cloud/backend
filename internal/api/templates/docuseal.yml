@@ -1,0 +1,29 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: DocuSeal
+category: Productivity
+description: Document Signing for Everyone free forever for individuals, extensible for businesses and developers. Open Source Alternative to DocuSign, PandaDoc and more.
+website: https://www.docuseal.co/
+tags:
+  - documentation
+logo: templates/docuseal.webp
+env: |-
+  PORT=3000
+  DOCUSEAL_URL=http://{{host}}:${PORT}
+compose: |
+  services:
+    docuseal:
+      image: docuseal/docuseal:latest
+      restart: unless-stopped
+      environment:
+        - HOST=${DOCUSEAL_URL}
+      volumes:
+        - docuseal-data:/data
+      healthcheck:
+        test: [CMD, wget, -q, --spider, http://127.0.0.1:3000]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-3000}:3000
+  volumes:
+    docuseal-data:

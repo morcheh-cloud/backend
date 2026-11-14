@@ -50,6 +50,7 @@ type JobPlace struct {
 	Name       string `json:"name,omitempty" doc:"The server's or storage's name when the job started"`
 	RunID      string `json:"run_id,omitempty" format:"uuid" doc:"The Ansible or cron job run it belongs to"`
 	ScheduleID string `json:"schedule_id,omitempty" format:"uuid" doc:"The cron job it is a run of"`
+	SyncID     string `json:"sync_id,omitempty" format:"uuid" doc:"The storage migration or sync it is a run of"`
 	DatabaseID string `json:"database_id,omitempty" format:"uuid" doc:"The database it backs up"`
 	Volume     string `json:"volume,omitempty" doc:"The Docker volume it works in (path is inside it)"`
 	AutoUpdate string `json:"auto_update,omitempty" format:"uuid" doc:"The container auto-update it is a run of"`

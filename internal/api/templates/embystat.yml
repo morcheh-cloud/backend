@@ -1,0 +1,32 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: EmbyStat
+category: Analytics
+description: EmbyStat is a web analytics tool, designed to provide insight into website traffic and user behavior.
+website: https://github.com/mregni/EmbyStat
+tags:
+  - analytics
+  - insights
+  - statistics
+  - web
+  - traffic
+env: PORT=6555
+compose: |
+  services:
+    embystat:
+      image: lscr.io/linuxserver/embystat:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=Europe/Madrid
+      volumes:
+        - embystat-config:/config
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:6555]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-6555}:6555
+  volumes:
+    embystat-config:

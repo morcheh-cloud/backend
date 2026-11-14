@@ -1,0 +1,31 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: linkding Plus
+category: News & RSS
+description: A self-hosted bookmark manager designed to be minimal, fast, and easy to set up. (Includes feature for archiving websites as HTML snapshots)
+website: https://linkding.link/
+tags:
+  - rss
+  - feed
+logo: templates/linkding.svg
+env: |-
+  PORT=9090
+  LINKDING_USER={{user}}
+  LINKDING_PASSWORD={{secret}}
+compose: |
+  services:
+    linkding-plus:
+      image: sissbruecker/linkding:latest-plus
+      restart: unless-stopped
+      volumes:
+        - linkding_data:/etc/linkding/data
+      environment:
+        - LD_SUPERUSER_NAME=${LINKDING_USER}
+        - LD_SUPERUSER_PASSWORD=${LINKDING_PASSWORD}
+      healthcheck:
+        test: [CMD-SHELL, "bash -c ':> /dev/tcp/127.0.0.1/9090' || exit 1"]
+        interval: 5s
+        timeout: 5s
+      ports:
+        - ${PORT:-9090}:9090
+  volumes:
+    linkding_data:

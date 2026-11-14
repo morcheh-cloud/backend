@@ -1,0 +1,45 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Next Image Transformation
+category: Media
+description: Drop-in replacement for Vercel's Nextjs image optimization service.
+website: https://github.com/coollabsio/next-image-transformation
+tags:
+  - nextjs
+  - image
+  - transformation
+  - service
+logo: templates/coolify-logo.svg
+env: |-
+  PORT=3000
+
+  # Optional settings
+  ALLOWED_REMOTE_DOMAINS="*"
+  IMGPROXY_URL=http://imgproxy:8080
+compose: |
+  services:
+    next-image-transformation:
+      image: ghcr.io/coollabsio/next-image-transformation:latest
+      restart: unless-stopped
+      environment:
+        - NODE_ENV=production
+        - ALLOWED_REMOTE_DOMAINS=${ALLOWED_REMOTE_DOMAINS:-*}
+        - IMGPROXY_URL=${IMGPROXY_URL:-http://imgproxy:8080}
+      healthcheck:
+        test: wget -qO- http://127.0.0.1:3000/health || exit 1
+        interval: 2s
+        timeout: 10s
+        retries: 5
+      ports:
+        - ${PORT:-3000}:3000
+    imgproxy:
+      image: darthsim/imgproxy
+      restart: unless-stopped
+      environment:
+        - IMGPROXY_ENABLE_WEBP_DETECTION=true
+        - IMGPROXY_JPEG_PROGRESSIVE=true
+        - IMGPROXY_USE_ETAG=true
+      healthcheck:
+        test: [CMD, imgproxy, health]
+        interval: 2s
+        timeout: 10s
+        retries: 5

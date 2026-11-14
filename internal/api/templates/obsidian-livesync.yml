@@ -1,0 +1,69 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Obsidian LiveSync
+category: Storage
+description: Self-hosted sync backend for Obsidian LiveSync plugin using CouchDB
+website: https://github.com/vrtmrz/obsidian-livesync/blob/main/docs/setup_own_server.md
+tags:
+  - obsidian
+  - couchdb
+  - sync
+  - notes
+  - markdown
+env: |-
+  PORT=5984
+  COUCHDB_USER={{user}}
+  COUCHDB_PASSWORD={{secret:64}}
+
+  # Optional settings
+  MAX_DOCUMENT_SIZE=52428800
+  MAX_HTTP_REQUEST_SIZE=67108864
+compose: |
+  services:
+    couchdb:
+      image: couchdb:3.4.2
+      restart: unless-stopped
+      environment:
+        - COUCHDB_USER=${COUCHDB_USER}
+        - COUCHDB_PASSWORD=${COUCHDB_PASSWORD}
+        - MAX_DOCUMENT_SIZE=${MAX_DOCUMENT_SIZE:-52428800}
+        - MAX_HTTP_REQUEST_SIZE=${MAX_HTTP_REQUEST_SIZE:-67108864}
+      volumes:
+        - couchdb-data:/opt/couchdb/data
+      healthcheck:
+        test: [CMD-SHELL, "curl -f -u \"$${COUCHDB_USER}:$${COUCHDB_PASSWORD}\" http://localhost:5984/_up"]
+        interval: 30s
+        timeout: 10s
+        start_period: 40s
+        retries: 3
+      ports:
+        - ${PORT:-5984}:5984
+      configs:
+        - source: couchdb-local.ini
+          target: /opt/couchdb/etc/local.ini
+  volumes:
+    couchdb-data:
+  configs:
+    couchdb-local.ini:
+      content: |
+        [couchdb]
+        single_node=true
+        max_document_size = ${MAX_DOCUMENT_SIZE}
+
+        [chttpd]
+        require_valid_user = true
+        max_http_request_size = ${MAX_HTTP_REQUEST_SIZE}
+
+        [chttpd_auth]
+        require_valid_user = true
+        authentication_redirect = /_utils/session.html
+
+        [httpd]
+        WWW-Authenticate = Basic realm="couchdb"
+        enable_cors = true
+
+        [cors]
+        origins = app://obsidian.md,capacitor://localhost,http://localhost
+        credentials = true
+        headers = accept, authorization, content-type, origin, referer
+        methods = GET, PUT, POST, HEAD, DELETE
+        max_age = 3600

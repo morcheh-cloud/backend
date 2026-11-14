@@ -1,0 +1,30 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Open WebUI
+category: AI
+description: User-friendly AI Interface (Supports Ollama, OpenAI API, ...)
+website: https://docs.openwebui.com
+tags:
+  - ai
+  - models
+  - deployment
+  - open-web-ui
+  - integration
+logo: templates/openwebui.svg
+featured: true
+env: PORT=8080
+compose: |
+  services:
+    open-webui:
+      image: ghcr.io/open-webui/open-webui:main
+      restart: unless-stopped
+      volumes:
+        - open-webui:/app/backend/data
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8080]
+        interval: 5s
+        timeout: 30s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    open-webui:

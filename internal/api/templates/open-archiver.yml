@@ -1,0 +1,128 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Open Archiver
+category: Email
+description: A self-hosted, open-source email archiving solution with full-text search capability.
+website: https://docs.openarchiver.com/
+tags:
+  - email archiving
+  - email
+  - compliance
+  - search
+logo: templates/openarchiver.webp
+env: |-
+  PORT=3000
+  ENCRYPTIONKEY_HEX={{hex:64}}
+  STORAGEENCRYPTIONKEY_HEX={{hex:64}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  MEILISEARCH_PASSWORD={{secret}}
+  VALKEY_PASSWORD={{secret}}
+  JWT_SECRET={{secret:128}}
+
+  # Optional settings
+  PORT_BACKEND=4000
+  PORT_FRONTEND=3000
+  NODE_ENV=production
+  SYNC_FREQUENCY="* * * * *"
+  POSTGRES_DB=open_archive
+  STORAGE_TYPE=local
+  STORAGE_LOCAL_ROOT_PATH=/var/data/open-archiver
+  BODY_SIZE_LIMIT=100M
+  STORAGE_S3_ENDPOINT=
+  STORAGE_S3_BUCKET=
+  STORAGE_S3_ACCESS_KEY_ID=
+  STORAGE_S3_SECRET_ACCESS_KEY=
+  STORAGE_S3_REGION=
+  STORAGE_S3_FORCE_PATH_STYLE=false
+  JWT_EXPIRES_IN=7d
+  RATE_LIMIT_WINDOW_MS=60000
+  RATE_LIMIT_MAX_REQUESTS=100
+compose: |
+  services:
+    open-archiver:
+      image: logiclabshq/open-archiver:latest
+      restart: unless-stopped
+      environment:
+        - ENCRYPTION_KEY=${ENCRYPTIONKEY_HEX}
+        - STORAGE_ENCRYPTION_KEY=${STORAGEENCRYPTIONKEY_HEX}
+        - PORT_BACKEND=${PORT_BACKEND:-4000}
+        - PORT_FRONTEND=${PORT_FRONTEND:-3000}
+        - NODE_ENV=${NODE_ENV:-production}
+        - SYNC_FREQUENCY=${SYNC_FREQUENCY:-* * * * *}
+        - POSTGRES_DB=${POSTGRES_DB:-open_archive}
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-open-archiver-db}
+        - MEILI_MASTER_KEY=${MEILISEARCH_PASSWORD}
+        - MEILI_HOST=http://meilisearch:7700
+        - REDIS_HOST=valkey
+        - REDIS_PORT=6379
+        - REDIS_PASSWORD=${VALKEY_PASSWORD}
+        - REDIS_TLS_ENABLED=false
+        - STORAGE_TYPE=${STORAGE_TYPE:-local}
+        - STORAGE_LOCAL_ROOT_PATH=${STORAGE_LOCAL_ROOT_PATH:-/var/data/open-archiver}
+        - BODY_SIZE_LIMIT=${BODY_SIZE_LIMIT:-100M}
+        - STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT}
+        - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET}
+        - STORAGE_S3_ACCESS_KEY_ID=${STORAGE_S3_ACCESS_KEY_ID}
+        - STORAGE_S3_SECRET_ACCESS_KEY=${STORAGE_S3_SECRET_ACCESS_KEY}
+        - STORAGE_S3_REGION=${STORAGE_S3_REGION}
+        - STORAGE_S3_FORCE_PATH_STYLE=${STORAGE_S3_FORCE_PATH_STYLE:-false}
+        - JWT_SECRET=${JWT_SECRET}
+        - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
+        - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
+        - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      volumes:
+        - archiver-data:/var/data/open-archiver
+      depends_on:
+        postgres:
+          condition: service_healthy
+        valkey:
+          condition: service_healthy
+        meilisearch:
+          condition: service_healthy
+      ports:
+        - ${PORT:-3000}:3000
+    postgres:
+      image: postgres:17-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_DB=${POSTGRES_DB:-open-archiver-db}
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - LC_ALL=C
+      volumes:
+        - postgres-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 10s
+        timeout: 20s
+        retries: 10
+    valkey:
+      image: valkey/valkey:8-alpine
+      restart: unless-stopped
+      command: valkey-server --requirepass ${VALKEY_PASSWORD}
+      volumes:
+        - valkey-data:/data
+      healthcheck:
+        test: [CMD, redis-cli, ping]
+        interval: 10s
+        timeout: 5s
+        retries: 3
+    meilisearch:
+      image: getmeili/meilisearch:v1.15
+      restart: unless-stopped
+      environment:
+        - MEILI_MASTER_KEY=${MEILISEARCH_PASSWORD}
+      volumes:
+        - meilisearch-data:/meili_data
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:7700/health]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+  volumes:
+    archiver-data:
+    postgres-data:
+    valkey-data:
+    meilisearch-data:

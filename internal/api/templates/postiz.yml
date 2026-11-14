@@ -1,0 +1,192 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Postiz
+category: Analytics
+description: Open source social media scheduling tool.
+website: https://docs.postiz.com
+tags:
+  - post everywhere
+  - social media
+  - planning
+logo: templates/postiz.svg
+env: |-
+  PORT=5000
+  POSTIZ_URL=http://{{host}}:${PORT}
+  JWTSECRET_PASSWORD={{secret}}
+  POSTGRESQL_PASSWORD={{secret}}
+  REDIS_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRESQL_DATABASE=postiz-db
+  CLOUDFLARE_ACCOUNT_ID=
+  CLOUDFLARE_ACCESS_KEY=
+  CLOUDFLARE_SECRET_ACCESS_KEY=
+  CLOUDFLARE_BUCKETNAME=
+  CLOUDFLARE_BUCKET_URL=
+  CLOUDFLARE_REGION=
+  STORAGE_PROVIDER=local
+  UPLOAD_DIRECTORY=/uploads
+  NEXT_PUBLIC_UPLOAD_DIRECTORY=/uploads
+  NEXT_PUBLIC_UPLOAD_STATIC_DIRECTORY=
+  RESEND_API_KEY=
+  EMAIL_FROM_ADDRESS=
+  EMAIL_FROM_NAME=
+  EMAIL_PROVIDER=
+  SERVICE_X_API=
+  SERVICE_X_SECRET=
+  SERVICE_LINKEDIN_ID=
+  SERVICE_LINKEDIN_SECRET=
+  SERVICE_REDDIT_API=
+  SERVICE_REDDIT_SECRET=
+  SERVICE_GITHUB_ID=
+  SERVICE_GITHUB_SECRET=
+  SERVICE_THREADS_ID=
+  SERVICE_THREADS_SECRET=
+  SERVICE_FACEBOOK_ID=
+  SERVICE_FACEBOOK_SECRET=
+  SERVICE_YOUTUBE_ID=
+  SERVICE_YOUTUBE_SECRET=
+  SERVICE_TIKTOK_ID=
+  SERVICE_TIKTOK_SECRET=
+  SERVICE_PINTEREST_ID=
+  SERVICE_PINTEREST_SECRET=
+  SERVICE_DRIBBLE_ID=
+  SERVICE_DRIBBLE_SECRET=
+  SERVICE_DISCORD_ID=
+  SERVICE_DISCORD_SECRET=
+  SERVICE_DISCORD_TOKEN=
+  SERVICE_SLACK_ID=
+  SERVICE_SLACK_SECRET=
+  SLACK_SIGNING_SECRET=
+  SERVICE_MASTODON_ID=
+  SERVICE_MASTODON_SECRET=
+  INSTAGRAM_APP_ID=
+  INSTAGRAM_APP_SECRET=
+  SERVICE_BEEHIIVE_KEY=
+  SERVICE_BEEHIIVE_PUBID=
+  SERVICE_OPENAI_KEY=
+  NEXT_PUBLIC_DISCORD_SUPPORT=
+  NEXT_PUBLIC_POLOTNO=
+  NX_ADD_PLUGINS=false
+  NOT_SECURED=false
+  FEE_AMOUNT=0.05
+  STRIPE_PUBLISHABLE_KEY=
+  STRIPE_SECRET_KEY=
+  STRIPE_SIGNING_KEY=
+  STRIPE_SIGNING_KEY_CONNECT=
+compose: |
+  services:
+    postiz:
+      image: ghcr.io/gitroomhq/postiz-app:v2.10.1
+      restart: unless-stopped
+      environment:
+        - MAIN_URL=${POSTIZ_URL}
+        - FRONTEND_URL=${POSTIZ_URL}
+        - NEXT_PUBLIC_BACKEND_URL=${POSTIZ_URL}/api
+        - JWT_SECRET=${JWTSECRET_PASSWORD}
+        - DATABASE_URL=postgresql://postgres:${POSTGRESQL_PASSWORD}@postgres:5432/${POSTGRESQL_DATABASE:-postiz-db}
+        - REDIS_URL=redis://default:${REDIS_PASSWORD}@redis:6379
+        - BACKEND_INTERNAL_URL=http://localhost:3000
+        - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+        - CLOUDFLARE_ACCESS_KEY=${CLOUDFLARE_ACCESS_KEY}
+        - CLOUDFLARE_SECRET_ACCESS_KEY=${CLOUDFLARE_SECRET_ACCESS_KEY}
+        - CLOUDFLARE_BUCKETNAME=${CLOUDFLARE_BUCKETNAME}
+        - CLOUDFLARE_BUCKET_URL=${CLOUDFLARE_BUCKET_URL}
+        - CLOUDFLARE_REGION=${CLOUDFLARE_REGION}
+        - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+        - UPLOAD_DIRECTORY=${UPLOAD_DIRECTORY:-/uploads}
+        - NEXT_PUBLIC_UPLOAD_DIRECTORY=${NEXT_PUBLIC_UPLOAD_DIRECTORY:-/uploads}
+        - NEXT_PUBLIC_UPLOAD_STATIC_DIRECTORY=${NEXT_PUBLIC_UPLOAD_STATIC_DIRECTORY}
+        - RESEND_API_KEY=${RESEND_API_KEY}
+        - EMAIL_FROM_ADDRESS=${EMAIL_FROM_ADDRESS}
+        - EMAIL_FROM_NAME=${EMAIL_FROM_NAME}
+        - EMAIL_PROVIDER=${EMAIL_PROVIDER}
+        - X_API_KEY=${SERVICE_X_API}
+        - X_API_SECRET=${SERVICE_X_SECRET}
+        - LINKEDIN_CLIENT_ID=${SERVICE_LINKEDIN_ID}
+        - LINKEDIN_CLIENT_SECRET=${SERVICE_LINKEDIN_SECRET}
+        - REDDIT_CLIENT_ID=${SERVICE_REDDIT_API}
+        - REDDIT_CLIENT_SECRET=${SERVICE_REDDIT_SECRET}
+        - GITHUB_CLIENT_ID=${SERVICE_GITHUB_ID}
+        - GITHUB_CLIENT_SECRET=${SERVICE_GITHUB_SECRET}
+        - THREADS_APP_ID=${SERVICE_THREADS_ID}
+        - THREADS_APP_SECRET=${SERVICE_THREADS_SECRET}
+        - FACEBOOK_APP_ID=${SERVICE_FACEBOOK_ID}
+        - FACEBOOK_APP_SECRET=${SERVICE_FACEBOOK_SECRET}
+        - YOUTUBE_CLIENT_ID=${SERVICE_YOUTUBE_ID}
+        - YOUTUBE_CLIENT_SECRET=${SERVICE_YOUTUBE_SECRET}
+        - TIKTOK_CLIENT_ID=${SERVICE_TIKTOK_ID}
+        - TIKTOK_CLIENT_SECRET=${SERVICE_TIKTOK_SECRET}
+        - PINTEREST_CLIENT_ID=${SERVICE_PINTEREST_ID}
+        - PINTEREST_CLIENT_SECRET=${SERVICE_PINTEREST_SECRET}
+        - DRIBBBLE_CLIENT_ID=${SERVICE_DRIBBLE_ID}
+        - DRIBBBLE_CLIENT_SECRET=${SERVICE_DRIBBLE_SECRET}
+        - DISCORD_CLIENT_ID=${SERVICE_DISCORD_ID}
+        - DISCORD_CLIENT_SECRET=${SERVICE_DISCORD_SECRET}
+        - DISCORD_BOT_TOKEN_ID=${SERVICE_DISCORD_TOKEN}
+        - SLACK_ID=${SERVICE_SLACK_ID}
+        - SLACK_SECRET=${SERVICE_SLACK_SECRET}
+        - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+        - MASTODON_CLIENT_ID=${SERVICE_MASTODON_ID}
+        - MASTODON_CLIENT_SECRET=${SERVICE_MASTODON_SECRET}
+        - INSTAGRAM_APP_ID=${INSTAGRAM_APP_ID}
+        - INSTAGRAM_APP_SECRET=${INSTAGRAM_APP_SECRET}
+        - BEEHIIVE_API_KEY=${SERVICE_BEEHIIVE_KEY}
+        - BEEHIIVE_PUBLICATION_ID=${SERVICE_BEEHIIVE_PUBID}
+        - OPENAI_API_KEY=${SERVICE_OPENAI_KEY}
+        - NEXT_PUBLIC_DISCORD_SUPPORT=${NEXT_PUBLIC_DISCORD_SUPPORT}
+        - NEXT_PUBLIC_POLOTNO=${NEXT_PUBLIC_POLOTNO}
+        - IS_GENERAL=true
+        - NX_ADD_PLUGINS=${NX_ADD_PLUGINS:-false}
+        - NOT_SECURED=${NOT_SECURED:-false}
+        - FEE_AMOUNT=${FEE_AMOUNT:-0.05}
+        - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+        - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+        - STRIPE_SIGNING_KEY=${STRIPE_SIGNING_KEY}
+        - STRIPE_SIGNING_KEY_CONNECT=${STRIPE_SIGNING_KEY_CONNECT}
+      volumes:
+        - postiz_config:/config/
+        - postiz_uploads:/uploads/
+      depends_on:
+        postgres:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD-SHELL, wget -qO- http://127.0.0.1:5000/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-5000}:5000
+    postgres:
+      image: postgres:14.5
+      restart: unless-stopped
+      volumes:
+        - postiz_postgresql_data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=postgres
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-postiz-db}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB:-postiz-db}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    redis:
+      image: redis:7.2
+      restart: unless-stopped
+      environment:
+        - REDIS_PASSWORD=${REDIS_PASSWORD}
+      command: redis-server --requirepass ${REDIS_PASSWORD}
+      volumes:
+        - postiz_redis_data:/data
+      healthcheck:
+        test: [CMD, redis-cli, -a, "${REDIS_PASSWORD}", ping]
+        interval: 5s
+        timeout: 10s
+        retries: 20
+  volumes:
+    postiz_config:
+    postiz_uploads:
+    postiz_postgresql_data:
+    postiz_redis_data:

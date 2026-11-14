@@ -1,0 +1,32 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: ESPHome
+category: Automation
+description: Smart Home Made Simple.
+website: https://esphome.io/guides/getting_started_command_line/
+tags:
+  - home
+  - smart
+  - assistant
+  - microcontroller
+logo: templates/esphome.svg
+env: |-
+  PORT=6052
+  ADMIN_USER={{user}}
+  ADMIN_PASSWORD={{secret}}
+compose: |
+  services:
+    esphome:
+      image: ghcr.io/esphome/esphome:2025.12.4
+      restart: unless-stopped
+      volumes:
+        - esp_config:/config
+        - /etc/localtime:/etc/localtime:ro
+      privileged: true
+      network_mode: host
+      environment:
+        - USERNAME=${ADMIN_USER}
+        - PASSWORD=${ADMIN_PASSWORD}
+      ports:
+        - ${PORT:-6052}:6052
+  volumes:
+    esp_config:

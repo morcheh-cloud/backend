@@ -1,0 +1,49 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Celld
+category: Backend
+description: Self-hosted, distributed Durable Objects powered by Deno.
+website: https://celld.dev/docs
+tags:
+  - deno
+  - durable-objects
+  - workers
+  - sqlite
+  - distributed
+  - backend
+  - serverless
+env: |-
+  PORT=8080
+
+  # Fill these in before starting
+  CELLD_BUCKET=
+  AWS_ACCESS_KEY_ID=
+  AWS_SECRET_ACCESS_KEY=
+
+  # Optional settings
+  CELLD_VERSION=latest
+  S3_ENDPOINT=
+  AWS_REGION=us-east-1
+  AWS_SESSION_TOKEN=
+  RUST_LOG=info
+compose: |
+  services:
+    celld:
+      image: ghcr.io/denoland/celld:${CELLD_VERSION:-latest}
+      restart: unless-stopped
+      environment:
+        - CELLD_BUCKET=${CELLD_BUCKET:?}
+        - S3_ENDPOINT=${S3_ENDPOINT:-}
+        - AWS_REGION=${AWS_REGION:-us-east-1}
+        - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?}
+        - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?}
+        - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN:-}
+        - CELLD_ADDR=0.0.0.0:8080
+        - CELLD_ADVERTISE=celld:8080
+        - CELLD_WATCH=/var/lib/celld/state
+        - RUST_LOG=${RUST_LOG:-info}
+      volumes:
+        - celld-data:/var/lib/celld
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    celld-data:

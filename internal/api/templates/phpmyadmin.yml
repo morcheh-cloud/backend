@@ -1,0 +1,34 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: phpMyAdmin
+category: Databases
+description: phpMyAdmin is a web-based database management tool for administering your MySQL and MariaDB databases through a user-friendly interface.
+website: https://phpmyadmin.net
+tags:
+  - database management
+logo: templates/phpmyadmin.svg
+featured: true
+env: |-
+  PORT=8080
+  PHPMYADMIN_URL=http://{{host}}:${PORT}
+compose: |
+  services:
+    phpmyadmin:
+      image: lscr.io/linuxserver/phpmyadmin:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=Europe/Madrid
+        - PMA_ARBITRARY=1
+        - PMA_ABSOLUTE_URI=$PHPMYADMIN_URL
+      volumes:
+        - phpmyadmin-config:/config
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    phpmyadmin-config:

@@ -1,0 +1,54 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Umami
+category: Analytics
+description: Umami is web analytics platform which provides insights into visitor behavior without compromising user privacy.
+website: https://umami.is
+tags:
+  - analytics
+  - insights
+  - privacy
+logo: templates/umami.svg
+featured: true
+env: |-
+  PORT=3000
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  UMAMI_PASSWORD={{secret:64}}
+
+  # Optional settings
+  POSTGRES_DB=
+compose: |
+  services:
+    umami:
+      image: ghcr.io/umami-software/umami:3.0.3
+      restart: unless-stopped
+      environment:
+        - DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@postgresql:5432/$POSTGRES_DB
+        - DATABASE_TYPE=postgres
+        - APP_SECRET=$UMAMI_PASSWORD
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000/api/heartbeat]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-3000}:3000
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=${POSTGRES_DB:-umami}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    postgresql-data:

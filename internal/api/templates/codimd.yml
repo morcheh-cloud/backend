@@ -1,0 +1,69 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: CodiMD
+category: Productivity
+description: Realtime collaborative markdown notes on all platforms
+website: https://hackmd.io/c/codimd-documentation
+tags:
+  - markdown
+  - md
+  - editor
+  - opensource
+  - collaborative
+  - realtime-collaboration
+  - notes
+logo: templates/codimd.webp
+env: |-
+  PORT=3000
+  CODIMD_HOST={{host}}:${PORT}
+  SESSIONSECRET_PASSWORD={{secret}}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Optional settings
+  CMD_PROTOCOL_USESSL=true
+  CMD_USECDN=false
+  POSTGRES_DB=codimd-db
+  CMD_EMAIL=true
+  CMD_ALLOW_EMAIL_REGISTER=true
+compose: |
+  services:
+    codimd:
+      image: nabo.codimd.dev/hackmdio/hackmd:latest
+      restart: unless-stopped
+      environment:
+        - CMD_DOMAIN=${CODIMD_HOST}
+        - CMD_PROTOCOL_USESSL=${CMD_PROTOCOL_USESSL:-true}
+        - CMD_SESSION_SECRET=${SESSIONSECRET_PASSWORD}
+        - CMD_USECDN=${CMD_USECDN:-false}
+        - CMD_DB_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-codimd-db}
+        - CMD_EMAIL=${CMD_EMAIL:-true}
+        - CMD_ALLOW_EMAIL_REGISTER=${CMD_ALLOW_EMAIL_REGISTER:-true}
+      depends_on:
+        postgres:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD-SHELL, "curl -f http://localhost:3000/ || exit 1"]
+        interval: 5s
+        timeout: 20s
+        retries: 5
+      volumes:
+        - uploads_data:/home/hackmd/app/public/uploads
+      ports:
+        - ${PORT:-3000}:3000
+    postgres:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - codimd_postgres_data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-codimd-db}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    uploads_data:
+    codimd_postgres_data:

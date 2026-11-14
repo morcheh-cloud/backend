@@ -1,0 +1,40 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Eclipse Mosquitto
+category: Communication
+description: Mosquitto is lightweight and suitable for use on all devices, from low-power single-board computers to full servers.
+website: https://mosquitto.org/documentation/
+tags:
+  - mosquitto
+  - mqtt
+  - open-source
+logo: templates/mosquitto.svg
+env: |-
+  PORT=1883
+  MOSQUITTO_USER={{user}}
+  MOSQUITTO_PASSWORD={{secret}}
+
+  # Optional settings
+  REQUIRE_CERTIFICATE=false
+  ALLOW_ANONYMOUS=true
+compose: |
+  services:
+    mosquitto:
+      image: eclipse-mosquitto
+      restart: unless-stopped
+      environment:
+        - MQTT_USERNAME=${MOSQUITTO_USER}
+        - MQTT_PASSWORD=${MOSQUITTO_PASSWORD}
+        - REQUIRE_CERTIFICATE=${REQUIRE_CERTIFICATE:-false}
+        - ALLOW_ANONYMOUS=${ALLOW_ANONYMOUS:-true}
+      volumes:
+        - ./mosquitto/config:/mosquitto/config
+        - ./certs:/certs
+      ports:
+        - 8883:8883
+        - ${PORT:-1883}:1883
+      healthcheck:
+        test: [CMD-SHELL, exit 0]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+      entrypoint: sh -c " if [ '$REQUIRE_CERTIFICATE' = 'true' ]; then echo 'listener 8883' > /mosquitto/config/mosquitto.conf && echo 'cafile /certs/ca.crt' >> /mosquitto/config/mosquitto.conf && echo 'certfile /certs/server.crt' >> /mosquitto/config/mosquitto.conf && echo 'keyfile  /certs/server.key' >> /mosquitto/config/mosquitto.conf; else echo 'listener 1883' > /mosquitto/config/mosquitto.conf; fi && echo 'require_certificate '$REQUIRE_CERTIFICATE >> /mosquitto/config/mosquitto.conf && echo 'allow_anonymous '$ALLOW_ANONYMOUS >> /mosquitto/config/mosquitto.conf; if [ -n '$MOSQUITTO_USER' ] && [ -n '$MOSQUITTO_PASSWORD' ]; then echo 'password_file /mosquitto/config/passwords' >> /mosquitto/config/mosquitto.conf && rm -f /mosquitto/config/passwords && mosquitto_passwd -b -c /mosquitto/config/passwords $MOSQUITTO_USER $MOSQUITTO_PASSWORD && chown mosquitto:mosquitto /mosquitto/config/passwords; fi && exec mosquitto -c /mosquitto/config/mosquitto.conf "

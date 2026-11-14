@@ -1,0 +1,32 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: SilverBullet
+category: Productivity
+description: SilverBullet is a tool to develop, organize, and structure your personal knowledge and to make it universally accessible across all your devices.
+website: https://v2.silverbullet.md/Install/Configuration
+tags:
+  - note-taking
+  - markdown
+  - pkm
+logo: templates/silverbullet.webp
+env: |-
+  PORT=3000
+  SILVERBULLET_USER={{user}}
+  SILVERBULLET_PASSWORD={{secret}}
+compose: |
+  services:
+    silverbullet:
+      image: ghcr.io/silverbulletmd/silverbullet:v2
+      restart: unless-stopped
+      environment:
+        - SB_USER=${SILVERBULLET_USER}:${SILVERBULLET_PASSWORD}
+      volumes:
+        - silverbullet-space:/space
+      healthcheck:
+        test: [CMD, wget, --spider, --quiet, http://127.0.0.1:3000]
+        interval: 2s
+        timeout: 10s
+        retries: 5
+      ports:
+        - ${PORT:-3000}:3000
+  volumes:
+    silverbullet-space:

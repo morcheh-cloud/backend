@@ -1,0 +1,97 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Autobase
+category: Databases
+description: Autobase for PostgreSQL® is an open-source alternative to cloud-managed databases (self-hosted DBaaS).
+website: https://autobase.tech/docs/
+tags:
+  - database
+  - postgres
+  - automation
+  - self-hosted
+  - dbaas
+logo: templates/autobase.svg
+env: |-
+  PORT=8080
+  UI_PASSWORD={{secret}}
+  POSTGRES_PASSWORD={{secret}}
+  ENCRYPTIONKEY_SECRET={{secret}}
+
+  # Optional settings
+  PG_CONSOLE_LOGGER_LEVEL=info
+  CORS_ORIGIN="*"
+compose: |
+  services:
+    autobase:
+      image: autobase/console_ui:2.11.0
+      restart: unless-stopped
+      platform: linux/amd64
+      environment:
+        - PG_CONSOLE_AUTHORIZATION_TOKEN=${UI_PASSWORD}
+        - PG_CONSOLE_API_HOST=autobase-api
+        - PG_CONSOLE_DBDESK_STUDIO_HOST=dbdesk-studio
+      healthcheck:
+        test: [CMD, curl, http://localhost:80/]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      depends_on:
+        autobase-api:
+          condition: service_healthy
+      ports:
+        - ${PORT:-8080}:80
+    autobase-db:
+      image: autobase/console_db:2.11.0
+      restart: unless-stopped
+      platform: linux/amd64
+      environment:
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      volumes:
+        - autobase-db-data:/var/lib/postgresql
+      healthcheck:
+        test: [CMD-SHELL, pg_isready -U postgres]
+        interval: 5s
+        timeout: 5s
+        retries: 10
+    autobase-api:
+      image: autobase/console_api:2.11.0
+      restart: unless-stopped
+      platform: linux/amd64
+      environment:
+        - PG_CONSOLE_DB_HOST=autobase-db
+        - PG_CONSOLE_DB_PASSWORD=${POSTGRES_PASSWORD}
+        - PG_CONSOLE_AUTHORIZATION_TOKEN=${UI_PASSWORD}
+        - PG_CONSOLE_ENCRYPTIONKEY=${ENCRYPTIONKEY_SECRET}
+        - PG_CONSOLE_LOGGER_LEVEL=${PG_CONSOLE_LOGGER_LEVEL:-info}
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - /tmp/ansible:/tmp/ansible
+      healthcheck:
+        test: [CMD, curl, -fsS, -H, "accept: application/json", -H, "Authorization: Bearer ${UI_PASSWORD}", http://localhost:8080/api/v1/version]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      depends_on:
+        autobase-db:
+          condition: service_healthy
+    dbdesk-studio:
+      image: docker.io/bhavikagarwal2001/dbdesk-studio:0.1.5
+      restart: unless-stopped
+      environment:
+        - PORT=6789
+        - CORS_ORIGIN=${CORS_ORIGIN:-*}
+        - NODE_ENV=production
+        - DEFAULT_SSL_MODE=require
+        - STORAGE_PATH=/opt/dbdesk-studio/data
+      volumes:
+        - dbdesk_studio_data:/opt/dbdesk-studio
+      healthcheck:
+        test: [CMD, curl, -fsS, http://localhost:6789/health]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      depends_on:
+        autobase-api:
+          condition: service_healthy
+  volumes:
+    autobase-db-data:
+    dbdesk_studio_data:

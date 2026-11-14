@@ -112,6 +112,7 @@ type Proxy struct {
 	KindLabel     string             `json:"kind_label"`
 	Runtime       string             `json:"runtime" enum:"host,docker,podman" doc:"host = installed on the server; docker/podman = runs in a container"`
 	Container     string             `json:"container,omitempty" doc:"The container's name (docker/podman)"`
+	Manager       string             `json:"manager,omitempty" doc:"The container runs this proxy manager (Nginx Proxy Manager…), which writes nginx's config itself: Morche only reads the proxy (status, sites, logs) and refuses every change"`
 	Status        string             `json:"status" enum:"unknown,online,stopped,not_installed,not_set_up,config_error,unreachable,error"`
 	StatusMessage string             `json:"status_message"`
 	Version       string             `json:"version"`
@@ -325,7 +326,7 @@ func proxyOut(p sqlc.Proxy, name, host string, ws uuid.UUID, serverStatus string
 		StatusMessage: p.StatusMessage, Version: p.Version, HostProblems: int(p.HostProblems),
 		HostCount: int(hosts), LastCheckedAt: p.LastCheckedAt, CreatedAt: p.CreatedAt,
 		Capabilities: proxy.Capabilities{Types: []string{}},
-		Runtime:      p.Runtime, Container: p.Container,
+		Runtime:      p.Runtime, Container: p.Container, Manager: p.Manager,
 	}
 	if out.Runtime == "" {
 		out.Runtime = proxy.RuntimeHost
@@ -407,6 +408,14 @@ func (h *proxyHandler) getProxy(ctx context.Context, rawID string) (sqlc.GetProx
 		return r, nil, huma.Error422UnprocessableEntity("This version of Morche can't manage " + r.Proxy.Kind)
 	}
 	return r, d, nil
+}
+
+// readOnly refuses a change to a proxy that a proxy manager writes itself.
+func readOnly(p sqlc.Proxy) error {
+	if p.Manager == "" {
+		return nil
+	}
+	return huma.Error409Conflict(p.Container + " runs " + p.Manager + ", which writes nginx's config itself: Morche only reads it. Make changes in " + p.Manager + ".")
 }
 
 func (h *proxyHandler) detail(ctx context.Context, rawID string) (*ProxyDetail, error) {
@@ -662,8 +671,11 @@ func (h *proxyHandler) check(ctx context.Context, p sqlc.Proxy, d proxy.Driver) 
 		}
 		in, err = inspectWith(ctx, sh, d)
 		ci = sh.ci
-		if err == nil && h.heal(ctx, p, d, sh, in) {
+		if err == nil && p.Manager == "" && h.heal(ctx, p, d, sh, in) {
 			in, err = inspectWith(ctx, sh, d)
+		}
+		if p.Manager != "" {
+			in.SetUp = true // nothing of Morche's goes there
 		}
 		return err
 	})
@@ -763,6 +775,9 @@ func actorName(ctx context.Context) (string, *uuid.UUID) {
 func (h *proxyHandler) write(ctx context.Context, rawID string, edit func(q *sqlc.Queries, proxyID uuid.UUID) (string, error)) (*ProxyDetail, error) {
 	r, d, err := h.getProxy(ctx, rawID)
 	if err != nil {
+		return nil, err
+	}
+	if err := readOnly(r.Proxy); err != nil {
 		return nil, err
 	}
 	defer h.lock(r.Proxy.ID)()
@@ -903,6 +918,9 @@ type proxySetupParams struct {
 func (h *proxyHandler) submitSetup(ctx context.Context, rawID, kind string) (*JobOutput, error) {
 	r, d, err := h.getProxy(ctx, rawID)
 	if err != nil {
+		return nil, err
+	}
+	if err := readOnly(r.Proxy); err != nil {
 		return nil, err
 	}
 	server := r.Proxy.ServerID.String()
@@ -1165,7 +1183,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-proxy", Method: http.MethodPost, Path: "/proxies",
 		Summary:     "Manage a proxy on a server",
-		Description: "Adds the proxy to the panel and checks the server. Nothing is installed or written yet: call setup for that. Needs Engineer on the server.",
+		Description: "Adds the proxy to the panel and checks the server. Nothing is installed or written yet: call setup for that. A container running a proxy manager (Nginx Proxy Manager…) is added read only (`manager`). Needs Engineer on the server.",
 		Tags:        tags, DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, in *struct {
 		Body struct {
@@ -1190,7 +1208,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		case level < auth.Engineer:
 			return nil, forbidden(auth.Engineer)
 		}
-		rt, box := in.Body.Runtime, strings.TrimSpace(in.Body.Container)
+		rt, box, manager := in.Body.Runtime, strings.TrimSpace(in.Body.Container), ""
 		if rt == "" {
 			rt = proxy.RuntimeHost
 		}
@@ -1200,11 +1218,11 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			if !proxy.ValidContainerName(box) {
 				return nil, fieldError("body.container", "Give the container's name.", box)
 			}
-			if err := h.checkContainer(ctx, sid, rt, box); err != nil {
+			if manager, err = h.checkContainer(ctx, sid, rt, box); err != nil {
 				return nil, err
 			}
 		}
-		p, err := h.s.q.CreateProxy(ctx, sqlc.CreateProxyParams{ServerID: sid, Kind: d.Kind(), Runtime: rt, Container: box})
+		p, err := h.s.q.CreateProxy(ctx, sqlc.CreateProxyParams{ServerID: sid, Kind: d.Kind(), Runtime: rt, Container: box, Manager: manager})
 		if isUniqueViolation(err) {
 			if box != "" {
 				return nil, huma.Error409Conflict("The container " + box + " is already in the panel.")
@@ -1294,7 +1312,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			return nil, err
 		}
 		defer h.lock(r.Proxy.ID)()
-		if in.RemoveFiles {
+		if in.RemoveFiles && r.Proxy.Manager == "" { // Morche wrote nothing into a managed one
 			server := r.Proxy.ServerID.String()
 			err := h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
 				sh, err := h.shell(ctx, r.Proxy, c)
@@ -1444,6 +1462,11 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		if err != nil {
 			return nil, err
 		}
+		if in.Body.Action != "test" {
+			if err := readOnly(r.Proxy); err != nil {
+				return nil, err
+			}
+		}
 		server := r.Proxy.ServerID.String()
 		out := &struct{ Body ProxyActionResult }{}
 		err = h.s.withConn(ctx, server, func(c *sshpool.Conn) error {
@@ -1547,6 +1570,9 @@ func registerProxies(api huma.API, h *proxyHandler) {
 	}) (*struct{ Body ProxyActionResult }, error) {
 		r, d, err := h.getProxy(ctx, in.ID)
 		if err != nil {
+			return nil, err
+		}
+		if err := readOnly(r.Proxy); err != nil {
 			return nil, err
 		}
 		if err := h.withStorage(ctx, &in.Body.Config); err != nil {
@@ -1788,6 +1814,9 @@ func registerProxies(api huma.API, h *proxyHandler) {
 		}
 		if !d.Capabilities().Cache {
 			return nil, huma.Error422UnprocessableEntity(d.Label() + " can't cache answers")
+		}
+		if err := readOnly(r.Proxy); err != nil {
+			return nil, err
 		}
 		host, err := h.s.q.GetProxyHost(ctx, sqlc.GetProxyHostParams{ID: uuid.MustParse(in.Host), ProxyID: r.Proxy.ID})
 		if isNotFound(err) {

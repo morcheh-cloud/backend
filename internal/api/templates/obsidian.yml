@@ -1,0 +1,48 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Obsidian
+category: Productivity
+description: Note-taking app with linking, organizing, and hundreds of plugins - runs in your browser via remote desktop
+website: https://docs.linuxserver.io/images/docker-obsidian
+tags:
+  - notes
+  - obsidian
+  - markdown
+  - desktop
+  - gui
+  - productivity
+logo: templates/obsidian.svg
+env: |-
+  PORT=3000
+  OBSIDIAN_USER={{user}}
+  OBSIDIAN_PASSWORD={{secret}}
+
+  # Optional settings
+  PUID=1000
+  PGID=1000
+  TZ=Etc/UTC
+compose: |
+  services:
+    obsidian:
+      image: lscr.io/linuxserver/obsidian:latest
+      restart: unless-stopped
+      environment:
+        - PUID=${PUID:-1000}
+        - PGID=${PGID:-1000}
+        - TZ=${TZ:-Etc/UTC}
+        - CUSTOM_USER=${OBSIDIAN_USER}
+        - PASSWORD=${OBSIDIAN_PASSWORD}
+      volumes:
+        - obsidian-config:/config
+      shm_size: 1gb
+      security_opt:
+        - seccomp=unconfined
+      healthcheck:
+        test: [CMD, curl, -s, -o, /dev/null, http://127.0.0.1:3000/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+        start_period: 90s
+      ports:
+        - ${PORT:-3000}:3000
+  volumes:
+    obsidian-config:

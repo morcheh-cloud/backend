@@ -1,0 +1,52 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Shlink
+category: Productivity
+description: The definitive self-hosted URL shortener
+website: https://shlink.io/
+tags:
+  - links
+  - shortener
+  - sharing
+  - url
+  - short
+  - link
+  - sharing
+env: |-
+  SHLINK_PORT=8080
+  SHLINKWEB_PORT=8081
+  SHLINK_HOST={{host}}:${SHLINK_PORT}
+  SHLINKAPIKEY_SECRET={{secret}}
+  SHLINK_URL=http://{{host}}:${SHLINK_PORT}
+compose: |
+  services:
+    shlink:
+      image: shlinkio/shlink:stable
+      restart: unless-stopped
+      environment:
+        - DEFAULT_DOMAIN=${SHLINK_HOST}
+        - IS_HTTPS_ENABLED=false
+        - INITIAL_API_KEY=${SHLINKAPIKEY_SECRET}
+      volumes:
+        - shlink-data:/etc/shlink/data
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8080/rest/v3/health]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${SHLINK_PORT:-8080}:8080
+    shlink-web:
+      image: shlinkio/shlink-web-client
+      restart: unless-stopped
+      environment:
+        - SHLINK_SERVER_API_KEY=${SHLINKAPIKEY_SECRET}
+        - SHLINK_SERVER_URL=${SHLINK_URL}
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8080]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      ports:
+        - ${SHLINKWEB_PORT:-8081}:8080
+  volumes:
+    shlink-data:

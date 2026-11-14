@@ -1,0 +1,43 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Appsmith
+category: Productivity
+description: A low-code application platform for building internal tools.
+website: https://appsmith.com
+tags:
+  - lowcode
+  - nocode
+  - no
+  - low
+  - platform
+logo: templates/appsmith.svg
+env: |-
+  PORT=8080
+
+  # Optional settings
+  APPSMITH_MAIL_ENABLED=false
+  APPSMITH_DISABLE_TELEMETRY=false
+  APPSMITH_DISABLE_INTERCOM=true
+  APPSMITH_SENTRY_DSN=
+  APPSMITH_SMART_LOOK_ID=
+compose: |
+  services:
+    appsmith:
+      image: index.docker.io/appsmith/appsmith-ce:latest
+      restart: unless-stopped
+      environment:
+        - APPSMITH_MAIL_ENABLED=${APPSMITH_MAIL_ENABLED:-false}
+        - APPSMITH_DISABLE_TELEMETRY=${APPSMITH_DISABLE_TELEMETRY:-false}
+        - APPSMITH_DISABLE_INTERCOM=${APPSMITH_DISABLE_INTERCOM:-true}
+        - APPSMITH_SENTRY_DSN=${APPSMITH_SENTRY_DSN}
+        - APPSMITH_SMART_LOOK_ID=${APPSMITH_SMART_LOOK_ID}
+      volumes:
+        - stacks-data:/appsmith-stacks
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:80]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80
+  volumes:
+    stacks-data:

@@ -1,0 +1,74 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: OneDev
+category: Git & CI
+description: Git server with CI/CD, kanban, and packages. Seamless integration. Unparalleled experience.
+website: https://docs.onedev.io/
+tags:
+  - git
+  - scm
+  - ci
+  - cd
+  - kanban
+  - packages
+  - devops
+  - collaboration
+  - code
+  - repository
+  - management
+logo: templates/onedev.svg
+env: |-
+  PORT=6610
+  DATABASE_USER={{user}}
+  DATABASE_PASSWORD={{secret:64}}
+  ONEDEV_USER={{user}}
+  ONEDEV_PASSWORD={{secret}}
+  ONEDEV_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  POSTGRESQL_DATABASE=onedev
+  ONEDEV_EMAIL=mail@example.com
+  SSH_ROOT_URL=ssh://changeme:22
+compose: |
+  services:
+    onedev:
+      image: 1dev/server:latest
+      restart: unless-stopped
+      volumes:
+        - onedev-docker-sock:/var/run/docker.sock
+        - onedev-data:/opt/onedev
+      environment:
+        - hibernate_dialect=io.onedev.server.persistence.PostgreSQLDialect
+        - hibernate_connection_driver_class=org.postgresql.Driver
+        - hibernate_connection_url=jdbc:postgresql://postgres:5432/${POSTGRESQL_DATABASE:-onedev}
+        - hibernate_connection_username=${DATABASE_USER}
+        - hibernate_connection_password=${DATABASE_PASSWORD}
+        - initial_user=${ONEDEV_USER}
+        - initial_password=${ONEDEV_PASSWORD}
+        - initial_email=${ONEDEV_EMAIL:-mail@example.com}
+        - initial_server_url=${ONEDEV_URL}
+        - initial_ssh_root_url=${SSH_ROOT_URL:-ssh://changeme:22}
+      depends_on:
+        postgres:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, "true"]
+      ports:
+        - ${PORT:-6610}:6610
+    postgres:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - onedev-postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${DATABASE_USER}
+        - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-onedev}
+      healthcheck:
+        test: [CMD-SHELL, pg_isready]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    onedev-docker-sock:
+    onedev-data:
+    onedev-postgresql-data:

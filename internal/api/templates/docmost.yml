@@ -1,0 +1,95 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Docmost
+category: Productivity
+description: Open-source collaborative wiki and documentation software
+website: https://docmost.com/docs/
+tags:
+  - documentation
+  - opensource
+  - wiki
+  - confluence
+  - knowledge-base
+  - notion
+  - realtime-collaboration
+  - notion-alternative
+logo: templates/docmost.webp
+env: |-
+  PORT=3000
+  APPKEY_SECRET={{secret}}
+  DOCMOST_URL=http://{{host}}:${PORT}
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+
+  # Fill these in before starting
+  MAIL_DRIVER=
+
+  # Optional settings
+  SMTP_HOST=
+  SMTP_PORT=
+  SMTP_USERNAME=
+  SMTP_PASSWORD=
+  SMTP_SECURE=
+  MAIL_FROM_ADDRESS=
+  MAIL_FROM_NAME=
+  POSTMARK_TOKEN=
+compose: |
+  services:
+    docmost:
+      image: docmost/docmost:latest
+      restart: unless-stopped
+      depends_on:
+        postgresql:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      environment:
+        - APP_SECRET=$APPKEY_SECRET
+        - APP_URL=$DOCMOST_URL
+        - DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@postgresql/docmost?schema=public
+        - REDIS_URL=redis://redis:6379
+        - MAIL_DRIVER=${MAIL_DRIVER:?}
+        - SMTP_HOST=${SMTP_HOST}
+        - SMTP_PORT=${SMTP_PORT}
+        - SMTP_USERNAME=${SMTP_USERNAME}
+        - SMTP_PASSWORD=${SMTP_PASSWORD}
+        - SMTP_SECURE=${SMTP_SECURE}
+        - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS}
+        - MAIL_FROM_NAME=${MAIL_FROM_NAME}
+        - POSTMARK_TOKEN=${POSTMARK_TOKEN}
+      volumes:
+        - docmost:/app/data/storage
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000]
+        interval: 2s
+        timeout: 10s
+        retries: 20
+      ports:
+        - ${PORT:-3000}:3000
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=$POSTGRES_USER
+        - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        - POSTGRES_DB=docmost
+      volumes:
+        - postgresql-data:/var/lib/postgresql/data
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 10s
+        retries: 20
+    redis:
+      image: redis:7.2-alpine
+      restart: unless-stopped
+      volumes:
+        - redis-data:/data
+      healthcheck:
+        test: [CMD, redis-cli, PING]
+        interval: 5s
+        timeout: 10s
+        retries: 20
+  volumes:
+    docmost:
+    postgresql-data:
+    redis-data:

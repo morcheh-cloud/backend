@@ -49,7 +49,28 @@ type SyncOptions struct {
 	DryRun bool
 	// Plan, when set, hears what's to copy before copying starts.
 	Plan func(files int, bytes int64)
+	// Existing says what to do with a file the destination already has:
+	// "" = copy it again only when it changed, ExistingAll = always copy,
+	// ExistingKeep = leave it as it is (only missing files are copied).
+	Existing string
+	// SettleBefore, when set, leaves out source files changed after it (still
+	// being written, most likely); they're counted as Waiting and their
+	// destination copy is kept as it is.
+	SettleBefore time.Time
+	// Removals, when set, hears what a mirror would delete (relative paths)
+	// and says which of them to delete now; the rest are counted as Held.
+	Removals func(candidates []string) []string
+	// SameFS says src and dst are the same storage, so files are copied by
+	// the storage itself when it can (no bytes through this process).
+	SameFS bool
 }
+
+// What to do with files the destination already has.
+const (
+	ExistingChanged = ""
+	ExistingAll     = "all"
+	ExistingKeep    = "missing"
+)
 
 type SyncResult struct {
 	Copied  int   `json:"copied" doc:"Files written"`
@@ -57,6 +78,8 @@ type SyncResult struct {
 	Skipped int   `json:"skipped" doc:"Files already up to date"`
 	Deleted int   `json:"deleted" doc:"Files and folders removed (mirror), or old snapshots"`
 	Failed  int   `json:"failed" doc:"Files that couldn't be copied"`
+	Waiting int   `json:"waiting,omitempty" doc:"Files left for later because they changed too recently"`
+	Held    int   `json:"held,omitempty" doc:"Deletions held back for now (delayed deletes)"`
 	// The first few problems with single files.
 	Problems []string `json:"problems,omitempty"`
 	// The folder a snapshot went into.
@@ -208,7 +231,11 @@ func Sync(ctx context.Context, src FS, srcPath string, dst FS, dstDir string, o 
 			}
 			continue
 		}
-		if ok && same(s, d) {
+		if !o.SettleBefore.IsZero() && s.Modified.After(o.SettleBefore) {
+			res.Waiting++
+			continue
+		}
+		if ok && (o.Existing == ExistingKeep || (o.Existing != ExistingAll && same(s, d))) {
 			res.Skipped++
 			continue
 		}
@@ -229,6 +256,11 @@ func Sync(ctx context.Context, src FS, srcPath string, dst FS, dstDir string, o 
 			// A folder goes as a whole.
 			gone[rel] = true
 			removes = append(removes, rel)
+		}
+		if o.Removals != nil && len(removes) > 0 {
+			now := o.Removals(removes)
+			res.Held = len(removes) - len(now)
+			removes = now
 		}
 	}
 	if o.Plan != nil {
@@ -267,7 +299,12 @@ func Sync(ctx context.Context, src FS, srcPath string, dst FS, dstDir string, o 
 			return res, err
 		}
 		before := progressBytes(p)
-		err := copyFile(ctx, src, want[rel], dst, path.Join(dstDir, rel), p)
+		var err error
+		if o.SameFS {
+			err = sameCopy(ctx, src, want[rel], path.Join(dstDir, rel), p)
+		} else {
+			err = copyFile(ctx, src, want[rel], dst, path.Join(dstDir, rel), p)
+		}
 		if err != nil {
 			if !fileError(err) {
 				return res, err
@@ -292,6 +329,24 @@ func Sync(ctx context.Context, src FS, srcPath string, dst FS, dstDir string, o 
 		res.Deleted++
 	}
 	return res, nil
+}
+
+// sameCopy copies a file within one storage by the storage's own copy,
+// falling back to streaming it when the storage can't.
+func sameCopy(ctx context.Context, f FS, e Entry, to string, p *Progress) error {
+	p.file(e.Path)
+	err := f.Copy(ctx, e.Path, to)
+	if errors.Is(err, ErrUnsupported) {
+		return copyFile(ctx, f, e, f, to, p)
+	}
+	if err == nil && p != nil {
+		p.Files++
+		p.Bytes += e.Size
+		if p.OnBytes != nil {
+			p.OnBytes(e.Size)
+		}
+	}
+	return err
 }
 
 // snapshot copies everything into dstDir/<now>, then prunes old snapshots.

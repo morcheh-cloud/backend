@@ -1,0 +1,113 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Sure
+category: Finance
+description: An all-in-one personal finance platform.
+website: https://github.com/we-promise/sure
+tags:
+  - budgeting
+  - budget
+  - money
+  - expenses
+  - income
+logo: templates/sure.webp
+env: |-
+  PORT=3000
+  SURE_HOST={{host}}:${PORT}
+  BASE_SECRET={{secret}}
+  POSTGRESQL_USER={{user}}
+  POSTGRESQL_PASSWORD={{secret}}
+
+  # Optional settings
+  POSTGRESQL_DATABASE=sure
+  ONBOARDING_STATE=open
+compose: |
+  services:
+    web:
+      image: ghcr.io/we-promise/sure:0.6.7
+      restart: unless-stopped
+      environment:
+        - APP_DOMAIN=$SURE_HOST
+        - SECRET_KEY_BASE=$BASE_SECRET
+        - POSTGRES_USER=${POSTGRESQL_USER}
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-sure}
+        - REDIS_URL=redis://valkey:6379
+        - DB_HOST=postgresql
+        - DB_PORT=5432
+        - SELF_HOSTED=true
+        - RAILS_FORCE_SSL=false
+        - RAILS_ASSUME_SSL=false
+        - ONBOARDING_STATE=${ONBOARDING_STATE:-open}
+      depends_on:
+        postgresql:
+          condition: service_healthy
+        valkey:
+          condition: service_healthy
+      volumes:
+        - sure-app-storage:/rails/storage
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:3000]
+        interval: 15s
+        timeout: 20s
+        retries: 5
+      ports:
+        - ${PORT:-3000}:3000
+    worker:
+      image: ghcr.io/we-promise/sure:0.6.7
+      restart: unless-stopped
+      command: bundle exec sidekiq
+      environment:
+        - APP_DOMAIN=$SURE_HOST
+        - SECRET_KEY_BASE=$BASE_SECRET
+        - POSTGRES_USER=${POSTGRESQL_USER}
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-sure}
+        - REDIS_URL=redis://valkey:6379
+        - DB_HOST=postgresql
+        - DB_PORT=5432
+        - SELF_HOSTED=true
+        - RAILS_FORCE_SSL=false
+        - RAILS_ASSUME_SSL=false
+        - ONBOARDING_STATE=${ONBOARDING_STATE:-open}
+      volumes:
+        - sure-app-storage:/rails/storage
+      depends_on:
+        postgresql:
+          condition: service_healthy
+        valkey:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, pgrep, -f, sidekiq]
+        interval: 15s
+        timeout: 20s
+        retries: 5
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      volumes:
+        - sure-postgresql-data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRESQL_USER}
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_DB=${POSTGRESQL_DATABASE:-sure}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+    valkey:
+      image: valkey/valkey:8-alpine
+      restart: unless-stopped
+      command: valkey-server --appendonly yes
+      volumes:
+        - sure-valkey:/data
+      healthcheck:
+        test: [CMD-SHELL, "valkey-cli ping | grep PONG"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+        start_period: 3s
+  volumes:
+    sure-app-storage:
+    sure-postgresql-data:
+    sure-valkey:

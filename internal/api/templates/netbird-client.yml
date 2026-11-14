@@ -1,0 +1,40 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: NetBird Client
+category: Networking
+description: Connect your devices into a secure WireGuard®-based overlay network with SSO, MFA and granular access controls.
+website: https://docs.netbird.io/how-to/examples#net-bird-client-in-docker
+tags:
+  - wireguard
+  - mesh-networks
+  - vpn
+  - zero-trust-network-access
+  - open source
+logo: templates/netbird.webp
+env: |-
+  # Optional settings
+  NB_SETUP_KEY=
+  NB_ENABLE_ROSENPASS=false
+  NB_ENABLE_EXPERIMENTAL_LAZY_CONN=false
+compose: |
+  services:
+    netbird-client:
+      image: netbirdio/netbird:latest
+      restart: unless-stopped
+      network_mode: host
+      environment:
+        - NB_SETUP_KEY=${NB_SETUP_KEY}
+        - NB_ENABLE_ROSENPASS=${NB_ENABLE_ROSENPASS:-false}
+        - NB_ENABLE_EXPERIMENTAL_LAZY_CONN=${NB_ENABLE_EXPERIMENTAL_LAZY_CONN:-false}
+      volumes:
+        - netbird-client:/var/lib/netbird
+      cap_add:
+        - NET_ADMIN
+        - SYS_ADMIN
+        - SYS_RESOURCE
+      healthcheck:
+        test: [CMD, netbird, version]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    netbird-client:

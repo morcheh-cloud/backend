@@ -1,0 +1,39 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Transmission
+category: Media
+description: Fast, easy, and free BitTorrent client.
+website: https://docs.linuxserver.io/images/docker-transmission/
+tags:
+  - bittorrent
+  - torrent
+  - peer-to-peer
+logo: templates/transmission.svg
+env: |-
+  PORT=9091
+  ADMIN_USER={{user}}
+  ADMIN_PASSWORD={{secret}}
+compose: |
+  services:
+    transmission:
+      image: lscr.io/linuxserver/transmission:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - USER=${ADMIN_USER}
+        - PASS=${ADMIN_PASSWORD}
+      volumes:
+        - transmission-config:/config
+        - transmission-downloads:/downloads
+        - transmission-watch:/watch
+      healthcheck:
+        test: [CMD, curl, -sSfL, -u, "${ADMIN_USER}:${ADMIN_PASSWORD}", http://localhost:9091/]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+      ports:
+        - ${PORT:-9091}:9091
+  volumes:
+    transmission-config:
+    transmission-downloads:
+    transmission-watch:

@@ -1,0 +1,72 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: AnythingLLM
+category: AI
+description: AnythingLLM is the easiest to use, all-in-one AI application that can do RAG, AI Agents, and much more with no code or infrastructure headaches.
+website: https://docs.anythingllm.com/installation-docker/overview
+tags:
+  - lowcode
+  - nocode
+  - llm
+  - openai
+  - anthropic
+  - machine-learning
+  - rag
+  - agents
+  - chatbot
+  - api
+  - team
+  - bot
+logo: templates/anythingllm.svg
+env: |-
+  PORT=3001
+  SIGKEY_PASSWORD={{secret}}
+  SIGSALT_PASSWORD={{secret}}
+  JWTSECRET_PASSWORD={{secret}}
+  AUTHTOKEN_PASSWORD={{secret}}
+
+  # Optional settings
+  DISABLE_TELEMETRY=true
+  PASSWORDLOWERCASE=1
+  PASSWORDMAXCHAR=250
+  PASSWORDMINCHAR=6
+  PASSWORDNUMERIC=1
+  PASSWORDREQUIREMENTS=1
+  PASSWORDSYMBOL=1
+  PASSWORDUPPERCASE=1
+  SERVER_PORT=3001
+  UID=1000
+  GID=1000
+compose: |
+  services:
+    anything-llm:
+      image: mintplexlabs/anythingllm
+      restart: unless-stopped
+      environment:
+        - STORAGE_DIR=/app/server/storage
+        - DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-true}
+        - PASSWORDLOWERCASE=${PASSWORDLOWERCASE:-1}
+        - PASSWORDMAXCHAR=${PASSWORDMAXCHAR:-250}
+        - PASSWORDMINCHAR=${PASSWORDMINCHAR:-6}
+        - PASSWORDNUMERIC=${PASSWORDNUMERIC:-1}
+        - PASSWORDREQUIREMENTS=${PASSWORDREQUIREMENTS:-1}
+        - PASSWORDSYMBOL=${PASSWORDSYMBOL:-1}
+        - PASSWORDUPPERCASE=${PASSWORDUPPERCASE:-1}
+        - SIG_KEY=${SIGKEY_PASSWORD}
+        - SIG_SALT=${SIGSALT_PASSWORD}
+        - JWT_SECRET=${JWTSECRET_PASSWORD}
+        - AUTH_TOKEN=${AUTHTOKEN_PASSWORD}
+        - SERVER_PORT=${SERVER_PORT:-3001}
+        - VECTOR_DB=lancedb
+      cap_add:
+        - SYS_ADMIN
+      volumes:
+        - anythingllm-storage:/app/server/storage
+        - anythingllm-hot:/app/collector/hotdir
+        - anythingllm-outputs:/app/collector/outputs
+      user: ${UID:-1000}:${GID:-1000}
+      ports:
+        - ${PORT:-3001}:3001
+  volumes:
+    anythingllm-storage:
+    anythingllm-hot:
+    anythingllm-outputs:

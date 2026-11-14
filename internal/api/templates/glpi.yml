@@ -1,0 +1,60 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: GLPI
+category: Support
+description: GLPI (Gestionnaire Libre de Parc Informatique) is a free, open-source IT Service Management (ITSM) platform used for IT asset management, helpdesk, and service desk operations.
+website: https://help.glpi-project.org/documentation
+tags:
+  - helpdesk
+  - ticketing
+  - support
+  - open-source
+logo: templates/glpi.svg
+env: |-
+  PORT=8080
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+  ROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  MYSQL_DATABASE=glpi-db
+compose: |
+  services:
+    glpi:
+      image: glpi/glpi:11
+      restart: unless-stopped
+      environment:
+        - GLPI_DB_HOST=glpi-db
+        - GLPI_DB_PORT=3306
+        - GLPI_DB_NAME=${MYSQL_DATABASE:-glpi-db}
+        - GLPI_DB_USER=${MYSQL_USER}
+        - GLPI_DB_PASSWORD=${MYSQL_PASSWORD}
+      volumes:
+        - glpi-data:/var/glpi:rw
+      depends_on:
+        glpi-db:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, curl, -f, http://localhost/]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+      ports:
+        - ${PORT:-8080}:80
+    glpi-db:
+      image: mysql:8
+      restart: unless-stopped
+      volumes:
+        - mysql-data:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=${ROOT_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-glpi-db}
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      healthcheck:
+        test: [CMD, mysqladmin, ping, -h, 127.0.0.1]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    glpi-data:
+    mysql-data:

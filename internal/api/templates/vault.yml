@@ -1,0 +1,40 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: HashiCorp Vault
+category: Security
+description: HashiCorp Vault securely stores and controls access to secrets.
+website: https://developer.hashicorp.com/vault/docs/deploy/run-container
+tags:
+  - vault
+  - hashicorp
+  - secrets
+  - security
+  - encryption
+featured: true
+env: |-
+  PORT=8200
+  VAULT_URL=http://{{host}}:${PORT}
+
+  # Optional settings
+  VAULT_VERSION=latest
+compose: |
+  services:
+    vault:
+      image: hashicorp/vault:${VAULT_VERSION:-latest}
+      restart: unless-stopped
+      command: server
+      environment:
+        - VAULT_ADDR=http://127.0.0.1:8200
+        - VAULT_API_ADDR=${VAULT_URL}
+        - VAULT_LOCAL_CONFIG={"ui":true,"disable_mlock":true,"storage":{"file":{"path":"/vault/file"}},"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":true}}}
+      volumes:
+        - vault-data:/vault/file
+      healthcheck:
+        test: [CMD-SHELL, "wget -qO- \"http://127.0.0.1:8200/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200\" >/dev/null || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 12
+        start_period: 15s
+      ports:
+        - ${PORT:-8200}:8200
+  volumes:
+    vault-data:

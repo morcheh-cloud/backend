@@ -1,0 +1,98 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: BookStack
+category: Websites
+description: BookStack is a simple, self-hosted, easy-to-use platform for organising and storing information
+website: https://www.bookstackapp.com/docs/
+tags:
+  - free-and-open-source
+  - mfa
+  - dark-light-themes
+  - searchable
+  - connected
+  - simple-interface
+  - diagramms
+  - notes
+logo: templates/bookstack.webp
+featured: true
+env: |-
+  PORT=8080
+  BOOKSTACK_URL=http://{{host}}:${PORT}
+  APPKEY_PASSWORD={{secret}}
+  MYSQL_USER={{user}}
+  MYSQL_PASSWORD={{secret}}
+  MYSQLROOT_PASSWORD={{secret}}
+
+  # Optional settings
+  TZ=Europe/Berlin
+  MYSQL_DATABASE=bookstack
+  QUEUE_CONNECTION=
+  GITHUB_APP_ID=
+  GITHUB_APP_SECRET=
+  MAIL_DRIVER=smtp
+  MAIL_HOST=
+  MAIL_PORT=587
+  MAIL_ENCRYPTION=tls
+  MAIL_USERNAME=
+  MAIL_PASSWORD=
+  MAIL_FROM=
+  MAIL_FROM_NAME=BookStack
+compose: |
+  services:
+    bookstack:
+      image: lscr.io/linuxserver/bookstack:latest
+      restart: unless-stopped
+      environment:
+        - APP_URL=${BOOKSTACK_URL}
+        - APP_KEY=${APPKEY_PASSWORD}
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-Europe/Berlin}
+        - DB_HOST=mariadb
+        - DB_PORT=3306
+        - DB_USERNAME=${MYSQL_USER}
+        - DB_PASSWORD=${MYSQL_PASSWORD}
+        - DB_DATABASE=${MYSQL_DATABASE:-bookstack}
+        - QUEUE_CONNECTION=${QUEUE_CONNECTION}
+        - GITHUB_APP_ID=${GITHUB_APP_ID}
+        - GITHUB_APP_SECRET=${GITHUB_APP_SECRET}
+        - MAIL_DRIVER=${MAIL_DRIVER:-smtp}
+        - MAIL_HOST=${MAIL_HOST}
+        - MAIL_PORT=${MAIL_PORT:-587}
+        - MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
+        - MAIL_USERNAME=${MAIL_USERNAME}
+        - MAIL_PASSWORD=${MAIL_PASSWORD}
+        - MAIL_FROM=${MAIL_FROM}
+        - MAIL_FROM_NAME=${MAIL_FROM_NAME:-BookStack}
+      volumes:
+        - bookstack-data:/config
+      healthcheck:
+        test: [CMD-SHELL, curl -f http://127.0.0.1:80/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      depends_on:
+        mariadb:
+          condition: service_healthy
+      ports:
+        - ${PORT:-8080}:80
+    mariadb:
+      image: lscr.io/linuxserver/mariadb:latest
+      restart: unless-stopped
+      environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=${TZ:-Europe/Berlin}
+        - MYSQL_ROOT_PASSWORD=${MYSQLROOT_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE:-bookstack}
+        - MYSQL_USER=${MYSQL_USER}
+        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      volumes:
+        - bookstack-mariadb-data:/config
+      healthcheck:
+        test: [CMD, mysqladmin, ping, -h, 127.0.0.1]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    bookstack-data:
+    bookstack-mariadb-data:

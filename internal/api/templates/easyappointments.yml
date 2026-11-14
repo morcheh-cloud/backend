@@ -1,0 +1,49 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Easy!Appointments
+category: Productivity
+description: Schedule Anything. Let's start with easy! Get the best free online appointment scheduler on your server, today.
+website: https://easyappointments.org/
+tags:
+  - calendar
+  - scheduling
+  - database
+logo: templates/easyappointments.webp
+env: |-
+  PORT=8080
+  EASYAPPOINTMENTS_URL=http://{{host}}:${PORT}
+  EASYAPPOINTMENTS_PASSWORD={{secret}}
+compose: |
+  services:
+    easyappointments:
+      image: alextselegidis/easyappointments:latest
+      restart: unless-stopped
+      environment:
+        - BASE_URL=${EASYAPPOINTMENTS_URL}
+        - DB_HOST=mysql
+        - DB_NAME=easyappointments
+        - DB_USERNAME=root
+        - DB_PASSWORD=${EASYAPPOINTMENTS_PASSWORD}
+      depends_on:
+        - mysql
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1]
+        interval: 2s
+        timeout: 10s
+        retries: 30
+      ports:
+        - ${PORT:-8080}:80
+    mysql:
+      image: mysql:8
+      restart: unless-stopped
+      volumes:
+        - easyappointments-mysql-data:/var/lib/mysql
+      environment:
+        - MYSQL_ROOT_PASSWORD=${EASYAPPOINTMENTS_PASSWORD}
+        - MYSQL_DATABASE=easyappointments
+      healthcheck:
+        test: [CMD, mysqladmin, ping, -h, 127.0.0.1]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+  volumes:
+    easyappointments-mysql-data:

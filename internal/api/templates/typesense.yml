@@ -1,0 +1,38 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Typesense
+category: Search
+description: Cutting-edge, in-memory search engine for mere mortals. Knowledge of rocket science optional.
+website: https://typesense.org/docs
+tags:
+  - search
+  - search-engine
+  - search-api
+  - elasticsearch-alternative
+logo: templates/typesense.webp
+env: |-
+  PORT=8108
+
+  # Fill these in before starting
+  TYPESENSE_API_KEY=
+
+  # Optional settings
+  TYPESENSE_ENABLE_CORS=true
+compose: |
+  services:
+    typesense:
+      image: typesense/typesense:28.0
+      restart: unless-stopped
+      environment:
+        - TYPESENSE_ENABLE_CORS=${TYPESENSE_ENABLE_CORS:-true}
+        - TYPESENSE_DATA_DIR=/data
+        - TYPESENSE_API_KEY=${TYPESENSE_API_KEY:?}
+      volumes:
+        - typesense_data:/data
+      healthcheck:
+        test: [CMD, bash, -c, "exec 3<>/dev/tcp/localhost/8108 && printf 'GET /health HTTP/1.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep '200' && exec 3>&-"]
+        retries: 5
+        timeout: 7s
+      ports:
+        - ${PORT:-8108}:8108
+  volumes:
+    typesense_data:

@@ -1,0 +1,91 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: useSend
+category: Email
+description: Usesend is an open-source alternative to Resend, Sendgrid, Mailgun and Postmark etc.
+website: https://docs.usesend.com/self-hosting/overview
+tags:
+  - resend
+  - mailer
+  - marketing emails
+  - transaction emails
+  - self-hosting
+  - postmark
+logo: templates/usesend.svg
+env: |-
+  PORT=3000
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  USESEND_URL=http://{{host}}:${PORT}
+  NEXTAUTHSECRET_SECRET={{secret:64}}
+
+  # Fill these in before starting
+  AWS_ACCESS_KEY=
+  AWS_SECRET_KEY=
+  AWS_DEFAULT_REGION=
+  GITHUB_ID=
+  GITHUB_SECRET=
+
+  # Optional settings
+  SERVICE_DB_POSTGRES=usesend
+  NEXT_PUBLIC_IS_CLOUD=false
+  API_RATE_LIMIT=1
+compose: |
+  services:
+    postgres:
+      image: postgres:16
+      restart: unless-stopped
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${SERVICE_DB_POSTGRES:-usesend}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      volumes:
+        - usesend-postgres-data:/var/lib/postgresql/data
+    redis:
+      image: redis:7
+      restart: unless-stopped
+      volumes:
+        - usesend-redis-data:/data
+      command: [redis-server, --maxmemory-policy, noeviction]
+      healthcheck:
+        test: [CMD, redis-cli, PING]
+        interval: 5s
+        timeout: 10s
+        retries: 20
+    usesend:
+      image: usesend/usesend:v1.10.0
+      restart: unless-stopped
+      expose:
+        - 3000
+      environment:
+        - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${SERVICE_DB_POSTGRES:-usesend}
+        - NEXTAUTH_URL=${USESEND_URL}
+        - NEXTAUTH_SECRET=${NEXTAUTHSECRET_SECRET}
+        - AWS_ACCESS_KEY=${AWS_ACCESS_KEY:?}
+        - AWS_SECRET_KEY=${AWS_SECRET_KEY:?}
+        - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:?}
+        - GITHUB_ID=${GITHUB_ID:?}
+        - GITHUB_SECRET=${GITHUB_SECRET:?}
+        - REDIS_URL=redis://redis:6379
+        - NEXT_PUBLIC_IS_CLOUD=${NEXT_PUBLIC_IS_CLOUD:-false}
+        - API_RATE_LIMIT=${API_RATE_LIMIT:-1}
+        - HOSTNAME=0.0.0.0
+      depends_on:
+        postgres:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD-SHELL, "wget -qO- http://usesend:3000 || exit 1"]
+        interval: 5s
+        retries: 10
+        timeout: 2s
+      ports:
+        - ${PORT:-3000}:3000
+  volumes:
+    usesend-postgres-data:
+    usesend-redis-data:

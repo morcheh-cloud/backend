@@ -1,0 +1,110 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Authentik
+category: Security
+description: An open-source Identity Provider, focused on flexibility and versatility.
+website: https://docs.goauthentik.io/docs/installation/docker-compose
+tags:
+  - identity
+  - login
+  - user
+  - oauth
+  - openid
+  - oidc
+  - authentication
+  - saml
+  - auth0
+  - okta
+logo: templates/authentik.webp
+featured: true
+env: |-
+  PORT=9000
+  POSTGRESQL_USER={{user}}
+  POSTGRESQL_PASSWORD={{secret}}
+  AUTHENTIKSERVER_PASSWORD={{secret:64}}
+
+  # Optional settings
+  AUTHENTIK_TAG=2026.5.6
+  POSTGRES_HOST=postgresql
+  POSTGRES_DB=authentik
+  AUTHENTIK_ERROR_REPORTING__ENABLED=true
+  AUTHENTIK_EMAIL__HOST=
+  AUTHENTIK_EMAIL__PORT=
+  AUTHENTIK_EMAIL__USERNAME=
+  AUTHENTIK_EMAIL__PASSWORD=
+  AUTHENTIK_EMAIL__USE_TLS=
+  AUTHENTIK_EMAIL__USE_SSL=
+  AUTHENTIK_EMAIL__TIMEOUT=
+  AUTHENTIK_EMAIL__FROM=
+compose: |
+  services:
+    authentik-server:
+      image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.6}
+      restart: unless-stopped
+      command: server
+      environment:
+        - AUTHENTIK_POSTGRESQL__HOST=${POSTGRES_HOST:-postgresql}
+        - AUTHENTIK_POSTGRESQL__USER=${POSTGRESQL_USER}
+        - AUTHENTIK_POSTGRESQL__NAME=${POSTGRES_DB:-authentik}
+        - AUTHENTIK_POSTGRESQL__PASSWORD=${POSTGRESQL_PASSWORD}
+        - AUTHENTIK_SECRET_KEY=${AUTHENTIKSERVER_PASSWORD}
+        - AUTHENTIK_ERROR_REPORTING__ENABLED=${AUTHENTIK_ERROR_REPORTING__ENABLED:-true}
+        - AUTHENTIK_EMAIL__HOST=${AUTHENTIK_EMAIL__HOST}
+        - AUTHENTIK_EMAIL__PORT=${AUTHENTIK_EMAIL__PORT}
+        - AUTHENTIK_EMAIL__USERNAME=${AUTHENTIK_EMAIL__USERNAME}
+        - AUTHENTIK_EMAIL__PASSWORD=${AUTHENTIK_EMAIL__PASSWORD}
+        - AUTHENTIK_EMAIL__USE_TLS=${AUTHENTIK_EMAIL__USE_TLS}
+        - AUTHENTIK_EMAIL__USE_SSL=${AUTHENTIK_EMAIL__USE_SSL}
+        - AUTHENTIK_EMAIL__TIMEOUT=${AUTHENTIK_EMAIL__TIMEOUT}
+        - AUTHENTIK_EMAIL__FROM=${AUTHENTIK_EMAIL__FROM}
+      volumes:
+        - ./data:/data
+        - ./custom-templates:/templates
+      depends_on:
+        postgresql:
+          condition: service_healthy
+      ports:
+        - ${PORT:-9000}:9000
+    authentik-worker:
+      image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.6}
+      restart: unless-stopped
+      command: worker
+      environment:
+        - AUTHENTIK_POSTGRESQL__HOST=${POSTGRES_HOST:-postgresql}
+        - AUTHENTIK_POSTGRESQL__USER=${POSTGRESQL_USER}
+        - AUTHENTIK_POSTGRESQL__NAME=${POSTGRES_DB:-authentik}
+        - AUTHENTIK_POSTGRESQL__PASSWORD=${POSTGRESQL_PASSWORD}
+        - AUTHENTIK_SECRET_KEY=${AUTHENTIKSERVER_PASSWORD}
+        - AUTHENTIK_ERROR_REPORTING__ENABLED=${AUTHENTIK_ERROR_REPORTING__ENABLED}
+        - AUTHENTIK_EMAIL__HOST=${AUTHENTIK_EMAIL__HOST}
+        - AUTHENTIK_EMAIL__PORT=${AUTHENTIK_EMAIL__PORT}
+        - AUTHENTIK_EMAIL__USERNAME=${AUTHENTIK_EMAIL__USERNAME}
+        - AUTHENTIK_EMAIL__PASSWORD=${AUTHENTIK_EMAIL__PASSWORD}
+        - AUTHENTIK_EMAIL__USE_TLS=${AUTHENTIK_EMAIL__USE_TLS}
+        - AUTHENTIK_EMAIL__USE_SSL=${AUTHENTIK_EMAIL__USE_SSL}
+        - AUTHENTIK_EMAIL__TIMEOUT=${AUTHENTIK_EMAIL__TIMEOUT}
+        - AUTHENTIK_EMAIL__FROM=${AUTHENTIK_EMAIL__FROM}
+      user: root
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - ./data:/data
+        - ./certs:/certs
+        - ./custom-templates:/templates
+      depends_on:
+        postgresql:
+          condition: service_healthy
+    postgresql:
+      image: postgres:16-alpine
+      restart: unless-stopped
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+        interval: 2s
+        timeout: 10s
+        retries: 15
+      volumes:
+        - authentik-db:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+        - POSTGRES_USER=${POSTGRESQL_USER}
+        - POSTGRES_DB=authentik
+  volumes:
+    authentik-db:

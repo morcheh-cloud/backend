@@ -1,0 +1,46 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Ollama with Open WebUI
+category: AI
+description: Ollama with Open Web UI integrates AI model deployment with a user-friendly interface.
+website: https://docs.openwebui.com
+tags:
+  - ollama
+  - ai
+  - models
+  - deployment
+  - open-web-ui
+  - integration
+logo: templates/ollama.svg
+featured: true
+env: PORT=8080
+compose: |
+  services:
+    ollama-api:
+      image: ollama/ollama:latest
+      restart: unless-stopped
+      volumes:
+        - ollama:/root/.ollama
+      healthcheck:
+        test: [CMD, ollama, list]
+        interval: 5s
+        timeout: 30s
+        retries: 10
+    open-webui:
+      image: ghcr.io/open-webui/open-webui:main
+      restart: unless-stopped
+      volumes:
+        - open-webui:/app/backend/data
+      depends_on:
+        - ollama-api
+      environment:
+        - OLLAMA_BASE_URL=http://ollama-api:11434
+      healthcheck:
+        test: [CMD, curl, -f, http://127.0.0.1:8080]
+        interval: 5s
+        timeout: 30s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:8080
+  volumes:
+    ollama:
+    open-webui:

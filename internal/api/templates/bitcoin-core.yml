@@ -1,0 +1,35 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Bitcoin Core
+category: Backend
+description: A self-hosted Bitcoin Core full node.
+website: https://hub.docker.com/r/ruimarinho/bitcoin-core/
+tags:
+  - cryptocurrency
+  - node
+  - blockchain
+  - bitcoin
+logo: templates/bitcoin.svg
+env: |-
+  PASSWORD64_PASSWORD={{secret}}
+
+  # Optional settings
+  BITCOIN_RPCUSER=bitcoinuser
+  BITCOIN_PRINTTOCONSOLE=1
+  BITCOIN_TXINDEX=1
+  BITCOIN_SERVER=1
+compose: |
+  services:
+    bitcoin-core:
+      image: ruimarinho/bitcoin-core:latest
+      restart: unless-stopped
+      environment:
+        - BITCOIN_RPCUSER=${BITCOIN_RPCUSER:-bitcoinuser}
+        - BITCOIN_RPCPASSWORD=${PASSWORD64_PASSWORD}
+        - BITCOIN_PRINTTOCONSOLE=${BITCOIN_PRINTTOCONSOLE:-1}
+        - BITCOIN_TXINDEX=${BITCOIN_TXINDEX:-1}
+        - BITCOIN_SERVER=${BITCOIN_SERVER:-1}
+      volumes:
+        - blockchain-data:/home/bitcoin/.bitcoin
+      command: [-datadir=/home/bitcoin/.bitcoin, -rpcbind=127.0.0.1, -rpcallowip=127.0.0.1, "-rpcuser=${BITCOIN_RPCUSER}", "-rpcpassword=${PASSWORD64_PASSWORD}", "-printtoconsole=${BITCOIN_PRINTTOCONSOLE}", "-txindex=${BITCOIN_TXINDEX}", "-server=${BITCOIN_SERVER}"]
+  volumes:
+    blockchain-data:

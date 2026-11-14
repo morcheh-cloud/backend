@@ -1,0 +1,27 @@
+name: MinIO
+category: Storage
+description: S3-compatible object storage with its console.
+logo: minio
+featured: true
+env: |
+  MINIO_ROOT_USER=admin
+  MINIO_ROOT_PASSWORD={{secret}}
+  API_PORT=9000
+  CONSOLE_PORT=9001
+compose: |
+  services:
+    minio:
+      image: minio/minio:latest
+      restart: unless-stopped
+      command: server /data --console-address ":9001"
+      ports:
+        - "${API_PORT:-9000}:9000"
+        - "${CONSOLE_PORT:-9001}:9001"
+      environment:
+        MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+        MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      volumes:
+        - data:/data
+
+  volumes:
+    data:

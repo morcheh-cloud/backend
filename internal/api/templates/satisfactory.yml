@@ -1,0 +1,60 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Satisfactory
+category: Games
+description: Satisfactory Dedicated Server for hosting your own Satisfactory game sessions.
+website: https://github.com/wolveix/satisfactory-server
+tags:
+  - satisfactory
+  - game-server
+  - dedicated-server
+  - steam
+  - self-hosted
+  - gaming
+env: |-
+  # Optional settings
+  SERVER_GAME_PORT=7777
+  SERVER_MESSAGING_PORT=8888
+  AUTOSAVE_NUM=5
+  DEBUG=false
+  DISABLE_SEASONAL_EVENTS=false
+  LOG=false
+  MAX_OBJECTS=2162688
+  MAX_PLAYERS=4
+  MAX_TICK_RATE=30
+  MULTI_HOME=::
+  PGID=1000
+  PUID=1000
+  SERVER_STREAMING=true
+  SKIP_UPDATE=false
+  STEAM_BETA=false
+  TIMEOUT=30
+compose: |
+  services:
+    satisfactory-server:
+      image: wolveix/satisfactory-server:v1.9.10
+      restart: unless-stopped
+      ports:
+        - ${SERVER_GAME_PORT}:7777/tcp
+        - ${SERVER_GAME_PORT}:7777/udp
+        - ${SERVER_MESSAGING_PORT}:8888/tcp
+      volumes:
+        - satisfactory-server:/config
+      environment:
+        - AUTOSAVENUM=${AUTOSAVE_NUM:-5}
+        - DEBUG=${DEBUG:-false}
+        - DISABLESEASONALEVENTS=${DISABLE_SEASONAL_EVENTS:-false}
+        - LOG=${LOG:-false}
+        - MAXOBJECTS=${MAX_OBJECTS:?2162688}
+        - MAXPLAYERS=${MAX_PLAYERS:?4}
+        - MAXTICKRATE=${MAX_TICK_RATE:-30}
+        - MULTIHOME=${MULTI_HOME:-::}
+        - PGID=${PGID:?1000}
+        - PUID=${PUID:?1000}
+        - SERVERGAMEPORT=${SERVER_GAME_PORT:-7777}
+        - SERVERMESSAGINGPORT=${SERVER_MESSAGING_PORT:-8888}
+        - SERVERSTREAMING=${SERVER_STREAMING:-true}
+        - SKIPUPDATE=${SKIP_UPDATE:-false}
+        - STEAMBETA=${STEAM_BETA:-false}
+        - TIMEOUT=${TIMEOUT:-30}
+  volumes:
+    satisfactory-server:

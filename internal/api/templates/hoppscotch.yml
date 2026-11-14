@@ -1,0 +1,80 @@
+# Converted from Coolify's service templates (Apache-2.0).
+name: Hoppscotch
+category: Development
+description: The Open Source API Development Platform
+website: https://docs.hoppscotch.io
+tags:
+  - api
+  - development
+  - platform
+logo: templates/hoppscotch.webp
+env: |-
+  PORT=8080
+  POSTGRES_USER={{user}}
+  POSTGRES_PASSWORD={{secret}}
+  DATAENCRYPTIONKEY_SECRET={{secret}}
+  HOPPSCOTCH_URL=http://{{host}}:${PORT}
+  HOPPSCOTCH_HOST={{host}}:${PORT}
+
+  # Optional settings
+  VITE_ALLOWED_AUTH_PROVIDERS=GOOGLE,GITHUB,MICROSOFT,EMAIL
+  POSTGRES_DB=
+  MAILER_USE_CUSTOM_CONFIGS=true
+compose: |
+  services:
+    backend:
+      image: hoppscotch/hoppscotch:2026.2.1
+      restart: unless-stopped
+      environment:
+        - VITE_ALLOWED_AUTH_PROVIDERS=${VITE_ALLOWED_AUTH_PROVIDERS:-GOOGLE,GITHUB,MICROSOFT,EMAIL}
+        - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@hoppscotch-db:5432/${POSTGRES_DB}
+        - DATA_ENCRYPTION_KEY=${DATAENCRYPTIONKEY_SECRET}
+        - WHITELISTED_ORIGINS=${HOPPSCOTCH_URL}/backend,${HOPPSCOTCH_URL},${HOPPSCOTCH_URL}/admin
+        - MAILER_USE_CUSTOM_CONFIGS=${MAILER_USE_CUSTOM_CONFIGS:-true}
+        - VITE_BASE_URL=${HOPPSCOTCH_URL}
+        - VITE_SHORTCODE_BASE_URL=${HOPPSCOTCH_URL}
+        - VITE_ADMIN_URL=${HOPPSCOTCH_URL}/admin
+        - VITE_BACKEND_GQL_URL=${HOPPSCOTCH_URL}/backend/graphql
+        - VITE_BACKEND_WS_URL=wss://${HOPPSCOTCH_HOST}/backend/graphql
+        - VITE_BACKEND_API_URL=${HOPPSCOTCH_URL}/backend/v1
+        - VITE_APP_TOS_LINK=https://docs.hoppscotch.io/support/terms
+        - VITE_APP_PRIVACY_POLICY_LINK=https://docs.hoppscotch.io/support/privacy
+        - ENABLE_SUBPATH_BASED_ACCESS=true
+      depends_on:
+        db-migration:
+          condition: service_completed_successfully
+      healthcheck:
+        test: [CMD-SHELL, wget -qO- http://127.0.0.1:80/]
+        interval: 5s
+        timeout: 20s
+        retries: 10
+      ports:
+        - ${PORT:-8080}:80
+    hoppscotch-db:
+      image: postgres:15
+      restart: unless-stopped
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-hoppscotch}
+      healthcheck:
+        test: [CMD-SHELL, "pg_isready -h localhost -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+        interval: 5s
+        timeout: 10s
+        retries: 10
+    db-migration:
+      image: hoppscotch/hoppscotch:2026.2.1
+      depends_on:
+        hoppscotch-db:
+          condition: service_healthy
+      command: pnpx prisma migrate deploy
+      restart: on-failure
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB:-hoppscotch}
+        - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@hoppscotch-db:5432/${POSTGRES_DB:-hoppscotch}
+  volumes:
+    postgres_data:
