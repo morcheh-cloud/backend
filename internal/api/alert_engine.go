@@ -47,7 +47,14 @@ const (
 	// Known vulnerabilities in a running container's image (last scan).
 	metricVulnsCritical = "container_vulns_critical"
 	metricVulnsHigh     = "container_vulns_high"
+	// Proxmox clusters (read by the cluster monitor, pve_monitor.go).
+	metricPVENodeDown    = "pve_node_down"
+	metricPVEStorageFull = "pve_storage_full"
+	metricPVEVMStopped   = "pve_vm_stopped"
 )
+
+// pveMetric says whether a rule watches Proxmox clusters.
+func pveMetric(m string) bool { return strings.HasPrefix(m, "pve_") }
 
 // vulnMetric says whether a rule counts an image's known vulnerabilities.
 func vulnMetric(m string) bool { return m == metricVulnsCritical || m == metricVulnsHigh }
@@ -63,7 +70,8 @@ func databaseMetric(m string) bool { return m == metricDBDown || m == metricDBHe
 // stateMetric says whether a metric is a yes/no state, without a threshold.
 func stateMetric(m string) bool {
 	switch m {
-	case metricOffline, metricService, metricContainerDown, metricContainerUnhealthy, metricDockerEngine:
+	case metricOffline, metricService, metricContainerDown, metricContainerUnhealthy, metricDockerEngine,
+		metricPVENodeDown, metricPVEVMStopped:
 		return true
 	}
 	return databaseMetric(m)
@@ -78,12 +86,13 @@ var metricLabels = map[string]string{
 	metricContainerRestarts: "Container restarts", metricContainerCPU: "Container CPU",
 	metricContainerMemory: "Container memory", metricDockerEngine: "Docker engine",
 	metricVulnsCritical: "Critical vulnerabilities", metricVulnsHigh: "High vulnerabilities",
+	metricPVENodeDown: "Node down", metricPVEStorageFull: "Storage used", metricPVEVMStopped: "Machine stopped",
 }
 
 // percentMetric says whether a metric's threshold is a percent (0–100).
 func percentMetric(m string) bool {
 	switch m {
-	case metricCPU, metricIOWait, metricMemory, metricSwap, metricDisk, metricContainerMemory:
+	case metricCPU, metricIOWait, metricMemory, metricSwap, metricDisk, metricContainerMemory, metricPVEStorageFull:
 		return true
 	}
 	return false
@@ -120,6 +129,10 @@ func ruleCondition(r sqlc.AlertRule) string {
 		return "unreachable"
 	case metricDBHealth:
 		return "health critical"
+	case metricPVENodeDown:
+		return "a node is offline"
+	case metricPVEVMStopped:
+		return "a machine stopped on its own"
 	case metricService:
 		if r.Unit != "" {
 			return r.Unit + " not running"
@@ -148,6 +161,10 @@ type alertTarget struct {
 
 func serverTarget(s sqlc.Server) alertTarget {
 	return alertTarget{id: s.ID, kind: "server", name: s.Name, where: s.Host}
+}
+
+func clusterTarget(c sqlc.PveCluster) alertTarget {
+	return alertTarget{id: c.ID, kind: "pve", name: c.Name, where: c.Url}
 }
 
 func databaseTarget(d sqlc.Database) alertTarget {
@@ -433,9 +450,12 @@ func (e *alertEngine) event(ctx context.Context, r sqlc.AlertRule, t alertTarget
 		Metric: r.Metric, Severity: r.Severity, Kind: kind, Value: v, Threshold: r.Threshold,
 		Detail: detail, LastedSecs: int64(lasted / time.Second), Muted: muted, At: at,
 	}
-	if t.kind == "database" {
+	switch t.kind {
+	case "database":
 		p.DatabaseID = &tid
-	} else {
+	case "pve":
+		p.ClusterID = &tid
+	default:
 		p.ServerID = &tid
 	}
 	if err := e.q.InsertAlertEvent(ctx, p); err != nil {
@@ -457,6 +477,21 @@ func alertText(r sqlc.AlertRule, t alertTarget, kind string, v float64, detail s
 			return t.name + " is healthy again (no critical checks)."
 		}
 		return t.name + " has critical checks: " + detail
+	case metricPVENodeDown:
+		if resolved {
+			return "Every node of " + t.name + " is online again."
+		}
+		return "Nodes of " + t.name + " are offline: " + detail
+	case metricPVEVMStopped:
+		if resolved {
+			return "The machines that stopped on " + t.name + " run again (or are gone)."
+		}
+		return "Machines on " + t.name + " stopped without Morche stopping them: " + detail
+	case metricPVEStorageFull:
+		if resolved {
+			return "Storage on " + t.name + " is back to " + formatMetric(r.Metric, v) + " used."
+		}
+		return fmt.Sprintf("Storage on %s is %s full (%s): %s", t.name, formatMetric(r.Metric, v), ruleCondition(r), detail)
 	case metricService:
 		switch {
 		case resolved && r.Unit != "":
@@ -535,8 +570,11 @@ func (e *alertEngine) alertMessage(r sqlc.AlertRule, t alertTarget, kind string,
 		}
 	}
 	noun := "Server"
-	if t.kind == "database" {
+	switch t.kind {
+	case "database":
 		noun = "Database"
+	case "pve":
+		noun = "Cluster"
 	}
 	fields := []notify.Field{{Name: noun, Value: t.name + " (" + t.where + ")"}}
 	if !stateMetric(r.Metric) {
@@ -556,6 +594,12 @@ func (e *alertEngine) alertMessage(r sqlc.AlertRule, t alertTarget, kind string,
 		switch {
 		case t.kind == "database":
 			url = e.up.panelURL + "/databases/" + t.id.String()
+		case t.kind == "pve" && r.Metric == metricPVENodeDown:
+			url = e.up.panelURL + "/vms?tab=nodes&cluster=" + t.id.String()
+		case t.kind == "pve" && r.Metric == metricPVEStorageFull:
+			url = e.up.panelURL + "/vms?tab=storage&cluster=" + t.id.String()
+		case t.kind == "pve":
+			url = e.up.panelURL + "/vms?cluster=" + t.id.String()
 		case containerMetric(r.Metric) && r.Project != "" && !strings.ContainsAny(r.Project, "*?["):
 			url = e.up.panelURL + "/containers/projects/" + r.Project + "?env=" + t.id.String()
 		case containerMetric(r.Metric):
@@ -576,9 +620,12 @@ func (e *alertEngine) alertMessage(r sqlc.AlertRule, t alertTarget, kind string,
 	if containerMetric(r.Metric) {
 		data["project"], data["container"] = r.Project, r.Container
 	}
-	if t.kind == "database" {
+	switch t.kind {
+	case "database":
 		data["database_id"], data["database_name"] = t.id.String(), t.name
-	} else {
+	case "pve":
+		data["cluster_id"], data["cluster_name"] = t.id.String(), t.name
+	default:
 		data["server_id"], data["server_name"] = t.id.String(), t.name
 	}
 	return notify.Message{

@@ -57,6 +57,7 @@ type AlertEvent struct {
 	At          time.Time  `json:"at"`
 	DatabaseID  *uuid.UUID `json:"database_id"`
 	Muted       bool       `json:"muted"`
+	ClusterID   *uuid.UUID `json:"cluster_id"`
 }
 
 type AlertMute struct {
@@ -97,6 +98,7 @@ type AlertRule struct {
 	DatabaseIds    []uuid.UUID `json:"database_ids"`
 	Project        string      `json:"project"`
 	Container      string      `json:"container"`
+	ClusterIds     []uuid.UUID `json:"cluster_ids"`
 }
 
 type AlertRuleChannel struct {
@@ -983,6 +985,40 @@ type ProxyHost struct {
 	UpdatedByName string    `json:"updated_by_name"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type PveCluster struct {
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	Name          string     `json:"name"`
+	Url           string     `json:"url"`
+	TokenID       string     `json:"token_id"`
+	SecretEnc     []byte     `json:"secret_enc"`
+	Fingerprint   string     `json:"fingerprint"`
+	TlsSkipVerify bool       `json:"tls_skip_verify"`
+	AllowInternal bool       `json:"allow_internal"`
+	Description   string     `json:"description"`
+	Favorite      bool       `json:"favorite"`
+	Status        string     `json:"status"`
+	StatusMessage string     `json:"status_message"`
+	Version       string     `json:"version"`
+	ClusterName   string     `json:"cluster_name"`
+	NodeCount     int32      `json:"node_count"`
+	NodesOnline   int32      `json:"nodes_online"`
+	GuestCount    int32      `json:"guest_count"`
+	RunningCount  int32      `json:"running_count"`
+	LatencyMs     *int32     `json:"latency_ms"`
+	LastCheckedAt *time.Time `json:"last_checked_at"`
+	LastOnlineAt  *time.Time `json:"last_online_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type PveVmLink struct {
+	ClusterID uuid.UUID `json:"cluster_id"`
+	Vmid      int32     `json:"vmid"`
+	ServerID  uuid.UUID `json:"server_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Schedule struct {

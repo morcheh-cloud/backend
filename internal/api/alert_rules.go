@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
@@ -24,6 +25,7 @@ type alertRuleHandler struct {
 	q      *sqlc.Queries
 	authz  *authz
 	engine *alertEngine
+	pve    *pveHandler
 }
 
 type AlertRuleIDPath struct {
@@ -31,8 +33,8 @@ type AlertRuleIDPath struct {
 }
 
 type AlertRuleState struct {
-	TargetID    string     `json:"target_id" format:"uuid" doc:"The server or database"`
-	TargetKind  string     `json:"target_kind" enum:"server,database"`
+	TargetID    string     `json:"target_id" format:"uuid" doc:"The server, database or Proxmox cluster"`
+	TargetKind  string     `json:"target_kind" enum:"server,database,pve"`
 	TargetName  string     `json:"target_name"`
 	State       string     `json:"state" enum:"pending,firing" doc:"pending = the condition holds, not yet for long enough"`
 	BreachSince *time.Time `json:"breach_since,omitempty"`
@@ -60,6 +62,7 @@ type AlertRule struct {
 	Scope          string           `json:"scope"`
 	ServerIDs      []string         `json:"server_ids"`
 	DatabaseIDs    []string         `json:"database_ids"`
+	ClusterIDs     []string         `json:"cluster_ids"`
 	Tags           []string         `json:"tags"`
 	RepeatMinutes  int32            `json:"repeat_minutes"`
 	NotifyResolved bool             `json:"notify_resolved"`
@@ -78,18 +81,19 @@ type AlertRuleOutput struct {
 type AlertRuleBody struct {
 	Name           string   `json:"name" minLength:"1" maxLength:"100"`
 	Enabled        *bool    `json:"enabled,omitempty" doc:"Default true"`
-	Metric         string   `json:"metric" enum:"cpu,iowait,load,memory,swap,disk,net_rx,net_tx,offline,service,db_down,db_health,container_down,container_unhealthy,container_restarts,container_cpu,container_memory,docker_engine,container_vulns_critical,container_vulns_high"`
+	Metric         string   `json:"metric" enum:"cpu,iowait,load,memory,swap,disk,net_rx,net_tx,offline,service,db_down,db_health,container_down,container_unhealthy,container_restarts,container_cpu,container_memory,docker_engine,container_vulns_critical,container_vulns_high,pve_node_down,pve_storage_full,pve_vm_stopped"`
 	Op             string   `json:"op,omitempty" enum:"above,below" default:"above"`
-	Threshold      float64  `json:"threshold" doc:"Percent for cpu, iowait, memory, swap, disk and container_memory (of its limit); load per core; bytes per second for net_rx/net_tx; percent of one core for container_cpu; stops in 10 minutes for container_restarts; findings in the image's last scan for container_vulns_critical (critical) and container_vulns_high (high or critical); ignored for offline, service, db_down, db_health, container_down, container_unhealthy and docker_engine"`
+	Threshold      float64  `json:"threshold" doc:"Percent for cpu, iowait, memory, swap, disk and container_memory (of its limit); load per core; bytes per second for net_rx/net_tx; percent of one core for container_cpu; stops in 10 minutes for container_restarts; findings in the image's last scan for container_vulns_critical (critical) and container_vulns_high (high or critical); percent used for pve_storage_full; ignored for offline, service, db_down, db_health, container_down, container_unhealthy, docker_engine, pve_node_down and pve_vm_stopped"`
 	Mount          string   `json:"mount,omitempty" maxLength:"255" doc:"disk only: one mount point; empty = the fullest"`
 	Unit           string   `json:"unit,omitempty" maxLength:"255" doc:"service only: one systemd unit that must keep running; empty = any service that failed"`
 	Project        string   `json:"project,omitempty" maxLength:"100" doc:"container_* only: a compose project (* = any characters); empty = any"`
 	Container      string   `json:"container,omitempty" maxLength:"100" doc:"container_* only: a container or compose service name (* = any characters); empty = any"`
 	ForMinutes     int32    `json:"for_minutes" minimum:"0" maximum:"1440" doc:"How long it must hold before alerting; 0 = at once"`
 	Severity       string   `json:"severity,omitempty" enum:"warning,critical" default:"warning"`
-	Scope          string   `json:"scope,omitempty" enum:"all,servers,tags,databases" default:"all" doc:"databases = for db_down/db_health, which take all or databases"`
+	Scope          string   `json:"scope,omitempty" enum:"all,servers,tags,databases,clusters" default:"all" doc:"databases = for db_down/db_health, which take all or databases; clusters = for pve_*, which take all or clusters"`
 	ServerIDs      []string `json:"server_ids,omitempty" doc:"scope servers"`
 	DatabaseIDs    []string `json:"database_ids,omitempty" doc:"scope databases"`
+	ClusterIDs     []string `json:"cluster_ids,omitempty" doc:"scope clusters"`
 	Tags           []string `json:"tags,omitempty" doc:"scope tags: servers with any of them"`
 	RepeatMinutes  int32    `json:"repeat_minutes,omitempty" minimum:"0" maximum:"10080" doc:"Remind while it fires; 0 = once"`
 	NotifyResolved *bool    `json:"notify_resolved,omitempty" doc:"Send when it clears; default true"`
@@ -112,7 +116,7 @@ func toAlertRule(r sqlc.AlertRule, channels []string, states []AlertRuleState) A
 		ID: r.ID.String(), WorkspaceID: r.WorkspaceID.String(), Name: r.Name, Enabled: r.Enabled,
 		Metric: r.Metric, Op: r.Op, Threshold: r.Threshold, Mount: r.Mount, Unit: r.Unit,
 		Project: r.Project, Container: r.Container, ForMinutes: r.ForMinutes, Severity: r.Severity, Scope: r.Scope, ServerIDs: ids,
-		DatabaseIDs: idStrings(r.DatabaseIds), Tags: tags,
+		DatabaseIDs: idStrings(r.DatabaseIds), ClusterIDs: idStrings(r.ClusterIds), Tags: tags,
 		RepeatMinutes: r.RepeatMinutes, NotifyResolved: r.NotifyResolved, ChannelIDs: channels,
 		States: states, CreatedByName: r.CreatedByName, UpdatedByName: r.UpdatedByName,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -183,6 +187,22 @@ func (h *alertRuleHandler) database(ctx context.Context, p *principal, raw strin
 	return d, nil
 }
 
+// pveCluster loads a cluster this person can see.
+func (h *alertRuleHandler) pveCluster(ctx context.Context, p *principal, raw string) (sqlc.PveCluster, error) {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return sqlc.PveCluster{}, huma.Error404NotFound("Cluster not found")
+	}
+	c, err := h.q.GetPVECluster(ctx, id)
+	if isNotFound(err) || (err == nil && p.Access.WorkspaceLevel(c.WorkspaceID) == auth.None) {
+		return sqlc.PveCluster{}, huma.Error404NotFound("Cluster not found")
+	}
+	if err != nil {
+		return sqlc.PveCluster{}, internalError(err)
+	}
+	return c, nil
+}
+
 func (h *alertRuleHandler) getRule(ctx context.Context, raw string) (sqlc.AlertRule, error) {
 	id, err := uuid.Parse(raw)
 	if err != nil {
@@ -205,7 +225,7 @@ var containerPatternRe = regexp.MustCompile(`^[A-Za-z0-9*?][A-Za-z0-9_.*?-]*$`)
 type cleanedRule struct {
 	name, op, mount, unit, severity, scope string
 	project, container                     string
-	servers, databases                     []uuid.UUID
+	servers, databases, clusters           []uuid.UUID
 	tags                                   []string
 	channels                               []uuid.UUID
 	enabled, resolved                      bool
@@ -218,7 +238,7 @@ func (h *alertRuleHandler) clean(ctx context.Context, ws uuid.UUID, b *AlertRule
 		severity: cmpOr(b.Severity, "warning"), scope: cmpOr(b.Scope, "all"),
 		unit:    strings.TrimSpace(b.Unit),
 		project: strings.TrimSpace(b.Project), container: strings.TrimSpace(b.Container),
-		servers: []uuid.UUID{}, databases: []uuid.UUID{}, tags: []string{}, channels: []uuid.UUID{},
+		servers: []uuid.UUID{}, databases: []uuid.UUID{}, clusters: []uuid.UUID{}, tags: []string{}, channels: []uuid.UUID{},
 		enabled: b.Enabled == nil || *b.Enabled, resolved: b.NotifyResolved == nil || *b.NotifyResolved,
 	}
 	if c.name == "" {
@@ -268,13 +288,39 @@ func (h *alertRuleHandler) clean(ctx context.Context, ws uuid.UUID, b *AlertRule
 			return c, fieldError("body.container", "Use a container or service name like web or web-*", b.Container)
 		}
 	}
-	if databaseMetric(b.Metric) != (c.scope == "databases") && c.scope != "all" {
+	if pveMetric(b.Metric) != (c.scope == "clusters") && c.scope != "all" {
+		if pveMetric(b.Metric) {
+			return c, fieldError("body.scope", "A Proxmox rule covers every cluster or the ones you pick", b.Scope)
+		}
+		return c, fieldError("body.scope", "Pick clusters only for a Proxmox rule", b.Scope)
+	}
+	if !pveMetric(b.Metric) && databaseMetric(b.Metric) != (c.scope == "databases") && c.scope != "all" {
 		if databaseMetric(b.Metric) {
 			return c, fieldError("body.scope", "A database rule covers every database or the ones you pick", b.Scope)
 		}
 		return c, fieldError("body.scope", "Pick servers or tags for a server rule", b.Scope)
 	}
 	switch c.scope {
+	case "clusters":
+		if len(b.ClusterIDs) == 0 {
+			return c, fieldError("body.cluster_ids", "Pick at least one cluster", b.ClusterIDs)
+		}
+		for _, raw := range b.ClusterIDs {
+			id, err := uuid.Parse(raw)
+			if err != nil {
+				return c, fieldError("body.cluster_ids", "Unknown cluster", raw)
+			}
+			cl, err := h.q.GetPVECluster(ctx, id)
+			if isNotFound(err) || (err == nil && cl.WorkspaceID != ws) {
+				return c, fieldError("body.cluster_ids", "That cluster isn't in this workspace", raw)
+			}
+			if err != nil {
+				return c, internalError(err)
+			}
+			if !slices.Contains(c.clusters, id) {
+				c.clusters = append(c.clusters, id)
+			}
+		}
 	case "databases":
 		if len(b.DatabaseIDs) == 0 {
 			return c, fieldError("body.database_ids", "Pick at least one database", b.DatabaseIDs)
@@ -374,7 +420,7 @@ func (h *alertRuleHandler) create(ctx context.Context, in *struct{ Body AlertRul
 		WorkspaceID: ws, Name: c.name, Enabled: c.enabled, Metric: b.Metric, Op: c.op,
 		Threshold: b.Threshold, Mount: c.mount, Unit: c.unit, Project: c.project, Container: c.container,
 		ForMinutes: b.ForMinutes, Severity: c.severity,
-		Scope: c.scope, ServerIds: c.servers, DatabaseIds: c.databases, Tags: c.tags, RepeatMinutes: b.RepeatMinutes,
+		Scope: c.scope, ServerIds: c.servers, DatabaseIds: c.databases, ClusterIds: c.clusters, Tags: c.tags, RepeatMinutes: b.RepeatMinutes,
 		NotifyResolved: c.resolved, CreatedByName: cmpOr(p.User.FullName, p.User.Username),
 	})
 	if err != nil {
@@ -404,7 +450,7 @@ func (h *alertRuleHandler) update(ctx context.Context, in *struct {
 		ID: prev.ID, Name: c.name, Enabled: c.enabled, Metric: b.Metric, Op: c.op,
 		Threshold: b.Threshold, Mount: c.mount, Unit: c.unit, Project: c.project, Container: c.container,
 		ForMinutes: b.ForMinutes, Severity: c.severity,
-		Scope: c.scope, ServerIds: c.servers, DatabaseIds: c.databases, Tags: c.tags, RepeatMinutes: b.RepeatMinutes,
+		Scope: c.scope, ServerIds: c.servers, DatabaseIds: c.databases, ClusterIds: c.clusters, Tags: c.tags, RepeatMinutes: b.RepeatMinutes,
 		NotifyResolved: c.resolved, UpdatedByName: cmpOr(p.User.FullName, p.User.Username),
 	})
 	if err != nil {
@@ -421,7 +467,7 @@ func (h *alertRuleHandler) update(ctx context.Context, in *struct {
 
 type AlertPreviewItem struct {
 	TargetID   string     `json:"target_id" format:"uuid"`
-	TargetKind string     `json:"target_kind" enum:"server,database"`
+	TargetKind string     `json:"target_kind" enum:"server,database,pve"`
 	TargetName string     `json:"target_name"`
 	Status     string     `json:"status"`
 	At         *time.Time `json:"at,omitempty" doc:"The sample it was read from; missing = no data"`
@@ -455,12 +501,15 @@ func (h *alertRuleHandler) preview(ctx context.Context, in *struct {
 	}
 	rule := sqlc.AlertRule{
 		Metric: b.Metric, Op: c.op, Threshold: b.Threshold, Mount: c.mount, Scope: c.scope,
-		ServerIds: c.servers, DatabaseIds: c.databases, Tags: c.tags, Unit: c.unit,
+		ServerIds: c.servers, DatabaseIds: c.databases, ClusterIds: c.clusters, Tags: c.tags, Unit: c.unit,
 		Project: c.project, Container: c.container,
 	}
 	sc := p.scope()
 	if databaseMetric(rule.Metric) {
 		return h.previewDatabases(ctx, p, ws, rule)
+	}
+	if pveMetric(rule.Metric) {
+		return h.previewClusters(ctx, p, ws, rule)
 	}
 	rows, err := h.q.ListServers(ctx, sqlc.ListServersParams{
 		SeeAll: sc.seeAll, WorkspaceIds: sc.workspaces, ServerIds: sc.servers, WorkspaceID: &ws,
@@ -568,6 +617,71 @@ func (h *alertRuleHandler) previewDatabases(ctx context.Context, p *principal, w
 	return out, nil
 }
 
+// previewClusters checks a Proxmox rule against each covered cluster now.
+func (h *alertRuleHandler) previewClusters(ctx context.Context, p *principal, ws uuid.UUID, rule sqlc.AlertRule) (*AlertPreviewOutput, error) {
+	out := &AlertPreviewOutput{}
+	out.Body.Items = []AlertPreviewItem{}
+	if p.Access.WorkspaceLevel(ws) == auth.None {
+		return out, nil
+	}
+	rows, err := h.q.ListPVEClusters(ctx, sqlc.ListPVEClustersParams{SeeAll: true, WorkspaceID: &ws})
+	if err != nil {
+		return nil, internalError(err)
+	}
+	for _, c := range rows {
+		if !pveCovered(rule, c) {
+			continue
+		}
+		it := AlertPreviewItem{TargetID: c.ID.String(), TargetKind: "pve", TargetName: c.Name, Status: c.Status}
+		v := 0.0
+		switch rule.Metric {
+		case metricPVENodeDown:
+			if c.LastCheckedAt != nil {
+				switch {
+				case c.Status != "online":
+					v, it.Met, it.Detail = 1, true, "the cluster can't be reached ("+cmpOr(c.StatusMessage, c.Status)+")"
+				case c.NodesOnline < c.NodeCount:
+					v, it.Met = float64(c.NodeCount-c.NodesOnline), true
+					it.Detail = fmt.Sprintf("%d of %d nodes offline", c.NodeCount-c.NodesOnline, c.NodeCount)
+				}
+				it.At, it.Value = c.LastCheckedAt, &v
+			}
+		case metricPVEVMStopped:
+			it.Detail = "Seen over time: a machine that was running and stopped without Morche"
+		case metricPVEStorageFull:
+			if h.pve == nil || c.Status != "online" {
+				break
+			}
+			_, storages, err := h.pve.infraOf(ctx, c)
+			if err != nil {
+				it.Detail = "Couldn't read its storage"
+				break
+			}
+			parts, seen := []string{}, false
+			for _, s := range storages {
+				if s.Total <= 0 || s.Status != "available" {
+					continue
+				}
+				pct := float64(s.Used) / float64(s.Total) * 100
+				if !seen || (rule.Op == "below" && pct < v) || (rule.Op != "below" && pct > v) {
+					v, seen = pct, true
+				}
+				if breached(rule, pct) {
+					it.Met = true
+					parts = append(parts, fmt.Sprintf("%s on %s %.0f%%", s.Storage, s.Node, pct))
+				}
+			}
+			if seen {
+				now := time.Now()
+				it.At, it.Value, it.Detail = &now, &v, strings.Join(parts, ", ")
+			}
+		}
+		out.Body.Items = append(out.Body.Items, it)
+	}
+	metFirst(out.Body.Items)
+	return out, nil
+}
+
 // databaseCovered says whether a database rule takes in a database.
 func databaseCovered(r sqlc.AlertRule, d sqlc.Database) bool {
 	if !databaseMetric(r.Metric) {
@@ -578,7 +692,7 @@ func databaseCovered(r sqlc.AlertRule, d sqlc.Database) bool {
 
 // ruleCovers says whether a rule's scope takes in a server.
 func ruleCovers(r sqlc.AlertRule, s sqlc.Server) bool {
-	if databaseMetric(r.Metric) {
+	if databaseMetric(r.Metric) || pveMetric(r.Metric) {
 		return false
 	}
 	switch r.Scope {
@@ -602,6 +716,7 @@ type AlertEvent struct {
 	RuleID     *string   `json:"rule_id,omitempty" format:"uuid"`
 	ServerID   *string   `json:"server_id,omitempty" format:"uuid"`
 	DatabaseID *string   `json:"database_id,omitempty" format:"uuid"`
+	ClusterID  *string   `json:"cluster_id,omitempty" format:"uuid" doc:"A Proxmox cluster's event"`
 	RuleName   string    `json:"rule_name"`
 	ServerName string    `json:"server_name" doc:"The server's or the database's name"`
 	Metric     string    `json:"metric"`
@@ -630,6 +745,7 @@ func registerAlertRules(api huma.API, h *alertRuleHandler) {
 	}, func(ctx context.Context, in *struct {
 		ServerID   string `query:"server_id" doc:"Only rules covering this server"`
 		DatabaseID string `query:"database_id" doc:"Only rules covering this database"`
+		ClusterID  string `query:"cluster_id" doc:"Only rules covering this Proxmox cluster"`
 	}) (*listOut, error) {
 		p := principalOf(ctx)
 		sc := p.scope()
@@ -658,9 +774,26 @@ func registerAlertRules(api huma.API, h *alertRuleHandler) {
 			}
 			dbase, params.SeeAll, params.WorkspaceID = &d, true, &d.WorkspaceID
 		}
+		var clu *sqlc.PveCluster
+		if in.ClusterID != "" && srv == nil && dbase == nil {
+			c, err := h.pveCluster(ctx, p, in.ClusterID)
+			if err != nil {
+				return nil, err
+			}
+			clu, params.SeeAll, params.WorkspaceID = &c, true, &c.WorkspaceID
+		}
 		rows, err := h.q.ListAlertRules(ctx, params)
 		if err != nil {
 			return nil, internalError(err)
+		}
+		if clu != nil {
+			kept := rows[:0]
+			for _, r := range rows {
+				if pveCovered(r, *clu) {
+					kept = append(kept, r)
+				}
+			}
+			rows = kept
 		}
 		if srv != nil || dbase != nil {
 			kept := rows[:0]
@@ -683,6 +816,18 @@ func registerAlertRules(api huma.API, h *alertRuleHandler) {
 			} else {
 				only = dbase.ID.String()
 			}
+			for i := range items {
+				st := items[i].States[:0]
+				for _, s := range items[i].States {
+					if s.TargetID == only {
+						st = append(st, s)
+					}
+				}
+				items[i].States = st
+			}
+		}
+		if clu != nil {
+			only := clu.ID.String()
 			for i := range items {
 				st := items[i].States[:0]
 				for _, s := range items[i].States {
@@ -776,6 +921,7 @@ func registerAlertRules(api huma.API, h *alertRuleHandler) {
 	}, func(ctx context.Context, in *struct {
 		ServerID   string `query:"server_id" doc:"Only this server"`
 		DatabaseID string `query:"database_id" doc:"Only this database"`
+		ClusterID  string `query:"cluster_id" doc:"Only this Proxmox cluster"`
 		RuleID     string `query:"rule_id" doc:"Only this rule"`
 		Limit      int32  `query:"limit" minimum:"1" maximum:"500" default:"100"`
 	}) (*eventsOut, error) {
@@ -805,6 +951,13 @@ func registerAlertRules(api huma.API, h *alertRuleHandler) {
 			}
 			params.DatabaseID, params.SeeAll, params.WorkspaceID = &d.ID, true, &d.WorkspaceID
 		}
+		if in.ClusterID != "" {
+			c, err := h.pveCluster(ctx, p, in.ClusterID)
+			if err != nil {
+				return nil, err
+			}
+			params.ClusterID, params.SeeAll, params.WorkspaceID = &c.ID, true, &c.WorkspaceID
+		}
 		if in.RuleID != "" {
 			id, err := uuid.Parse(in.RuleID)
 			if err != nil {
@@ -821,8 +974,8 @@ func registerAlertRules(api huma.API, h *alertRuleHandler) {
 		for _, e := range rows {
 			out.Body.Items = append(out.Body.Items, AlertEvent{
 				ID: e.ID, RuleID: optionalIDString(e.RuleID), ServerID: optionalIDString(e.ServerID),
-				DatabaseID: optionalIDString(e.DatabaseID),
-				RuleName:   e.RuleName, ServerName: e.ServerName, Metric: e.Metric, Severity: e.Severity,
+				DatabaseID: optionalIDString(e.DatabaseID), ClusterID: optionalIDString(e.ClusterID),
+				RuleName: e.RuleName, ServerName: e.ServerName, Metric: e.Metric, Severity: e.Severity,
 				Kind: e.Kind, Value: e.Value, Threshold: e.Threshold, Detail: e.Detail,
 				LastedSecs: e.LastedSecs, Muted: e.Muted, At: e.At,
 			})

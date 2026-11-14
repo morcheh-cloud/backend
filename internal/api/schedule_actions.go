@@ -48,6 +48,7 @@ type ScheduleTask struct {
 	Docker   *ScheduleDocker      `json:"docker,omitempty" doc:"action docker-update"`
 	Volumes  *ScheduleVolumes     `json:"volumes,omitempty" doc:"action docker-volume-backup"`
 	Prune    *ScheduleDockerPrune `json:"prune,omitempty" doc:"action docker-prune"`
+	PVE      *SchedulePVE         `json:"pve,omitempty" doc:"actions pve-backup, pve-snapshot"`
 }
 
 // SchedulePackages upgrades the system packages on servers, as Upgrade all
@@ -128,7 +129,7 @@ type ScheduleVerify struct {
 // ScheduleRef is something a task names, with what it's called now.
 type ScheduleRef struct {
 	ID      string `json:"id" format:"uuid"`
-	Kind    string `json:"kind" enum:"server,storage,script,playbook,database"`
+	Kind    string `json:"kind" enum:"server,storage,script,playbook,database,cluster"`
 	Name    string `json:"name" doc:"Empty when it was deleted"`
 	Missing bool   `json:"missing"`
 }
@@ -172,6 +173,8 @@ func taskRefs(action string, t ScheduleTask) []ScheduleRef {
 		add("storage", t.Volumes.StorageID)
 	case action == "docker-prune" && t.Prune != nil:
 		add("server", t.Prune.ServerIDs...)
+	case pveAction(action) && t.PVE != nil:
+		add("cluster", t.PVE.ClusterID)
 	}
 	return refs
 }
@@ -733,6 +736,8 @@ func (h *scheduleHandler) runTask(ctx context.Context, t *jobs.Task) (any, error
 		return r.volumeBackups(ctx)
 	case "docker-prune":
 		return r.dockerPrune(ctx)
+	case "pve-backup", "pve-snapshot":
+		return r.pve(ctx)
 	}
 	return fail(fmt.Errorf("Unknown action %q.", r.plan.Action))
 }

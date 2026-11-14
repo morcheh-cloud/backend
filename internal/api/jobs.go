@@ -27,7 +27,7 @@ import (
 // reports progress and can be canceled.
 type Job struct {
 	ID         string         `json:"id" format:"uuid"`
-	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install, fail2ban-uninstall, firewall-install, firewall-apply, ansible-run, schedule-sync, schedule-run, script-run, database-backup, database-backup-verify, database-backup-restore, proxy-setup, proxy-geo, proxy-brotli, proxy-waf, proxy-image-filter, proxy-stream-geo, proxy-certificate, software-run, software-scan, package-action, package-refresh, docker-pull or docker-prune" example:"transfer"`
+	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install, fail2ban-uninstall, firewall-install, firewall-apply, ansible-run, schedule-sync, schedule-run, script-run, database-backup, database-backup-verify, database-backup-restore, proxy-setup, proxy-geo, proxy-brotli, proxy-waf, proxy-image-filter, proxy-stream-geo, proxy-certificate, software-run, software-scan, package-action, package-refresh, docker-pull, docker-prune, pve-task or pve-create" example:"transfer"`
 	Title      string         `json:"title" example:"Copy backup.tar.gz from MinIO to web-01"`
 	State      string         `json:"state" enum:"queued,running,succeeded,failed,canceled,interrupted"`
 	Refs       []string       `json:"refs" doc:"Servers and storages it touches"`
@@ -55,6 +55,8 @@ type JobPlace struct {
 	AutoUpdate string `json:"auto_update,omitempty" format:"uuid" doc:"The container auto-update it is a run of"`
 	Dataset    string `json:"dataset,omitempty" doc:"The kind of logs it archives, puts back or compacts"`
 	Archive    string `json:"archive,omitempty" format:"uuid" doc:"The log archive it writes, restores or puts away"`
+	ClusterID  string `json:"cluster_id,omitempty" format:"uuid" doc:"The Proxmox cluster it works on"`
+	VMID       int    `json:"vmid,omitempty" doc:"The Proxmox guest it works on"`
 }
 
 // JobRemoved is sent on the stream when a job is deleted; an empty id means
@@ -156,6 +158,11 @@ func (a *authz) mayRetry(ctx context.Context, p *principal, j sqlc.Job) error {
 		if level == auth.None {
 			if level, err = a.storageLevel(ctx, p.Access, ref); err != nil {
 				return internalError(err)
+			}
+		}
+		if level == auth.None {
+			if ws, err := a.q.GetPVEClusterWorkspace(ctx, ref); err == nil {
+				level = p.Access.WorkspaceLevel(ws)
 			}
 		}
 		if level < auth.Engineer {

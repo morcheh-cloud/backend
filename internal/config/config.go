@@ -41,6 +41,8 @@ type Config struct {
 	ServerHistory time.Duration `env:"SERVER_HISTORY" envDefault:"744h"`
 	// Same for DNS servers. 0 = off.
 	DNSCheckInterval time.Duration `env:"DNS_CHECK_INTERVAL" envDefault:"30s"`
+	// Same for Proxmox clusters (and their alert rules). 0 = off.
+	PVECheckInterval time.Duration `env:"PVE_CHECK_INTERVAL" envDefault:"30s"`
 	// PanelURL is where the panel is served, for links in alerts. Default:
 	// the first CORS origin.
 	PanelURL string `env:"PANEL_URL"`

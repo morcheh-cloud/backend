@@ -481,6 +481,8 @@ UNION ALL
 SELECT id, name, workspace_id, 'playbook'::text AS kind FROM ansible_playbooks WHERE id = ANY ($1::uuid[])
 UNION ALL
 SELECT id, name, workspace_id, 'database'::text AS kind FROM databases WHERE id = ANY ($1::uuid[])
+UNION ALL
+SELECT id, name, workspace_id, 'cluster'::text AS kind FROM pve_clusters WHERE id = ANY ($1::uuid[])
 `
 
 type ListScheduleEndNamesRow struct {

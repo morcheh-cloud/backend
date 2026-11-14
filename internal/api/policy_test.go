@@ -80,7 +80,7 @@ func TestEveryOperationHasAPolicy(t *testing.T) {
 		}
 		hasID := strings.Contains(op.path, "{id}")
 		switch pol.kind {
-		case kindServer, kindStorage, kindWorkspace, kindDatabase, kindBackupPlan, kindBackup, kindApp, kindPlaybook, kindAnsibleRun, kindSchedule, kindScheduleRun, kindDNSServer, kindScript, kindProxy, kindSoftwareRecipe, kindSoftwareInstall:
+		case kindServer, kindStorage, kindWorkspace, kindDatabase, kindBackupPlan, kindBackup, kindApp, kindPlaybook, kindAnsibleRun, kindSchedule, kindScheduleRun, kindDNSServer, kindPVECluster, kindScript, kindProxy, kindSoftwareRecipe, kindSoftwareInstall:
 			if !hasID {
 				t.Errorf("%s checks the path's {id}, but %s has none", op.id, op.path)
 			}
@@ -111,6 +111,7 @@ func TestOnlyKnownRoutesSkipTheMiddleware(t *testing.T) {
 		switch {
 		case known[method+" "+route],
 			route == "/servers/{id}/terminals/connect",
+			route == "/pve-clusters/{id}/console/connect",
 			route == "/docs",
 			strings.HasPrefix(route, "/openapi"),
 			strings.HasPrefix(route, "/schemas/"):

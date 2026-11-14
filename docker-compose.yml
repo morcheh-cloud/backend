@@ -223,6 +223,17 @@ services:
     volumes:
       - testdockerdata:/var/lib/docker
 
+  # Fake Proxmox VE cluster for the Virtual machines section (cmd/fakepve).
+  # Token root@pam!morche = 00000000-fake-4000-8000-000000000000.
+  test-pve:
+    build:
+      context: .
+      dockerfile: dev/fakepve/Dockerfile
+    ports:
+      - "127.0.0.1:8006:8006"
+    volumes:
+      - testpvedata:/data
+
 volumes:
   pgdata:
   redisdata:
@@ -238,3 +249,4 @@ volumes:
   testdns1data:
   testdns2data:
   testdockerdata:
+  testpvedata:

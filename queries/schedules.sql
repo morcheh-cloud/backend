@@ -157,7 +157,9 @@ SELECT id, name, workspace_id, 'script'::text AS kind FROM scripts WHERE id = AN
 UNION ALL
 SELECT id, name, workspace_id, 'playbook'::text AS kind FROM ansible_playbooks WHERE id = ANY (@ids::uuid[])
 UNION ALL
-SELECT id, name, workspace_id, 'database'::text AS kind FROM databases WHERE id = ANY (@ids::uuid[]);
+SELECT id, name, workspace_id, 'database'::text AS kind FROM databases WHERE id = ANY (@ids::uuid[])
+UNION ALL
+SELECT id, name, workspace_id, 'cluster'::text AS kind FROM pve_clusters WHERE id = ANY (@ids::uuid[]);
 
 -- name: ListUserNames :many
 SELECT id, username, full_name, status FROM users WHERE id = ANY (@ids::uuid[]);

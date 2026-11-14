@@ -21,7 +21,7 @@ type AlertMute struct {
 	WorkspaceID   string    `json:"workspace_id" format:"uuid"`
 	RuleID        *string   `json:"rule_id,omitempty" format:"uuid" doc:"Missing = every rule"`
 	RuleName      string    `json:"rule_name"`
-	TargetKind    string    `json:"target_kind" enum:",server,database" doc:"Empty = everywhere"`
+	TargetKind    string    `json:"target_kind" enum:",server,database,pve" doc:"Empty = everywhere"`
 	TargetID      *string   `json:"target_id,omitempty" format:"uuid"`
 	TargetName    string    `json:"target_name"`
 	StartsAt      time.Time `json:"starts_at"`
@@ -34,7 +34,7 @@ type AlertMute struct {
 
 type AlertMuteBody struct {
 	RuleID     string     `json:"rule_id,omitempty" doc:"One rule; empty = every rule"`
-	TargetKind string     `json:"target_kind,omitempty" enum:"server,database" doc:"With target_id: one server or database; empty = everywhere"`
+	TargetKind string     `json:"target_kind,omitempty" enum:"server,database,pve" doc:"With target_id: one server or database; empty = everywhere"`
 	TargetID   string     `json:"target_id,omitempty"`
 	StartsAt   *time.Time `json:"starts_at,omitempty" doc:"Empty = now"`
 	Minutes    int32      `json:"minutes,omitempty" minimum:"0" maximum:"129600" doc:"How long; or give until"`
@@ -117,8 +117,19 @@ func (h *alertRuleHandler) createMute(ctx context.Context, in *struct {
 			return nil, fieldError("body.target_id", "That database isn't in the rule's workspace", b.TargetID)
 		}
 		ws = &d.WorkspaceID
+	case b.TargetKind == "pve":
+		c, err := h.pveCluster(ctx, p, b.TargetID)
+		if err != nil {
+			return nil, err
+		}
+		m.TargetID, m.TargetName = &c.ID, c.Name
+		level = p.Access.WorkspaceLevel(c.WorkspaceID)
+		if ws != nil && *ws != c.WorkspaceID {
+			return nil, fieldError("body.target_id", "That cluster isn't in the rule's workspace", b.TargetID)
+		}
+		ws = &c.WorkspaceID
 	default:
-		return nil, fieldError("body.target_kind", "Say whether it's a server or a database", b.TargetKind)
+		return nil, fieldError("body.target_kind", "Say whether it's a server, a database or a cluster", b.TargetKind)
 	}
 	if ws == nil {
 		w, err := h.authz.createTarget(ctx, p)
@@ -181,6 +192,7 @@ func registerAlertMutes(api huma.API, h *alertRuleHandler) {
 	}, func(ctx context.Context, in *struct {
 		ServerID   string `query:"server_id"`
 		DatabaseID string `query:"database_id"`
+		ClusterID  string `query:"cluster_id"`
 	}) (*listOut, error) {
 		p := principalOf(ctx)
 		sc := p.scope()
@@ -206,6 +218,12 @@ func registerAlertMutes(api huma.API, h *alertRuleHandler) {
 				return nil, err
 			}
 			only, params.SeeAll, params.WorkspaceID = &d.ID, true, &d.WorkspaceID
+		case in.ClusterID != "":
+			c, err := h.pveCluster(ctx, p, in.ClusterID)
+			if err != nil {
+				return nil, err
+			}
+			only, params.SeeAll, params.WorkspaceID = &c.ID, true, &c.WorkspaceID
 		}
 		rows, err := h.q.ListAlertMutes(ctx, params)
 		if err != nil {

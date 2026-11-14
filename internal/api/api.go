@@ -166,6 +166,14 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	alertRules := &alertRuleHandler{q: sqlc.New(db), authz: a, engine: servers.alerts}
 	registerAlertRules(api, alertRules)
 	registerAlertMutes(api, alertRules)
+	pve := &pveHandler{q: sqlc.New(db), box: box, authz: a, servers: servers, runner: runner}
+	pve.registerJobs()
+	registerPVEClusters(api, pve)
+	registerPVEGuests(api, pve)
+	registerPVEInfra(api, pve)
+	registerPVEConsole(api, r, pve, cfg.CORSOrigins)
+	startPVEMonitor(pve, cfg.PVECheckInterval)
+	alertRules.pve = pve
 	apps := newAppHandler(sqlc.New(db), db, box, a)
 	registerApps(api, apps)
 	registerAppCategories(api, apps)
@@ -176,6 +184,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	backups := newBackupHandler(databases, st, a)
 	registerDatabaseBackups(api, backups)
 	schedules := newScheduleHandler(st, a, scripts, playbooks, backups, software)
+	schedules.pve = pve
 	registerSchedules(api, schedules)
 	startBackupScheduler(backups, cfg.ScheduleTick)
 	startScheduler(schedules, cfg.ScheduleTick)

@@ -613,9 +613,9 @@ func (h *serverHandler) list(ctx context.Context, in *ListServersInput) (*Server
 	return out, nil
 }
 
-func nonNil(s []string) []string {
+func nonNil[T any](s []T) []T {
 	if s == nil {
-		return []string{}
+		return []T{}
 	}
 	return s
 }

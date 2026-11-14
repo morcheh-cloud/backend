@@ -106,6 +106,7 @@ type Querier interface {
 	CreateLogArchive(ctx context.Context, arg CreateLogArchiveParams) (LogArchive, error)
 	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
 	CreateNotificationChannel(ctx context.Context, arg CreateNotificationChannelParams) (NotificationChannel, error)
+	CreatePVECluster(ctx context.Context, arg CreatePVEClusterParams) (PveCluster, error)
 	CreatePlaybook(ctx context.Context, arg CreatePlaybookParams) (AnsiblePlaybook, error)
 	CreateProxy(ctx context.Context, arg CreateProxyParams) (Proxy, error)
 	CreateProxyHost(ctx context.Context, arg CreateProxyHostParams) (ProxyHost, error)
@@ -178,6 +179,9 @@ type Querier interface {
 	DeleteOldSignIns(ctx context.Context, days int32) error
 	DeleteOldSoftwareRuns(ctx context.Context) error
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
+	DeletePVECluster(ctx context.Context, id uuid.UUID) error
+	DeletePVELink(ctx context.Context, arg DeletePVELinkParams) error
+	DeletePVELinkForServer(ctx context.Context, serverID uuid.UUID) error
 	DeletePlaybook(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteProxy(ctx context.Context, id uuid.UUID) error
 	DeleteProxyHost(ctx context.Context, arg DeleteProxyHostParams) error
@@ -220,6 +224,8 @@ type Querier interface {
 	// Every enabled rule that watches containers or the Docker engine.
 	EnabledContainerAlertRules(ctx context.Context) ([]AlertRule, error)
 	EnabledDockerAutoUpdatesWithoutNext(ctx context.Context) ([]DockerAutoUpdate, error)
+	// Every enabled rule that watches Proxmox clusters.
+	EnabledPVEAlertRules(ctx context.Context) ([]AlertRule, error)
 	// Ends a mute now (one that hasn't started yet goes away).
 	EndAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error)
 	// A run whose job ended without it (canceled while queued, Morche restarted).
@@ -310,6 +316,10 @@ type Querier interface {
 	GetMonitorWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetNotificationChannel(ctx context.Context, id uuid.UUID) (NotificationChannel, error)
 	GetNotificationChannelWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetPVECluster(ctx context.Context, id uuid.UUID) (PveCluster, error)
+	GetPVEClusterWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetPVELink(ctx context.Context, arg GetPVELinkParams) (PveVmLink, error)
+	GetPVELinkForServer(ctx context.Context, serverID uuid.UUID) (GetPVELinkForServerRow, error)
 	GetPlaybook(ctx context.Context, id uuid.UUID) (AnsiblePlaybook, error)
 	GetPlaybookWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetProxy(ctx context.Context, id uuid.UUID) (GetProxyRow, error)
@@ -413,6 +423,7 @@ type Querier interface {
 	// Where the given rules stand on each server or database they've seen.
 	ListAlertStates(ctx context.Context, ids []uuid.UUID) ([]ListAlertStatesRow, error)
 	ListAllGroupMembers(ctx context.Context) ([]GroupMember, error)
+	ListAllPVEClusters(ctx context.Context) ([]PveCluster, error)
 	ListAnsibleFolders(ctx context.Context, workspaceID uuid.UUID) ([]ListAnsibleFoldersRow, error)
 	// Newest first, without the heavy columns.
 	ListAnsibleRuns(ctx context.Context, arg ListAnsibleRunsParams) ([]ListAnsibleRunsRow, error)
@@ -493,6 +504,12 @@ type Querier interface {
 	// ---- Notification channels ----
 	ListNotificationChannels(ctx context.Context, arg ListNotificationChannelsParams) ([]NotificationChannel, error)
 	ListNotificationLog(ctx context.Context, arg ListNotificationLogParams) ([]ListNotificationLogRow, error)
+	ListPVEClusters(ctx context.Context, arg ListPVEClustersParams) ([]PveCluster, error)
+	// Clusters whose last check is older than @before (or that were never
+	// checked), the longest waiting first.
+	ListPVEClustersDueForCheck(ctx context.Context, before time.Time) ([]PveCluster, error)
+	// Machines linked to servers, with the server's name, on the given clusters.
+	ListPVELinks(ctx context.Context, clusterIds []uuid.UUID) ([]ListPVELinksRow, error)
 	// Every good backup of a plan, newest first: what retention looks at.
 	ListPlanBackups(ctx context.Context, planID *uuid.UUID) ([]DatabaseBackup, error)
 	// With each playbook's newest run, for the list.
@@ -637,6 +654,8 @@ type Querier interface {
 	RecordDNSServerCheck(ctx context.Context, arg RecordDNSServerCheckParams) (DnsServer, error)
 	RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseCheckParams) (Database, error)
 	RecordDockerAutoPrune(ctx context.Context, arg RecordDockerAutoPruneParams) error
+	// What was last read keeps its value while a cluster is away.
+	RecordPVEClusterCheck(ctx context.Context, arg RecordPVEClusterCheckParams) (PveCluster, error)
 	// The version keeps its last known value while the server is away.
 	RecordProxyCheck(ctx context.Context, arg RecordProxyCheckParams) error
 	// Stores a connection check. OS fields are only overwritten when the check
@@ -725,6 +744,10 @@ type Querier interface {
 	SetLogArchiveRestore(ctx context.Context, arg SetLogArchiveRestoreParams) (LogArchive, error)
 	// Resuming starts over: pending until the next check says otherwise.
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) (Monitor, error)
+	SetPVEClusterFavorite(ctx context.Context, arg SetPVEClusterFavoriteParams) (PveCluster, error)
+	// A machine links to one server; run DeletePVELinkForServer first so a
+	// server links to one machine too.
+	SetPVELink(ctx context.Context, arg SetPVELinkParams) (PveVmLink, error)
 	SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error)
 	SetRestoreJob(ctx context.Context, arg SetRestoreJobParams) error
 	SetRestoreSafety(ctx context.Context, arg SetRestoreSafetyParams) error
@@ -801,6 +824,8 @@ type Querier interface {
 	// A changed monitor is checked again at once.
 	UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (Monitor, error)
 	UpdateNotificationChannel(ctx context.Context, arg UpdateNotificationChannelParams) (NotificationChannel, error)
+	// Full replace of the editable fields; the handler resolves the secret first.
+	UpdatePVECluster(ctx context.Context, arg UpdatePVEClusterParams) (PveCluster, error)
 	UpdatePlaybook(ctx context.Context, arg UpdatePlaybookParams) (AnsiblePlaybook, error)
 	UpdateProxyHost(ctx context.Context, arg UpdateProxyHostParams) (ProxyHost, error)
 	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (Schedule, error)

@@ -47,6 +47,8 @@ const (
 	kindMonitorIncident
 	// A workspace level, on the workspace of the alert rule in {id}.
 	kindAlertRule
+	// A workspace level, on the workspace of the Proxmox cluster in {id}.
+	kindPVECluster
 )
 
 type policy struct {
@@ -66,6 +68,7 @@ func onAnsibleRun(l auth.Level) policy  { return policy{kindAnsibleRun, l} }
 func onSchedule(l auth.Level) policy    { return policy{kindSchedule, l} }
 func onScheduleRun(l auth.Level) policy { return policy{kindScheduleRun, l} }
 func onDNSServer(l auth.Level) policy   { return policy{kindDNSServer, l} }
+func onPVECluster(l auth.Level) policy  { return policy{kindPVECluster, l} }
 func onScript(l auth.Level) policy      { return policy{kindScript, l} }
 func onProxy(l auth.Level) policy       { return policy{kindProxy, l} }
 func onSoftwareRecipe(l auth.Level) policy {
@@ -591,6 +594,62 @@ var policies = map[string]policy{
 	"delete-dns-record":         onDNSServer(auth.Engineer),
 	"update-dns-server":         onDNSServer(auth.Owner),
 	"delete-dns-server":         onDNSServer(auth.Owner),
+
+	// Proxmox: a cluster's level is its workspace's.
+	"list-pve-clusters":              active,
+	"create-pve-cluster":             active,
+	"test-pve-connection":            active,
+	"list-pve-guests-everywhere":     active,
+	"list-pve-infrastructure":        active,
+	"get-pve-cluster":                onPVECluster(auth.Viewer),
+	"list-pve-guests":                onPVECluster(auth.Viewer),
+	"get-pve-guest":                  onPVECluster(auth.Viewer),
+	"get-pve-guest-rrd":              onPVECluster(auth.Viewer),
+	"list-pve-snapshots":             onPVECluster(auth.Viewer),
+	"list-pve-guest-tasks":           onPVECluster(auth.Viewer),
+	"list-pve-guest-backups":         onPVECluster(auth.Viewer),
+	"get-pve-cloud-init":             onPVECluster(auth.Viewer),
+	"get-pve-guest-firewall":         onPVECluster(auth.Viewer),
+	"check-pve-migration":            onPVECluster(auth.Viewer),
+	"get-pve-node":                   onPVECluster(auth.Viewer),
+	"get-pve-node-rrd":               onPVECluster(auth.Viewer),
+	"list-pve-storage-content":       onPVECluster(auth.Viewer),
+	"list-pve-cluster-tasks":         onPVECluster(auth.Viewer),
+	"get-pve-task-log":               onPVECluster(auth.Viewer),
+	"list-pve-ha":                    onPVECluster(auth.Viewer),
+	"get-pve-create-options":         onPVECluster(auth.Viewer),
+	"set-pve-cluster-favorite":       onPVECluster(auth.Viewer),
+	"check-pve-cluster":              onPVECluster(auth.Operator),
+	"power-pve-guest":                onPVECluster(auth.Operator),
+	"set-pve-guest-config":           onPVECluster(auth.Engineer),
+	"resize-pve-guest-disk":          onPVECluster(auth.Engineer),
+	"create-pve-snapshot":            onPVECluster(auth.Engineer),
+	"rollback-pve-snapshot":          onPVECluster(auth.Engineer),
+	"delete-pve-snapshot":            onPVECluster(auth.Engineer),
+	"clone-pve-guest":                onPVECluster(auth.Engineer),
+	"convert-pve-guest-to-template":  onPVECluster(auth.Engineer),
+	"migrate-pve-guest":              onPVECluster(auth.Engineer),
+	"backup-pve-guest":               onPVECluster(auth.Engineer),
+	"restore-pve-guest":              onPVECluster(auth.Engineer),
+	"set-pve-cloud-init":             onPVECluster(auth.Engineer),
+	"set-pve-guest-firewall-options": onPVECluster(auth.Engineer),
+	"add-pve-guest-firewall-rule":    onPVECluster(auth.Engineer),
+	"update-pve-guest-firewall-rule": onPVECluster(auth.Engineer),
+	"move-pve-guest-firewall-rule":   onPVECluster(auth.Engineer),
+	"delete-pve-guest-firewall-rule": onPVECluster(auth.Engineer),
+	"set-pve-guest-ha":               onPVECluster(auth.Engineer),
+	"remove-pve-guest-ha":            onPVECluster(auth.Engineer),
+	"link-pve-guest":                 onPVECluster(auth.Engineer),
+	"unlink-pve-guest":               onPVECluster(auth.Engineer),
+	"download-pve-storage-url":       onPVECluster(auth.Engineer),
+	"upload-pve-storage-file":        onPVECluster(auth.Engineer),
+	"create-pve-guest":               onPVECluster(auth.Engineer),
+	"open-pve-console":               onPVECluster(auth.Engineer),
+	"update-pve-cluster":             onPVECluster(auth.Owner),
+	"delete-pve-cluster":             onPVECluster(auth.Owner),
+	"delete-pve-guest":               onPVECluster(auth.Owner),
+	"delete-pve-volume":              onPVECluster(auth.Owner),
+	"get-server-pve-link":            onServer(auth.Viewer),
 
 	// Reverse proxies
 	"list-proxy-kinds":                   active,
