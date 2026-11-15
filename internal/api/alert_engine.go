@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morcheh/backend/internal/dbmon"
 	"github.com/morcheh/backend/internal/notify"
 	"github.com/morcheh/backend/internal/sshprobe"
 )
@@ -37,6 +38,13 @@ const (
 	// Databases.
 	metricDBDown   = "db_down"
 	metricDBHealth = "db_health"
+	// Numbers from a database's own checks (dbmon), see dbCheckMetrics.
+	metricDBDisk        = "db_disk"
+	metricDBConnections = "db_connections"
+	metricDBMemory      = "db_memory"
+	metricDBLatency     = "db_latency"
+	metricDBReplication = "db_replication_lag"
+	metricDBBackupAge   = "db_backup_age"
 	// Containers on a server (read by the Docker loop, alert_docker.go).
 	metricContainerDown      = "container_down"
 	metricContainerUnhealthy = "container_unhealthy"
@@ -65,7 +73,38 @@ func containerMetric(m string) bool {
 }
 
 // databaseMetric says whether a rule watches databases (not servers).
-func databaseMetric(m string) bool { return m == metricDBDown || m == metricDBHealth }
+func databaseMetric(m string) bool { return strings.HasPrefix(m, "db_") }
+
+// dbCheckMetric is a database metric read from one of its checks: the check's
+// value times scale (ratios become percents).
+type dbCheckMetric struct {
+	check string
+	scale float64
+}
+
+var dbCheckMetrics = map[string]dbCheckMetric{
+	metricDBDisk:        {"disk", 100},
+	metricDBConnections: {"connections", 100},
+	metricDBMemory:      {"memory", 100},
+	metricDBLatency:     {"latency", 1},
+	metricDBReplication: {"replication", 1},
+	metricDBBackupAge:   {"backup_age", 1},
+}
+
+// dbCheckValue is a check metric's value in a database's checks; ok = false
+// when the check has no number (not read, not this engine).
+func dbCheckValue(metric string, checks []dbmon.DatabaseCheck) (v float64, detail string, ok bool) {
+	m, known := dbCheckMetrics[metric]
+	if !known {
+		return 0, "", false
+	}
+	for _, c := range checks {
+		if c.ID == m.check && c.Value != nil {
+			return *c.Value * m.scale, c.Reason, true
+		}
+	}
+	return 0, "", false
+}
 
 // stateMetric says whether a metric is a yes/no state, without a threshold.
 func stateMetric(m string) bool {
@@ -87,12 +126,15 @@ var metricLabels = map[string]string{
 	metricContainerMemory: "Container memory", metricDockerEngine: "Docker engine",
 	metricVulnsCritical: "Critical vulnerabilities", metricVulnsHigh: "High vulnerabilities",
 	metricPVENodeDown: "Node down", metricPVEStorageFull: "Storage used", metricPVEVMStopped: "Machine stopped",
+	metricDBDisk: "Database disk", metricDBConnections: "Database connections", metricDBMemory: "Database memory",
+	metricDBLatency: "Database response time", metricDBReplication: "Replication lag", metricDBBackupAge: "Last backup",
 }
 
 // percentMetric says whether a metric's threshold is a percent (0–100).
 func percentMetric(m string) bool {
 	switch m {
-	case metricCPU, metricIOWait, metricMemory, metricSwap, metricDisk, metricContainerMemory, metricPVEStorageFull:
+	case metricCPU, metricIOWait, metricMemory, metricSwap, metricDisk, metricContainerMemory, metricPVEStorageFull,
+		metricDBDisk, metricDBConnections, metricDBMemory:
 		return true
 	}
 	return false
@@ -118,6 +160,12 @@ func formatMetric(metric string, v float64) string {
 		return fmt.Sprintf("%g critical", v)
 	case metric == metricVulnsHigh:
 		return fmt.Sprintf("%g high or critical", v)
+	case metric == metricDBLatency:
+		return fmt.Sprintf("%.0f ms", v)
+	case metric == metricDBReplication:
+		return fmt.Sprintf("%.0f s", v)
+	case metric == metricDBBackupAge:
+		return fmt.Sprintf("%.0f h", v)
 	}
 	return fmt.Sprintf("%g", v)
 }
@@ -320,8 +368,9 @@ func (e *alertEngine) onStatus(ctx context.Context, srv sqlc.Server, res sshprob
 }
 
 // onDatabase checks a database's rules against a finished check: status is
-// how it answered, health the worst check, problems the critical checks.
-func (e *alertEngine) onDatabase(ctx context.Context, d sqlc.Database, status, message, health string, problems []string) {
+// how it answered, health the worst check, problems the critical checks, and
+// checks every check (the number metrics read theirs).
+func (e *alertEngine) onDatabase(ctx context.Context, d sqlc.Database, status, message, health string, problems []string, checks []dbmon.DatabaseCheck) {
 	rules, err := e.q.AlertRulesForDatabase(ctx, sqlc.AlertRulesForDatabaseParams{
 		WorkspaceID: d.WorkspaceID, DatabaseID: d.ID,
 	})
@@ -343,6 +392,13 @@ func (e *alertEngine) onDatabase(ctx context.Context, d sqlc.Database, status, m
 			if met {
 				detail = strings.Join(problems, ", ")
 			}
+		default:
+			v, d2, ok := dbCheckValue(r.Metric, checks)
+			if !ok {
+				continue
+			}
+			e.step(ctx, r, databaseTarget(d), breached(r, v), v, d2, now)
+			continue
 		}
 		v := 0.0
 		if met {
@@ -544,6 +600,9 @@ func alertText(r sqlc.AlertRule, t alertTarget, kind string, v float64, detail s
 		return fmt.Sprintf("%s of containers is %s: %s", what, ruleCondition(r), detail)
 	}
 	what := metricLabels[r.Metric]
+	if _, ok := dbCheckMetrics[r.Metric]; ok && !resolved && detail != "" {
+		return fmt.Sprintf("%s of %s is %s (%s): %s", what, t.name, formatMetric(r.Metric, v), ruleCondition(r), detail)
+	}
 	if r.Metric == metricDisk && detail != "" {
 		what = "Disk " + detail
 	}

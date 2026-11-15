@@ -63,7 +63,7 @@ GROUP BY channel_id;
 -- The enabled server rules of a server's workspace that cover it.
 SELECT * FROM alert_rules
 WHERE enabled AND workspace_id = @workspace_id
-  AND metric NOT IN ('db_down', 'db_health')
+  AND metric NOT LIKE 'db\_%'
   AND metric NOT LIKE 'container\_%' AND metric <> 'docker_engine'
   AND metric NOT LIKE 'pve\_%'
   AND (scope = 'all'
@@ -74,7 +74,7 @@ WHERE enabled AND workspace_id = @workspace_id
 -- The enabled database rules of a database's workspace that cover it.
 SELECT * FROM alert_rules
 WHERE enabled AND workspace_id = @workspace_id
-  AND metric IN ('db_down', 'db_health')
+  AND metric LIKE 'db\_%'
   AND (scope = 'all' OR (scope = 'databases' AND @database_id::uuid = ANY (database_ids)));
 
 -- name: EnabledPVEAlertRules :many

@@ -23,11 +23,12 @@ import (
 )
 
 // Storage syncs move or keep files in step between two storages of a
-// workspace. A migration copies everything once (optionally checking every
+// workspace, or from a server's folder (over SFTP) to a storage. A migration copies everything once (optionally checking every
 // copy and then emptying the source); a sync keeps a destination folder up to
 // date, by hand, on a cron schedule or every N minutes. A sync between two
 // MinIO storages can instead be done by MinIO itself (engine "replication"):
-// Morche only sets it up and reads its numbers.
+// Morche only sets it up and reads its numbers. A sync from a server can also
+// follow the folder's changes (trigger "watch", see storage_sync_watch.go).
 
 const (
 	storageMigrateKind  = "storage-migrate"
@@ -54,19 +55,22 @@ type StorageSyncOptions struct {
 	Verify       bool `json:"verify,omitempty" doc:"Migration: check every copy is there with the same size"`
 	DeleteSource bool `json:"delete_source,omitempty" doc:"Migration: delete each file from the source once its copy checks out"`
 	// Sync only.
-	SettleMinutes    int                     `json:"settle_minutes,omitempty" minimum:"0" maximum:"1440" doc:"Sync: leave files changed in the last N minutes for the next run"`
-	DeleteDelayHours int                     `json:"delete_delay_hours,omitempty" minimum:"0" maximum:"8760" doc:"Sync (mirror): delete from the destination only N hours after a file left the source"`
-	Replication      *StorageSyncReplication `json:"replication,omitempty" doc:"Engine replication: how MinIO copies"`
+	SettleMinutes     int                     `json:"settle_minutes,omitempty" minimum:"0" maximum:"1440" doc:"Sync: leave files changed in the last N minutes for the next run"`
+	DeleteDelayHours  int                     `json:"delete_delay_hours,omitempty" minimum:"0" maximum:"8760" doc:"Sync (mirror): delete from the destination only N hours after a file left the source"`
+	WatchDelaySeconds int                     `json:"watch_delay_seconds,omitempty" minimum:"0" maximum:"600" doc:"Watch: wait until nothing changed for N seconds before copying (default 5)"`
+	Replication       *StorageSyncReplication `json:"replication,omitempty" doc:"Engine replication: how MinIO copies"`
 }
 
 type StorageSyncEnd struct {
-	StorageID string `json:"storage_id" format:"uuid"`
+	Kind      string `json:"kind" enum:"storage,server"`
+	StorageID string `json:"storage_id" doc:"Empty for a server's folder"`
+	ServerID  string `json:"server_id" doc:"Empty for a storage"`
 	Name      string `json:"name"`
-	Protocol  string `json:"protocol"`
+	Protocol  string `json:"protocol" doc:"\"server\" for a server's folder"`
 	Provider  string `json:"provider"`
 	Path      string `json:"path"`
 	ReadOnly  bool   `json:"read_only"`
-	Missing   bool   `json:"missing" doc:"The storage was deleted"`
+	Missing   bool   `json:"missing" doc:"The storage or server was deleted"`
 }
 
 type StorageSyncHeld struct {
@@ -100,10 +104,10 @@ type StorageSync struct {
 	Dest            StorageSyncEnd       `json:"dest"`
 	Engine          string               `json:"engine" enum:"morche,replication"`
 	Mode            string               `json:"mode" enum:"update,mirror"`
-	Trigger         string               `json:"trigger" enum:"manual,schedule,interval"`
+	Trigger         string               `json:"trigger" enum:"manual,schedule,interval,watch"`
 	Cron            string               `json:"cron"`
 	Timezone        string               `json:"timezone"`
-	IntervalMinutes int                  `json:"interval_minutes"`
+	IntervalMinutes int                  `json:"interval_minutes" doc:"Interval: minutes between runs. Watch: minutes between full checks (0 = only after reconnecting)"`
 	Options         StorageSyncOptions   `json:"options"`
 	Paused          bool                 `json:"paused"`
 	NextRunAt       *time.Time           `json:"next_run_at"`
@@ -113,6 +117,7 @@ type StorageSync struct {
 	Problem         string               `json:"problem" doc:"Why replication isn't set up as saved"`
 	RunsAs          string               `json:"runs_as" doc:"Whose access runs use: the person who saved it last"`
 	LastRun         *StorageSyncRunBrief `json:"last_run"`
+	Watch           *StorageSyncWatch    `json:"watch" doc:"Watch: what the watcher is doing now; null for other triggers"`
 	CreatedAt       time.Time            `json:"created_at"`
 	UpdatedAt       time.Time            `json:"updated_at"`
 }
@@ -120,13 +125,14 @@ type StorageSync struct {
 type StorageSyncBody struct {
 	Kind            string             `json:"kind" enum:"migrate,sync" doc:"Ignored when saving changes"`
 	Name            string             `json:"name" minLength:"1" maxLength:"100"`
-	SourceStorageID string             `json:"source_storage_id" format:"uuid"`
+	SourceStorageID string             `json:"source_storage_id,omitempty" doc:"The source storage, or"`
+	SourceServerID  string             `json:"source_server_id,omitempty" doc:"a server's folder (over SFTP)"`
 	SourcePath      string             `json:"source_path" minLength:"1" maxLength:"1024"`
 	DestStorageID   string             `json:"dest_storage_id" format:"uuid"`
 	DestPath        string             `json:"dest_path" minLength:"1" maxLength:"1024"`
 	Engine          string             `json:"engine,omitempty" enum:"morche,replication"`
 	Mode            string             `json:"mode,omitempty" enum:"update,mirror"`
-	Trigger         string             `json:"trigger,omitempty" enum:"manual,schedule,interval"`
+	Trigger         string             `json:"trigger,omitempty" enum:"manual,schedule,interval,watch" doc:"watch = copy each change as it happens (a server's folder only)"`
 	Cron            string             `json:"cron,omitempty" maxLength:"200"`
 	Timezone        string             `json:"timezone,omitempty" maxLength:"64"`
 	IntervalMinutes int                `json:"interval_minutes,omitempty" minimum:"0" maximum:"10080"`
@@ -159,7 +165,7 @@ type StorageSyncResult struct {
 type StorageSyncRun struct {
 	ID            string             `json:"id" format:"uuid"`
 	SyncID        string             `json:"sync_id" format:"uuid"`
-	Trigger       string             `json:"trigger" enum:"manual,schedule,interval"`
+	Trigger       string             `json:"trigger" enum:"manual,schedule,interval,watch"`
 	DryRun        bool               `json:"dry_run"`
 	State         string             `json:"state" enum:"queued,running,succeeded,partial,failed,canceled,interrupted,skipped"`
 	Phase         string             `json:"phase"`
@@ -178,14 +184,53 @@ type StorageSyncRun struct {
 // ---- Handler ----
 
 type storageSyncHandler struct {
-	q      *sqlc.Queries
-	st     *storageHandler
-	authz  *authz
-	runner *jobs.Runner
+	q       *sqlc.Queries
+	st      *storageHandler
+	authz   *authz
+	runner  *jobs.Runner
+	watches *syncWatches
 }
 
 func newStorageSyncHandler(st *storageHandler, a *authz) *storageSyncHandler {
-	return &storageSyncHandler{q: st.q, st: st, authz: a, runner: st.servers.jobs}
+	h := &storageSyncHandler{q: st.q, st: st, authz: a, runner: st.servers.jobs}
+	h.watches = newSyncWatches(h)
+	return h
+}
+
+// sourceID is the storage or server a sync reads from.
+func sourceID(s sqlc.StorageSync) uuid.UUID {
+	if s.SourceServerID != nil {
+		return *s.SourceServerID
+	}
+	if s.SourceStorageID != nil {
+		return *s.SourceStorageID
+	}
+	return uuid.Nil
+}
+
+// sourceEnd opens a sync's source the way transfers do.
+func sourceEnd(s sqlc.StorageSync) StorageTransferEnd {
+	id := sourceID(s).String()
+	if s.SourceServerID != nil {
+		return StorageTransferEnd{ServerID: &id}
+	}
+	return StorageTransferEnd{StorageID: &id}
+}
+
+// sourceStorage is the source storage of a storage-to-storage sync.
+func (h *storageSyncHandler) sourceStorage(ctx context.Context, s sqlc.StorageSync) (sqlc.Storage, error) {
+	if s.SourceStorageID == nil {
+		return sqlc.Storage{}, errors.New("the source is a server")
+	}
+	return h.q.GetStorage(ctx, *s.SourceStorageID)
+}
+
+// sourceLevel is acc's level on a sync's source.
+func sourceLevel(acc *auth.Access, s sqlc.StorageSync) auth.Level {
+	if s.SourceServerID != nil {
+		return acc.ServerLevel(s.WorkspaceID, *s.SourceServerID)
+	}
+	return acc.StorageLevel(s.WorkspaceID, sourceID(s))
 }
 
 func decodeSyncOptions(raw []byte) StorageSyncOptions {
@@ -224,14 +269,41 @@ func decodeNative(raw []byte) *storage.ReplicationSetup {
 	return &s
 }
 
-// syncNames looks up storages and people once for a list.
+// syncNames looks up storages, servers and people once for a list.
 type syncNames struct {
 	storages map[uuid.UUID]sqlc.Storage
+	servers  map[uuid.UUID]sqlc.Server
 	users    map[uuid.UUID]string
 }
 
-func (h *storageSyncHandler) names(ctx context.Context, storages, users []uuid.UUID) (syncNames, error) {
-	n := syncNames{storages: map[uuid.UUID]sqlc.Storage{}, users: map[uuid.UUID]string{}}
+// syncEnds lists the storages and servers syncs read and write.
+func syncEnds(list ...sqlc.StorageSync) (storages, servers []uuid.UUID) {
+	for _, s := range list {
+		if s.SourceServerID != nil {
+			servers = append(servers, *s.SourceServerID)
+		} else if s.SourceStorageID != nil {
+			storages = append(storages, *s.SourceStorageID)
+		}
+		storages = append(storages, s.DestStorageID)
+	}
+	return storages, servers
+}
+
+func (h *storageSyncHandler) names(ctx context.Context, storages, servers, users []uuid.UUID) (syncNames, error) {
+	n := syncNames{storages: map[uuid.UUID]sqlc.Storage{}, servers: map[uuid.UUID]sqlc.Server{}, users: map[uuid.UUID]string{}}
+	for _, id := range servers {
+		if _, ok := n.servers[id]; ok {
+			continue
+		}
+		s, err := h.q.GetServer(ctx, id)
+		if isNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return n, err
+		}
+		n.servers[id] = s
+	}
 	for _, id := range storages {
 		if _, ok := n.storages[id]; ok {
 			continue
@@ -262,8 +334,23 @@ func (h *storageSyncHandler) names(ctx context.Context, storages, users []uuid.U
 	return n, nil
 }
 
+func (n syncNames) source(s sqlc.StorageSync) StorageSyncEnd {
+	if s.SourceServerID == nil {
+		return n.end(sourceID(s), s.SourcePath)
+	}
+	id := *s.SourceServerID
+	e := StorageSyncEnd{Kind: "server", ServerID: id.String(), Protocol: "server", Path: s.SourcePath}
+	srv, ok := n.servers[id]
+	if !ok {
+		e.Missing, e.Name = true, "Deleted server"
+		return e
+	}
+	e.Name = srv.Name
+	return e
+}
+
 func (n syncNames) end(id uuid.UUID, p string) StorageSyncEnd {
-	e := StorageSyncEnd{StorageID: id.String(), Path: p}
+	e := StorageSyncEnd{Kind: "storage", StorageID: id.String(), Path: p}
 	s, ok := n.storages[id]
 	if !ok {
 		e.Missing, e.Name = true, "Deleted storage"
@@ -277,13 +364,16 @@ func (h *storageSyncHandler) toSync(s sqlc.StorageSync, n syncNames, last *Stora
 	o := decodeSyncOptions(s.Options)
 	out := StorageSync{
 		ID: s.ID.String(), WorkspaceID: s.WorkspaceID.String(), Kind: s.Kind, Name: s.Name,
-		Source: n.end(s.SourceStorageID, s.SourcePath), Dest: n.end(s.DestStorageID, s.DestPath),
+		Source: n.source(s), Dest: n.end(s.DestStorageID, s.DestPath),
 		Engine: s.Engine, Mode: s.Mode, Trigger: s.Trigger, Cron: s.Cron, Timezone: s.Timezone,
 		IntervalMinutes: int(s.IntervalMinutes), Options: o, Paused: s.Paused, NextRunAt: s.NextRunAt,
 		Held: []StorageSyncHeld{}, Problem: s.Problem, LastRun: last, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}
 	if s.UpdatedBy != nil {
 		out.RunsAs = n.users[*s.UpdatedBy]
+	}
+	if s.Trigger == "watch" {
+		out.Watch = h.watches.state(s)
 	}
 	if nat := decodeNative(s.Native); nat != nil {
 		out.Native = &StorageSyncNative{Bucket: nat.Bucket, Prefix: nat.Prefix, TargetBucket: nat.TargetBucket, Endpoint: nat.Endpoint}
@@ -314,7 +404,8 @@ func syncPeople(s sqlc.StorageSync) []uuid.UUID {
 }
 
 func (h *storageSyncHandler) one(ctx context.Context, s sqlc.StorageSync) (StorageSync, error) {
-	n, err := h.names(ctx, []uuid.UUID{s.SourceStorageID, s.DestStorageID}, syncPeople(s))
+	storages, servers := syncEnds(s)
+	n, err := h.names(ctx, storages, servers, syncPeople(s))
 	if err != nil {
 		return StorageSync{}, internalError(err)
 	}
@@ -355,12 +446,29 @@ type checkedSync struct {
 	kind, name, engine, mode, trigger, cron, tz string
 	interval                                    int
 	src, dst                                    sqlc.Storage
+	srv                                         *sqlc.Server // the source, when it's a server
 	srcPath, dstPath                            string
 	options                                     StorageSyncOptions
 	optionsJSON                                 []byte
 }
 
 func isMinIO(s sqlc.Storage) bool { return s.Protocol == "s3" && s.Provider == "minio" }
+
+// sourceIDs are the columns a checked sync's source goes in.
+func (c checkedSync) sourceIDs() (storageID, serverID *uuid.UUID) {
+	if c.srv != nil {
+		id := c.srv.ID
+		return nil, &id
+	}
+	id := c.src.ID
+	return &id, nil
+}
+
+const (
+	defaultWatchDelay = 5
+	// A followed folder's full check, at the most often.
+	minWatchCheck = 15
+)
 
 // check validates a sync for the person saving it.
 func (h *storageSyncHandler) check(ctx context.Context, ws uuid.UUID, kind string, b StorageSyncBody) (checkedSync, error) {
@@ -393,8 +501,34 @@ func (h *storageSyncHandler) check(ctx context.Context, ws uuid.UUID, kind strin
 		return storage.Clean(p), nil
 	}
 	var err error
-	if c.src, err = storageOf(b.SourceStorageID, "body.source_storage_id"); err != nil {
-		return c, err
+	switch {
+	case b.SourceServerID != "" && b.SourceStorageID != "":
+		return c, fieldError("body.source_server_id", "Copy from a storage or from a server, not both.", b.SourceServerID)
+	case b.SourceServerID != "":
+		id, perr := uuid.Parse(b.SourceServerID)
+		if perr != nil {
+			return c, fieldError("body.source_server_id", "Not found.", b.SourceServerID)
+		}
+		srv, err := h.q.GetServer(ctx, id)
+		if isNotFound(err) || (err == nil && srv.WorkspaceID != ws) {
+			return c, fieldError("body.source_server_id", "This server isn't in this workspace.", b.SourceServerID)
+		}
+		if err != nil {
+			return c, internalError(err)
+		}
+		if acc.ServerLevel(ws, srv.ID) == auth.None {
+			return c, fieldError("body.source_server_id", "Not found.", b.SourceServerID)
+		}
+		c.srv = &srv
+	case b.SourceStorageID == "":
+		return c, fieldError("body.source_storage_id", "Pick where to copy from.", b.SourceStorageID)
+	default:
+		if _, perr := uuid.Parse(b.SourceStorageID); perr != nil {
+			return c, fieldError("body.source_storage_id", "Not found.", b.SourceStorageID)
+		}
+		if c.src, err = storageOf(b.SourceStorageID, "body.source_storage_id"); err != nil {
+			return c, err
+		}
 	}
 	if c.dst, err = storageOf(b.DestStorageID, "body.dest_storage_id"); err != nil {
 		return c, err
@@ -408,7 +542,7 @@ func (h *storageSyncHandler) check(ctx context.Context, ws uuid.UUID, kind strin
 	if c.dst.ReadOnly {
 		return c, fieldError("body.dest_storage_id", c.dst.Name+" is read-only in Morche, so nothing can be written to it.", b.DestStorageID)
 	}
-	if c.src.ID == c.dst.ID && (storage.Within(c.srcPath, c.dstPath) || storage.Within(c.dstPath, c.srcPath)) {
+	if c.srv == nil && c.src.ID == c.dst.ID && (storage.Within(c.srcPath, c.dstPath) || storage.Within(c.dstPath, c.srcPath)) {
 		return c, fieldError("body.dest_path", "On the same storage the two folders can't be inside one another.", b.DestPath)
 	}
 	excludes, err := cleanExcludes(c.options.Excludes)
@@ -427,8 +561,11 @@ func (h *storageSyncHandler) check(ctx context.Context, ws uuid.UUID, kind strin
 			return c, fieldError("body.engine", "A migration is always copied by Morche.", b.Engine)
 		}
 		c.mode, c.trigger, c.cron, c.tz, c.interval = storage.SyncUpdate, "manual", "", "", 0
-		c.options.SettleMinutes, c.options.DeleteDelayHours, c.options.Replication = 0, 0, nil
+		c.options.SettleMinutes, c.options.DeleteDelayHours, c.options.Replication, c.options.WatchDelaySeconds = 0, 0, nil, 0
 		if c.options.DeleteSource {
+			if c.srv != nil {
+				return c, fieldError("body.options.delete_source", "Files on a server are never deleted by a migration. Copy them, then delete them yourself.", true)
+			}
 			if c.src.ReadOnly {
 				return c, fieldError("body.options.delete_source", c.src.Name+" is read-only in Morche, so nothing can be deleted from it.", true)
 			}
@@ -437,8 +574,11 @@ func (h *storageSyncHandler) check(ctx context.Context, ws uuid.UUID, kind strin
 		}
 	case "sync":
 		c.options.Verify, c.options.DeleteSource = false, false
+		if c.trigger != "watch" {
+			c.options.WatchDelaySeconds = 0
+		}
 		if c.engine == "replication" {
-			if !isMinIO(c.src) || !isMinIO(c.dst) {
+			if c.srv != nil || !isMinIO(c.src) || !isMinIO(c.dst) {
 				return c, fieldError("body.engine", "MinIO replication needs a MinIO storage at both ends.", b.Engine)
 			}
 			if acc.StorageLevel(ws, c.src.ID) < auth.Owner || acc.StorageLevel(ws, c.dst.ID) < auth.Owner {
@@ -462,6 +602,7 @@ func (h *storageSyncHandler) check(ctx context.Context, ws uuid.UUID, kind strin
 			}
 			c.options.Replication.TargetEndpoint = strings.TrimSpace(c.options.Replication.TargetEndpoint)
 			c.mode, c.trigger, c.cron, c.tz, c.interval = storage.SyncUpdate, "manual", "", "", 0
+			c.options.WatchDelaySeconds = 0
 			c.options.Excludes, c.options.SettleMinutes, c.options.DeleteDelayHours, c.options.Existing = []string{}, 0, 0, "changed"
 		} else {
 			c.options.Replication = nil
@@ -481,14 +622,29 @@ func (h *storageSyncHandler) check(ctx context.Context, ws uuid.UUID, kind strin
 				}
 				c.cron, c.tz = strings.TrimSpace(b.Cron), cmpOr(strings.TrimSpace(b.Timezone), "UTC")
 			case "interval":
-				if b.IntervalMinutes < 5 {
-					return c, fieldError("body.interval_minutes", "Every 5 minutes at the most often.", b.IntervalMinutes)
+				if b.IntervalMinutes < 1 {
+					return c, fieldError("body.interval_minutes", "Every minute at the most often.", b.IntervalMinutes)
 				}
 				c.interval = b.IntervalMinutes
+			case "watch":
+				if c.srv == nil {
+					return c, fieldError("body.trigger", "Only a folder on a server can be followed as it changes. Pick a server as the source, or run it every few minutes.", b.Trigger)
+				}
+				if b.IntervalMinutes != 0 && b.IntervalMinutes < minWatchCheck {
+					return c, fieldError("body.interval_minutes", fmt.Sprintf("A full check every %d minutes at the most often (0 = only after reconnecting).", minWatchCheck), b.IntervalMinutes)
+				}
+				c.interval = b.IntervalMinutes
+				if c.options.WatchDelaySeconds <= 0 {
+					c.options.WatchDelaySeconds = defaultWatchDelay
+				}
 			}
 		}
 	}
-	if acc.StorageLevel(ws, c.src.ID) < needSrc {
+	srcLevel := acc.StorageLevel(ws, c.src.ID)
+	if c.srv != nil {
+		srcLevel = acc.ServerLevel(ws, c.srv.ID)
+	}
+	if srcLevel < needSrc {
 		return c, forbidden(needSrc)
 	}
 	if acc.StorageLevel(ws, c.dst.ID) < auth.Engineer {
@@ -519,7 +675,7 @@ func nextOf(trigger, cronExpr, tz string, interval int, paused bool, after time.
 	switch trigger {
 	case "schedule":
 		return nextRun(cronExpr, tz, after)
-	case "interval":
+	case "interval", "watch":
 		if interval > 0 {
 			t := after.Add(time.Duration(interval) * time.Minute)
 			return &t
@@ -673,7 +829,7 @@ func (h *storageSyncHandler) start(ctx context.Context, s sqlc.StorageSync, by *
 	if busy && by != nil {
 		return nil, nil, huma.Error409Conflict("It's running now. Wait for it to finish, or stop it first.")
 	}
-	if busy && trigger == "interval" {
+	if busy && (trigger == "interval" || trigger == "watch") {
 		return nil, nil, nil
 	}
 	params := sqlc.CreateStorageSyncRunParams{
@@ -703,7 +859,7 @@ func (h *storageSyncHandler) start(ctx context.Context, s sqlc.StorageSync, by *
 	}
 	j, err := h.runner.Submit(ctx, jobs.Spec{
 		Kind: kind, Title: verb + s.Name, Params: storageSyncRunParams{RunID: run.ID},
-		Refs:      []uuid.UUID{s.SourceStorageID, s.DestStorageID},
+		Refs:      []uuid.UUID{sourceID(s), s.DestStorageID},
 		Target:    JobPlace{SyncID: s.ID.String(), RunID: run.ID.String(), StorageID: s.DestStorageID.String(), Path: s.DestPath, Name: s.Name},
 		CreatedBy: byID,
 	})
@@ -781,14 +937,11 @@ func (h *storageSyncHandler) runJob(ctx context.Context, t *jobs.Task) (any, err
 	if removeSource {
 		needSrc = auth.Engineer
 	}
-	for _, e := range []struct {
-		id   uuid.UUID
-		need auth.Level
-		what string
-	}{{s.SourceStorageID, needSrc, "the source"}, {s.DestStorageID, auth.Engineer, "the destination"}} {
-		if acc.StorageLevel(s.WorkspaceID, e.id) < e.need {
-			return fail(fmt.Errorf("%s no longer has %s access to %s.", who, e.need, e.what))
-		}
+	if sourceLevel(acc, s) < needSrc {
+		return fail(fmt.Errorf("%s no longer has %s access to the source.", who, needSrc))
+	}
+	if acc.StorageLevel(s.WorkspaceID, s.DestStorageID) < auth.Engineer {
+		return fail(fmt.Errorf("%s no longer has %s access to the destination.", who, auth.Engineer))
 	}
 
 	save := func(phase string) {
@@ -806,8 +959,8 @@ func (h *storageSyncHandler) runJob(ctx context.Context, t *jobs.Task) (any, err
 
 	held := decodeHeld(s.Held)
 	var deleted []string
-	srcID, dstID := s.SourceStorageID.String(), s.DestStorageID.String()
-	runErr := h.st.with(ctx, StorageTransferEnd{StorageID: &srcID}, func(src place) error {
+	dstID := s.DestStorageID.String()
+	runErr := h.st.with(ctx, sourceEnd(s), func(src place) error {
 		return h.st.with(ctx, StorageTransferEnd{StorageID: &dstID}, func(dst place) error {
 			if dst.readOnly {
 				return errors.New(dst.name + " is read-only in Morche.")
@@ -824,7 +977,7 @@ func (h *storageSyncHandler) runJob(ctx context.Context, t *jobs.Task) (any, err
 			}
 			so := storage.SyncOptions{
 				Mode: s.Mode, Excludes: o.Excludes, Now: time.Now().In(scheduleLoc(s.Timezone)), DryRun: run.DryRun,
-				Existing: existingOf(o), SameFS: s.SourceStorageID == s.DestStorageID,
+				Existing: existingOf(o), SameFS: s.SourceStorageID != nil && *s.SourceStorageID == s.DestStorageID,
 				Plan: func(n int, size int64) {
 					save(verb)
 					t.Update(func(p *jobs.Progress) {
@@ -1102,6 +1255,7 @@ func startStorageSyncScheduler(h *storageSyncHandler, every time.Duration) {
 	if every <= 0 {
 		return
 	}
+	go h.watches.run(context.Background(), 30*time.Second)
 	go func() {
 		ctx := context.Background()
 		for range time.Tick(every) {
@@ -1171,6 +1325,7 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 	tags := []string{"Storage syncs"}
 	h.runner.Handle(storageSyncKind, h.runJob)
 	h.runner.Handle(storageMigrateKind, h.runJob)
+	registerStorageSyncWatch(api, h)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-storage-syncs",
@@ -1181,38 +1336,45 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 	}, func(ctx context.Context, in *struct {
 		WorkspacePath
 		StorageID string `query:"storage_id" format:"uuid" doc:"Only those with this storage at either end"`
+		ServerID  string `query:"server_id" format:"uuid" doc:"Only those copying from this server"`
 	}) (*StorageSyncListOutput, error) {
 		params := sqlc.ListStorageSyncsParams{WorkspaceID: uuid.MustParse(in.ID)}
 		if in.StorageID != "" {
 			id := uuid.MustParse(in.StorageID)
 			params.StorageID = &id
 		}
+		if in.ServerID != "" {
+			id := uuid.MustParse(in.ServerID)
+			params.ServerID = &id
+		}
 		rows, err := h.q.ListStorageSyncs(ctx, params)
 		if err != nil {
 			return nil, internalError(err)
 		}
-		var ends, users []uuid.UUID
-		for _, r := range rows {
-			ends = append(ends, r.SourceStorageID, r.DestStorageID)
+		var users []uuid.UUID
+		list := make([]sqlc.StorageSync, len(rows))
+		for i, r := range rows {
+			list[i] = sqlc.StorageSync{
+				ID: r.ID, WorkspaceID: r.WorkspaceID, Kind: r.Kind, Name: r.Name,
+				SourceStorageID: r.SourceStorageID, SourceServerID: r.SourceServerID, SourcePath: r.SourcePath, DestStorageID: r.DestStorageID, DestPath: r.DestPath,
+				Engine: r.Engine, Mode: r.Mode, Trigger: r.Trigger, Cron: r.Cron, Timezone: r.Timezone,
+				IntervalMinutes: r.IntervalMinutes, Options: r.Options, Paused: r.Paused, NextRunAt: r.NextRunAt,
+				Held: r.Held, Native: r.Native, Problem: r.Problem, CreatedBy: r.CreatedBy, UpdatedBy: r.UpdatedBy,
+				CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			}
 			if r.UpdatedBy != nil {
 				users = append(users, *r.UpdatedBy)
 			}
 		}
-		n, err := h.names(ctx, ends, users)
+		storages, servers := syncEnds(list...)
+		n, err := h.names(ctx, storages, servers, users)
 		if err != nil {
 			return nil, internalError(err)
 		}
 		out := &StorageSyncListOutput{}
 		out.Body.Items = make([]StorageSync, len(rows))
 		for i, r := range rows {
-			s := sqlc.StorageSync{
-				ID: r.ID, WorkspaceID: r.WorkspaceID, Kind: r.Kind, Name: r.Name,
-				SourceStorageID: r.SourceStorageID, SourcePath: r.SourcePath, DestStorageID: r.DestStorageID, DestPath: r.DestPath,
-				Engine: r.Engine, Mode: r.Mode, Trigger: r.Trigger, Cron: r.Cron, Timezone: r.Timezone,
-				IntervalMinutes: r.IntervalMinutes, Options: r.Options, Paused: r.Paused, NextRunAt: r.NextRunAt,
-				Held: r.Held, Native: r.Native, Problem: r.Problem, CreatedBy: r.CreatedBy, UpdatedBy: r.UpdatedBy,
-				CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-			}
+			s := list[i]
 			var last *StorageSyncRunBrief
 			if r.LastRunID != nil {
 				last = &StorageSyncRunBrief{
@@ -1253,8 +1415,9 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 			return nil, err
 		}
 		paused := in.Body.Paused != nil && *in.Body.Paused
+		srcStorage, srcServer := c.sourceIDs()
 		s, err := h.q.CreateStorageSync(ctx, sqlc.CreateStorageSyncParams{
-			WorkspaceID: ws, Kind: c.kind, Name: c.name, SourceStorageID: c.src.ID, SourcePath: c.srcPath,
+			WorkspaceID: ws, Kind: c.kind, Name: c.name, SourceStorageID: srcStorage, SourceServerID: srcServer, SourcePath: c.srcPath,
 			DestStorageID: c.dst.ID, DestPath: c.dstPath, Engine: c.engine, Mode: c.mode, Trigger: c.trigger,
 			Cron: c.cron, Timezone: c.tz, IntervalMinutes: int32(c.interval), Options: c.optionsJSON,
 			NextRunAt: nextOf(c.trigger, c.cron, c.tz, c.interval, paused, time.Now()), CreatedBy: principalOf(ctx).ID(),
@@ -1281,6 +1444,7 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 			}
 			s.Native = native
 		}
+		h.watches.kick()
 		out, err := h.one(ctx, s)
 		if err != nil {
 			return nil, err
@@ -1336,7 +1500,7 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 		prev := decodeNative(old.Native)
 		var prevSource *sqlc.Storage
 		if prev != nil {
-			if ps, err := h.q.GetStorage(ctx, old.SourceStorageID); err == nil {
+			if ps, err := h.sourceStorage(ctx, old); err == nil {
 				prevSource = &ps
 			}
 		}
@@ -1348,8 +1512,9 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 		case prev != nil && prevSource != nil:
 			h.tearDown(ctx, *prevSource, *prev)
 		}
+		srcStorage, srcServer := c.sourceIDs()
 		s, err := h.q.UpdateStorageSync(ctx, sqlc.UpdateStorageSyncParams{
-			ID: old.ID, Name: c.name, SourceStorageID: c.src.ID, SourcePath: c.srcPath,
+			ID: old.ID, Name: c.name, SourceStorageID: srcStorage, SourceServerID: srcServer, SourcePath: c.srcPath,
 			DestStorageID: c.dst.ID, DestPath: c.dstPath, Engine: c.engine, Mode: c.mode, Trigger: c.trigger,
 			Cron: c.cron, Timezone: c.tz, IntervalMinutes: int32(c.interval), Options: c.optionsJSON,
 			NextRunAt: nextOf(c.trigger, c.cron, c.tz, c.interval, paused, time.Now()), UpdatedBy: principalOf(ctx).ID(),
@@ -1366,7 +1531,7 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 			}
 		}
 		// Moved ends or another mode start the held deletions over.
-		if old.SourceStorageID != s.SourceStorageID || old.SourcePath != s.SourcePath || old.DestStorageID != s.DestStorageID ||
+		if sourceID(old) != sourceID(s) || old.SourcePath != s.SourcePath || old.DestStorageID != s.DestStorageID ||
 			old.DestPath != s.DestPath || old.Mode != s.Mode {
 			_ = h.q.SetStorageSyncHeld(ctx, sqlc.SetStorageSyncHeldParams{ID: s.ID, Held: []byte("{}")})
 			s.Held = []byte("{}")
@@ -1378,6 +1543,7 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 			return nil, internalError(err)
 		}
 		s.Native, s.Problem = native, ""
+		h.watches.kick()
 		out, err := h.one(ctx, s)
 		if err != nil {
 			return nil, err
@@ -1403,7 +1569,7 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 			return nil, err
 		}
 		if nat := decodeNative(old.Native); nat != nil {
-			src, err := h.q.GetStorage(ctx, old.SourceStorageID)
+			src, err := h.sourceStorage(ctx, old)
 			if err != nil {
 				return nil, internalError(err)
 			}
@@ -1420,6 +1586,7 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 		if err != nil {
 			return nil, internalError(err)
 		}
+		h.watches.kick()
 		out, err := h.one(ctx, s)
 		if err != nil {
 			return nil, err
@@ -1448,13 +1615,14 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 			}
 		}
 		if nat := decodeNative(s.Native); nat != nil {
-			if src, err := h.q.GetStorage(ctx, s.SourceStorageID); err == nil {
+			if src, err := h.sourceStorage(ctx, s); err == nil {
 				h.tearDown(ctx, src, *nat)
 			}
 		}
 		if _, err := h.q.DeleteStorageSync(ctx, s.ID); err != nil {
 			return nil, internalError(err)
 		}
+		h.watches.kick()
 		return nil, nil
 	})
 
@@ -1593,7 +1761,7 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 			return nil, huma.Error422UnprocessableEntity("It isn't a MinIO replication.")
 		}
 		out := &StorageSyncReplicationOutput{}
-		src, err := h.q.GetStorage(ctx, s.SourceStorageID)
+		src, err := h.sourceStorage(ctx, s)
 		if err != nil {
 			out.Body.Error = "The source storage was deleted."
 			return out, nil
@@ -1628,7 +1796,7 @@ func registerStorageSyncs(api huma.API, h *storageSyncHandler) {
 		if nat == nil {
 			return nil, huma.Error422UnprocessableEntity("It isn't a MinIO replication.")
 		}
-		src, err := h.q.GetStorage(ctx, s.SourceStorageID)
+		src, err := h.sourceStorage(ctx, s)
 		if err != nil {
 			return nil, huma.Error422UnprocessableEntity("The source storage was deleted.")
 		}

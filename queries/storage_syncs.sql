@@ -12,6 +12,7 @@ LEFT JOIN storage_sync_runs r ON r.id = (
 )
 WHERE s.workspace_id = @workspace_id
   AND (sqlc.narg('storage_id')::uuid IS NULL OR s.source_storage_id = sqlc.narg('storage_id')::uuid OR s.dest_storage_id = sqlc.narg('storage_id')::uuid)
+  AND (sqlc.narg('server_id')::uuid IS NULL OR s.source_server_id = sqlc.narg('server_id')::uuid)
 ORDER BY s.kind, lower(s.name);
 
 -- name: GetStorageSync :one
@@ -22,11 +23,11 @@ SELECT workspace_id FROM storage_syncs WHERE id = $1;
 
 -- name: CreateStorageSync :one
 INSERT INTO storage_syncs (
-    workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path,
+    workspace_id, kind, name, source_storage_id, source_server_id, source_path, dest_storage_id, dest_path,
     engine, mode, trigger, cron, timezone, interval_minutes, options, next_run_at,
     created_by, updated_by
 ) VALUES (
-    @workspace_id, @kind, @name, @source_storage_id, @source_path, @dest_storage_id, @dest_path,
+    @workspace_id, @kind, @name, sqlc.narg('source_storage_id'), sqlc.narg('source_server_id'), @source_path, @dest_storage_id, @dest_path,
     @engine, @mode, @trigger, @cron, @timezone, @interval_minutes, @options, sqlc.narg('next_run_at'),
     sqlc.narg('created_by'), sqlc.narg('created_by')
 )
@@ -35,7 +36,8 @@ RETURNING *;
 -- name: UpdateStorageSync :one
 UPDATE storage_syncs SET
     name = @name,
-    source_storage_id = @source_storage_id,
+    source_storage_id = sqlc.narg('source_storage_id'),
+    source_server_id = sqlc.narg('source_server_id'),
     source_path = @source_path,
     dest_storage_id = @dest_storage_id,
     dest_path = @dest_path,
@@ -131,3 +133,7 @@ DELETE FROM storage_sync_runs d
 WHERE d.sync_id = @sync_id::uuid AND d.id NOT IN (
     SELECT x.id FROM storage_sync_runs x WHERE x.sync_id = @sync_id::uuid ORDER BY x.created_at DESC, x.id DESC LIMIT @keep
 );
+
+-- name: ListWatchedStorageSyncs :many
+-- Syncs that follow a server folder's changes, for the watchers.
+SELECT * FROM storage_syncs WHERE trigger = 'watch' AND NOT paused AND source_server_id IS NOT NULL;

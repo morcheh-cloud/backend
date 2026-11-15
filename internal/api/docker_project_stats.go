@@ -136,6 +136,18 @@ type DockerProjectLogBatch struct {
 	Lines []DockerProjectLogLine `json:"lines"`
 }
 
+// One container's reading in a project's live stats stream.
+type DockerProjectLiveStat struct {
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	Service string      `json:"service"`
+	Stats   DockerStats `json:"stats"`
+}
+
+type DockerProjectLiveStats struct {
+	Containers []DockerProjectLiveStat `json:"containers" doc:"Running containers that have sent a reading"`
+}
+
 type DockerProjectMetaBody struct {
 	Title string `json:"title" maxLength:"80" doc:"Empty = show the project's name"`
 	Note  string `json:"note" maxLength:"2000"`
@@ -880,6 +892,103 @@ func registerDockerProjectStats(api huma.API, h *serverHandler) {
 				return
 			}
 			flush()
+			cancel()
+			mu.Lock()
+			defer mu.Unlock()
+			_ = send.Data(streamEnd(err))
+		})
+
+	sse.Register(api, huma.Operation{
+		OperationID: "stream-docker-project-stats",
+		Method:      http.MethodGet,
+		Path:        base + "/stats/stream",
+		Summary:     "Live resource use of a project's containers",
+		Description: "Server-sent events: `stats` about once a second with the latest reading of each running container (CPU, memory, network, disk); `end` when every one of them stopped, or the stream failed. A container started later isn't picked up: connect again.",
+		Tags:        tags,
+	}, map[string]any{"stats": DockerProjectLiveStats{}, "end": DockerStreamEnd{}},
+		func(ctx context.Context, in *DockerProjectPath, send sse.Sender) {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			var mu sync.Mutex
+			latest := map[string]DockerProjectLiveStat{}
+			order := []string{}
+			var sendErr error
+			flush := func() {
+				mu.Lock()
+				defer mu.Unlock()
+				if sendErr != nil {
+					return
+				}
+				out := DockerProjectLiveStats{Containers: []DockerProjectLiveStat{}}
+				for _, id := range order {
+					if v, ok := latest[id]; ok {
+						out.Containers = append(out.Containers, v)
+					}
+				}
+				if len(out.Containers) == 0 {
+					return
+				}
+				if sendErr = send.Data(out); sendErr != nil {
+					cancel()
+				}
+			}
+			go func() {
+				tick := time.NewTicker(time.Second)
+				defer tick.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-tick.C:
+						flush()
+					}
+				}
+			}()
+			err := h.withDocker(ctx, in.ID, func(e *dockerEngine) error {
+				cs, err := h.projectContainers(ctx, e, in.Project, nil)
+				if err != nil {
+					return err
+				}
+				var wg sync.WaitGroup
+				var first error
+				var emu sync.Mutex
+				for _, c := range cs {
+					if c.State != "running" {
+						continue
+					}
+					mu.Lock()
+					order = append(order, c.ID)
+					mu.Unlock()
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						base := DockerProjectLiveStat{ID: c.ID, Name: containerName(c.Names), Service: c.Labels["com.docker.compose.service"]}
+						err := e.client.Stats(ctx, c.ID, func(s docker.Sample) bool {
+							v := base
+							v.Stats = toDockerStats(s)
+							mu.Lock()
+							latest[c.ID] = v
+							mu.Unlock()
+							return ctx.Err() == nil
+						})
+						mu.Lock()
+						delete(latest, c.ID)
+						mu.Unlock()
+						if err != nil && ctx.Err() == nil {
+							emu.Lock()
+							if first == nil {
+								first = err
+							}
+							emu.Unlock()
+						}
+					}()
+				}
+				wg.Wait()
+				return first
+			})
+			if ctx.Err() != nil {
+				return
+			}
 			cancel()
 			mu.Lock()
 			defer mu.Unlock()

@@ -601,6 +601,8 @@ type Querier interface {
 	ListUserNames(ctx context.Context, ids []uuid.UUID) ([]ListUserNamesRow, error)
 	ListUserSessions(ctx context.Context, userID uuid.UUID) ([]Session, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
+	// Syncs that follow a server folder's changes, for the watchers.
+	ListWatchedStorageSyncs(ctx context.Context) ([]StorageSync, error)
 	ListWorkspaceApps(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceAppsRow, error)
 	// Incidents of every monitor in scope, open ones first.
 	ListWorkspaceIncidents(ctx context.Context, arg ListWorkspaceIncidentsParams) ([]ListWorkspaceIncidentsRow, error)

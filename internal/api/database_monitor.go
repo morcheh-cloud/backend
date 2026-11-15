@@ -434,7 +434,7 @@ func (h *databaseHandler) look(ctx context.Context, d sqlc.Database) sqlc.Databa
 				problems = append(problems, c.Title)
 			}
 		}
-		alerts.onDatabase(context.WithoutCancel(ctx), out, status, msg, out.Health, problems)
+		alerts.onDatabase(context.WithoutCancel(ctx), out, status, msg, out.Health, problems, checks)
 	}
 	return out
 }

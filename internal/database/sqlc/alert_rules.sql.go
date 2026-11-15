@@ -96,7 +96,7 @@ func (q *Queries) AlertRuleChannelsToNotify(ctx context.Context, ruleID uuid.UUI
 const alertRulesForDatabase = `-- name: AlertRulesForDatabase :many
 SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container, cluster_ids FROM alert_rules
 WHERE enabled AND workspace_id = $1
-  AND metric IN ('db_down', 'db_health')
+  AND metric LIKE 'db\_%'
   AND (scope = 'all' OR (scope = 'databases' AND $2::uuid = ANY (database_ids)))
 `
 
@@ -154,7 +154,7 @@ func (q *Queries) AlertRulesForDatabase(ctx context.Context, arg AlertRulesForDa
 const alertRulesForServer = `-- name: AlertRulesForServer :many
 SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container, cluster_ids FROM alert_rules
 WHERE enabled AND workspace_id = $1
-  AND metric NOT IN ('db_down', 'db_health')
+  AND metric NOT LIKE 'db\_%'
   AND metric NOT LIKE 'container\_%' AND metric <> 'docker_engine'
   AND metric NOT LIKE 'pve\_%'
   AND (scope = 'all'

@@ -1376,7 +1376,7 @@ type StorageSync struct {
 	WorkspaceID     uuid.UUID  `json:"workspace_id"`
 	Kind            string     `json:"kind"`
 	Name            string     `json:"name"`
-	SourceStorageID uuid.UUID  `json:"source_storage_id"`
+	SourceStorageID *uuid.UUID `json:"source_storage_id"`
 	SourcePath      string     `json:"source_path"`
 	DestStorageID   uuid.UUID  `json:"dest_storage_id"`
 	DestPath        string     `json:"dest_path"`
@@ -1396,6 +1396,7 @@ type StorageSync struct {
 	UpdatedBy       *uuid.UUID `json:"updated_by"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+	SourceServerID  *uuid.UUID `json:"source_server_id"`
 }
 
 type StorageSyncRun struct {

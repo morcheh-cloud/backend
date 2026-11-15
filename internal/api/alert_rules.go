@@ -81,16 +81,16 @@ type AlertRuleOutput struct {
 type AlertRuleBody struct {
 	Name           string   `json:"name" minLength:"1" maxLength:"100"`
 	Enabled        *bool    `json:"enabled,omitempty" doc:"Default true"`
-	Metric         string   `json:"metric" enum:"cpu,iowait,load,memory,swap,disk,net_rx,net_tx,offline,service,db_down,db_health,container_down,container_unhealthy,container_restarts,container_cpu,container_memory,docker_engine,container_vulns_critical,container_vulns_high,pve_node_down,pve_storage_full,pve_vm_stopped"`
+	Metric         string   `json:"metric" enum:"cpu,iowait,load,memory,swap,disk,net_rx,net_tx,offline,service,db_down,db_health,db_disk,db_connections,db_memory,db_latency,db_replication_lag,db_backup_age,container_down,container_unhealthy,container_restarts,container_cpu,container_memory,docker_engine,container_vulns_critical,container_vulns_high,pve_node_down,pve_storage_full,pve_vm_stopped"`
 	Op             string   `json:"op,omitempty" enum:"above,below" default:"above"`
-	Threshold      float64  `json:"threshold" doc:"Percent for cpu, iowait, memory, swap, disk and container_memory (of its limit); load per core; bytes per second for net_rx/net_tx; percent of one core for container_cpu; stops in 10 minutes for container_restarts; findings in the image's last scan for container_vulns_critical (critical) and container_vulns_high (high or critical); percent used for pve_storage_full; ignored for offline, service, db_down, db_health, container_down, container_unhealthy, docker_engine, pve_node_down and pve_vm_stopped"`
+	Threshold      float64  `json:"threshold" doc:"Percent for cpu, iowait, memory, swap, disk and container_memory (of its limit); load per core; bytes per second for net_rx/net_tx; percent of one core for container_cpu; stops in 10 minutes for container_restarts; findings in the image's last scan for container_vulns_critical (critical) and container_vulns_high (high or critical); percent used for pve_storage_full; percent used for db_disk, db_connections (of the limit) and db_memory (Redis maxmemory); milliseconds for db_latency; seconds behind for db_replication_lag; hours since the last good backup for db_backup_age; ignored for offline, service, db_down, db_health, container_down, container_unhealthy, docker_engine, pve_node_down and pve_vm_stopped"`
 	Mount          string   `json:"mount,omitempty" maxLength:"255" doc:"disk only: one mount point; empty = the fullest"`
 	Unit           string   `json:"unit,omitempty" maxLength:"255" doc:"service only: one systemd unit that must keep running; empty = any service that failed"`
 	Project        string   `json:"project,omitempty" maxLength:"100" doc:"container_* only: a compose project (* = any characters); empty = any"`
 	Container      string   `json:"container,omitempty" maxLength:"100" doc:"container_* only: a container or compose service name (* = any characters); empty = any"`
 	ForMinutes     int32    `json:"for_minutes" minimum:"0" maximum:"1440" doc:"How long it must hold before alerting; 0 = at once"`
 	Severity       string   `json:"severity,omitempty" enum:"warning,critical" default:"warning"`
-	Scope          string   `json:"scope,omitempty" enum:"all,servers,tags,databases,clusters" default:"all" doc:"databases = for db_down/db_health, which take all or databases; clusters = for pve_*, which take all or clusters"`
+	Scope          string   `json:"scope,omitempty" enum:"all,servers,tags,databases,clusters" default:"all" doc:"databases = for db_* metrics, which take all or databases; clusters = for pve_*, which take all or clusters"`
 	ServerIDs      []string `json:"server_ids,omitempty" doc:"scope servers"`
 	DatabaseIDs    []string `json:"database_ids,omitempty" doc:"scope databases"`
 	ClusterIDs     []string `json:"cluster_ids,omitempty" doc:"scope clusters"`
@@ -276,6 +276,18 @@ func (h *alertRuleHandler) clean(ctx context.Context, ws uuid.UUID, b *AlertRule
 	case metricContainerCPU:
 		if b.Threshold > 12800 {
 			return c, fieldError("body.threshold", "Use a percent of one core, up to 12800", b.Threshold)
+		}
+	case metricDBLatency:
+		if b.Threshold > 600000 {
+			return c, fieldError("body.threshold", "Use milliseconds up to 600000 (10 minutes)", b.Threshold)
+		}
+	case metricDBReplication:
+		if b.Threshold > 604800 {
+			return c, fieldError("body.threshold", "Use seconds up to 604800 (a week)", b.Threshold)
+		}
+	case metricDBBackupAge:
+		if b.Threshold > 8760 {
+			return c, fieldError("body.threshold", "Use hours up to 8760 (a year)", b.Threshold)
 		}
 	}
 	if !containerMetric(b.Metric) || b.Metric == metricDockerEngine {
@@ -608,6 +620,14 @@ func (h *alertRuleHandler) previewDatabases(ctx context.Context, p *principal, w
 				if it.Met {
 					v, it.Detail = 1, "Health is critical"
 				}
+			default:
+				n, detail, ok := dbCheckValue(rule.Metric, checksOf(d))
+				if !ok {
+					it.Detail = "No number to compare yet"
+					out.Body.Items = append(out.Body.Items, it)
+					continue
+				}
+				v, it.Met, it.Detail = n, breached(rule, n), detail
 			}
 			it.At, it.Value = d.LastCheckedAt, &v
 		}

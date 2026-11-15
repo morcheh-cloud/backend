@@ -397,6 +397,7 @@ var policies = map[string]policy{
 	"delete-docker-volume-backup":    onServer(auth.Engineer),
 	"docker-project-logs":            onServer(auth.Operator),
 	"stream-docker-project-logs":     onServer(auth.Operator),
+	"stream-docker-project-stats":    onServer(auth.Viewer),
 	"set-docker-project-meta":        onServer(auth.Engineer),
 	"save-docker-project-files":      onServer(auth.Engineer),
 	"list-docker-project-versions":   onServer(auth.Engineer),
@@ -801,6 +802,8 @@ var policies = map[string]policy{
 	"resync-storage-sync-replication": onStorageSync(auth.Operator),
 	"get-storage-sync-run":            onStorageSyncRun(auth.Viewer),
 	"cancel-storage-sync-run":         onStorageSyncRun(auth.Operator),
+	"restart-storage-sync-watch":      onStorageSync(auth.Operator),
+	"raise-storage-sync-watch-limit":  onStorageSync(auth.Engineer),
 
 	"get-job":     active,
 	"cancel-job":  active,

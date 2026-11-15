@@ -34,22 +34,23 @@ func (q *Queries) ClaimStorageSync(ctx context.Context, arg ClaimStorageSyncPara
 
 const createStorageSync = `-- name: CreateStorageSync :one
 INSERT INTO storage_syncs (
-    workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path,
+    workspace_id, kind, name, source_storage_id, source_server_id, source_path, dest_storage_id, dest_path,
     engine, mode, trigger, cron, timezone, interval_minutes, options, next_run_at,
     created_by, updated_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12, $13, $14, $15,
-    $16, $16
+    $1, $2, $3, $4, $5, $6, $7, $8,
+    $9, $10, $11, $12, $13, $14, $15, $16,
+    $17, $17
 )
-RETURNING id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at
+RETURNING id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at, source_server_id
 `
 
 type CreateStorageSyncParams struct {
 	WorkspaceID     uuid.UUID  `json:"workspace_id"`
 	Kind            string     `json:"kind"`
 	Name            string     `json:"name"`
-	SourceStorageID uuid.UUID  `json:"source_storage_id"`
+	SourceStorageID *uuid.UUID `json:"source_storage_id"`
+	SourceServerID  *uuid.UUID `json:"source_server_id"`
 	SourcePath      string     `json:"source_path"`
 	DestStorageID   uuid.UUID  `json:"dest_storage_id"`
 	DestPath        string     `json:"dest_path"`
@@ -70,6 +71,7 @@ func (q *Queries) CreateStorageSync(ctx context.Context, arg CreateStorageSyncPa
 		arg.Kind,
 		arg.Name,
 		arg.SourceStorageID,
+		arg.SourceServerID,
 		arg.SourcePath,
 		arg.DestStorageID,
 		arg.DestPath,
@@ -109,6 +111,7 @@ func (q *Queries) CreateStorageSync(ctx context.Context, arg CreateStorageSyncPa
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SourceServerID,
 	)
 	return i, err
 }
@@ -228,7 +231,7 @@ func (q *Queries) FinishStorageSyncRun(ctx context.Context, arg FinishStorageSyn
 }
 
 const getStorageSync = `-- name: GetStorageSync :one
-SELECT id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at FROM storage_syncs WHERE id = $1
+SELECT id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at, source_server_id FROM storage_syncs WHERE id = $1
 `
 
 func (q *Queries) GetStorageSync(ctx context.Context, id uuid.UUID) (StorageSync, error) {
@@ -259,6 +262,7 @@ func (q *Queries) GetStorageSync(ctx context.Context, id uuid.UUID) (StorageSync
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SourceServerID,
 	)
 	return i, err
 }
@@ -357,7 +361,7 @@ func (q *Queries) ListActiveStorageSyncRuns(ctx context.Context, syncID uuid.UUI
 }
 
 const listDueStorageSyncs = `-- name: ListDueStorageSyncs :many
-SELECT id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at FROM storage_syncs
+SELECT id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at, source_server_id FROM storage_syncs
 WHERE NOT paused AND trigger <> 'manual' AND next_run_at IS NOT NULL AND next_run_at <= $1
 ORDER BY next_run_at
 LIMIT 100
@@ -397,6 +401,7 @@ func (q *Queries) ListDueStorageSyncs(ctx context.Context, now *time.Time) ([]St
 			&i.UpdatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SourceServerID,
 		); err != nil {
 			return nil, err
 		}
@@ -459,7 +464,7 @@ func (q *Queries) ListStorageSyncRuns(ctx context.Context, arg ListStorageSyncRu
 }
 
 const listStorageSyncs = `-- name: ListStorageSyncs :many
-SELECT s.id, s.workspace_id, s.kind, s.name, s.source_storage_id, s.source_path, s.dest_storage_id, s.dest_path, s.engine, s.mode, s.trigger, s.cron, s.timezone, s.interval_minutes, s.options, s.paused, s.next_run_at, s.held, s.native, s.problem, s.created_by, s.updated_by, s.created_at, s.updated_at,
+SELECT s.id, s.workspace_id, s.kind, s.name, s.source_storage_id, s.source_path, s.dest_storage_id, s.dest_path, s.engine, s.mode, s.trigger, s.cron, s.timezone, s.interval_minutes, s.options, s.paused, s.next_run_at, s.held, s.native, s.problem, s.created_by, s.updated_by, s.created_at, s.updated_at, s.source_server_id,
     r.id AS last_run_id, r.state AS last_run_state, r.created_at AS last_run_at,
     r.finished_at AS last_run_finished_at, r.error AS last_run_error,
     r.dry_run AS last_run_dry_run
@@ -471,12 +476,14 @@ LEFT JOIN storage_sync_runs r ON r.id = (
 )
 WHERE s.workspace_id = $1
   AND ($2::uuid IS NULL OR s.source_storage_id = $2::uuid OR s.dest_storage_id = $2::uuid)
+  AND ($3::uuid IS NULL OR s.source_server_id = $3::uuid)
 ORDER BY s.kind, lower(s.name)
 `
 
 type ListStorageSyncsParams struct {
 	WorkspaceID uuid.UUID  `json:"workspace_id"`
 	StorageID   *uuid.UUID `json:"storage_id"`
+	ServerID    *uuid.UUID `json:"server_id"`
 }
 
 type ListStorageSyncsRow struct {
@@ -484,7 +491,7 @@ type ListStorageSyncsRow struct {
 	WorkspaceID       uuid.UUID  `json:"workspace_id"`
 	Kind              string     `json:"kind"`
 	Name              string     `json:"name"`
-	SourceStorageID   uuid.UUID  `json:"source_storage_id"`
+	SourceStorageID   *uuid.UUID `json:"source_storage_id"`
 	SourcePath        string     `json:"source_path"`
 	DestStorageID     uuid.UUID  `json:"dest_storage_id"`
 	DestPath          string     `json:"dest_path"`
@@ -504,6 +511,7 @@ type ListStorageSyncsRow struct {
 	UpdatedBy         *uuid.UUID `json:"updated_by"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
+	SourceServerID    *uuid.UUID `json:"source_server_id"`
 	LastRunID         *uuid.UUID `json:"last_run_id"`
 	LastRunState      *string    `json:"last_run_state"`
 	LastRunAt         *time.Time `json:"last_run_at"`
@@ -514,7 +522,7 @@ type ListStorageSyncsRow struct {
 
 // With each one's newest run (skipped ones aside), for the list.
 func (q *Queries) ListStorageSyncs(ctx context.Context, arg ListStorageSyncsParams) ([]ListStorageSyncsRow, error) {
-	rows, err := q.db.Query(ctx, listStorageSyncs, arg.WorkspaceID, arg.StorageID)
+	rows, err := q.db.Query(ctx, listStorageSyncs, arg.WorkspaceID, arg.StorageID, arg.ServerID)
 	if err != nil {
 		return nil, err
 	}
@@ -547,12 +555,64 @@ func (q *Queries) ListStorageSyncs(ctx context.Context, arg ListStorageSyncsPara
 			&i.UpdatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SourceServerID,
 			&i.LastRunID,
 			&i.LastRunState,
 			&i.LastRunAt,
 			&i.LastRunFinishedAt,
 			&i.LastRunError,
 			&i.LastRunDryRun,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWatchedStorageSyncs = `-- name: ListWatchedStorageSyncs :many
+SELECT id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at, source_server_id FROM storage_syncs WHERE trigger = 'watch' AND NOT paused AND source_server_id IS NOT NULL
+`
+
+// Syncs that follow a server folder's changes, for the watchers.
+func (q *Queries) ListWatchedStorageSyncs(ctx context.Context) ([]StorageSync, error) {
+	rows, err := q.db.Query(ctx, listWatchedStorageSyncs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StorageSync{}
+	for rows.Next() {
+		var i StorageSync
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Kind,
+			&i.Name,
+			&i.SourceStorageID,
+			&i.SourcePath,
+			&i.DestStorageID,
+			&i.DestPath,
+			&i.Engine,
+			&i.Mode,
+			&i.Trigger,
+			&i.Cron,
+			&i.Timezone,
+			&i.IntervalMinutes,
+			&i.Options,
+			&i.Paused,
+			&i.NextRunAt,
+			&i.Held,
+			&i.Native,
+			&i.Problem,
+			&i.CreatedBy,
+			&i.UpdatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SourceServerID,
 		); err != nil {
 			return nil, err
 		}
@@ -651,7 +711,7 @@ func (q *Queries) SetStorageSyncNext(ctx context.Context, arg SetStorageSyncNext
 const setStorageSyncPaused = `-- name: SetStorageSyncPaused :one
 UPDATE storage_syncs SET paused = $1, next_run_at = $2, updated_at = now()
 WHERE id = $3
-RETURNING id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at
+RETURNING id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at, source_server_id
 `
 
 type SetStorageSyncPausedParams struct {
@@ -689,6 +749,7 @@ func (q *Queries) SetStorageSyncPaused(ctx context.Context, arg SetStorageSyncPa
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SourceServerID,
 	)
 	return i, err
 }
@@ -720,26 +781,28 @@ const updateStorageSync = `-- name: UpdateStorageSync :one
 UPDATE storage_syncs SET
     name = $1,
     source_storage_id = $2,
-    source_path = $3,
-    dest_storage_id = $4,
-    dest_path = $5,
-    engine = $6,
-    mode = $7,
-    trigger = $8,
-    cron = $9,
-    timezone = $10,
-    interval_minutes = $11,
-    options = $12,
-    next_run_at = $13,
-    updated_by = $14,
+    source_server_id = $3,
+    source_path = $4,
+    dest_storage_id = $5,
+    dest_path = $6,
+    engine = $7,
+    mode = $8,
+    trigger = $9,
+    cron = $10,
+    timezone = $11,
+    interval_minutes = $12,
+    options = $13,
+    next_run_at = $14,
+    updated_by = $15,
     updated_at = now()
-WHERE id = $15
-RETURNING id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at
+WHERE id = $16
+RETURNING id, workspace_id, kind, name, source_storage_id, source_path, dest_storage_id, dest_path, engine, mode, trigger, cron, timezone, interval_minutes, options, paused, next_run_at, held, native, problem, created_by, updated_by, created_at, updated_at, source_server_id
 `
 
 type UpdateStorageSyncParams struct {
 	Name            string     `json:"name"`
-	SourceStorageID uuid.UUID  `json:"source_storage_id"`
+	SourceStorageID *uuid.UUID `json:"source_storage_id"`
+	SourceServerID  *uuid.UUID `json:"source_server_id"`
 	SourcePath      string     `json:"source_path"`
 	DestStorageID   uuid.UUID  `json:"dest_storage_id"`
 	DestPath        string     `json:"dest_path"`
@@ -759,6 +822,7 @@ func (q *Queries) UpdateStorageSync(ctx context.Context, arg UpdateStorageSyncPa
 	row := q.db.QueryRow(ctx, updateStorageSync,
 		arg.Name,
 		arg.SourceStorageID,
+		arg.SourceServerID,
 		arg.SourcePath,
 		arg.DestStorageID,
 		arg.DestPath,
@@ -799,6 +863,7 @@ func (q *Queries) UpdateStorageSync(ctx context.Context, arg UpdateStorageSyncPa
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SourceServerID,
 	)
 	return i, err
 }
