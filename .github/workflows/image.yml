@@ -38,7 +38,11 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/${{ github.repository }}
+          # latest = the newest build of main, so it always exists; releases
+          # get their own version tags and never move latest.
+          flavor: latest=false
           tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
             type=edge,branch=main
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
