@@ -40,17 +40,21 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl gnupg postgresql-common; \
     . /etc/os-release; \
     install -d -m 0755 /etc/apt/keyrings; \
-    # PostgreSQL's own repository: pg_dump must be as new as the server.
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-      | gpg --dearmor -o /etc/apt/keyrings/pgdg.gpg; \
+    # PostgreSQL's own repository: pg_dump must be as new as the server. Its
+    # key ships with Ubuntu's postgresql-common (no download that can flake).
+    gpg --dearmor -o /etc/apt/keyrings/pgdg.gpg \
+      /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc; \
     echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
       > /etc/apt/sources.list.d/pgdg.list; \
     # MongoDB's repository, for mongodump/mongorestore.
-    curl -fsSL "https://pgp.mongodb.com/server-${MONGO_SERIES}.asc" \
-      | gpg --dearmor -o /etc/apt/keyrings/mongodb.gpg; \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
+      -o /tmp/mongodb.asc "https://pgp.mongodb.com/server-${MONGO_SERIES}.asc"; \
+    gpg --dearmor -o /etc/apt/keyrings/mongodb.gpg /tmp/mongodb.asc; \
+    rm /tmp/mongodb.asc; \
     echo "deb [signed-by=/etc/apt/keyrings/mongodb.gpg] https://repo.mongodb.org/apt/ubuntu ${VERSION_CODENAME}/mongodb-org/${MONGO_SERIES} multiverse" \
       > /etc/apt/sources.list.d/mongodb.list; \
     apt-get update; \
@@ -62,7 +66,7 @@ RUN set -eux; \
       mongodb-database-tools \
       redis-tools \
       gzip coreutils findutils procps less iputils-ping netcat-openbsd; \
-    apt-get purge -y --auto-remove gnupg; \
+    apt-get purge -y --auto-remove gnupg postgresql-common; \
     rm -rf /var/lib/apt/lists/*; \
     # Every tool the panel looks for has to be there.
     for t in ssh sshpass bwrap ansible-playbook ansible-doc pg_dump pg_dumpall \
