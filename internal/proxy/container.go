@@ -64,7 +64,7 @@ func (c Container) Host(args string) string {
 // stdin is empty.
 func (c Container) Run(script string) string {
 	sum := sha256.Sum256([]byte(script))
-	eof := "MORCHEH_IN_" + hex.EncodeToString(sum[:6])
+	eof := "MORCHE_IN_" + hex.EncodeToString(sum[:6])
 	inner := `f=$(mktemp) && cat > "$f" && { sh "$f" </dev/null; r=$?; rm -f "$f"; exit $r; }`
 	if !strings.HasSuffix(script, "\n") {
 		script += "\n"
@@ -90,12 +90,12 @@ esac
 
 // HostDir is the folder on the server holding what Morche keeps there for
 // this container (certbot's hooks, log rotation).
-func (c Container) HostDir() string { return "/etc/morcheh/proxy/" + c.Runtime + "-" + c.Name }
+func (c Container) HostDir() string { return "/etc/morche/proxy/" + c.Runtime + "-" + c.Name }
 
 // CronFile is the cron.d entry for this container (cron skips names with
 // dots).
 func (c Container) CronFile() string {
-	return "/etc/cron.d/morcheh-proxy-" + c.Runtime + "-" + strings.ReplaceAll(c.Name, ".", "_")
+	return "/etc/cron.d/morche-proxy-" + c.Runtime + "-" + strings.ReplaceAll(c.Name, ".", "_")
 }
 
 // HostPath is the PATH line host scripts start with.
@@ -117,7 +117,7 @@ func (c Container) PushFn() string {
     printf '%s\n' "$have" | grep -qxF "$want" && continue
     m=$(stat -L -c %a "$f" 2>/dev/null) || m=600
     ` + ex + ` sh -c 'mkdir -p "$(dirname "$1")" || exit 1
-if [ -L "$1" ]; then cat > "$1"; else cat > "$1.morcheh-new" && chmod "$2" "$1.morcheh-new" && mv -f "$1.morcheh-new" "$1"; fi' sh "$f" "$m" < "$f" || { echo "Couldn't copy $f into the container ` + c.Name + `" >&2; rc=1; }
+if [ -L "$1" ]; then cat > "$1"; else cat > "$1.morche-new" && chmod "$2" "$1.morche-new" && mv -f "$1.morche-new" "$1"; fi' sh "$f" "$m" < "$f" || { echo "Couldn't copy $f into the container ` + c.Name + `" >&2; rc=1; }
   done
   return $rc
 }

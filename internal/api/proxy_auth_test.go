@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestHashPasswords(t *testing.T) {

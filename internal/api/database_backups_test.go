@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/dbmon"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/dbmon"
 )
 
 func TestBackupPath(t *testing.T) {
@@ -127,7 +127,7 @@ func TestBackupFolder(t *testing.T) {
 }
 
 func TestReadMarks(t *testing.T) {
-	m, rest := readMarks("warning: x\n MORCHEH_POSITION=binlog.000004:157\nMORCHEH_CHAIN_BROKEN\nend")
+	m, rest := readMarks("warning: x\n MORCHE_POSITION=binlog.000004:157\nMORCHE_CHAIN_BROKEN\nend")
 	if m.position != "binlog.000004:157" || !m.broken || rest != "warning: x\nend" {
 		t.Errorf("readMarks = %+v %q", m, rest)
 	}

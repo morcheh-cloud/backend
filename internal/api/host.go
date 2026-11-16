@@ -6,7 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // Shared by every module that installs a package and runs a service on the

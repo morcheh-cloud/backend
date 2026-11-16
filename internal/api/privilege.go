@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // privilege is how a server's login user can act as root.

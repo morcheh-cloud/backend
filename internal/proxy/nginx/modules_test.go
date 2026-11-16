@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestWAF(t *testing.T) {
@@ -66,11 +66,11 @@ func TestImages(t *testing.T) {
 	}
 	got := render(t, h, "1.24.0")
 	has(t, got,
-		"map $arg_w $morcheh_01abcd_iw {", "default -;", "320 320;", "640 640;",
-		`map "$morcheh_01abcd_iw$morcheh_01abcd_ih:$uri" $morcheh_01abcd_img {`,
-		"if ($morcheh_01abcd_img) {", "rewrite ^ /__morcheh/img$uri last;",
-		"location ^~ /__morcheh/img/ {", "internal;",
-		"image_filter resize $morcheh_01abcd_iw $morcheh_01abcd_ih;",
+		"map $arg_w $morche_01abcd_iw {", "default -;", "320 320;", "640 640;",
+		`map "$morche_01abcd_iw$morche_01abcd_ih:$uri" $morche_01abcd_img {`,
+		"if ($morche_01abcd_img) {", "rewrite ^ /__morche/img$uri last;",
+		"location ^~ /__morche/img/ {", "internal;",
+		"image_filter resize $morche_01abcd_iw $morche_01abcd_ih;",
 		"image_filter_jpeg_quality 70;", "image_filter_buffer 10M;",
 	)
 	if strings.Contains(got, "1920 1920;") {
@@ -93,12 +93,12 @@ func TestStreamCountries(t *testing.T) {
 	}
 	got := render(t, h, "1.24.0")
 	has(t, got,
-		"upstream morcheh_01abcd_main {", "server 127.0.0.1:22;",
-		"upstream morcheh_01abcd_refuse {", "server 127.0.0.1:1 down;",
-		"geo $morcheh_01abcd_ip {", "10.0.0.0/8 a;",
+		"upstream morche_01abcd_main {", "server 127.0.0.1:22;",
+		"upstream morche_01abcd_refuse {", "server 127.0.0.1:1 down;",
+		"geo $morche_01abcd_ip {", "10.0.0.0/8 a;",
 		"IR a;",
-		`map "$morcheh_01abcd_ip:$morcheh_01abcd_cc" $morcheh_01abcd_to {`,
-		"proxy_pass $morcheh_01abcd_to;",
+		`map "$morche_01abcd_ip:$morche_01abcd_cc" $morche_01abcd_to {`,
+		"proxy_pass $morche_01abcd_to;",
 	)
 	if strings.Contains(got, "allow 10.0.0.0/8;") {
 		t.Errorf("with countries, addresses go through the geo block:\n%s", got)

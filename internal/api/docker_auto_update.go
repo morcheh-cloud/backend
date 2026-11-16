@@ -21,14 +21,14 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/cmdlog"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/docker"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/notify"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/docker"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/notify"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 const dockerAutoUpdateKind = "docker-auto-update"
@@ -37,7 +37,7 @@ const dockerAutoUpdateKind = "docker-auto-update"
 
 type DockerAutoUpdateRules struct {
 	Servers        []string `json:"servers" minItems:"1" maxItems:"100" doc:"Server ids in the workspace"`
-	Pick           string   `json:"pick" enum:"all,labeled,chosen" doc:"all = every container (but excluded ones); labeled = only containers labelled morcheh.auto-update.enable=true or com.centurylinklabs.watchtower.enable=true; chosen = containers, compose projects or images named in include (or labelled)"`
+	Pick           string   `json:"pick" enum:"all,labeled,chosen" doc:"all = every container (but excluded ones); labeled = only containers labelled morche.auto-update.enable=true or com.centurylinklabs.watchtower.enable=true; chosen = containers, compose projects or images named in include (or labelled)"`
 	Include        []string `json:"include,omitempty" maxItems:"200" doc:"Names, compose projects or images (* and ? allowed), for pick = chosen"`
 	Exclude        []string `json:"exclude,omitempty" maxItems:"200" doc:"Names, compose projects or images (* and ?) never touched"`
 	IncludeStopped bool     `json:"include_stopped" doc:"Also update containers that aren't running (they stay stopped unless revive_stopped)"`
@@ -217,7 +217,7 @@ var autoUpdateBusy sync.Map
 
 // ---- Labels ----
 
-var autoLabelPrefixes = []string{"morcheh.auto-update.", "com.centurylinklabs.watchtower."}
+var autoLabelPrefixes = []string{"morche.auto-update.", "com.centurylinklabs.watchtower."}
 
 // autoLabel reads one of our labels, or Watchtower's of the same name.
 func autoLabel(c docker.ContainerSummary, key string) (string, bool) {
@@ -261,7 +261,7 @@ func autoMatches(patterns []string, c docker.ContainerSummary) string {
 func autoPick(r DockerAutoUpdateRules, c docker.ContainerSummary) (bool, string) {
 	name := containerName(c.Names)
 	switch {
-	case strings.Contains(name, "-morcheh-old-"):
+	case strings.Contains(name, "-morche-old-"):
 		return false, "A copy kept during an update"
 	case pinnedRef(c.Image):
 		return false, "Its image is pinned to a digest or an id, so there is nothing newer"
@@ -930,7 +930,7 @@ func (h *serverHandler) previewAutoServer(ctx context.Context, r DockerAutoUpdat
 		}
 	}
 	for _, c := range cs {
-		if strings.Contains(containerName(c.Names), "-morcheh-old-") {
+		if strings.Contains(containerName(c.Names), "-morche-old-") {
 			continue
 		}
 		out.Containers = append(out.Containers, toAutoCandidate(r, c, state))
@@ -1629,7 +1629,7 @@ func (r *autoRun) restartLinked(ctx context.Context, s sqlc.Server, done []autoD
 	}
 	for _, c := range cs {
 		name := containerName(c.Names)
-		if names[name] || c.State != "running" || strings.Contains(name, "-morcheh-old-") {
+		if names[name] || c.State != "running" || strings.Contains(name, "-morche-old-") {
 			continue
 		}
 		var on []string

@@ -14,8 +14,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/pkg/sftp"
 
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ---- Types ----

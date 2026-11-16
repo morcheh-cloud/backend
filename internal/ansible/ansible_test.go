@@ -172,7 +172,7 @@ func TestLiveRefusesChangedHostKey(t *testing.T) {
 // The sandbox hides the host's files from a playbook's local tasks.
 func TestLiveSandboxHidesHostFiles(t *testing.T) {
 	key := liveHostKey(t)
-	secret := filepath.Join(os.Getenv("HOME"), ".morcheh-ansible-test-secret")
+	secret := filepath.Join(os.Getenv("HOME"), ".morche-ansible-test-secret")
 	if err := os.WriteFile(secret, []byte("topsecret"), 0o600); err != nil {
 		t.Fatal(err)
 	}

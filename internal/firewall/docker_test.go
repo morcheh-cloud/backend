@@ -44,10 +44,10 @@ func TestContainerRules(t *testing.T) {
 	limits := []ContainerLimit{l}
 	v4 := ContainerRestore(limits, false)
 	for _, want := range []string{
-		":MORCHEH-DOCKER - [0:0]",
-		"-A MORCHEH-DOCKER -i docker0 -j RETURN",
-		"-A MORCHEH-DOCKER -s 203.0.113.7 -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport 3030 -j RETURN",
-		"-A MORCHEH-DOCKER -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport 3030 -j DROP",
+		":MORCHE-DOCKER - [0:0]",
+		"-A MORCHE-DOCKER -i docker0 -j RETURN",
+		"-A MORCHE-DOCKER -s 203.0.113.7 -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport 3030 -j RETURN",
+		"-A MORCHE-DOCKER -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport 3030 -j DROP",
 	} {
 		if !strings.Contains(v4, want) {
 			t.Errorf("missing %q in:\n%s", want, v4)
@@ -63,11 +63,11 @@ func TestContainerRules(t *testing.T) {
 		t.Error("no limits = nothing to load")
 	}
 
-	live := `-N MORCHEH-DOCKER
--A MORCHEH-DOCKER -i docker0 -j RETURN
--A MORCHEH-DOCKER -i br-+ -j RETURN
--A MORCHEH-DOCKER -s 203.0.113.7/32 -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport 3030 -j RETURN
--A MORCHEH-DOCKER -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport 3030 -j DROP`
+	live := `-N MORCHE-DOCKER
+-A MORCHE-DOCKER -i docker0 -j RETURN
+-A MORCHE-DOCKER -i br-+ -j RETURN
+-A MORCHE-DOCKER -s 203.0.113.7/32 -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport 3030 -j RETURN
+-A MORCHE-DOCKER -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport 3030 -j DROP`
 	if !ContainerLoaded(limits, false, live) {
 		t.Error("the live chain should match")
 	}

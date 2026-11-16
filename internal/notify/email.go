@@ -73,7 +73,7 @@ func sendEmail(ctx context.Context, ch Channel, m Message) error {
 		return err
 	}
 	defer cl.Close()
-	if err := cl.Hello("morcheh"); err != nil {
+	if err := cl.Hello("morche"); err != nil {
 		return err
 	}
 	if security == "starttls" {
@@ -121,7 +121,7 @@ func emailBody(from *mail.Address, to []string, m Message) []byte {
 	fmt.Fprintf(&b, "To: %s\r\n", strings.Join(to, ", "))
 	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))
 	fmt.Fprintf(&b, "Date: %s\r\n", m.At.Format(time.RFC1123Z))
-	fmt.Fprintf(&b, "Message-ID: <%s@morcheh>\r\n", randomHex(16))
+	fmt.Fprintf(&b, "Message-ID: <%s@morche>\r\n", randomHex(16))
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Auto-Submitted: auto-generated\r\n")
 	fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", boundary)
@@ -166,7 +166,7 @@ func randomHex(n int) string {
 }
 
 // sendWebhook posts the message as JSON. With a signing key every body is
-// signed: X-Morcheh-Signature = "sha256=" + HMAC-SHA256(key, timestamp + "." + body).
+// signed: X-Morche-Signature = "sha256=" + HMAC-SHA256(key, timestamp + "." + body).
 func sendWebhook(ctx context.Context, ch Channel, m Message) error {
 	fields := map[string]string{}
 	for _, f := range m.Fields {
@@ -197,14 +197,14 @@ func sendWebhook(ctx context.Context, ch Channel, m Message) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Morche")
-	req.Header.Set("X-Morcheh-Event", m.Event)
+	req.Header.Set("X-Morche-Event", m.Event)
 	if key := ch.Secrets.SigningKey; key != "" {
 		ts := strconv.FormatInt(m.At.Unix(), 10)
 		mac := hmac.New(sha256.New, []byte(key))
 		mac.Write([]byte(ts + "."))
 		mac.Write(raw)
-		req.Header.Set("X-Morcheh-Timestamp", ts)
-		req.Header.Set("X-Morcheh-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+		req.Header.Set("X-Morche-Timestamp", ts)
+		req.Header.Set("X-Morche-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	}
 	for k, v := range ch.Secrets.Headers {
 		if k = strings.TrimSpace(k); k != "" {

@@ -178,8 +178,8 @@ func checkKafka(ctx context.Context, c MonitorConfig, env Env) CheckResult {
 	binary.Write(&req, binary.BigEndian, int16(18)) // api key
 	binary.Write(&req, binary.BigEndian, int16(0))  // version
 	binary.Write(&req, binary.BigEndian, int32(7))  // correlation id
-	binary.Write(&req, binary.BigEndian, int16(len("morcheh")))
-	req.WriteString("morcheh")
+	binary.Write(&req, binary.BigEndian, int16(len("morche")))
+	req.WriteString("morche")
 	var frame bytes.Buffer
 	binary.Write(&frame, binary.BigEndian, int32(req.Len()))
 	frame.Write(req.Bytes())
@@ -258,7 +258,7 @@ func checkNATS(ctx context.Context, c MonitorConfig, s MonitorSecrets, env Env) 
 			io.Writer
 		}{br, tc}
 	}
-	opts := map[string]any{"verbose": false, "pedantic": false, "name": "morcheh-uptime", "lang": "go", "version": "1.0", "protocol": 1}
+	opts := map[string]any{"verbose": false, "pedantic": false, "name": "morche-uptime", "lang": "go", "version": "1.0", "protocol": 1}
 	if c.Username != "" {
 		opts["user"] = c.Username
 		opts["pass"] = s.Password
@@ -325,7 +325,7 @@ func checkMQTT(ctx context.Context, c MonitorConfig, s MonitorSecrets, env Env) 
 	}
 	vh.WriteByte(flags)
 	binary.Write(&vh, binary.BigEndian, uint16(30))
-	mqttStr(&vh, "morcheh-"+randomID())
+	mqttStr(&vh, "morche-"+randomID())
 	if c.Username != "" {
 		mqttStr(&vh, c.Username)
 		if s.Password != "" {

@@ -15,10 +15,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/secrets"
-	"github.com/morcheh/backend/internal/uptime"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/secrets"
+	"github.com/morche/backend/internal/uptime"
 )
 
 // Uptime monitors: something to check on a schedule (a web address, a
@@ -136,7 +136,7 @@ func toLocationRule(r uptime.Rule) LocationRule {
 // MonitorLocation is one place a monitor is checked from, with its own
 // latest answer.
 type MonitorLocation struct {
-	Location      string     `json:"location" doc:"morcheh, or the server's id"`
+	Location      string     `json:"location" doc:"morche, or the server's id"`
 	ServerID      *string    `json:"server_id,omitempty" format:"uuid"`
 	Name          string     `json:"name"`
 	Status        string     `json:"status" enum:"pending,up,degraded,down,unknown" doc:"unknown = it couldn't check (its server was unreachable)"`
@@ -182,7 +182,7 @@ type MonitorBody struct {
 	Tags            []string              `json:"tags,omitempty" maxItems:"20"`
 	Config          uptime.MonitorConfig  `json:"config"`
 	Secrets         uptime.MonitorSecrets `json:"secrets" doc:"A blank secret keeps the saved one"`
-	Locations       []string              `json:"locations,omitempty" maxItems:"20" doc:"Where to check from: morcheh and/or server ids (over SSH). docker, systemd and command take one server. Left out: Morche on create, unchanged on update"`
+	Locations       []string              `json:"locations,omitempty" maxItems:"20" doc:"Where to check from: morche and/or server ids (over SSH). docker, systemd and command take one server. Left out: Morche on create, unchanged on update"`
 	Rule            *LocationRule         `json:"rule,omitempty" doc:"With several locations: when they make it down or degraded. Left out: majority down, any degraded on create, unchanged on update"`
 	ServerID        *string               `json:"server_id,omitempty" format:"uuid" doc:"The server it belongs to, shown on that server's page"`
 	IntervalSeconds int32                 `json:"interval_seconds,omitempty" minimum:"10" maximum:"86400" default:"60"`
@@ -393,8 +393,8 @@ type monitorPlan struct {
 	channels []uuid.UUID
 	setCh    bool
 	secrets  uptime.MonitorSecrets
-	// hadMorcheh: the saved monitor was checked from Morche.
-	hadMorcheh bool
+	// hadMorche: the saved monitor was checked from Morche.
+	hadMorche bool
 }
 
 // planLocations checks where the monitor is checked from and its rule. A
@@ -409,7 +409,7 @@ func (h *uptimeHandler) planLocations(ctx context.Context, p *principal, kind st
 		}
 		saved = rows
 		pl.rule = ruleOf(*prev)
-		pl.hadMorcheh = hasMorcheh(planLocs(rows))
+		pl.hadMorche = hasMorche(planLocs(rows))
 	}
 	if b.Rule != nil {
 		pl.rule = uptime.Rule{
@@ -441,7 +441,7 @@ func (h *uptimeHandler) planLocations(ctx context.Context, p *principal, kind st
 	for _, r := range raw {
 		r = strings.TrimSpace(r)
 		if r == uptime.Morche {
-			if !hasMorcheh(pl.locs) {
+			if !hasMorche(pl.locs) {
 				pl.locs = append(pl.locs, planLoc{key: r, name: "Morche"})
 			}
 			continue
@@ -514,7 +514,7 @@ func planLocs(rows []sqlc.ListMonitorLocationsRow) []planLoc {
 	return out
 }
 
-func hasMorcheh(locs []planLoc) bool {
+func hasMorche(locs []planLoc) bool {
 	return slices.ContainsFunc(locs, func(l planLoc) bool { return l.server == nil })
 }
 
@@ -564,8 +564,8 @@ func (h *uptimeHandler) planMonitor(ctx context.Context, p *principal, ws uuid.U
 		}
 	}
 
-	if b.AllowInternal && hasMorcheh(pl.locs) && !p.Access.Admin {
-		kept := prev != nil && prev.AllowInternal && pl.hadMorcheh &&
+	if b.AllowInternal && hasMorche(pl.locs) && !p.Access.Admin {
+		kept := prev != nil && prev.AllowInternal && pl.hadMorche &&
 			monitorTarget(kind, savedCfg) == monitorTarget(kind, b.Config) && savedCfg.Resolver == b.Config.Resolver
 		if !kept {
 			return pl, fieldError("body.allow_internal", "Only a system admin can allow private addresses", true)
@@ -837,7 +837,7 @@ type MonitorReport struct {
 }
 
 type ReportLocation struct {
-	Location   string   `json:"location" doc:"morcheh, or the server's id"`
+	Location   string   `json:"location" doc:"morche, or the server's id"`
 	Name       string   `json:"name"`
 	Checks     int32    `json:"checks"`
 	Up         int32    `json:"up"`

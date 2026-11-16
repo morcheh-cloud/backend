@@ -15,12 +15,12 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/morcheh/backend/internal/api"
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/cache"
-	"github.com/morcheh/backend/internal/config"
-	"github.com/morcheh/backend/internal/database"
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/api"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/cache"
+	"github.com/morche/backend/internal/config"
+	"github.com/morche/backend/internal/database"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 const resetAdminUsage = `Usage: server reset-admin [flags]

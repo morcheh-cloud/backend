@@ -16,11 +16,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/software"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/software"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // Applications: a catalog of software (packages like Docker or Git, vendor
@@ -52,7 +52,7 @@ type SoftwareInstall struct {
 	RecipeID        string            `json:"recipe_id"`
 	Name            string            `json:"name"`
 	Kind            string            `json:"kind" enum:"package,script"`
-	Origin          string            `json:"origin" enum:"morcheh,found" doc:"morcheh = installed from the panel; found = a scan found it"`
+	Origin          string            `json:"origin" enum:"morche,found" doc:"morche = installed from the panel; found = a scan found it"`
 	Status          string            `json:"status" enum:"installing,installed,updating,failed,removing,missing"`
 	Version         string            `json:"version"`
 	Latest          string            `json:"latest"`

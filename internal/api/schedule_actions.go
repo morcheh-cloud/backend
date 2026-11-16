@@ -18,14 +18,14 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/packages"
-	"github.com/morcheh/backend/internal/services"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/storage"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/packages"
+	"github.com/morche/backend/internal/services"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/storage"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // Cron job actions other than a file sync. Each is checked when saved with
@@ -1129,11 +1129,11 @@ func (r *taskRun) archive(ctx context.Context) (any, error) {
 	// Packed into a temporary folder on the source, removed afterwards.
 	var tmp string
 	err := srv.withConn(ctx, srcID, func(c *sshpool.Conn) error {
-		out, err := run(ctx, c, "mktemp -d /var/tmp/morcheh-archive.XXXXXX")
+		out, err := run(ctx, c, "mktemp -d /var/tmp/morche-archive.XXXXXX")
 		tmp = strings.TrimSpace(out)
 		return err
 	})
-	if err == nil && !strings.HasPrefix(tmp, "/var/tmp/morcheh-archive.") {
+	if err == nil && !strings.HasPrefix(tmp, "/var/tmp/morche-archive.") {
 		err = errors.New("Couldn't make a temporary folder in /var/tmp.")
 	}
 	if err != nil {

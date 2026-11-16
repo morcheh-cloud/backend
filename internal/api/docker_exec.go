@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // A shell inside a container rides the terminal manager: `docker exec -it`

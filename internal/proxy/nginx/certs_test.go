@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestRenderTLSOptions(t *testing.T) {
@@ -26,7 +26,7 @@ func TestRenderTLSOptions(t *testing.T) {
 		"location ^~ /.well-known/acme-challenge/",
 		"listen 443 quic reuseport;",
 		"ssl_protocols TLSv1.3;",
-		"ssl_session_cache shared:morcheh_tls:10m;",
+		"ssl_session_cache shared:morche_tls:10m;",
 		"ssl_stapling on;",
 		"ssl_verify_client optional;",
 		`Alt-Svc 'h3=":443"; ma=86400'`,

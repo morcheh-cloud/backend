@@ -38,7 +38,7 @@ func (d hostDialer) HostName() string { return d.host }
 func openMSSQL(ctx context.Context, cfg Config) (engine, error) {
 	q := url.Values{}
 	q.Set("database", cmp(cfg.Database, "master"))
-	q.Set("app name", "morcheh-monitor")
+	q.Set("app name", "morche-monitor")
 	q.Set("dial timeout", strconv.Itoa(int(cfg.timeout().Seconds())))
 	switch cfg.TLS {
 	case TLSDisable:

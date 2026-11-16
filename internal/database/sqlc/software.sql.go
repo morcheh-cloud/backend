@@ -49,13 +49,13 @@ const beginSoftwareInstall = `-- name: BeginSoftwareInstall :one
 INSERT INTO software_installs (
     workspace_id, server_id, recipe_id, name, kind, origin, status, params, secrets, error
 ) VALUES (
-    $1, $2, $3, $4, $5, 'morcheh', 'installing', $6,
+    $1, $2, $3, $4, $5, 'morche', 'installing', $6,
     $7, ''
 )
 ON CONFLICT (server_id, recipe_id) DO UPDATE SET
     name = excluded.name,
     kind = excluded.kind,
-    origin = 'morcheh',
+    origin = 'morche',
     status = 'installing',
     params = excluded.params,
     secrets = excluded.secrets,
@@ -1024,7 +1024,7 @@ func (q *Queries) ListSoftwareRuns(ctx context.Context, arg ListSoftwareRunsPara
 
 const markMissingSoftware = `-- name: MarkMissingSoftware :exec
 UPDATE software_installs SET status = 'missing', checked_at = now(), updated_at = now()
-WHERE server_id = $1 AND origin = 'morcheh' AND NOT (recipe_id = ANY($2::text[]))
+WHERE server_id = $1 AND origin = 'morche' AND NOT (recipe_id = ANY($2::text[]))
   AND status = 'installed'
 `
 

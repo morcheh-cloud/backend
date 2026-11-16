@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/morcheh/backend/internal/auth"
+	"github.com/morche/backend/internal/auth"
 )
 
 // The docker-prune cron action: on each server, removes what Docker no longer

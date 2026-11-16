@@ -10,7 +10,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // Run wizard: `docker run` from an image, with the common options. The

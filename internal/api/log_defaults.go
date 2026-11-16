@@ -11,11 +11,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 // defaultLogFolder is where files go on a storage unless a policy says.
-const defaultLogFolder = "/morcheh-archives"
+const defaultLogFolder = "/morche-archives"
 
 // defaultPolicy is what every kind of logs starts with, and what Reset to
 // default puts back: on, archived to Morche's own disk once rows pass the

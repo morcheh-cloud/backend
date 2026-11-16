@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-// TestWriteSpec writes the OpenAPI spec to $MORCHEH_SPEC_OUT, for generating
+// TestWriteSpec writes the OpenAPI spec to $MORCHE_SPEC_OUT, for generating
 // the frontend's client without restarting the running server:
 //
-//	MORCHEH_SPEC_OUT=/tmp/openapi.json go test ./internal/api -run TestWriteSpec
+//	MORCHE_SPEC_OUT=/tmp/openapi.json go test ./internal/api -run TestWriteSpec
 func TestWriteSpec(t *testing.T) {
-	out := os.Getenv("MORCHEH_SPEC_OUT")
+	out := os.Getenv("MORCHE_SPEC_OUT")
 	if out == "" {
-		t.Skip("MORCHEH_SPEC_OUT not set")
+		t.Skip("MORCHE_SPEC_OUT not set")
 	}
 	_, api := testRouter(t, "development")
 	b, err := json.Marshal(api.OpenAPI())

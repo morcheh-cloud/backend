@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/morcheh/backend/internal/cmdlog"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // termCommands logs one terminal: a "shell" row for the terminal itself and

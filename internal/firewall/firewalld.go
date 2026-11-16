@@ -322,7 +322,7 @@ func FirewalldAdd(in Input) ([]string, error) {
 	}
 	tail := []string{}
 	if in.Log {
-		tail = append(tail, `log prefix="morcheh " level="info"`)
+		tail = append(tail, `log prefix="morche " level="info"`)
 	}
 	switch in.Action {
 	case "allow":

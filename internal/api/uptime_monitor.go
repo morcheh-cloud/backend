@@ -14,10 +14,10 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/notify"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/uptime"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/notify"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/uptime"
 )
 
 // The uptime scheduler: every second it picks the monitors that are due,

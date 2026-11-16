@@ -19,11 +19,11 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/pkg/sftp"
 
-	"github.com/morcheh/backend/internal/cmdlog"
-	"github.com/morcheh/backend/internal/docker"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/docker"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // A volume's files, browsed as root on the server that holds them. Paths in
@@ -1160,7 +1160,7 @@ func (h *serverHandler) uploadVolumeFile(ctx context.Context, in *VolumeUploadIn
 			}
 		}
 
-		tmp := path.Join(dir, "."+path.Base(p)+".morcheh-"+randomSuffix())
+		tmp := path.Join(dir, "."+path.Base(p)+".morche-"+randomSuffix())
 		f, err := v.s.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 		if err != nil {
 			return fsError(path.Dir(rel), err)

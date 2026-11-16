@@ -7,7 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/morcheh/backend/internal/cache"
+	"github.com/morche/backend/internal/cache"
 )
 
 type HealthOutput struct {

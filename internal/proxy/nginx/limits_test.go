@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func render(t *testing.T, h proxy.HostConfig, version string) string {
@@ -59,11 +59,11 @@ func TestCountries(t *testing.T) {
 		Allow: []string{"1.2.3.4"}, Countries: []string{"de", "FR"}, CountryMode: "allow", DefaultAccess: "allow",
 	}, "1.24.0")
 	has(t, got,
-		"geo $morcheh_01abcd_ip {", "1.2.3.4 a;",
-		"map $morcheh_country $morcheh_01abcd_cc {", "default d;", `"" a;`, "DE a;", "FR a;",
-		"map $uri $morcheh_01abcd_acme {", `~^/\.well-known/acme-challenge/ 1;`,
-		`map "$morcheh_01abcd_acme:$morcheh_01abcd_ip:$morcheh_01abcd_cc" $morcheh_01abcd_block {`,
-		`"0:n:d" 1;`, "if ($morcheh_01abcd_block) {", "return 403;",
+		"geo $morche_01abcd_ip {", "1.2.3.4 a;",
+		"map $morche_country $morche_01abcd_cc {", "default d;", `"" a;`, "DE a;", "FR a;",
+		"map $uri $morche_01abcd_acme {", `~^/\.well-known/acme-challenge/ 1;`,
+		`map "$morche_01abcd_acme:$morche_01abcd_ip:$morche_01abcd_cc" $morche_01abcd_block {`,
+		`"0:n:d" 1;`, "if ($morche_01abcd_block) {", "return 403;",
 	)
 	if strings.Contains(got, "allow 1.2.3.4;") {
 		t.Errorf("with countries, addresses go through the geo block:\n%s", got)
@@ -73,7 +73,7 @@ func TestCountries(t *testing.T) {
 		Domains: []string{"a.test"}, Type: proxy.TypeProxy, Upstream: "http://127.0.0.1:1",
 		Countries: []string{"CN"}, CountryMode: "deny",
 	}, "1.24.0")
-	has(t, deny, "default a;", "CN d;", `map "$morcheh_01abcd_acme:$morcheh_01abcd_cc" $morcheh_01abcd_block {`, `"0:d" 1;`)
+	has(t, deny, "default a;", "CN d;", `map "$morche_01abcd_acme:$morche_01abcd_cc" $morche_01abcd_block {`, `"0:d" 1;`)
 }
 
 func TestRateLimits(t *testing.T) {
@@ -90,10 +90,10 @@ func TestRateLimits(t *testing.T) {
 		},
 	}, "1.24.0")
 	has(t, got,
-		"geo $morcheh_01abcd_free_ip {", "10.0.0.0/8 1;",
-		`map "$morcheh_01abcd_free_ip:$uri" $morcheh_01abcd_free {`,
+		"geo $morche_01abcd_free_ip {", "10.0.0.0/8 1;",
+		`map "$morche_01abcd_free_ip:$uri" $morche_01abcd_free {`,
 		`~^0:/\.well-known/acme-challenge/ 1;`,
-		"limit_req_zone $morcheh_01abcd_key_", "rate=10r/s;", "rate=5r/m;",
+		"limit_req_zone $morche_01abcd_key_", "rate=10r/s;", "rate=5r/m;",
 		"limit_req_status 429;", "limit_req_dry_run on;",
 		"burst=20 nodelay;", "burst=50 delay=10;",
 		"limit_conn_status 429;", "limit_conn_dry_run on;",
@@ -116,8 +116,8 @@ func TestRateLimits(t *testing.T) {
 		t.Errorf("nginx 1.16 has no dry run:\n%s", old)
 	}
 	// Without exempt addresses, ACME challenges still aren't counted.
-	has(t, old, "map $uri $morcheh_01abcd_free {", `~^/\.well-known/acme-challenge/ 1;`,
-		"limit_req_zone $morcheh_01abcd_key_")
+	has(t, old, "map $uri $morche_01abcd_free {", `~^/\.well-known/acme-challenge/ 1;`,
+		"limit_req_zone $morche_01abcd_key_")
 }
 
 func TestStreamLimits(t *testing.T) {
@@ -156,7 +156,7 @@ func TestVariableNamesFit(t *testing.T) {
 	}
 	h = proxy.Normalize(h)
 	got := Driver{}.Render(id, h, proxy.Env{Version: "1.24.0"})
-	names := regexp.MustCompile(`\$(morcheh_[a-z0-9_]+)`).FindAllStringSubmatch(got, -1)
+	names := regexp.MustCompile(`\$(morche_[a-z0-9_]+)`).FindAllStringSubmatch(got, -1)
 	if len(names) < 10 {
 		t.Fatalf("too few variables found:\n%s", got)
 	}
@@ -165,7 +165,7 @@ func TestVariableNamesFit(t *testing.T) {
 			t.Errorf("%s is %d characters", n[1], len(n[1]))
 		}
 	}
-	if !strings.Contains(got, CacheDir+"/morcheh_01a1bb40b9e874d3ac12f55f7660205d ") {
+	if !strings.Contains(got, CacheDir+"/morche_01a1bb40b9e874d3ac12f55f7660205d ") {
 		t.Errorf("the cache folder keeps the whole id:\n%s", got)
 	}
 }

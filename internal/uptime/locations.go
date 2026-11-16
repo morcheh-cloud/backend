@@ -6,7 +6,7 @@ import (
 )
 
 // Morche names the location that is Morche itself (no server in between).
-const Morche = "morcheh"
+const Morche = "morche"
 
 // Unknown is a location's status when it couldn't check at all (its server
 // was unreachable): it doesn't vote.
@@ -14,7 +14,7 @@ const Unknown = "unknown"
 
 // LocationResult is what one location found in a round.
 type LocationResult struct {
-	Location  string `json:"location" doc:"morcheh, or the server's id"`
+	Location  string `json:"location" doc:"morche, or the server's id"`
 	Name      string `json:"name"`
 	Status    string `json:"status" enum:"up,degraded,down,unknown" doc:"unknown = it couldn't check (its server was unreachable); it doesn't vote"`
 	LatencyMs *int   `json:"latency_ms,omitempty"`

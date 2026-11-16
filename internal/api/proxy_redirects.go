@@ -13,8 +13,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/proxy"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/proxy"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // Helpers for a site's redirect list: what its access log says about old
@@ -66,7 +66,7 @@ type RedirectSource struct {
 var redirectStatsRanges = map[string]time.Duration{"24h": 24 * time.Hour, "7d": 7 * 24 * time.Hour, "30d": 30 * 24 * time.Hour}
 
 const (
-	redirectCheckMark = "MORCHEH_RDCHECK"
+	redirectCheckMark = "MORCHE_RDCHECK"
 	redirectFetchMax  = 10 << 20
 	maxNotFound       = 300
 	maxPages          = 3000

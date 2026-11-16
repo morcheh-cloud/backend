@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/morcheh/backend/internal/technitium"
+	"github.com/morche/backend/internal/technitium"
 )
 
 // DNSZoneOptions is who may copy a zone (zone transfer) and which servers

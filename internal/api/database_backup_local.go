@@ -12,9 +12,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/dbmon"
-	"github.com/morcheh/backend/internal/jobs"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/dbmon"
+	"github.com/morche/backend/internal/jobs"
 )
 
 // LocalRunnerName is how the machine Morche runs on is shown as a runner.

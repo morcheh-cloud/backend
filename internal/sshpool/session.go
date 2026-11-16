@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/cmdlog"
 )
 
 // Session is an SSH session whose command goes into the command log. Every

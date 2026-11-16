@@ -16,7 +16,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/morcheh/backend/internal/dbmon"
+	"github.com/morche/backend/internal/dbmon"
 )
 
 // File formats. Stored with a backup, they decide the restore steps and how
@@ -37,8 +37,8 @@ const (
 // Lines an incremental's script leaves on stderr for the API: where the next
 // one continues from, and that the chain can't be continued.
 const (
-	PositionMark = "MORCHEH_POSITION="
-	BrokenMark   = "MORCHEH_CHAIN_BROKEN"
+	PositionMark = "MORCHE_POSITION="
+	BrokenMark   = "MORCHE_CHAIN_BROKEN"
 )
 
 // Gzipped says Morche compressed the file itself, so it's the one to undo that
@@ -464,7 +464,7 @@ func mssql(t Target) (Spec, error) {
 	}
 	var b strings.Builder
 	mssqlPrelude(&b, t)
-	file := mssqlDataDir + "/morcheh-" + t.ID + ".bak"
+	file := mssqlDataDir + "/morche-" + t.ID + ".bak"
 	b.WriteString("f=" + quote(file) + "\ntrap 'rm -f \"$f\"' EXIT\n")
 	base := "SET NOCOUNT ON; SELECT differential_base_guid FROM sys.master_files WHERE database_id = DB_ID(" + mssqlText(t.Name) + ") AND file_id = 1"
 	readBase := "base=$(run -h-1 -W -Q " + mssqlSQL(base) + " | tr -d '[:space:]') || exit 1\n"

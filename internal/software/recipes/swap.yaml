@@ -47,7 +47,7 @@ install: |
   mkswap /swapfile >/dev/null
   swapon /swapfile
   grep -q '^/swapfile[[:space:]]' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-  echo "vm.swappiness=$SWAPPINESS" > /etc/sysctl.d/90-morcheh-swap.conf
+  echo "vm.swappiness=$SWAPPINESS" > /etc/sysctl.d/90-morche-swap.conf
   sysctl -q -w vm.swappiness="$SWAPPINESS" || true
   free -h 2>/dev/null | grep -i '^swap' || true
 update: |
@@ -58,5 +58,5 @@ uninstall: |
     swapoff /swapfile
   fi
   sed -i '\#^/swapfile[[:space:]]#d' /etc/fstab
-  rm -f /swapfile /etc/sysctl.d/90-morcheh-swap.conf
+  rm -f /swapfile /etc/sysctl.d/90-morche-swap.conf
   echo "Removed /swapfile."

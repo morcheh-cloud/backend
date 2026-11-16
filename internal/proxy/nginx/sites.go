@@ -4,7 +4,7 @@ import (
 	"net"
 	"net/url"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // mirrorLocation is where copies of requests go; an exact location, so it
@@ -180,7 +180,7 @@ func mirrorLocations(w *writer, t string, h proxy.HostConfig) {
 	w.line("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;")
 	w.line("proxy_set_header X-Forwarded-Proto $scheme;")
 	w.line("proxy_set_header X-Forwarded-Host $host;")
-	w.line("proxy_set_header X-Morcheh-Mirror 1;")
+	w.line("proxy_set_header X-Morche-Mirror 1;")
 	if m.SkipBody {
 		w.line("proxy_pass_request_body off;")
 		w.line(`proxy_set_header Content-Length "";`)

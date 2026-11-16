@@ -8,9 +8,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/proxy"
-	"github.com/morcheh/backend/internal/storage"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/proxy"
+	"github.com/morche/backend/internal/storage"
 )
 
 // resolveStorage fills in where a storage site reads its files from: the

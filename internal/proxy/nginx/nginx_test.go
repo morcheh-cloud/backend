@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestParseSites(t *testing.T) {
@@ -95,10 +95,10 @@ func TestRender(t *testing.T) {
 		`add_header X-Frame-Options "DENY" always;`,
 		"location /api/ {\n        proxy_pass https://10.0.0.2:8443/;",
 		"proxy_ssl_server_name on;",
-		"proxy_set_header Connection $morcheh_connection;",
+		"proxy_set_header Connection $morche_connection;",
 		`proxy_set_header X-Env "prod";`,
 		"proxy_set_header Host $host;",
-		"access_log /var/log/nginx/morcheh-h1.access.log morcheh_access;",
+		"access_log /var/log/nginx/morche-h1.access.log morche_access;",
 		"    # Advanced\n    location /health {\n        return 200;\n    }\n}\n",
 	} {
 		if !strings.Contains(got, want) {
@@ -135,7 +135,7 @@ func TestApplyScript(t *testing.T) {
 	if strings.Index(s, "a-2.conf") > strings.Index(s, "b-1.conf") {
 		t.Error("files should be written in a stable order")
 	}
-	if !strings.Contains(s, "<<'MORCHEH_HOST_a2'\nA\nMORCHEH_HOST_a2\n") {
+	if !strings.Contains(s, "<<'MORCHE_HOST_a2'\nA\nMORCHE_HOST_a2\n") {
 		t.Errorf("heredoc:\n%s", s)
 	}
 	if !strings.Contains(s, `"$n/streams/c-3.conf"`) || !strings.Contains(s, "taken_by t 5432") {
@@ -152,7 +152,7 @@ func TestRenderStreamAndNotFound(t *testing.T) {
 		t.Fatalf("stream problems: %v", p)
 	}
 	out := Driver{}.Render("s1", st, proxy.Env{IPv6: true})
-	for _, want := range []string{"listen 53 udp;", "listen [::]:53 udp;", "proxy_pass 10.0.0.5:53;", "proxy_timeout 30s;", "allow 10.0.0.0/8;", "morcheh_stream;"} {
+	for _, want := range []string{"listen 53 udp;", "listen [::]:53 udp;", "proxy_pass 10.0.0.5:53;", "proxy_timeout 30s;", "allow 10.0.0.0/8;", "morche_stream;"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stream render lacks %q:\n%s", want, out)
 		}
@@ -194,7 +194,7 @@ func TestDefaultHolders(t *testing.T) {
 		{File: "/etc/nginx/sites-enabled/default", Listen: []string{"80 default_server", "[::]:80 default_server"}},
 		{File: "/etc/nginx/conf.d/alt.conf", Listen: []string{"8080 default_server"}},
 		{File: "/etc/nginx/conf.d/tls.conf", Listen: []string{"443 ssl default_server"}},
-		{File: "/etc/nginx/morcheh/hosts/x.conf", Listen: []string{"80 default_server"}, Managed: true},
+		{File: "/etc/nginx/morche/hosts/x.conf", Listen: []string{"80 default_server"}, Managed: true},
 		{File: "/etc/nginx/conf.d/plain.conf", Listen: []string{"80"}},
 	}
 	got := proxy.DefaultHolders(sites)

@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestWAFIndexFind(t *testing.T) {

@@ -26,9 +26,9 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/sshprobe"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ---- Types ----
@@ -789,7 +789,7 @@ func (h *serverHandler) upload(ctx context.Context, in *UploadInput) (*FileEntry
 			return fsError(dir, err)
 		}
 
-		tmp := path.Join(dir, "."+path.Base(p)+".morcheh-"+randomSuffix())
+		tmp := path.Join(dir, "."+path.Base(p)+".morche-"+randomSuffix())
 		f, err := s.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 		if err != nil {
 			return fsError(dir, err)

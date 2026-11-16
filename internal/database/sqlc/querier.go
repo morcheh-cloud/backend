@@ -406,7 +406,7 @@ type Querier interface {
 	InterruptSoftwareRuns(ctx context.Context) error
 	// At start-up: shells recorded by a previous run of Morche are gone.
 	InterruptTerminalRecordings(ctx context.Context) (int64, error)
-	// Removes the locations not listed ("morcheh" or a server id).
+	// Removes the locations not listed ("morche" or a server id).
 	KeepMonitorLocations(ctx context.Context, arg KeepMonitorLocationsParams) error
 	// Has this person signed in from this network before (in what's kept)?
 	KnownNetwork(ctx context.Context, arg KnownNetworkParams) (bool, error)

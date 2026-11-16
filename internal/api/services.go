@@ -15,9 +15,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/services"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/services"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // ---- Types ----
@@ -702,13 +702,13 @@ func writeUnitFile(ctx context.Context, sh *rootShell, unit, path string, b Serv
 		return nil, huma.Error409Conflict("The file changed on the server since you opened it")
 	}
 	content := services.Normalize(b.Content)
-	p, bak := q(path), q(path+".morcheh-bak")
+	p, bak := q(path), q(path+".morche-bak")
 	dir := q(path[:strings.LastIndex(path, "/")])
 	var script string
 	if content == "" {
 		script = "[ -f " + p + " ] && mv -f " + p + " " + bak + "\nrmdir " + dir + " 2>/dev/null\n"
 	} else {
-		eof := "MORCHEH_" + randomSuffix()
+		eof := "MORCHE_" + randomSuffix()
 		script = "mkdir -p " + dir + "\nrm -f " + bak + "\n[ -f " + p + " ] && cp -p " + p + " " + bak + "\ncat > " + p +
 			" <<'" + eof + "'\n" + content + eof + "\nchmod 644 " + p + "\n"
 	}

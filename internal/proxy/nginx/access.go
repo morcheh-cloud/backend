@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // accessReadMax is the most a read ever keeps, whatever LogRead.Cap says.
@@ -21,7 +21,7 @@ const accessReadMax = 256 << 20
 // base64 when the server has both, so a big read crosses SSH small.
 func (Driver) AccessScript(hostID string, r proxy.LogRead) string {
 	if !hostIDRe.MatchString(hostID) {
-		return "echo @@morcheh-nolog\n"
+		return "echo @@morche-nolog\n"
 	}
 	return logScript(AccessLog(hostID), r)
 }
@@ -31,7 +31,7 @@ func (Driver) AccessScript(hostID string, r proxy.LogRead) string {
 // ParseWAFLines its lines.
 func (Driver) WAFLogScript(hostID string, r proxy.LogRead) string {
 	if !hostIDRe.MatchString(hostID) {
-		return "echo @@morcheh-nolog\n"
+		return "echo @@morche-nolog\n"
 	}
 	return logScript(WAFLog(hostID), r)
 }
@@ -43,7 +43,7 @@ func logScript(f string, r proxy.LogRead) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "f=%s\n", f)
-	b.WriteString(`if [ ! -f "$f" ]; then echo @@morcheh-nolog; exit 0; fi
+	b.WriteString(`if [ ! -f "$f" ]; then echo @@morche-nolog; exit 0; fi
 set -- $(stat -c '%i %s' "$f")
 ino=$1 size=$2
 echo "@@mark $ino $size"
@@ -111,7 +111,7 @@ func (Driver) ParseAccessOutput(out string) (proxy.LogChunk, error) {
 			continue
 		}
 		switch f[0] {
-		case "@@morcheh-nolog":
+		case "@@morche-nolog":
 			c.Missing = true
 			return c, nil
 		case "@@cap":
@@ -171,7 +171,7 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// ParseAccess reads one line of the morcheh_access format, nginx's combined
+// ParseAccess reads one line of the morche_access format, nginx's combined
 // one (older lines) or the stream one.
 //
 //	1.2.3.4 - - [08/Nov/2026:10:15:32 +0330] "GET /a?b=1 HTTP/2.0" 200 512 "-" "curl/8" "example.com" 0.012 "0.010" "-" "200" "10.0.0.2:80" 431 "f3…"

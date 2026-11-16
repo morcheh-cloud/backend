@@ -14,8 +14,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ---- Types ----
@@ -128,7 +128,7 @@ type CronHistory struct {
 type CronTableOutput struct{ Body CronTable }
 
 const (
-	cronMarker     = "@@morcheh@@"
+	cronMarker     = "@@morche@@"
 	maxCrontab     = 256 << 10
 	maxRunOutput   = 256 << 10
 	defaultRunTime = 60
@@ -947,7 +947,7 @@ func tableLabel(t *CronTable) string {
 // writeTable installs content: user crontabs through crontab (which also
 // tells the daemon), system files by replacing the file.
 func writeTable(ctx context.Context, sh *rootShell, t *CronTable, login, content string) error {
-	eof := "MORCHEH_" + randomSuffix()
+	eof := "MORCHE_" + randomSuffix()
 	doc := " <<'" + eof + "'\n" + content + eof + "\n"
 	var script string
 	switch {
@@ -957,7 +957,7 @@ func writeTable(ctx context.Context, sh *rootShell, t *CronTable, login, content
 		script = "crontab -u " + terminal.ShellQuote(t.User) + " -" + doc
 	default:
 		f := terminal.ShellQuote(t.Path)
-		script = "t=$(mktemp \"$(dirname " + f + ")/.morcheh.XXXXXX\") || exit 1\n" +
+		script = "t=$(mktemp \"$(dirname " + f + ")/.morche.XXXXXX\") || exit 1\n" +
 			"cat > \"$t\"" + doc +
 			"chmod 644 \"$t\" && mv -f \"$t\" " + f + " || { rm -f \"$t\"; exit 1; }\n"
 	}
@@ -1014,7 +1014,7 @@ func (h *serverHandler) runCron(ctx context.Context, id string, sh *rootShell, i
 	}
 	input := " </dev/null"
 	if hasStdin {
-		eof := "MORCHEH_" + randomSuffix()
+		eof := "MORCHE_" + randomSuffix()
 		input = " <<'" + eof + "'\n" + stdin + "\n" + eof
 	}
 	script := "u=" + terminal.ShellQuote(user) + "\n" +

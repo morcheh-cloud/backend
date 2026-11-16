@@ -11,9 +11,9 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/cmdlog"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/sysstats"
+	"github.com/morche/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/sysstats"
 )
 
 // StatsProblem is sent on the stream instead of stats while they can't be read.

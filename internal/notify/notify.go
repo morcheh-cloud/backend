@@ -96,7 +96,7 @@ type ChannelSecrets struct {
 	Password   string `json:"password,omitempty" maxLength:"500" doc:"Email: the SMTP password"`
 	Token      string `json:"token,omitempty" maxLength:"500" doc:"Telegram/Bale: the bot token; ntfy: an access token; Gotify: the app token; Pushover: the app token"`
 	WebhookURL string `json:"webhook_url,omitempty" maxLength:"1000" doc:"Slack/Discord/Mattermost/Teams: the incoming webhook address"`
-	SigningKey string `json:"signing_key,omitempty" maxLength:"500" doc:"Webhook: signs each body (X-Morcheh-Signature: sha256=…)"`
+	SigningKey string `json:"signing_key,omitempty" maxLength:"500" doc:"Webhook: signs each body (X-Morche-Signature: sha256=…)"`
 	UserKey    string `json:"user_key,omitempty" maxLength:"100" doc:"Pushover: the user or group key"`
 	// Header values often carry a login (Authorization, X-Api-Key), so they
 	// are sealed like the rest; only the names are listed back.

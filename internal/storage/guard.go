@@ -4,7 +4,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/morcheh/backend/internal/dbmon"
+	"github.com/morche/backend/internal/dbmon"
 )
 
 // guardedDialer reaches a storage from Morche itself, refusing link-local and

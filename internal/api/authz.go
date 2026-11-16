@@ -15,17 +15,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/cache"
-	"github.com/morcheh/backend/internal/cmdlog"
-	"github.com/morcheh/backend/internal/config"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/cache"
+	"github.com/morche/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/config"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/terminal"
 )
 
 const (
-	sessionCookie   = "morcheh_session"
+	sessionCookie   = "morche_session"
 	workspaceHeader = "X-Workspace-Id"
 
 	sessionTTL  = 12 * time.Hour

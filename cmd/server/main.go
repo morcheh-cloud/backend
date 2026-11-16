@@ -12,13 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/morcheh/backend/internal/api"
-	"github.com/morcheh/backend/internal/cache"
-	"github.com/morcheh/backend/internal/config"
-	"github.com/morcheh/backend/internal/database"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/secrets"
+	"github.com/morche/backend/internal/api"
+	"github.com/morche/backend/internal/cache"
+	"github.com/morche/backend/internal/config"
+	"github.com/morche/backend/internal/database"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/secrets"
 )
 
 func main() {

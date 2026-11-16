@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/morcheh/backend/internal/cloud/arvan/fake"
+	"github.com/morche/backend/internal/cloud/arvan/fake"
 )
 
 func main() {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 // fakeDB keeps jobs in memory; only the job queries are implemented.

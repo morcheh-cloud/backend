@@ -39,7 +39,7 @@ ALTER TABLE monitors
         CHECK (rule_degraded_count BETWEEN 1 AND 50);
 
 -- Every location's answer for a check, when there's more than one:
--- [{"loc": "morcheh" | server id, "status", "latency_ms", "code", "message"}].
+-- [{"loc": "morche" | server id, "status", "latency_ms", "code", "message"}].
 ALTER TABLE monitor_checks ADD COLUMN results jsonb NOT NULL DEFAULT '[]';
 
 -- +goose Down

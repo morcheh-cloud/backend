@@ -13,11 +13,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/docker"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/docker"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 type DockerScanCounts struct {
@@ -242,7 +242,7 @@ func registerDockerScans(api huma.API, h *serverHandler) {
 		Method:        http.MethodPost,
 		Path:          "/servers/{id}/docker/scans",
 		Summary:       "Scan images for known vulnerabilities",
-		Description:   "Runs Trivy on the server: the `trivy` command if installed, else the workspace's scanner image through Docker (its database is cached in the `morcheh-trivy-cache` volume). Runs as a job (kind `docker-scan`).",
+		Description:   "Runs Trivy on the server: the `trivy` command if installed, else the workspace's scanner image through Docker (its database is cached in the `morche-trivy-cache` volume). Runs as a job (kind `docker-scan`).",
 		Tags:          tags,
 		DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *struct {
@@ -314,7 +314,7 @@ if command -v trivy >/dev/null 2>&1; then
   trivy image ` + opts + ` ` + q(image) + ` >"$t" 2>"$e"; code=$?
 else
   echo "@@scanner "` + q(scanner) + `
-  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock:ro -v morcheh-trivy-cache:/root/.cache/ ` + q(scanner) + ` image ` + opts + ` ` + q(image) + ` >"$t" 2>"$e"; code=$?
+  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock:ro -v morche-trivy-cache:/root/.cache/ ` + q(scanner) + ` image ` + opts + ` ` + q(image) + ` >"$t" 2>"$e"; code=$?
 fi
 if [ $code -ne 0 ]; then echo "@@err"; tail -n 5 "$e"; exit 0; fi
 echo "@@json"; cat "$t"`

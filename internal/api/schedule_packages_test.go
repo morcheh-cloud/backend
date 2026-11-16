@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/morcheh/backend/internal/packages"
+	"github.com/morche/backend/internal/packages"
 )
 
 func TestUpgradeNote(t *testing.T) {

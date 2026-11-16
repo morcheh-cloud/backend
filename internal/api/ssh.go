@@ -12,9 +12,9 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/sshprobe"
 )
 
 // connVersion summarises what a connection depends on, so a pooled one is

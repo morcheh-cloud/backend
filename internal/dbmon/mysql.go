@@ -34,7 +34,7 @@ func openMySQL(ctx context.Context, cfg Config) (engine, error) {
 	mc.ReadTimeout = 3 * cfg.timeout()
 	mc.WriteTimeout = cfg.timeout()
 	mc.ParseTime = true
-	mc.ConnectionAttributes = "program_name:morcheh-monitor"
+	mc.ConnectionAttributes = "program_name:morche-monitor"
 	tc, err := cfg.tlsConfig()
 	if err != nil {
 		return nil, err

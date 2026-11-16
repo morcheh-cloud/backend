@@ -10,9 +10,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/morcheh/backend/internal/config"
-	"github.com/morcheh/backend/internal/database"
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/config"
+	"github.com/morche/backend/internal/database"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 const allowlistUsage = `Usage: server allowlist show|off

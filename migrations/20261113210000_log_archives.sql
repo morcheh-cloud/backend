@@ -14,7 +14,7 @@ CREATE TABLE log_archive_policies (
     period       text NOT NULL DEFAULT 'month' CHECK (period IN ('day', 'week', 'month')),
     keep_local   boolean NOT NULL DEFAULT true,
     storage_ids  uuid[] NOT NULL DEFAULT '{}',
-    folder       text NOT NULL DEFAULT '/morcheh-archives',
+    folder       text NOT NULL DEFAULT '/morche-archives',
     -- Archive files are deleted after this many days; 0 = kept for good.
     keep_days    int NOT NULL DEFAULT 0 CHECK (keep_days >= 0),
     cron         text NOT NULL DEFAULT '30 3 * * *',

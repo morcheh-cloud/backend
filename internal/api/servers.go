@@ -15,13 +15,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/secrets"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/sshprobe"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/secrets"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ---- Response types ----

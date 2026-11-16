@@ -143,11 +143,11 @@ func (f Forward) FilterInput(comment string) Input {
 // PREROUTING's other rules (Docker keeps its own there). The block stays when
 // empty, or a reload would leave the old rules running.
 const (
-	forwardBegin  = "# BEGIN MORCHEH FORWARDS (changed by Morcheh, edits here are lost)"
-	forwardEnd    = "# END MORCHEH FORWARDS"
+	forwardBegin  = "# BEGIN MORCHE FORWARDS (changed by Morche, edits here are lost)"
+	forwardEnd    = "# END MORCHE FORWARDS"
 	forwardMark   = "### forward ###"
-	ForwardChainP = "MORCHEH-PRE"
-	ForwardChainQ = "MORCHEH-POST"
+	ForwardChainP = "MORCHE-PRE"
+	ForwardChainQ = "MORCHE-POST"
 )
 
 // splitBefore takes the managed block out of before.rules.

@@ -14,11 +14,11 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/fail2ban"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/fail2ban"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ---- Types ----
@@ -159,7 +159,7 @@ type Fail2banTestResult struct {
 const (
 	f2bDir       = "/etc/fail2ban"
 	f2bJailLocal = f2bDir + "/jail.local"
-	f2bMarker    = "@@morcheh@@"
+	f2bMarker    = "@@morche@@"
 	f2bService   = "fail2ban"
 )
 
@@ -980,13 +980,13 @@ func writeChecked(ctx context.Context, sh *rootShell, p, content string) error {
 	f := terminal.ShellQuote(p)
 	dir := terminal.ShellQuote(path.Dir(p))
 	script := "f=" + f + "; b=''\n" +
-		"if [ -f \"$f\" ]; then b=$(mktemp " + dir + "/.morcheh.bak.XXXXXX) && cp -p \"$f\" \"$b\" || exit 1; fi\n" +
+		"if [ -f \"$f\" ]; then b=$(mktemp " + dir + "/.morche.bak.XXXXXX) && cp -p \"$f\" \"$b\" || exit 1; fi\n" +
 		"restore() { if [ -n \"$b\" ]; then mv -f \"$b\" \"$f\"; else rm -f \"$f\"; fi; }\n"
 	if content == "" {
 		script += "rm -f \"$f\"\n"
 	} else {
-		eof := "MORCHEH_" + randomSuffix()
-		script += "t=$(mktemp " + dir + "/.morcheh.XXXXXX) || exit 1\n" +
+		eof := "MORCHE_" + randomSuffix()
+		script += "t=$(mktemp " + dir + "/.morche.XXXXXX) || exit 1\n" +
 			"cat > \"$t\" <<'" + eof + "'\n" + content + eof + "\n" +
 			"chmod 644 \"$t\" && mv -f \"$t\" \"$f\" || { rm -f \"$t\" \"$b\"; exit 1; }\n"
 	}
@@ -1109,7 +1109,7 @@ func f2bTestScript(b Fail2banTestBody) (string, error) {
 	run := "fail2ban-regex --print-all-matched "
 	switch {
 	case b.Sample != "":
-		eof := "MORCHEH_" + randomSuffix()
+		eof := "MORCHE_" + randomSuffix()
 		return "t=$(mktemp) || exit 1\ncat > \"$t\" <<'" + eof + "'\n" + normalizeConfig(b.Sample) + eof + "\n" +
 			run + "\"$t\" " + pattern + ignore + " 2>&1\nrc=$?; rm -f \"$t\"; exit $rc\n", nil
 	case b.Log == "journal":

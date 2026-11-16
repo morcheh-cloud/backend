@@ -1,8 +1,8 @@
 // Package nginx is the nginx driver: it renders hosts into server blocks in
-// /etc/nginx/morcheh/hosts, wired in with one include in conf.d (http.d on
+// /etc/nginx/morche/hosts, wired in with one include in conf.d (http.d on
 // Alpine), and reads the live config back with nginx -T. Port forwards
-// (streams) go to /etc/nginx/morcheh/streams, inside a stream block in
-// /etc/nginx/morcheh/stream.conf that is included from nginx's main context.
+// (streams) go to /etc/nginx/morche/streams, inside a stream block in
+// /etc/nginx/morche/stream.conf that is included from nginx's main context.
 package nginx
 
 import (
@@ -12,12 +12,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 const (
 	// Dir holds everything Morche writes; HostsDir one file per host.
-	Dir      = "/etc/nginx/morcheh"
+	Dir      = "/etc/nginx/morche"
 	HostsDir = Dir + "/hosts"
 	// StreamsDir holds one file per port forward; StreamConf is the stream
 	// block that loads them.
@@ -28,19 +28,19 @@ const (
 	ReleasedDir = Dir + "/released"
 	// streamHook is the main-context include put where nginx loads modules
 	// (Debian, Ubuntu), else appended to nginx.conf.
-	streamHook     = "/etc/nginx/modules-enabled/zz-morcheh-stream.conf"
+	streamHook     = "/etc/nginx/modules-enabled/zz-morche-stream.conf"
 	streamHookLine = "include " + StreamConf + "; " + marker
 	// IncludeName is the file put in conf.d (or http.d) to load the hosts.
-	IncludeName = "morcheh.conf"
+	IncludeName = "morche.conf"
 	logDir      = "/var/log/nginx"
-	marker      = "# Managed by Morcheh"
+	marker      = "# Managed by Morche"
 )
 
 // AccessFormat is the sites' log format: nginx's combined one with the
 // domain, times, upstream and cache after it, so readers of combined lines
 // (the traffic counter) read both, and older lines still parse.
 const (
-	AccessFormat     = "morcheh_access"
+	AccessFormat     = "morche_access"
 	accessFormatText = `$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$host" $request_time "$upstream_response_time" "$upstream_cache_status" "$upstream_status" "$upstream_addr" $request_length "$request_id"`
 )
 
@@ -49,7 +49,7 @@ const (
 const Include = marker + `: sites added in the panel live in ` + HostsDir + `.
 # Changes made here are overwritten.
 log_format ` + AccessFormat + ` '` + accessFormatText + `';
-map $http_upgrade $morcheh_connection {
+map $http_upgrade $morche_connection {
     default upgrade;
     ''      close;
 }
@@ -62,7 +62,7 @@ include ` + HostsDir + `/*.conf;
 const StreamBlock = marker + `: ports forwarded in the panel live in ` + StreamsDir + `.
 # Changes made here are overwritten.
 stream {
-    log_format morcheh_stream '$remote_addr - - [$time_local] "$protocol" $status $bytes_sent "-" "-"';
+    log_format morche_stream '$remote_addr - - [$time_local] "$protocol" $status $bytes_sent "-" "-"';
     include ` + GeoDir + `/*.stream;
     include ` + StreamsDir + `/*.conf;
 }
@@ -95,8 +95,8 @@ func (Driver) Capabilities() proxy.Capabilities {
 func (Driver) Validate(proxy.HostConfig) []proxy.Problem { return nil }
 
 // AccessLog and ErrorLog are a host's own logs.
-func AccessLog(id string) string { return logDir + "/morcheh-" + id + ".access.log" }
-func ErrorLog(id string) string  { return logDir + "/morcheh-" + id + ".error.log" }
+func AccessLog(id string) string { return logDir + "/morche-" + id + ".access.log" }
+func ErrorLog(id string) string  { return logDir + "/morche-" + id + ".error.log" }
 
 // ---- Rendering ----
 
@@ -353,7 +353,7 @@ func renderStream(id string, h proxy.HostConfig, env proxy.Env) string {
 	if env.IPv6 {
 		w.line("listen [::]:%d%s;", h.ListenPort, udp)
 	}
-	w.line("access_log %s morcheh_stream;", AccessLog(id))
+	w.line("access_log %s morche_stream;", AccessLog(id))
 	w.line("error_log %s;", ErrorLog(id))
 	if len(h.Countries) == 0 {
 		access(w, t, h)
@@ -446,7 +446,7 @@ func proxyPass(w *writer, t string, h proxy.HostConfig, env proxy.Env, upstream 
 	w.line("proxy_set_header X-Forwarded-Host $host;")
 	if ws {
 		w.line("proxy_set_header Upgrade $http_upgrade;")
-		w.line("proxy_set_header Connection $morcheh_connection;")
+		w.line("proxy_set_header Connection $morche_connection;")
 	} else {
 		w.line(`proxy_set_header Connection "";`)
 	}
@@ -542,8 +542,8 @@ stream_state() {
 }
 write_stream() {
   mkdir -p ` + StreamsDir + ` || return 1
-  cat > ` + StreamConf + ` <<'MORCHEH_STREAM'
-` + StreamBlock + `MORCHEH_STREAM
+  cat > ` + StreamConf + ` <<'MORCHE_STREAM'
+` + StreamBlock + `MORCHE_STREAM
   chmod 644 ` + StreamConf + `
 }
 wire_stream() {
@@ -579,8 +579,8 @@ done
 const certbotVersion = `command -v certbot >/dev/null 2>&1 && echo "certbot $(certbot --version 2>&1 | sed -n 's/^certbot \([0-9.]*\).*/\1/p' | head -n 1)"
 `
 
-const sectionMark = "@@morcheh-section:"
-const fileMark = "@@morcheh-file:"
+const sectionMark = "@@morche-section:"
+const fileMark = "@@morche-file:"
 
 func (Driver) InspectScript() string {
 	return head + `M() { printf '\n` + sectionMark + `%s@@\n' "$1"; }
@@ -620,8 +620,8 @@ for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /et
 // on a hand-built nginx).
 func writeInclude() string {
 	return `mkdir -p "$inc" ` + HostsDir + ` || exit 1
-cat > "$inc/` + IncludeName + `" <<'MORCHEH_INCLUDE'
-` + Include + `MORCHEH_INCLUDE
+cat > "$inc/` + IncludeName + `" <<'MORCHE_INCLUDE'
+` + Include + `MORCHE_INCLUDE
 chmod 644 "$inc/` + IncludeName + `"
 `
 }
@@ -837,10 +837,10 @@ mkdir -p "$n/hosts" "$n/streams" "$n/auth"
 		if f.Config.IsStream() {
 			sub = "streams"
 		}
-		eof := "MORCHEH_HOST_" + strings.ReplaceAll(f.ID, "-", "")
+		eof := "MORCHE_HOST_" + strings.ReplaceAll(f.ID, "-", "")
 		b.WriteString(`cat > "$n/` + sub + `/` + f.ID + `.conf" <<'` + eof + "'\n" + f.Text + eof + "\n")
 		if f.Config.Auth.Mode == "basic" {
-			pw := "MORCHEH_AUTH_" + strings.ReplaceAll(f.ID, "-", "")
+			pw := "MORCHE_AUTH_" + strings.ReplaceAll(f.ID, "-", "")
 			b.WriteString(`cat > "$n/auth/` + f.ID + `.htpasswd" <<'` + pw + "'\n" + htpasswd(f.Config.Auth) + pw + "\n")
 		}
 	}
@@ -904,7 +904,7 @@ func (Driver) ActionScript(action, init string) (string, error) {
 func (Driver) LogScript(hostID, log string, lines int) string {
 	f := logDir + "/" + log + ".log"
 	if hostID != "" {
-		f = logDir + "/morcheh-" + hostID + "." + log + ".log"
+		f = logDir + "/morche-" + hostID + "." + log + ".log"
 	}
-	return fmt.Sprintf("if [ -f %s ]; then tail -n %d %s; else echo '@@morcheh-nolog'; fi\n", f, lines, f)
+	return fmt.Sprintf("if [ -f %s ]; then tail -n %d %s; else echo '@@morche-nolog'; fi\n", f, lines, f)
 }

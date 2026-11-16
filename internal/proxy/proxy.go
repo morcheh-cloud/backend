@@ -288,7 +288,7 @@ var (
 // ParsePurge reads the script's last line: answers matched and their KiB.
 func ParsePurge(out string) (n int, kb int64, ok bool) {
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if f := strings.Fields(line); len(f) == 3 && f[0] == "MORCHEH_PURGE" {
+		if f := strings.Fields(line); len(f) == 3 && f[0] == "MORCHE_PURGE" {
 			a, e1 := strconv.Atoi(f[1])
 			b, e2 := strconv.ParseInt(f[2], 10, 64)
 			n, kb, ok = a, b, e1 == nil && e2 == nil
@@ -985,8 +985,8 @@ func validateCacheKey(c Cache, add func(field, msg string, v any)) {
 // the scripts use to write it.
 func checkCustom(s string) string {
 	for i, line := range strings.Split(s, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "MORCHEH_") || strings.Contains(line, "@@morcheh-") {
-			return fmt.Sprintf("Line %d starts with a word Morche keeps for itself (MORCHEH_ / @@morcheh-).", i+1)
+		if strings.HasPrefix(strings.TrimSpace(line), "MORCHE_") || strings.Contains(line, "@@morche-") {
+			return fmt.Sprintf("Line %d starts with a word Morche keeps for itself (MORCHE_ / @@morche-).", i+1)
 		}
 	}
 	return checkAdvanced(s)
@@ -1348,7 +1348,7 @@ type Site struct {
 }
 
 // Certificate is one found on the server: certbot's live folders and the
-// ones Morche made or was given (/etc/ssl/morcheh).
+// ones Morche made or was given (/etc/ssl/morche).
 type Certificate struct {
 	Name        string     `json:"name"`
 	Certificate string     `json:"certificate"`
@@ -1356,7 +1356,7 @@ type Certificate struct {
 	Domains     []string   `json:"domains"`
 	Expires     *time.Time `json:"expires,omitempty"`
 	Issuer      string     `json:"issuer,omitempty" doc:"Who signed it, like Let's Encrypt; Self-signed when it signed itself"`
-	Source      string     `json:"source" enum:"certbot,morcheh" doc:"certbot = renewed by certbot on the server; morcheh = uploaded or self-signed through the panel, never renewed"`
+	Source      string     `json:"source" enum:"certbot,morche" doc:"certbot = renewed by certbot on the server; morche = uploaded or self-signed through the panel, never renewed"`
 }
 
 // Takeover is what an apply does with the hand-written default server

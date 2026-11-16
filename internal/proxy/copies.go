@@ -39,7 +39,7 @@ func ParseKeptPages(out string, domains []string) (KeptPages, bool) {
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Split(strings.TrimRight(line, "\r"), "\t")
 		switch {
-		case len(f) == 4 && f[0] == "MORCHEH_PAGES":
+		case len(f) == 4 && f[0] == "MORCHE_PAGES":
 			n, e1 := strconv.Atoi(f[1])
 			kb, e2 := strconv.ParseInt(f[2], 10, 64)
 			t, e3 := strconv.ParseInt(f[3], 10, 64)

@@ -46,10 +46,10 @@ db-up: up
 db-down: down
 
 psql:
-	docker compose exec postgres psql -U morcheh -d morcheh
+	docker compose exec postgres psql -U morche -d morche
 
 redis-cli:
-	docker compose exec redis redis-cli -a morcheh --no-auth-warning
+	docker compose exec redis redis-cli -a morche --no-auth-warning
 
 migrate-up:
 	go tool goose -dir migrations postgres "$(DATABASE_URL)" up
@@ -57,13 +57,13 @@ migrate-up:
 migrate-down:
 	go tool goose -dir migrations postgres "$(DATABASE_URL)" down
 
-# Handler tests against a real database: a fresh morcheh_test in the compose
+# Handler tests against a real database: a fresh morche_test in the compose
 # Postgres (make up first). Plain `go test ./...` skips them.
-TEST_DATABASE_URL ?= postgres://morcheh:morcheh@localhost:5433/morcheh_test?sslmode=disable
+TEST_DATABASE_URL ?= postgres://morche:morche@localhost:5433/morche_test?sslmode=disable
 test-integration:
-	docker compose exec -T postgres psql -U morcheh -d morcheh -c 'DROP DATABASE IF EXISTS morcheh_test' -c 'CREATE DATABASE morcheh_test'
+	docker compose exec -T postgres psql -U morche -d morche -c 'DROP DATABASE IF EXISTS morche_test' -c 'CREATE DATABASE morche_test'
 	go tool goose -dir migrations postgres "$(TEST_DATABASE_URL)" up
-	MORCHEH_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test ./internal/api -run Integration -count=1
+	MORCHE_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test ./internal/api -run Integration -count=1
 
 # usage: make migrate-new name=create_servers
 migrate-new:

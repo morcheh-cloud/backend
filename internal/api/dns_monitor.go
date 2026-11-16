@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 // dnsMonitor re-checks every DNS server's connection in the background, so a

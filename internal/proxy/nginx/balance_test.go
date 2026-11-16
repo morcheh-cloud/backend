@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestBalance(t *testing.T) {
@@ -34,16 +34,16 @@ func TestBalance(t *testing.T) {
 	}
 	got := Driver{}.Render("h1", h, proxy.Env{Version: "1.24.0"})
 	for _, want := range []string{
-		"upstream morcheh_h1_pool {",
-		"zone morcheh_h1_pool 64k;",
+		"upstream morche_h1_pool {",
+		"zone morche_h1_pool 64k;",
 		"hash $cookie_sid consistent;",
 		"server app.internal:443 weight=3 max_fails=3 fail_timeout=30s;",
 		"# second box",
 		"server 10.0.0.6:443 max_fails=3 fail_timeout=30s max_conns=50;",
 		"server 10.0.0.7:443 max_fails=3 fail_timeout=30s down;",
 		"keepalive 16;",
-		"proxy_pass https://morcheh_h1_pool/base;",
-		"proxy_pass https://morcheh_h1_pool;",
+		"proxy_pass https://morche_h1_pool/base;",
+		"proxy_pass https://morche_h1_pool;",
 		"proxy_set_header Host app.internal;",
 		"proxy_ssl_name app.internal;",
 		"proxy_next_upstream error timeout http_502;",
@@ -54,7 +54,7 @@ func TestBalance(t *testing.T) {
 			t.Errorf("missing %q in\n%s", want, got)
 		}
 	}
-	if strings.Index(got, "upstream morcheh_h1_pool") > strings.Index(got, "server {") {
+	if strings.Index(got, "upstream morche_h1_pool") > strings.Index(got, "server {") {
 		t.Errorf("upstream must come before the server block:\n%s", got)
 	}
 
@@ -74,7 +74,7 @@ func TestBalance(t *testing.T) {
 		"least_conn;",
 		"server 10.0.0.2:5432;",
 		"server 10.0.0.3:5432 backup;",
-		"proxy_pass morcheh_s1_pool;",
+		"proxy_pass morche_s1_pool;",
 		"proxy_next_upstream_tries 2;",
 	} {
 		if !strings.Contains(got, want) {

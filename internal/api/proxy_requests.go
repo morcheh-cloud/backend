@@ -18,9 +18,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/proxy"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/proxy"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // A site's requests, read from its access log on demand: a filtered list
@@ -280,7 +280,7 @@ func (h *proxyHandler) readAccessWAF(ctx context.Context, p sqlc.Proxy, d proxy.
 }
 
 // wafSplit separates the two reads' output (the data in between is base64).
-const wafSplit = "@@morcheh-waf"
+const wafSplit = "@@morche-waf"
 
 func (h *proxyHandler) siteOf(ctx context.Context, proxyID, hostID string) (sqlc.GetProxyRow, proxy.Driver, sqlc.ProxyHost, proxy.HostConfig, error) {
 	var cfg proxy.HostConfig

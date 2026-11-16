@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestClassifyAgent(t *testing.T) {

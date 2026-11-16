@@ -13,16 +13,16 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/docker"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/docker"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // ---- Settings ----
 
 const (
-	defaultProjectsDir  = "/opt/morcheh/projects"
+	defaultProjectsDir  = "/opt/morche/projects"
 	defaultScannerImage = "aquasec/trivy:latest"
 	defaultEventsHours  = 24
 	defaultStatsDays    = 30

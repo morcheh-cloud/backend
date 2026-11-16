@@ -15,8 +15,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ---- Docker daemon config (daemon.json) ----
@@ -24,7 +24,7 @@ import (
 // The engine's own settings file, read and written over SSH as root. The
 // file in use is the one dockerd was started with (--config-file), else
 // /etc/docker/daemon.json. A save is checked with `dockerd --validate` when
-// the engine has it, keeps the old copy beside it (.morcheh-bak), and can be
+// the engine has it, keeps the old copy beside it (.morche-bak), and can be
 // applied by a reload (SIGHUP: only some keys) or a restart, which puts the
 // old file back when Docker doesn't come up with the new one.
 
@@ -41,7 +41,7 @@ type DockerDaemonConfig struct {
 	Exists     bool       `json:"exists"`
 	Content    string     `json:"content"`
 	Revision   string     `json:"revision" doc:"sha256 of the content, empty when there is no file; send it back with a save"`
-	Previous   string     `json:"previous" doc:"The copy kept by the last save (.morcheh-bak), empty when none"`
+	Previous   string     `json:"previous" doc:"The copy kept by the last save (.morche-bak), empty when none"`
 	Writable   bool       `json:"writable" doc:"Morche can write it: root or sudo"`
 	Running    bool       `json:"running"`
 	Manager    string     `json:"manager" enum:"systemd,snap,openrc,sysv,none" doc:"What restarts Docker; none = Morche can't restart it (it is PID 1 in a container, or unknown)"`
@@ -107,7 +107,7 @@ if [ -f "$cfg" ]; then
   echo "mtime=$(stat -c %Y "$cfg")"
   echo "file=$(head -c 1048577 "$cfg" | base64 | tr -d '\n')"
 fi
-[ -f "$cfg.morcheh-bak" ] && echo "prev=$(head -c 1048577 "$cfg.morcheh-bak" | base64 | tr -d '\n')"
+[ -f "$cfg.morche-bak" ] && echo "prev=$(head -c 1048577 "$cfg.morche-bak" | base64 | tr -d '\n')"
 exit 0
 `
 
@@ -337,7 +337,7 @@ func registerDockerDaemon(api huma.API, h *serverHandler) {
 		Method:      http.MethodPut,
 		Path:        base,
 		Summary:     "Save Docker's daemon.json",
-		Description: "Checks the JSON (and `dockerd --validate` when there is one), keeps the old file as daemon.json.morcheh-bak, writes the new one and optionally reloads or restarts Docker. A restart that doesn't bring Docker back puts the old file back and restarts again (422 with Docker's log). 409 when the file changed since it was read.",
+		Description: "Checks the JSON (and `dockerd --validate` when there is one), keeps the old file as daemon.json.morche-bak, writes the new one and optionally reloads or restarts Docker. A restart that doesn't bring Docker back puts the old file back and restarts again (422 with Docker's log). 409 when the file changed since it was read.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct {
 		ServerIDPath
@@ -390,14 +390,14 @@ func registerDockerDaemon(api huma.API, h *serverHandler) {
 if [ -f "$cfg" ]; then had=1; cur=$(sha256sum < "$cfg" | cut -c1-64); fi
 [ "$force" = 1 ] || [ "$cur" = "$expected" ] || { echo "The file changed since it was read."; exit 9; }
 d=$(dirname "$cfg"); mkdir -p "$d" || exit 5
-new=$(mktemp "$d/.morcheh-daemon.XXXXXX") || exit 5
+new=$(mktemp "$d/.morche-daemon.XXXXXX") || exit 5
 trap 'rm -f "$new"' EXIT
 `)
 			b.WriteString("printf '%s' " + terminal.ShellQuote(base64.StdEncoding.EncodeToString([]byte(content))) + " | base64 -d > \"$new\" || exit 5\n")
 			b.WriteString(`if [ -s "$new" ] && command -v dockerd >/dev/null 2>&1 && dockerd --help 2>&1 | grep -q -- '--validate'; then
   out=$(dockerd --validate --config-file "$new" 2>&1) || { printf '%s\n' "$out"; exit 2; }
 fi
-[ "$had" = 1 ] && cp -p "$cfg" "$cfg.morcheh-bak"
+[ "$had" = 1 ] && cp -p "$cfg" "$cfg.morche-bak"
 if [ -s "$new" ]; then chmod 644 "$new" && mv -f "$new" "$cfg" || exit 5
 else rm -f "$cfg"; fi
 `)
@@ -408,7 +408,7 @@ else rm -f "$cfg"; fi
     if restart_docker 2>&1 && docker_up; then exit 0; fi
     echo "==> Docker didn't start with the new file; putting the old one back."
     docker_logs
-    if [ "$had" = 1 ]; then cp -p "$cfg.morcheh-bak" "$cfg"; else rm -f "$cfg"; fi
+    if [ "$had" = 1 ]; then cp -p "$cfg.morche-bak" "$cfg"; else rm -f "$cfg"; fi
     [ "$mgr" = systemd ] && systemctl reset-failed docker >/dev/null 2>&1
     if restart_docker >/dev/null 2>&1 && docker_up; then exit 3; fi
     exit 4 ;;

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Morche backend: the API server plus every tool the panel drives from this
-# machine. Build: docker build -t morcheh-backend .
+# machine. Build: docker build -t morche-backend .
 #
 #   ssh, sshpass ........ Ansible runs (key and password logins)
 #   ansible ............. playbooks, the module catalogue (ansible-doc) and the
@@ -30,6 +30,9 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 
 # ---- runtime ----------------------------------------------------------------
 FROM ubuntu:${UBUNTU_VERSION}
+LABEL org.opencontainers.image.source=https://github.com/morche-cloud/backend \
+      org.opencontainers.image.title="Morche backend" \
+      org.opencontainers.image.description="API for Morche: SSH-based server management and monitoring"
 ARG UBUNTU_VERSION
 ARG PG_CLIENT=18
 ARG MONGO_SERIES=8.0
@@ -71,11 +74,11 @@ COPY migrations /app/migrations
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # A plain user: nothing the server or its tools run needs root here.
-RUN useradd --create-home --uid 10001 --user-group --shell /bin/sh morcheh && \
-    install -d -o morcheh -g morcheh /home/morcheh/log-archives && \
+RUN useradd --create-home --uid 10001 --user-group --shell /bin/sh morche && \
+    install -d -o morche -g morche /home/morche/log-archives && \
     chmod 0755 /usr/local/bin/docker-entrypoint.sh
-USER morcheh
-WORKDIR /home/morcheh
+USER morche
+WORKDIR /home/morche
 
 ENV APP_ENV=production \
     HTTP_ADDR=:8080 \

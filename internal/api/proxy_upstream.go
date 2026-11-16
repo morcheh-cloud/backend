@@ -11,8 +11,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/proxy"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/proxy"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 type ProxyUpstreamTest struct {
@@ -76,9 +76,9 @@ func (h *proxyHandler) registerUpstreamTest(api huma.API, base string, tags []st
 	})
 }
 
-const upstreamMark = "MORCHEH_UPSTREAM"
+const upstreamMark = "MORCHE_UPSTREAM"
 
-const resolveMark = "MORCHEH_RESOLVE"
+const resolveMark = "MORCHE_RESOLVE"
 
 // curlInBox runs the upstream check from the server inside the container's
 // network namespace (nsenter), for an image without curl. first is what the

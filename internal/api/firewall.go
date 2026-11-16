@@ -16,12 +16,12 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/firewall"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/sshprobe"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/firewall"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ---- Types ----
@@ -66,7 +66,7 @@ type FirewallOverview struct {
 	Rules          []firewall.FilterRule `json:"rules" doc:"In the order the firewall applies them"`
 	Forwards       []firewall.Forward    `json:"forwards" doc:"Ports sent on to another port or machine"`
 	SSHPort        int                   `json:"ssh_port" doc:"The port Morche reaches this server on; 0 if unknown" example:"22"`
-	MorchehIP      string                `json:"morcheh_ip" doc:"The address this server sees Morche's connection from"`
+	MorcheIP       string                `json:"morche_ip" doc:"The address this server sees Morche's connection from"`
 	YourIP         string                `json:"your_ip" doc:"The address of the person asking, when it isn't a loopback one"`
 	Capabilities   FirewallCapabilities  `json:"capabilities"`
 	Pending        *FirewallPending      `json:"pending,omitempty" doc:"A change waiting to be kept; while it's here, other changes are refused"`
@@ -146,8 +146,8 @@ type FirewallLog struct {
 // ---- Routes ----
 
 const (
-	fwMarker      = "@@morcheh-fw@@"
-	fwDir         = "/run/morcheh-firewall"
+	fwMarker      = "@@morche-fw@@"
+	fwDir         = "/run/morche-firewall"
 	fwInstallKind = "firewall-install"
 	// How long a change stands before the server undoes it by itself. A fresh
 	// connection has to fail inside it (sshprobe gives up after 15 s).
@@ -442,7 +442,7 @@ func parseFirewall(s map[string]string, access, conn string) *fwState {
 	o.Forwards = []firewall.Forward{}
 	o.Recommended = fwPackage(host.pm)
 	if f := strings.Fields(conn); len(f) == 4 {
-		o.MorchehIP = f[0]
+		o.MorcheIP = f[0]
 		o.SSHPort, _ = strconv.Atoi(f[3])
 	}
 
@@ -492,7 +492,7 @@ func parseFirewall(s map[string]string, access, conn string) *fwState {
 	}
 	if o.SSHPort != 0 {
 		for i := range o.Rules {
-			o.Rules[i].ProtectsSSH = o.Rules[i].Lets(o.SSHPort, o.MorchehIP)
+			o.Rules[i].ProtectsSSH = o.Rules[i].Lets(o.SSHPort, o.MorcheIP)
 		}
 	}
 	if p, ok := s["pending"]; ok {
@@ -767,7 +767,7 @@ func (st *fwState) keepsSSH(removed []string) bool {
 }
 
 func (st *fwState) stops(in firewall.Input) bool {
-	return st.o.SSHPort != 0 && in.Stops(st.o.SSHPort, st.o.MorchehIP, st.o.YourIP)
+	return st.o.SSHPort != 0 && in.Stops(st.o.SSHPort, st.o.MorcheIP, st.o.YourIP)
 }
 
 func describeRule(in firewall.Input) string {
@@ -826,7 +826,7 @@ func (st *fwState) planUpdate(id string, in firewall.Input) (fwPlan, error) {
 	}
 	cmds := append([]string{st.deleteCommand(old)}, add...)
 	lets := firewall.FilterRule{Direction: in.Direction, Action: in.Action, Protocol: in.Protocol, Port: in.Port, From: in.From}
-	stillLets := st.o.SSHPort != 0 && in.Service == "" && lets.Lets(st.o.SSHPort, st.o.MorchehIP)
+	stillLets := st.o.SSHPort != 0 && in.Service == "" && lets.Lets(st.o.SSHPort, st.o.MorcheIP)
 	risky := st.o.Active && (st.stops(in) || old.ProtectsSSH && !stillLets && !st.keepsSSH([]string{id}))
 	return fwPlan{cmds: st.finish(cmds), risky: risky, summary: "Change rule: " + describeRule(in)}, nil
 }
@@ -897,7 +897,7 @@ func (st *fwState) planMove(id, before string) (fwPlan, error) {
 	}
 	risky := false
 	if st.o.Active && st.o.SSHPort != 0 {
-		for _, ip := range []string{st.o.MorchehIP, st.o.YourIP} {
+		for _, ip := range []string{st.o.MorcheIP, st.o.YourIP} {
 			if ip != "" && firstMatchLets(order, st.o.SSHPort, ip) && !firstMatchLets(moved, st.o.SSHPort, ip) {
 				risky = true
 			}
@@ -1280,9 +1280,9 @@ umask 077
 mkdir -p "$d" || { echo "Could not write to $d"; exit ` + strconv.Itoa(fwExitPrepare) + `; }
 rm -f "$d/armed"
 tar -C / -cf "$d/snap.tar" ` + paths + ` 2>/dev/null || { echo "Could not save the current firewall configuration, so nothing was changed"; exit ` + strconv.Itoa(fwExitPrepare) + `; }
-cat > "$d/rollback.sh" <<'MORCHEH_ROLLBACK'
+cat > "$d/rollback.sh" <<'MORCHE_ROLLBACK'
 ` + rollback + `
-MORCHEH_ROLLBACK
+MORCHE_ROLLBACK
 cat /proc/sys/net/ipv4/ip_forward > "$d/ip_forward" 2>/dev/null
 printf '%s' ` + terminal.ShellQuote(p.summary) + ` > "$d/summary"
 echo $(( $(date +%s) + ` + strconv.Itoa(fwWindow) + ` )) > "$d/expires"
@@ -1324,8 +1324,8 @@ fail() {
 // unpacked over, so files a change added go too.
 func (st *fwState) rollback() (paths, script string, err error) {
 	restore := func(dir string) string {
-		return `mv ` + dir + ` ` + dir + `.morcheh-undo 2>/dev/null
-if tar -C / -xf "$d/snap.tar"; then rm -rf ` + dir + `.morcheh-undo; else mv ` + dir + `.morcheh-undo ` + dir + `; fi
+		return `mv ` + dir + ` ` + dir + `.morche-undo 2>/dev/null
+if tar -C / -xf "$d/snap.tar"; then rm -rf ` + dir + `.morche-undo; else mv ` + dir + `.morche-undo ` + dir + `; fi
 `
 	}
 	head := fwEnv + `d=` + fwDir + `

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // Redirects are two maps at http level: $<tag>_rd on the decoded path

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestParseAccess(t *testing.T) {
@@ -57,7 +57,7 @@ func TestParseAccessOutput(t *testing.T) {
 	if !c.Reset || c.Capped || len(c.Lines) != 2 {
 		t.Fatalf("plain: %+v", c)
 	}
-	c, _ = d.ParseAccessOutput("@@cap 100\n@@morcheh-nolog\n")
+	c, _ = d.ParseAccessOutput("@@cap 100\n@@morche-nolog\n")
 	if !c.Missing {
 		t.Fatal("missing")
 	}

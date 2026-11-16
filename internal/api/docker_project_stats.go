@@ -14,9 +14,9 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/cmdlog"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/docker"
+	"github.com/morche/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/docker"
 )
 
 // Live numbers for compose projects: one measurement covers every compose

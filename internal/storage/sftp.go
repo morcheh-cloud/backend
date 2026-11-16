@@ -15,7 +15,7 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/sshprobe"
 )
 
 // SFTP over its own SSH connection (servers already in Morche have theirs
@@ -163,7 +163,7 @@ func (s *sftpfs) Put(ctx context.Context, p string, r io.Reader, _ int64) error 
 	if err := s.c.MkdirAll(dir); err != nil {
 		return sftpErr(err)
 	}
-	tmp := path.Join(dir, "."+path.Base(p)+".morcheh-"+fmt.Sprint(time.Now().UnixNano()))
+	tmp := path.Join(dir, "."+path.Base(p)+".morche-"+fmt.Sprint(time.Now().UnixNano()))
 	f, err := s.c.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 	if err != nil {
 		return sftpErr(err)

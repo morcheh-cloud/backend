@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/morcheh/backend/internal/dbmon"
+	"github.com/morche/backend/internal/dbmon"
 )
 
 func dial(ctx context.Context, env Env, network, address string) (net.Conn, error) {
@@ -416,7 +416,7 @@ func checkSMTP(ctx context.Context, c MonitorConfig, s MonitorSecrets, env Env) 
 		return down("SMTP failed: %s", errText(err))
 	}
 	defer cl.Close()
-	if err := cl.Hello("morcheh"); err != nil {
+	if err := cl.Hello("morche"); err != nil {
 		return down("EHLO was refused: %s", errText(err))
 	}
 	r := CheckResult{Status: Up, Code: "220", Message: "Greeted: " + clip(strings.TrimPrefix(strings.TrimSpace(banner), "220 "), 160)}

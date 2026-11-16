@@ -38,7 +38,7 @@ type Found struct {
 	Name     string
 	Kind     string
 	// "found": the scan saw it on the server (Morche's own installs are
-	// "morcheh").
+	// "morche").
 	Origin          string
 	Version         string
 	Latest          string

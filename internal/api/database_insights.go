@@ -8,7 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 // Insights for the Databases page, read from the monitor's samples (one per

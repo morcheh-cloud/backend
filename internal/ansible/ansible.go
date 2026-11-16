@@ -26,7 +26,7 @@ import (
 	"time"
 )
 
-//go:embed callback/morcheh.py
+//go:embed callback/morche.py
 var callbackPlugin []byte
 
 // Sandbox modes.
@@ -125,7 +125,7 @@ func Run(ctx context.Context, c Config, st Status, s Spec, hook Hook) (int, erro
 		ctx, cancel = context.WithTimeout(ctx, c.Timeout)
 		defer cancel()
 	}
-	dir, err := os.MkdirTemp("", "morcheh-ansible-")
+	dir, err := os.MkdirTemp("", "morche-ansible-")
 	if err != nil {
 		return -1, err
 	}
@@ -278,9 +278,9 @@ func prepare(dir string, s Spec) error {
 		}
 	}
 	files := map[string][]byte{
-		"playbook.yml":       []byte(s.Playbook),
-		"plugins/morcheh.py": callbackPlugin,
-		"ansible.cfg":        []byte(config(dir)),
+		"playbook.yml":      []byte(s.Playbook),
+		"plugins/morche.py": callbackPlugin,
+		"ansible.cfg":       []byte(config(dir)),
 	}
 	if strings.TrimSpace(s.ExtraVars) != "" {
 		files["vars.yml"] = []byte(s.ExtraVars)
@@ -302,7 +302,7 @@ host_key_checking = True
 retry_files_enabled = False
 interpreter_python = auto_silent
 callback_plugins = ` + filepath.Join(dir, "plugins") + `
-callbacks_enabled = morcheh
+callbacks_enabled = morche
 local_tmp = ` + filepath.Join(dir, "tmp") + `
 nocows = True
 force_color = True
@@ -330,14 +330,14 @@ func environ(dir, playbook string) []string {
 		"ANSIBLE_FORCE_COLOR=1",
 		"PYTHONUNBUFFERED=1",
 		"PYTHONDONTWRITEBYTECODE=1",
-		"MORCHEH_EVENTS_FD=3",
+		"MORCHE_EVENTS_FD=3",
 	}
 }
 
 // CleanStale removes the folders of runs that never got to clean up after
 // themselves (Morche was killed): they hold decrypted credentials.
 func CleanStale(olderThan time.Duration) {
-	dirs, _ := filepath.Glob(filepath.Join(os.TempDir(), "morcheh-ansible-*"))
+	dirs, _ := filepath.Glob(filepath.Join(os.TempDir(), "morche-ansible-*"))
 	for _, d := range dirs {
 		if fi, err := os.Stat(d); err == nil && time.Since(fi.ModTime()) > olderThan {
 			_ = os.RemoveAll(d)

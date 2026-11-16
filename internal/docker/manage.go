@@ -182,7 +182,7 @@ func (c *Client) RecreateWait(ctx context.Context, id string, stop int) (string,
 		body["NetworkingConfig"] = map[string]any{"EndpointsConfig": map[string]any{mode: ep}}
 	}
 
-	old := name + "-morcheh-old-" + strconv.FormatInt(time.Now().Unix(), 36)
+	old := name + "-morche-old-" + strconv.FormatInt(time.Now().Unix(), 36)
 	if err := c.Rename(ctx, id, old); err != nil {
 		return "", err
 	}

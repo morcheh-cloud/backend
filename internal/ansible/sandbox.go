@@ -122,7 +122,7 @@ func tryBwrap(ctx context.Context, playbook string) error {
 	if err != nil {
 		return errors.New("bwrap isn't installed (install bubblewrap)")
 	}
-	dir, err := os.MkdirTemp("", "morcheh-ansible-check-")
+	dir, err := os.MkdirTemp("", "morche-ansible-check-")
 	if err != nil {
 		return err
 	}

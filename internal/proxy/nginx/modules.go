@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // Extra modules from the distribution's packages: Brotli, the ModSecurity
@@ -23,9 +23,9 @@ const (
 	WAFConf = WAFDir + "/crs.conf"
 	// wafLogDir holds one firewall log per site, outside nginx's own logs
 	// (whose rotation would leave ModSecurity writing to the old file).
-	wafLogDir = logDir + "/morcheh-waf"
+	wafLogDir = logDir + "/morche-waf"
 	// wafRotate keeps those logs small.
-	wafRotate = "/etc/logrotate.d/morcheh-waf"
+	wafRotate = "/etc/logrotate.d/morche-waf"
 )
 
 // WAFLog is a host's firewall log: one JSON line per flagged request.
@@ -232,8 +232,8 @@ func wafPost(proxy.Setup) string {
 setup=${crs% *}; rules=${crs#* }
 mkdir -p ` + WAFDir + ` ` + wafLogDir + ` || exit 1
 chmod 755 ` + wafLogDir + `
-cat > ` + WAFBase + ` <<'MORCHEH_WAF_BASE'
-` + wafBase + `MORCHEH_WAF_BASE
+cat > ` + WAFBase + ` <<'MORCHE_WAF_BASE'
+` + wafBase + `MORCHE_WAF_BASE
 for u in /etc/nginx/unicode.mapping /etc/modsecurity/unicode.mapping /usr/share/modsecurity-crs/unicode.mapping; do
   [ -f "$u" ] && { echo "SecUnicodeMapFile $u 20127" >> ` + WAFBase + `; break; }
 done
@@ -251,7 +251,7 @@ if [ -d /etc/logrotate.d ]; then
   printf '%s\n' '` + marker + `' '` + wafLogDir + `/*.log {' '    weekly' '    rotate 4' '    maxsize 20M' '    missingok' '    notifempty' '    compress' '    delaycompress' '    copytruncate' '}' > ` + wafRotate + `
 fi
 # The rules only load where a site uses them: try them once in http {}.
-t="$inc/zz-morcheh-waf-test.conf"
+t="$inc/zz-morche-waf-test.conf"
 echo 'modsecurity_rules_file ` + WAFConf + `;' > "$t"
 if ! out=$(nginx -t 2>&1); then
   rm -f "$t"
@@ -273,8 +273,8 @@ func streamGeoPost(su proxy.Setup) string {
 	test := strconv.Itoa(proxy.ExitTestFailed)
 	return `if [ ! -s ` + GeoDB + ` ]; then
 ` + geoData(su) + geoCronPart + `fi
-cat > ` + GeoStream + ` <<'MORCHEH_GEO_STREAM'
-` + geoStreamConf + `MORCHEH_GEO_STREAM
+cat > ` + GeoStream + ` <<'MORCHE_GEO_STREAM'
+` + geoStreamConf + `MORCHE_GEO_STREAM
 chmod 644 ` + GeoStream + `
 write_stream || exit 1
 if ! out=$(nginx -t 2>&1); then

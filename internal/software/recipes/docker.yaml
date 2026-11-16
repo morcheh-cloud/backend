@@ -43,9 +43,9 @@ install: |
   else
     command -v curl >/dev/null 2>&1 || { pkg_refresh; pkg_install curl; }
     echo "Running Docker's install script (get.docker.com)…"
-    curl -fsSL https://get.docker.com -o /tmp/morcheh-get-docker.sh
-    sh /tmp/morcheh-get-docker.sh
-    rm -f /tmp/morcheh-get-docker.sh
+    curl -fsSL https://get.docker.com -o /tmp/morche-get-docker.sh
+    sh /tmp/morche-get-docker.sh
+    rm -f /tmp/morche-get-docker.sh
   fi
   systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true
   docker version

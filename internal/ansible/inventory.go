@@ -75,7 +75,7 @@ func Names(names []string) []string {
 
 // alias is what ssh calls a host in known_hosts, so two servers behind one
 // address with different keys can't vouch for each other.
-func alias(h Host) string { return "morcheh-" + h.ServerID }
+func alias(h Host) string { return "morche-" + h.ServerID }
 
 // writeInventory writes everything a run needs to reach its hosts into dir:
 // inventory.json, known_hosts and a key file per key login. Keys with a
@@ -105,8 +105,8 @@ func writeInventory(dir string, hosts []Host) error {
 			"ansible_port":           h.Port,
 			"ansible_user":           h.User,
 			"ansible_ssh_extra_args": "-o HostKeyAlias=" + alias(h),
-			"morcheh_server_id":      h.ServerID,
-			"morcheh_server_name":    h.ServerName,
+			"morche_server_id":       h.ServerID,
+			"morche_server_name":     h.ServerName,
 		}
 		switch {
 		case h.PrivateKey != "":

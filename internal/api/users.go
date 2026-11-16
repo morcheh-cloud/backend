@@ -14,9 +14,9 @@ import (
 	"github.com/GehirnInc/crypt/sha512_crypt"
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
-	"github.com/morcheh/backend/internal/users"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
+	"github.com/morche/backend/internal/users"
 )
 
 // ---- Types ----
@@ -175,7 +175,7 @@ func registerUsers(api huma.API, h *serverHandler) {
 		Path:        "/servers/{id}/users/{user}",
 		Summary:     "Change an account",
 		Description: "Only the fields sent change. sudo rewrites how the account gets sudo: the sudo group, or a rule in " +
-			"/etc/sudoers.d/morcheh-<name>; its own rules elsewhere are commented out. Every sudoers change is checked with visudo " +
+			"/etc/sudoers.d/morche-<name>; its own rules elsewhere are commented out. Every sudoers change is checked with visudo " +
 			"and put back when it fails.",
 		Tags: tags,
 	}, func(ctx context.Context, in *struct {
@@ -657,7 +657,7 @@ func passwordScript(o *UsersOverview, name, password string, mustChange bool) (s
 	var s string
 	switch {
 	case o.has("chpasswd"):
-		eof := "MORCHEH_" + randomSuffix()
+		eof := "MORCHE_" + randomSuffix()
 		s = "chpasswd -e <<'" + eof + "'\n" + name + ":" + hash + "\n" + eof + "\n"
 	case o.has("usermod"):
 		s = "usermod -p " + q(hash) + " " + q(name) + "\n"
@@ -1021,7 +1021,7 @@ func managedSudoers(name string) string {
 
 // sudoScript gives u (called name once the change is done) one sudo level:
 //   - none: out of every group that grants sudo, no rule of its own
-//   - password: in the sudo group, else a rule in sudoers.d/morcheh-<name>
+//   - password: in the sudo group, else a rule in sudoers.d/morche-<name>
 //   - nopasswd: a NOPASSWD rule there, and out of the sudo groups
 //
 // Its rules in other files are commented out. sudoers changes are checked
@@ -1117,7 +1117,7 @@ func sudoScript(o *UsersOverview, u *users.User, name, level string, lenient boo
 	var restore, cleanup []string
 	for i, e := range edits {
 		v := fmt.Sprintf("b%d", i)
-		fmt.Fprintf(&s, "%s=$(mktemp %s/.morcheh.bak.XXXXXX) && cp -p %s \"$%s\" || exit 1\n", v, q(path.Dir(e.file)), q(e.file), v)
+		fmt.Fprintf(&s, "%s=$(mktemp %s/.morche.bak.XXXXXX) && cp -p %s \"$%s\" || exit 1\n", v, q(path.Dir(e.file)), q(e.file), v)
 		restore = append(restore, fmt.Sprintf("mv -f \"$%s\" %s", v, q(e.file)))
 		cleanup = append(cleanup, fmt.Sprintf("rm -f \"$%s\"", v))
 	}
@@ -1127,7 +1127,7 @@ func sudoScript(o *UsersOverview, u *users.User, name, level string, lenient boo
 	}
 	for i, f := range managedFiles {
 		v := fmt.Sprintf("m%d", i)
-		fmt.Fprintf(&s, "%s=''; if [ -f %s ]; then %s=$(mktemp /etc/sudoers.d/.morcheh.bak.XXXXXX) && cp -p %s \"$%s\" || exit 1; fi\n", v, q(f), v, q(f), v)
+		fmt.Fprintf(&s, "%s=''; if [ -f %s ]; then %s=$(mktemp /etc/sudoers.d/.morche.bak.XXXXXX) && cp -p %s \"$%s\" || exit 1; fi\n", v, q(f), v, q(f), v)
 		restore = append(restore, fmt.Sprintf("if [ -n \"$%s\" ]; then mv -f \"$%s\" %s; else rm -f %s; fi", v, v, q(f), q(f)))
 		cleanup = append(cleanup, fmt.Sprintf("[ -z \"$%s\" ] || rm -f \"$%s\"", v, v))
 	}
@@ -1144,7 +1144,7 @@ func sudoScript(o *UsersOverview, u *users.User, name, level string, lenient boo
 	if rule != "" {
 		// sudo skips names with a dot, so the temp file is ignored until
 		// it's checked and moved in place.
-		s.WriteString("t=$(mktemp /etc/sudoers.d/.morcheh.XXXXXX) || { restore; exit 1; }\n" +
+		s.WriteString("t=$(mktemp /etc/sudoers.d/.morche.XXXXXX) || { restore; exit 1; }\n" +
 			"printf '%s\\n' " + q("# Added by Morche") + " " + q(rule) + " > \"$t\" && chmod 440 \"$t\" || { rm -f \"$t\"; restore; exit 1; }\n" +
 			"if ! out=$(visudo -cf \"$t\" 2>&1); then rm -f \"$t\"; restore; printf '%s\\n' \"$out\" >&2; exit 1; fi\n" +
 			"mv -f \"$t\" " + q(newFile) + " || { restore; exit 1; }\n")

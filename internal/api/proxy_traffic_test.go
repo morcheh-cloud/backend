@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestManagedLogs(t *testing.T) {
@@ -13,7 +13,7 @@ func TestManagedLogs(t *testing.T) {
 		{File: "/data/nginx/proxy_host/3.conf", Line: 1, Text: "server {\n  access_log /data/logs/shared.log;\n}"},
 		{File: "/etc/nginx/conf.d/x.conf", Line: 1, Text: "server {\n  access_log /dev/stdout;\n}"},
 		{File: "/etc/nginx/conf.d/y.conf", Line: 1, Text: "server {\n  access_log off;\n}"},
-		{File: "/etc/nginx/morcheh/a.conf", Line: 1, Managed: true, Text: "access_log /var/log/a.log;"},
+		{File: "/etc/nginx/morche/a.conf", Line: 1, Managed: true, Text: "access_log /var/log/a.log;"},
 	}
 	got := managedLogs(sites)
 	if len(got) != 1 {

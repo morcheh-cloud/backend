@@ -14,9 +14,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/proxy"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/proxy"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // Live traffic: each proxy's access logs are read from where the last read

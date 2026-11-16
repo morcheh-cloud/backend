@@ -10,9 +10,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/procs"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/procs"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 type ProcessPath struct {

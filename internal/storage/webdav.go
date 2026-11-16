@@ -193,7 +193,7 @@ func (d *davfs) Open(ctx context.Context, p string) (File, error) {
 func (d *davfs) Put(_ context.Context, p string, r io.Reader, size int64) error {
 	if size < 0 {
 		// The client would buffer the whole stream in memory: spool to disk.
-		tmp, err := os.CreateTemp("", "morcheh-dav-*")
+		tmp, err := os.CreateTemp("", "morche-dav-*")
 		if err != nil {
 			return err
 		}

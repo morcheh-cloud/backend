@@ -10,10 +10,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/dbmon"
-	"github.com/morcheh/backend/internal/notify"
-	"github.com/morcheh/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/dbmon"
+	"github.com/morche/backend/internal/notify"
+	"github.com/morche/backend/internal/sshprobe"
 )
 
 // Alert rules are checked here: server metrics against every resource sample

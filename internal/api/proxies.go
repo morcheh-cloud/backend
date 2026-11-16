@@ -16,11 +16,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/proxy"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/proxy"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // Reverse proxies: a proxy kind (nginx first) on one of the panel's servers,
@@ -1899,7 +1899,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			if err != nil {
 				return err
 			}
-			if strings.TrimSpace(text) == "@@morcheh-nolog" && in.Host == "" && sh.box != nil {
+			if strings.TrimSpace(text) == "@@morche-nolog" && in.Host == "" && sh.box != nil {
 				// The official images send nginx's own logs to the
 				// container's output.
 				text, err = sh.hostRun(ctx, containerLogScript(*sh.box, in.Log, in.Lines))
@@ -1907,7 +1907,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 					return err
 				}
 			}
-			if strings.TrimSpace(text) == "@@morcheh-nolog" {
+			if strings.TrimSpace(text) == "@@morche-nolog" {
 				out.Body.Missing = true
 				return nil
 			}

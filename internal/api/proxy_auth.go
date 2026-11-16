@@ -5,7 +5,7 @@ import (
 
 	"github.com/GehirnInc/crypt/sha512_crypt"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // hashPasswords turns the passwords sent for basic auth into hashes. A user

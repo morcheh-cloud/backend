@@ -13,11 +13,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/sshprobe"
-	"github.com/morcheh/backend/internal/sysstats"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/sysstats"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // Insights for the Servers page: uptime and response time from every

@@ -22,7 +22,7 @@ import (
 // containers on Docker's bridges.
 
 // ContainerChain is Morche's chain, jumped to from DOCKER-USER.
-const ContainerChain = "MORCHEH-DOCKER"
+const ContainerChain = "MORCHE-DOCKER"
 
 // ContainerLimit says who may reach one published port (or range).
 type ContainerLimit struct {
@@ -157,7 +157,7 @@ func ContainerRestore(limits []ContainerLimit, v6 bool) string {
 	return "*filter\n:" + ContainerChain + " - [0:0]\n" + strings.Join(rules, "\n") + "\nCOMMIT\n"
 }
 
-// ContainerLoaded says whether `iptables -S MORCHEH-DOCKER` output holds
+// ContainerLoaded says whether `iptables -S MORCHE-DOCKER` output holds
 // exactly the rules the limits make.
 func ContainerLoaded(limits []ContainerLimit, v6 bool, live string) bool {
 	var got []string

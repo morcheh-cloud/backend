@@ -13,7 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const redisClientName = "morcheh-monitor"
+const redisClientName = "morche-monitor"
 
 type redisEngine struct {
 	cfg Config

@@ -214,10 +214,10 @@ VALUES (@monitor_id, sqlc.narg('server_id'))
 ON CONFLICT (monitor_id, server_id) DO NOTHING;
 
 -- name: KeepMonitorLocations :exec
--- Removes the locations not listed ("morcheh" or a server id).
+-- Removes the locations not listed ("morche" or a server id).
 DELETE FROM monitor_locations
 WHERE monitor_id = @monitor_id
-  AND NOT (coalesce(server_id::text, 'morcheh') = ANY (@keep::text[]));
+  AND NOT (coalesce(server_id::text, 'morche') = ANY (@keep::text[]));
 
 -- name: SaveMonitorLocation :exec
 UPDATE monitor_locations SET

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ufw keeps its rules as `### tuple ###` comments in user.rules and

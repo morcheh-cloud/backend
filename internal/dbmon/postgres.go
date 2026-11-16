@@ -38,7 +38,7 @@ func openPostgres(ctx context.Context, cfg Config) (engine, error) {
 	cc.ConnectTimeout = cfg.timeout()
 	cc.Fallbacks = nil
 	cc.RuntimeParams = map[string]string{
-		"application_name":  "morcheh-monitor",
+		"application_name":  "morche-monitor",
 		"statement_timeout": strconv.Itoa(int(cfg.timeout().Milliseconds())),
 		"lock_timeout":      "2000",
 	}

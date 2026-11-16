@@ -15,8 +15,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ---- Types ----

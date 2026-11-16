@@ -64,7 +64,7 @@ func TestCustom(t *testing.T) {
 	if p := Validate(h); len(p) != 0 {
 		t.Fatalf("unexpected problems: %v", p)
 	}
-	for _, bad := range []string{"server {", "}", "MORCHEH_HOST_x", "# @@morcheh-file:x"} {
+	for _, bad := range []string{"server {", "}", "MORCHE_HOST_x", "# @@morche-file:x"} {
 		h.Custom = bad
 		if p := Validate(h); len(p) == 0 || p[0].Field != "custom" {
 			t.Errorf("%q: want a custom problem, got %v", bad, p)

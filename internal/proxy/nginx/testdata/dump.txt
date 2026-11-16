@@ -17,13 +17,13 @@ stream {
 	}
 }
 
-# configuration file /etc/nginx/conf.d/morcheh.conf:
-# Managed by Morcheh: sites added in the panel live in /etc/nginx/morcheh/hosts.
-map $http_upgrade $morcheh_connection {
+# configuration file /etc/nginx/conf.d/morche.conf:
+# Managed by Morche: sites added in the panel live in /etc/nginx/morche/hosts.
+map $http_upgrade $morche_connection {
     default upgrade;
     ''      close;
 }
-include /etc/nginx/morcheh/hosts/*.conf;
+include /etc/nginx/morche/hosts/*.conf;
 
 # configuration file /etc/nginx/sites-enabled/default:
 server {
@@ -49,7 +49,7 @@ server {
 	}
 }
 
-# configuration file /etc/nginx/morcheh/hosts/0193.conf:
+# configuration file /etc/nginx/morche/hosts/0193.conf:
 server {
     listen 80;
     server_name app.example.com;

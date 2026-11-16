@@ -55,7 +55,7 @@ func restore(t *testing.T, container string, tg Target, o RestoreOptions, file [
 }
 
 func TestLiveRestorePostgres(t *testing.T) {
-	const c = "morcheh-test-postgres-1"
+	const c = "morche-test-postgres-1"
 	psql := func(db, sql string) string {
 		return sh(t, c, "env", "PGPASSWORD=colony", "psql", "-U", "ant", "-h", "127.0.0.1", "-d", db, "-tAc", sql)
 	}
@@ -91,7 +91,7 @@ func TestLiveRestorePostgres(t *testing.T) {
 
 func TestLiveRestoreMySQLIncremental(t *testing.T) {
 	// The mysql image has no mysqlbinlog; the mariadb one has its own.
-	const c = "morcheh-test-mariadb-1"
+	const c = "morche-test-mariadb-1"
 	my := func(sql string) string {
 		return sh(t, c, "mariadb", "-uroot", "-pcolony", "-N", "-e", sql)
 	}
@@ -137,7 +137,7 @@ func TestLiveRestoreMySQLIncremental(t *testing.T) {
 }
 
 func TestLiveRestoreMongo(t *testing.T) {
-	const c = "morcheh-test-mongo-1"
+	const c = "morche-test-mongo-1"
 	mongo := func(js string) string {
 		return sh(t, c, "mongosh", "--quiet", "-u", "ant", "-p", "colony", "--authenticationDatabase", "admin", "--eval", js)
 	}
@@ -159,7 +159,7 @@ func TestLiveRestoreMongo(t *testing.T) {
 }
 
 func TestLiveRestoreMSSQLDifferential(t *testing.T) {
-	const c = "morcheh-test-mssql-1"
+	const c = "morche-test-mssql-1"
 	q := func(sql string) string {
 		return sh(t, c, "/opt/mssql-tools18/bin/sqlcmd", "-C", "-S", "127.0.0.1", "-U", "sa", "-P", "Colony-2026!", "-h-1", "-W", "-Q", "SET NOCOUNT ON; "+sql)
 	}

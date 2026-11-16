@@ -13,7 +13,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 // AllowEntry is one address or range the panel answers when the allowlist is on.
@@ -24,7 +24,7 @@ type AllowEntry struct {
 
 // addressRefusedType marks the refusal, so the panel can say what happened
 // instead of sending the person to the sign-in page.
-const addressRefusedType = "urn:morcheh:address-not-allowed"
+const addressRefusedType = "urn:morche:address-not-allowed"
 
 // Operations that answer from any address: the health check, monitors' push
 // URLs and git webhooks (called by machines, not people) and the sign-in page's state, which is

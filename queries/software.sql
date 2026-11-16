@@ -55,13 +55,13 @@ SELECT * FROM software_installs WHERE server_id = @server_id AND recipe_id = @re
 INSERT INTO software_installs (
     workspace_id, server_id, recipe_id, name, kind, origin, status, params, secrets, error
 ) VALUES (
-    @workspace_id, @server_id, @recipe_id, @name, @kind, 'morcheh', 'installing', @params,
+    @workspace_id, @server_id, @recipe_id, @name, @kind, 'morche', 'installing', @params,
     @secrets, ''
 )
 ON CONFLICT (server_id, recipe_id) DO UPDATE SET
     name = excluded.name,
     kind = excluded.kind,
-    origin = 'morcheh',
+    origin = 'morche',
     status = 'installing',
     params = excluded.params,
     secrets = excluded.secrets,
@@ -117,7 +117,7 @@ WHERE server_id = @server_id AND origin = 'found' AND NOT (recipe_id = ANY(@pres
 -- name: MarkMissingSoftware :exec
 -- A scan no longer finds an app Morche installed.
 UPDATE software_installs SET status = 'missing', checked_at = now(), updated_at = now()
-WHERE server_id = @server_id AND origin = 'morcheh' AND NOT (recipe_id = ANY(@present::text[]))
+WHERE server_id = @server_id AND origin = 'morche' AND NOT (recipe_id = ANY(@present::text[]))
   AND status = 'installed';
 
 -- name: SaveSoftwareHost :exec

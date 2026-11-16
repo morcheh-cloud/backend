@@ -144,7 +144,7 @@ func TestParseSudoers(t *testing.T) {
 	if r := rules[1]; r.Line != 4 || !r.Full || !r.Active || r.Managed {
 		t.Errorf("rule 1 = %+v", r)
 	}
-	if r := ParseSudoers("/etc/sudoers.d/morcheh-x", "x ALL=(ALL) ALL"); !r[0].Managed {
+	if r := ParseSudoers("/etc/sudoers.d/morche-x", "x ALL=(ALL) ALL"); !r[0].Managed {
 		t.Errorf("not managed")
 	}
 	if !IncludesDir(sudoers) || IncludesDir("root ALL=(ALL) ALL") {

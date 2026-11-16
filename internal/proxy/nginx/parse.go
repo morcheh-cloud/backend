@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 var (
@@ -172,7 +172,7 @@ func parseCerts(out string) []proxy.Certificate {
 		case strings.HasPrefix(t, "cert "):
 			finish()
 			dir := strings.TrimPrefix(t, "cert ")
-			source := "morcheh"
+			source := "morche"
 			if !strings.HasPrefix(dir, "/") {
 				dir = "/etc/letsencrypt/live/" + dir
 			}

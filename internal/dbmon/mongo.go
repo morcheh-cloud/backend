@@ -16,7 +16,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 )
 
-const mongoAppName = "morcheh-monitor"
+const mongoAppName = "morche-monitor"
 
 type mongoEngine struct {
 	cfg    Config

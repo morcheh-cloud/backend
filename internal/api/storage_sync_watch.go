@@ -26,12 +26,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/sftp"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/cmdlog"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/storage"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/storage"
+	"github.com/morche/backend/internal/terminal"
 )
 
 type StorageSyncWatchChange struct {
@@ -300,10 +300,10 @@ func (w *syncWatch) loop(ctx context.Context, s sqlc.StorageSync) {
 
 func watchScript(dir string) string {
 	d := terminal.ShellQuote(dir)
-	return `command -v inotifywait >/dev/null 2>&1 || { echo MORCHEH-MISSING; exit 0; }
-[ -d ` + d + ` ] || { echo MORCHEH-NODIR; exit 0; }
-echo "MORCHEH-LIMIT $(cat /proc/sys/fs/inotify/max_user_watches 2>/dev/null)"
-echo "MORCHEH-DIRS $(find ` + d + ` -xdev -type d 2>/dev/null | wc -l)"
+	return `command -v inotifywait >/dev/null 2>&1 || { echo MORCHE-MISSING; exit 0; }
+[ -d ` + d + ` ] || { echo MORCHE-NODIR; exit 0; }
+echo "MORCHE-LIMIT $(cat /proc/sys/fs/inotify/max_user_watches 2>/dev/null)"
+echo "MORCHE-DIRS $(find ` + d + ` -xdev -type d 2>/dev/null | wc -l)"
 exec 3<&0
 inotifywait -m -r -e close_write,moved_to,moved_from,delete,create,delete_self,move_self --format 'E|%e|%w%f' -- ` + d + ` 2>&1 </dev/null &
 p=$!
@@ -311,7 +311,7 @@ p=$!
 # through fd 3: when Morche closes it, the watch ends.
 ( cat >/dev/null; kill $p 2>/dev/null ) <&3 >/dev/null 2>&1 &
 wait $p
-echo "MORCHEH-EXIT $?"
+echo "MORCHE-EXIT $?"
 `
 }
 
@@ -459,20 +459,20 @@ func (p *watchPass) follow(ctx context.Context, c *sshpool.Conn) error {
 				return nil
 			}
 			switch {
-			case l == "MORCHEH-MISSING":
+			case l == "MORCHE-MISSING":
 				return &errWatch{"missing", "inotify-tools isn't installed on the server, so changes can't be followed."}
-			case l == "MORCHEH-NODIR":
+			case l == "MORCHE-NODIR":
 				return &errWatch{"failed", fmt.Sprintf("%s isn't a folder on the server.", p.root)}
-			case strings.HasPrefix(l, "MORCHEH-LIMIT "):
-				limit, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(l, "MORCHEH-LIMIT ")))
+			case strings.HasPrefix(l, "MORCHE-LIMIT "):
+				limit, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(l, "MORCHE-LIMIT ")))
 				p.w.update(func(st *StorageSyncWatch) { st.Limit = limit })
-			case strings.HasPrefix(l, "MORCHEH-DIRS "):
-				folders, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(l, "MORCHEH-DIRS ")))
+			case strings.HasPrefix(l, "MORCHE-DIRS "):
+				folders, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(l, "MORCHE-DIRS ")))
 				p.w.update(func(st *StorageSyncWatch) { st.Folders = folders })
 				if limit > 0 && folders >= limit {
 					return &errWatch{"limit", fmt.Sprintf("The folder has %d folders, more than the %d the server lets one user watch.", folders, limit)}
 				}
-			case strings.HasPrefix(l, "MORCHEH-EXIT "):
+			case strings.HasPrefix(l, "MORCHE-EXIT "):
 				msg := "The watch on the server stopped."
 				if len(tail) > 0 {
 					msg = tail[len(tail)-1]
@@ -659,7 +659,7 @@ func registerStorageSyncWatch(api huma.API, h *storageSyncHandler) {
 		Method:      http.MethodPost,
 		Path:        "/storage-syncs/{id}/watch/raise-limit",
 		Summary:     "Let the server watch more folders",
-		Description: "Sets fs.inotify.max_user_watches on the source server now and in /etc/sysctl.d/90-morcheh-inotify.conf, then watches again. Needs Engineer on the server and root or sudo without a password. Each watched folder takes about 1 KB of kernel memory.",
+		Description: "Sets fs.inotify.max_user_watches on the source server now and in /etc/sysctl.d/90-morche-inotify.conf, then watches again. Needs Engineer on the server and root or sudo without a password. Each watched folder takes about 1 KB of kernel memory.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct {
 		StorageSyncPath
@@ -696,7 +696,7 @@ func registerStorageSyncWatch(api huma.API, h *storageSyncHandler) {
 				return huma.Error422UnprocessableEntity("Morche signs in to this server without root or passwordless sudo, so it can't change the limit. Run as root: sysctl -w fs.inotify.max_user_watches=" + strconv.Itoa(n))
 			}
 			v := strconv.Itoa(n)
-			_, err = sh.run(ctx, "sysctl -w fs.inotify.max_user_watches="+v+" >/dev/null && mkdir -p /etc/sysctl.d && printf 'fs.inotify.max_user_watches=%s\\n' "+v+" > /etc/sysctl.d/90-morcheh-inotify.conf")
+			_, err = sh.run(ctx, "sysctl -w fs.inotify.max_user_watches="+v+" >/dev/null && mkdir -p /etc/sysctl.d && printf 'fs.inotify.max_user_watches=%s\\n' "+v+" > /etc/sysctl.d/90-morche-inotify.conf")
 			return err
 		})
 		if err != nil {

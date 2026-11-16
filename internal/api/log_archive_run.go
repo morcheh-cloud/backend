@@ -23,8 +23,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
 )
 
 // Job kinds of the log retention.
@@ -1217,7 +1217,7 @@ func (h *logArchiveHandler) restore(ctx context.Context, t *jobs.Task, d logData
 	t.Update(func(pr *jobs.Progress) { pr.Items, pr.ItemsTotal, pr.Current = 0, len(m.Tables), "" })
 	for i, mt := range m.Tables {
 		t.Update(func(pr *jobs.Progress) { pr.Phase = "Putting back " + mt.Name })
-		temp := fmt.Sprintf("morcheh_restore_%d", i)
+		temp := fmt.Sprintf("morche_restore_%d", i)
 		if err := loadCSV(ctx, tx, zr, mt, temp); err != nil {
 			return res, fmt.Errorf("%s: %w", mt.Name, err)
 		}
@@ -1388,7 +1388,7 @@ func (h *logArchiveHandler) runPutAway(ctx context.Context, t *jobs.Task) (any, 
 		return nil, err
 	}
 	defer tx.Rollback(context.WithoutCancel(ctx))
-	if err := loadCSV(ctx, tx, zr, mt, "morcheh_putaway"); err != nil {
+	if err := loadCSV(ctx, tx, zr, mt, "morche_putaway"); err != nil {
 		return nil, err
 	}
 	// Only rows the file holds go: anything else in the period stays.
@@ -1398,7 +1398,7 @@ func (h *logArchiveHandler) runPutAway(ctx context.Context, t *jobs.Task) (any, 
 		on = append(on, fmt.Sprintf("t.%s = (r.%s)::%s", ident(k), ident(k), col.Type))
 	}
 	tag, err := tx.Exec(ctx, fmt.Sprintf("DELETE FROM %s t USING %s r WHERE %s AND %s",
-		ident(d.Table), ident("morcheh_putaway"), strings.Join(on, " AND "), d.windowWhere(info, a.PeriodFrom, a.PeriodTo)))
+		ident(d.Table), ident("morche_putaway"), strings.Join(on, " AND "), d.windowWhere(info, a.PeriodFrom, a.PeriodTo)))
 	if err != nil {
 		return nil, err
 	}

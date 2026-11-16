@@ -1,5 +1,5 @@
 # Morche's Ansible callback: writes one JSON object per line to the file
-# descriptor in MORCHEH_EVENTS_FD, so Morche can show plays, tasks and each
+# descriptor in MORCHE_EVENTS_FD, so Morche can show plays, tasks and each
 # host's result without parsing the human output (which still goes to stdout
 # through the default callback).
 #
@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 DOCUMENTATION = """
-    name: morcheh
+    name: morche
     type: notification
     short_description: Structured events for Morche
     description: Writes plays, tasks and host results as JSON lines.
@@ -65,12 +65,12 @@ def parts(result):
 class CallbackModule(CallbackBase):
     CALLBACK_VERSION = 2.0
     CALLBACK_TYPE = "notification"
-    CALLBACK_NAME = "morcheh"
+    CALLBACK_NAME = "morche"
     CALLBACK_NEEDS_ENABLED = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        fd = os.environ.get("MORCHEH_EVENTS_FD")
+        fd = os.environ.get("MORCHE_EVENTS_FD")
         self._out = os.fdopen(int(fd), "w", buffering=1, encoding="utf-8", errors="replace") if fd else None
         self._play = None
 

@@ -639,7 +639,7 @@ func (q *Queries) InsertMonitorEvent(ctx context.Context, arg InsertMonitorEvent
 const keepMonitorLocations = `-- name: KeepMonitorLocations :exec
 DELETE FROM monitor_locations
 WHERE monitor_id = $1
-  AND NOT (coalesce(server_id::text, 'morcheh') = ANY ($2::text[]))
+  AND NOT (coalesce(server_id::text, 'morche') = ANY ($2::text[]))
 `
 
 type KeepMonitorLocationsParams struct {
@@ -647,7 +647,7 @@ type KeepMonitorLocationsParams struct {
 	Keep      []string  `json:"keep"`
 }
 
-// Removes the locations not listed ("morcheh" or a server id).
+// Removes the locations not listed ("morche" or a server id).
 func (q *Queries) KeepMonitorLocations(ctx context.Context, arg KeepMonitorLocationsParams) error {
 	_, err := q.db.Exec(ctx, keepMonitorLocations, arg.MonitorID, arg.Keep)
 	return err

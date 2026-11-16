@@ -14,8 +14,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/firewall"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/firewall"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // Who may reach a container's published ports. Docker's ports skip ufw and
@@ -24,10 +24,10 @@ import (
 // depend on which firewall is in charge, or on whether there is one.
 
 const (
-	ctDir     = "/etc/morcheh"
+	ctDir     = "/etc/morche"
 	ctList    = ctDir + "/docker-limits.json"
-	ctBin     = "/usr/local/sbin/morcheh-docker-limits"
-	ctService = "morcheh-docker-limits"
+	ctBin     = "/usr/local/sbin/morche-docker-limits"
+	ctService = "morche-docker-limits"
 	ctUnit    = "/etc/systemd/system/" + ctService + ".service"
 )
 
@@ -45,7 +45,7 @@ type ContainerAccess struct {
 	Limits     []firewall.ContainerLimit `json:"limits"`
 	Published  []firewall.PublishedPort  `json:"published" doc:"Ports running containers publish on this server"`
 	SSHPort    int                       `json:"ssh_port"`
-	MorchehIP  string                    `json:"morcheh_ip" doc:"The address this server sees Morche's connection from"`
+	MorcheIP   string                    `json:"morche_ip" doc:"The address this server sees Morche's connection from"`
 	YourIP     string                    `json:"your_ip" doc:"The address of the person asking, when it isn't a loopback one"`
 }
 
@@ -155,7 +155,7 @@ func parseContainerAccess(s map[string]string, access, conn string) *ContainerAc
 	sum := sha256.Sum256([]byte(strings.TrimSpace(s["limits"])))
 	a.Revision = hex.EncodeToString(sum[:8])
 	if f := strings.Fields(conn); len(f) == 4 {
-		a.MorchehIP = f[0]
+		a.MorcheIP = f[0]
 		a.SSHPort, _ = strconv.Atoi(f[3])
 	}
 	_, a.Docker = s["docker"]
@@ -215,7 +215,7 @@ func parseContainerAccess(s map[string]string, access, conn string) *ContainerAc
 // ctLoadScript is installed on the server: the boot service runs it, and so
 // does every change.
 const ctLoadScript = `#!/bin/sh
-# Managed by Morcheh: who may reach ports Docker publishes. Edit them from
+# Managed by Morche: who may reach ports Docker publishes. Edit them from
 # Morche (Firewall > Containers); changes made here are overwritten.
 export LC_ALL=C PATH="$PATH:/usr/sbin:/sbin"
 d=` + ctDir + `
@@ -239,7 +239,7 @@ esac
 `
 
 const ctUnitFile = `[Unit]
-Description=Morcheh: who may reach ports Docker publishes
+Description=Morche: who may reach ports Docker publishes
 After=docker.service
 PartOf=docker.service
 
@@ -353,10 +353,10 @@ func (h *serverHandler) setContainerAccess(ctx context.Context, id string, body 
 		for i, l := range limits {
 			// Only matters when SSH itself reaches this server through a
 			// published container port.
-			if cur.SSHPort != 0 && cur.MorchehIP != "" && l.Covers("tcp", cur.SSHPort) && !l.Lets(cur.MorchehIP) &&
+			if cur.SSHPort != 0 && cur.MorcheIP != "" && l.Covers("tcp", cur.SSHPort) && !l.Lets(cur.MorcheIP) &&
 				publishes(cur.Published, "tcp", cur.SSHPort) {
 				return fieldError(fmt.Sprintf("body.limits[%d].allow", i),
-					"Morche reaches this server on that port: add "+cur.MorchehIP+" or it would be cut off", cur.MorchehIP)
+					"Morche reaches this server on that port: add "+cur.MorcheIP+" or it would be cut off", cur.MorcheIP)
 			}
 		}
 		script, err := ctApplyScript(limits, cur.Init)

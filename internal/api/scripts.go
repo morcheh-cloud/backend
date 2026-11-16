@@ -20,11 +20,11 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 const (
@@ -1311,7 +1311,7 @@ func wrapScript(interpreter, content string, env map[string]string) (string, err
 	for {
 		b := make([]byte, 12)
 		_, _ = rand.Read(b)
-		delim = "MORCHEH_" + strings.ToUpper(hex.EncodeToString(b))
+		delim = "MORCHE_" + strings.ToUpper(hex.EncodeToString(b))
 		if !strings.Contains(content, delim) {
 			break
 		}
@@ -1326,7 +1326,7 @@ func wrapScript(interpreter, content string, env map[string]string) (string, err
 	sort.Strings(names)
 
 	var b strings.Builder
-	b.WriteString("f=$(mktemp 2>/dev/null || mktemp -t morcheh.XXXXXX) || { echo 'Could not create a temporary file.' >&2; exit 1; }\n")
+	b.WriteString("f=$(mktemp 2>/dev/null || mktemp -t morche.XXXXXX) || { echo 'Could not create a temporary file.' >&2; exit 1; }\n")
 	b.WriteString("cat > \"$f\" <<'" + delim + "'\n")
 	b.WriteString(content)
 	b.WriteString(delim + "\n")

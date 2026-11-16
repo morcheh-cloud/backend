@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // gzipTypes are the text types worth compressing (text/html always is).
@@ -19,7 +19,7 @@ var gzipTypes = []string{
 
 // CacheDir holds the proxy caches, one folder per site; nginx makes the
 // site's folder itself.
-const CacheDir = "/var/cache/morcheh-nginx"
+const CacheDir = "/var/cache/morche-nginx"
 
 // assetTypes are the answers (by Content-Type) browsers may keep.
 var assetTypes = []string{
@@ -172,7 +172,7 @@ func backupOnly(c proxy.Cache) bool { return !c.Enabled && c.Online.On() }
 // offlineUpstream is where a site serving only its copies sends what it
 // has no copy of: a socket that isn't there, so nginx fails at once (as if
 // the app were down) and answers from the copy, or 502.
-const offlineUpstream = "http://unix:/run/morcheh-nginx-offline.sock"
+const offlineUpstream = "http://unix:/run/morche-nginx-offline.sock"
 
 // cacheRules are the cache rules with their own time: a regex location
 // each, nested in the location that proxies to the main upstream, so it
@@ -435,7 +435,7 @@ func headerRegexp(name, value string) string {
 // PurgeCacheScript clears the site's kept answers f picks, or counts them.
 // Cache files are named by the md5 of the key (no spaces), so plain lists
 // and xargs are safe; nginx's temp files (name.0000000001) are left alone.
-// The last line is "MORCHEH_PURGE <answers> <KiB>".
+// The last line is "MORCHE_PURGE <answers> <KiB>".
 func (Driver) PurgeCacheScript(hostID string, f proxy.PurgeFilter, dryRun bool) string {
 	var keys []string
 	for _, p := range f.Paths {
@@ -454,7 +454,7 @@ func (Driver) PurgeCacheScript(hostID string, f proxy.PurgeFilter, dryRun bool) 
 	}
 	return head + `export LC_ALL=C
 d=` + CacheDir + "/" + cacheDirName(hostID) + `
-if [ ! -d "$d" ]; then echo "MORCHEH_PURGE 0 0"; exit 0; fi
+if [ ! -d "$d" ]; then echo "MORCHE_PURGE 0 0"; exit 0; fi
 t=$(mktemp) || exit 1
 trap 'rm -f "$t"' EXIT
 find "$d" -type f | grep -E '/[0-9a-f]{32}$'` + pick + ` > "$t"
@@ -462,7 +462,7 @@ n=$(grep -c . "$t")
 kb=0
 if [ "$n" -gt 0 ]; then kb=$(xargs -r du -k < "$t" 2>/dev/null | awk '{s+=$1} END {print s+0}'); fi
 ` + act + ` || exit 1
-echo "MORCHEH_PURGE $n $kb"
+echo "MORCHE_PURGE $n $kb"
 `
 }
 
@@ -473,13 +473,13 @@ func (Driver) KeptPagesScript(hostID string, limit int) string {
 	return head + `export LC_ALL=C
 d=` + CacheDir + "/" + cacheDirName(hostID) + `
 now=$(date +%s)
-if [ ! -d "$d" ]; then printf 'MORCHEH_PAGES\t0\t0\t%s\n' "$now"; exit 0; fi
+if [ ! -d "$d" ]; then printf 'MORCHE_PAGES\t0\t0\t%s\n' "$now"; exit 0; fi
 t=$(mktemp) || exit 1
 trap 'rm -f "$t"' EXIT
 find "$d" -type f -printf '%T@ %s %p\n' | grep -E '/[0-9a-f]{32}$' > "$t"
 n=$(grep -c . "$t")
 kb=$(awk '{s+=$2} END {printf "%d", s/1024}' "$t")
-printf 'MORCHEH_PAGES\t%s\t%s\t%s\n' "$n" "$kb" "$now"
+printf 'MORCHE_PAGES\t%s\t%s\t%s\n' "$n" "$kb" "$now"
 sort -rn "$t" | head -n ` + strconv.Itoa(limit) + ` | while read -r m s p; do
 	l=$(head -c 16384 "$p" 2>/dev/null | grep -a -m2 -E '^(KEY: |HTTP/)' | tr -d '\r\t')
 	k=$(printf '%s\n' "$l" | grep -m1 '^KEY: ')

@@ -15,12 +15,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/cache"
-	"github.com/morcheh/backend/internal/config"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/secrets"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/cache"
+	"github.com/morche/backend/internal/config"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/secrets"
 )
 
 // env is the real router over a real database, for tests named Integration*
@@ -35,9 +35,9 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	url := os.Getenv("MORCHEH_TEST_DATABASE_URL")
+	url := os.Getenv("MORCHE_TEST_DATABASE_URL")
 	if url == "" {
-		t.Skip("MORCHEH_TEST_DATABASE_URL not set; run make test-integration")
+		t.Skip("MORCHE_TEST_DATABASE_URL not set; run make test-integration")
 	}
 	db, err := pgxpool.New(context.Background(), url)
 	if err != nil {

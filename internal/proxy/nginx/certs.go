@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // Mozilla's server-side TLS guidelines (5.7), by profile.
@@ -38,7 +38,7 @@ func tlsLines(w *writer, t proxy.HostTLS) {
 		w.line("%s", l)
 	}
 	if t.SessionCache {
-		w.line("ssl_session_cache shared:morcheh_tls:10m;")
+		w.line("ssl_session_cache shared:morche_tls:10m;")
 		w.line("ssl_session_timeout 1d;")
 		w.line("ssl_session_tickets off;")
 	}
@@ -75,7 +75,7 @@ func acmeLocation(w *writer, h proxy.HostConfig) {
 }
 
 // deployHook reloads nginx after certbot renews any certificate.
-const deployHook = "/etc/letsencrypt/renewal-hooks/deploy/morcheh-nginx.sh"
+const deployHook = "/etc/letsencrypt/renewal-hooks/deploy/morche-nginx.sh"
 
 // CertificateScript gets a certificate from an ACME CA with certbot (webroot,
 // through a short-lived server block for names no site serves yet), makes a
@@ -104,7 +104,7 @@ echo "Saved to %[1]s."
 		}
 		cn := r.Domains[0]
 		if len(cn) > 64 {
-			cn = "morcheh"
+			cn = "morche"
 		}
 		var alt []string
 		for _, d := range r.Domains {
@@ -167,14 +167,14 @@ func acmeOpen(r proxy.CertRequest) string {
 	first, rest := acmeBlock(r)
 	return fmt.Sprintf(`mkdir -p %[1]s/.well-known/acme-challenge && chmod 755 %[1]s %[1]s/.well-known %[1]s/.well-known/acme-challenge || exit 1
 tmp=%[2]s
-cat > "$tmp" <<'MORCHEH_ACME'
-%[3]sMORCHEH_ACME
+cat > "$tmp" <<'MORCHE_ACME'
+%[3]sMORCHE_ACME
 [ -f /proc/net/if_inet6 ] && v6='    listen [::]:80;' || v6=''
-cat >> "$tmp" <<MORCHEH_ACME
+cat >> "$tmp" <<MORCHE_ACME
 $v6
-MORCHEH_ACME
-cat >> "$tmp" <<'MORCHEH_ACME'
-%[4]sMORCHEH_ACME
+MORCHE_ACME
+cat >> "$tmp" <<'MORCHE_ACME'
+%[4]sMORCHE_ACME
 reload() { nginx -s reload >/dev/null 2>&1; sleep 1; }
 if ! out=$(nginx -t 2>&1); then rm -f "$tmp"; printf '%%s\n' "$out"; exit %[5]d; fi
 reload
@@ -250,13 +250,13 @@ func acmeScript(r proxy.CertRequest, s proxy.Setup) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `command -v nginx >/dev/null 2>&1 || exit %[1]d
 running || { echo "nginx isn't running, so the certificate authority can't reach this server. Start it first."; exit 1; }
-%[2]smkdir -p "$(dirname %[3]s)" && cat > %[3]s <<'MORCHEH_HOOK'
+%[2]smkdir -p "$(dirname %[3]s)" && cat > %[3]s <<'MORCHE_HOOK'
 #!/bin/sh
-# Managed by Morcheh: reload nginx after certbot renews a certificate.
+# Managed by Morche: reload nginx after certbot renews a certificate.
 PATH=$PATH:/usr/sbin:/sbin:/usr/local/sbin
 nginx -t >/dev/null 2>&1 || exit 0
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx; then systemctl reload nginx; else nginx -s reload; fi
-MORCHEH_HOOK
+MORCHE_HOOK
 chmod 755 %[3]s
 cfg=""
 %[4]scleanup() { rm -f "$tmp" "$cfg"; nginx -t >/dev/null 2>&1 && reload; }

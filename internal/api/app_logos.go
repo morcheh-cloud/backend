@@ -9,8 +9,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/appicon"
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/appicon"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 // A service's logo is its favicon (fetched by the backend whenever the

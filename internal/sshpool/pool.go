@@ -17,8 +17,8 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/cmdlog"
-	"github.com/morcheh/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/sshprobe"
 )
 
 const (

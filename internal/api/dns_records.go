@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/morcheh/backend/internal/technitium"
+	"github.com/morche/backend/internal/technitium"
 )
 
 // DNSRecord is one record, flat whatever its type. Value is the address,

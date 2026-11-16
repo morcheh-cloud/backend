@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 func TestMetricSampleValue(t *testing.T) {

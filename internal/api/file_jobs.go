@@ -16,9 +16,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/pkg/sftp"
 
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // File operations on a server that can take minutes: each request is checked

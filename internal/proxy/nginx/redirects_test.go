@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func redirectHost() proxy.HostConfig {
@@ -43,23 +43,23 @@ func TestRenderRedirects(t *testing.T) {
 		os.WriteFile(f, []byte(out), 0o644)
 	}
 	for _, want := range []string{
-		`map $uri $morcheh_abc123_rd {`,
+		`map $uri $morche_abc123_rd {`,
 		`"/old-page/" "301:/new-page";`,
 		`"/old-page" "301:/new-page";`,
 		`"/café" "302:https://other.com/cafe$is_args$args";`,
 		`"~^/\\.well-known/acme-challenge/" "";`,
 		`"~*^/a-very-long-address-that-will-not-fit-in-a-hash-bucket-at-all$" "301:/short";`,
 		`"~*^/blog(?:/(.*))?$" "308:https://blog.example.com/$1";`,
-		`"~^/item/(\\d+)\\.html$" "301:/items/$1?ref=old$morcheh_abc123_rdargs";`,
+		`"~^/item/(\\d+)\\.html$" "301:/items/$1?ref=old$morche_abc123_rdargs";`,
 		`default "&$args";`,
 		`"/gone" "410:";`,
-		`map $request_uri $morcheh_abc123_rdq {`,
-		`default $morcheh_abc123_rd;`,
+		`map $request_uri $morche_abc123_rdq {`,
+		`default $morche_abc123_rd;`,
 		`"/shop?id=5" "301:/products/5";`,
-		`if ($morcheh_abc123_rdq ~ "^301:(/.*)$")`,
+		`if ($morche_abc123_rdq ~ "^301:(/.*)$")`,
 		`return 301 https://$host$1;`,
-		`if ($morcheh_abc123_rdq ~ "^308:(.+)$")`,
-		`if ($morcheh_abc123_rdq = "410:")`,
+		`if ($morche_abc123_rdq ~ "^308:(.+)$")`,
+		`if ($morche_abc123_rdq = "410:")`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s", want)
@@ -129,15 +129,15 @@ func TestRenderConditionalRedirects(t *testing.T) {
 		os.WriteFile(f, []byte(out), 0o644)
 	}
 	for _, want := range []string{
-		`map $http_user_agent $morcheh_abc123_rddev {`,
-		`map $http_accept_language $morcheh_abc123_rdlang {`,
-		`map "$time_iso8601|$morcheh_country|$morcheh_abc123_rddev|$morcheh_abc123_rdlang|$uri" $morcheh_abc123_rdc {`,
-		`default $morcheh_abc123_rd;`,
+		`map $http_user_agent $morche_abc123_rddev {`,
+		`map $http_accept_language $morche_abc123_rdlang {`,
+		`map "$time_iso8601|$morche_country|$morche_abc123_rddev|$morche_abc123_rdlang|$uri" $morche_abc123_rdc {`,
+		`default $morche_abc123_rd;`,
 		`"~^[^|]*\\|[^|]*\\|[^|]*\\|[^|]*\\|/\\.well-known/acme-challenge/" "";`,
 		`"~^[^|]*\\|(?:IR)\\|[^|]*\\|(?i:fa)\\|(?i:/shop)/?$" "301:/fa/shop";`,
 		`"~^[^|]*\\|[^|]*\\|(?:phone|tablet)\\|[^|]*\\|(?i:/app)(?:/(.*))?$" "301:/m/$1";`,
 		`"/shop" "301:/en/shop";`,
-		`if ($morcheh_abc123_rdc ~ "^302:(.+)$")`,
+		`if ($morche_abc123_rdc ~ "^302:(.+)$")`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s", want)

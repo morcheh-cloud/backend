@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/morcheh/backend/internal/technitium"
+	"github.com/morche/backend/internal/technitium"
 )
 
 func TestCleanDNSURL(t *testing.T) {

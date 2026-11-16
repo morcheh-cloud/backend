@@ -49,7 +49,7 @@ install: |
         fi
         echo "Unattended-Upgrade::Automatic-Reboot \"$REBOOT\";"
         echo "Unattended-Upgrade::Automatic-Reboot-Time \"$REBOOT_TIME\";"
-      } > /etc/apt/apt.conf.d/52morcheh-unattended
+      } > /etc/apt/apt.conf.d/52morche-unattended
       systemctl enable --now apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
       unattended-upgrade --dry-run >/dev/null 2>&1 && echo "Checked: unattended-upgrades reads its settings." || true
       ;;
@@ -78,7 +78,7 @@ install: |
   esac
   echo "Done: updates ($UPDATES) install by themselves every day."
 uninstall: |
-  rm -f /etc/apt/apt.conf.d/52morcheh-unattended
+  rm -f /etc/apt/apt.conf.d/52morche-unattended
   systemctl disable --now dnf-automatic.timer dnf5-automatic.timer >/dev/null 2>&1 || true
   # shellcheck disable=SC2086
   HAVE=$(pkg_have $PKGS $ALSO)

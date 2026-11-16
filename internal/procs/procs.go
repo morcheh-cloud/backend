@@ -97,7 +97,7 @@ type Process struct {
 	Session       string    `json:"session,omitempty" doc:"The login session it belongs to (logind)" example:"3"`
 	Container     string    `json:"container,omitempty" doc:"Name of the Docker/Podman container it runs in, else a short container id" example:"web-1"`
 	Runtime       string    `json:"runtime,omitempty" enum:"docker,podman,other"`
-	Morche        bool      `json:"morcheh" doc:"Part of Morche's own SSH connection: ending it closes open terminals and running tasks here"`
+	Morche        bool      `json:"morche" doc:"Part of Morche's own SSH connection: ending it closes open terminals and running tasks here"`
 	Protected     bool      `json:"protected" doc:"The system or Morche relies on it (init, sshd, journald, dbus…): signals need force"`
 }
 

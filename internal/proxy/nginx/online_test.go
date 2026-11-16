@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func onlineHost(c proxy.Cache) proxy.HostConfig {
@@ -27,11 +27,11 @@ func TestAlwaysOnlineBackupOnly(t *testing.T) {
 	}
 	got := Driver{}.Render("h1", h, proxy.Env{Version: "1.24.0"})
 	for _, want := range []string{
-		"keys_zone=morcheh_h1_cache:10m max_size=1024m inactive=4320m",
-		"map $upstream_http_cache_control $morcheh_h1_private",
+		"keys_zone=morche_h1_cache:10m max_size=1024m inactive=4320m",
+		"map $upstream_http_cache_control $morche_h1_private",
 		"proxy_cache_valid 200 301 302 1s;",
 		"proxy_cache_revalidate on;",
-		"proxy_no_cache $http_authorization $http_upgrade $morcheh_h1_skip_cookie $morcheh_h1_private;",
+		"proxy_no_cache $http_authorization $http_upgrade $morche_h1_skip_cookie $morche_h1_private;",
 		"proxy_cache_use_stale error timeout http_502 http_503 http_429;",
 		"proxy_ignore_headers Cache-Control Expires;",
 		"proxy_connect_timeout 5s;",
@@ -98,7 +98,7 @@ func TestServeStaleBecomesAlwaysOnline(t *testing.T) {
 }
 
 func TestParseKeptPages(t *testing.T) {
-	out := "MORCHEH_PAGES\t3\t20\t1000\n" +
+	out := "MORCHE_PAGES\t3\t20\t1000\n" +
 		"P\t990\t2048\tHTTP/1.1 200 OK\tKEY: httpsapp.example.com/blog?page=2\n" +
 		"P\t400\t1024\tHTTP/1.1 301 Moved Permanently\tKEY: mobile,android|httpshop.com/\n" +
 		"P\t100\t512\t\tKEY: httpsother.org/x\n"
@@ -135,13 +135,13 @@ func TestAlwaysOnlineSlowPages(t *testing.T) {
 	got := Driver{}.Render("h1", h, proxy.Env{Version: "1.24.0"})
 	for _, want := range []string{
 		"inactive=525600m",
-		`map "$request_method:$http_upgrade$http_authorization:$morcheh_h1_skip_path$morcheh_h1_skip_cookie" $morcheh_h1_pass`,
+		`map "$request_method:$http_upgrade$http_authorization:$morche_h1_skip_path$morche_h1_skip_cookie" $morche_h1_pass`,
 		`"~^(?:GET|HEAD)::0*$" 0;`,
-		"error_page 418 = @morcheh_h1_pass;",
-		"if ($morcheh_h1_pass) {",
+		"error_page 418 = @morche_h1_pass;",
+		"if ($morche_h1_pass) {",
 		"proxy_read_timeout 15s;",
 		"proxy_send_timeout 120s;",
-		"location @morcheh_h1_pass {",
+		"location @morche_h1_pass {",
 		"proxy_read_timeout 120s;",
 	} {
 		if !strings.Contains(got, want) {
@@ -154,7 +154,7 @@ func TestAlwaysOnlineSlowPages(t *testing.T) {
 	if !strings.Contains(loc[:strings.Index(loc, "proxy_pass")], "error_page 502") {
 		t.Errorf("error pages not repeated in location /:\n%s", loc)
 	}
-	twin := got[strings.Index(got, "location @morcheh_h1_pass {"):]
+	twin := got[strings.Index(got, "location @morche_h1_pass {"):]
 	twin = twin[:strings.Index(twin, "\n    }")]
 	if strings.Contains(twin, "proxy_cache") || !strings.Contains(twin, "proxy_connect_timeout 5s;") {
 		t.Errorf("twin location:\n%s", twin)
@@ -172,7 +172,7 @@ func TestAlwaysOnlineSlowNotUsed(t *testing.T) {
 		h := onlineHost(proxy.Cache{Online: proxy.AlwaysOnline{Mode: c.mode, SlowSeconds: 15}})
 		h.TimeoutSeconds = c.timeout
 		got := Driver{}.Render("h1", h, proxy.Env{Version: "1.24.0"})
-		if strings.Contains(got, "morcheh_h1_pass") || strings.Contains(got, "418") {
+		if strings.Contains(got, "morche_h1_pass") || strings.Contains(got, "418") {
 			t.Errorf("%s: unexpected slow route in\n%s", name, got)
 		}
 	}

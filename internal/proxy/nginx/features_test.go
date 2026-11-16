@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // fullHost turns on every feature a proxy site can have.
@@ -46,18 +46,18 @@ func TestRenderFeatures(t *testing.T) {
 		os.WriteFile(os.Getenv("NGINX_DUMP"), []byte(out), 0o644)
 	}
 	for _, want := range []string{
-		`geo $morcheh_abc123_realm`,
+		`geo $morche_abc123_realm`,
 		`default "Team only";`,
-		`auth_basic $morcheh_abc123_realm;`,
+		`auth_basic $morche_abc123_realm;`,
 		`auth_basic_user_file ` + AuthFile("abc-123") + `;`,
-		`error_page 503 /__morcheh/maintenance.html;`,
-		`if ($morcheh_abc123_maint)`,
+		`error_page 503 /__morche/maintenance.html;`,
+		`if ($morche_abc123_maint)`,
 		`add_header Retry-After 600 always;`,
-		`error_page 502 504 /__morcheh/error-0.html;`,
-		`error_page 404 /__morcheh/error-1.html;`,
-		`if ($morcheh_abc123_harden)`,
+		`error_page 502 504 /__morche/error-0.html;`,
+		`error_page 404 /__morche/error-1.html;`,
+		`if ($morche_abc123_harden)`,
 		`return 444;`,
-		`if ($morcheh_abc123_h_method)`,
+		`if ($morche_abc123_h_method)`,
 		`HEAD 0;`,
 		`add_header X-Request-ID $request_id always;`,
 		`proxy_set_header X-Request-ID $request_id;`,
@@ -76,7 +76,7 @@ func TestRenderFeatures(t *testing.T) {
 		`root /srv/img;`,
 		`return 200 "ok \"yes\"";`,
 		`return 404;`,
-		`location ^~ /__morcheh/`,
+		`location ^~ /__morche/`,
 		`&#34;soon&#34;`,
 		`&#36;5<br>line two`,
 		`volatile;`,
@@ -109,11 +109,11 @@ func TestRenderForwardAuth(t *testing.T) {
 	}
 	out := Driver{}.Render("f", h, proxy.Env{})
 	for _, want := range []string{
-		"auth_request /__morcheh/auth;",
-		"auth_request_set $morcheh_f_auth_0 $upstream_http_remote_user;",
-		"proxy_set_header Remote-User $morcheh_f_auth_0;",
+		"auth_request /__morche/auth;",
+		"auth_request_set $morche_f_auth_0 $upstream_http_remote_user;",
+		"proxy_set_header Remote-User $morche_f_auth_0;",
 		"error_page 401 =302 https://auth.example.com/?x=1&rd=$scheme://$http_host$request_uri;",
-		"location = /__morcheh/auth",
+		"location = /__morche/auth",
 		"proxy_pass http://127.0.0.1:9091/api/verify;",
 		"location ^~ /oauth2/",
 		"proxy_pass http://127.0.0.1:9091;",
@@ -170,14 +170,14 @@ func TestPathAccessAndLogin(t *testing.T) {
 	}
 	out := Driver{}.Render("abc-123", h, proxy.Env{Version: "1.24.0"})
 	server := out[strings.Index(out, "server_name"):]
-	if strings.Contains(server[:strings.Index(server, "location")], "auth_request /__morcheh/auth;") {
+	if strings.Contains(server[:strings.Index(server, "location")], "auth_request /__morche/auth;") {
 		t.Error("the whole site asks to sign in")
 	}
 	admin := server[strings.Index(server, "location /admin/"):]
 	admin = admin[:strings.Index(admin, "}")]
 	for _, want := range []string{
-		"allow 192.168.1.0/24;", "deny all;", "auth_request /__morcheh/auth;",
-		"error_page 502 /__morcheh/error-0.html;", "error_page 401 =302 https://sso.example.com/?rd=",
+		"allow 192.168.1.0/24;", "deny all;", "auth_request /__morche/auth;",
+		"error_page 502 /__morche/error-0.html;", "error_page 401 =302 https://sso.example.com/?rd=",
 	} {
 		if !strings.Contains(admin, want) {
 			t.Errorf("/admin/ is missing %q:\n%s", want, admin)

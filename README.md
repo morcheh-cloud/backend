@@ -6,7 +6,9 @@ API for Morche (SSH-based server management and monitoring). Development setup a
 
 The `Dockerfile` builds the server together with every tool it drives from its own machine: ssh/sshpass and Ansible (with bubblewrap) for playbooks, and the database clients for backups that run on the Morche server (`pg_dump` 18, `mariadb-dump`/`mariadb-binlog`, `mongodump`, `redis-cli`). Migrations are applied on start (`MIGRATE_ON_START=false` to skip).
 
-The whole stack (Postgres, Redis, backend, panel) is in `deploy/`. It expects the frontend repository next to this one (`../frontend`):
+Published images: `ghcr.io/morcheh-cloud/backend` (`.github/workflows/image.yml`: `edge` from main, versions from `v*` tags; amd64 + arm64). Self-hosting from the published images (compose + `install.sh`) lives in the [deploy repository](https://github.com/morcheh-cloud/morcheh).
+
+To build the whole stack (Postgres, Redis, backend, panel) from source, use `deploy/`. It expects the frontend repository next to this one (`../frontend`):
 
 ```bash
 cd deploy
@@ -14,7 +16,7 @@ cp .env.example .env      # PANEL_URL, API_URL, passwords, SECRETS_KEY, SETUP_TO
 docker compose up -d --build
 ```
 
-- The panel calls the backend from the browser, so `API_URL` must be the address people's browsers reach the backend at. It's baked into the panel image: run `docker compose build frontend` after changing it.
+- The panel calls the backend from the browser, so `API_URL` must be the address people's browsers reach the backend at. It's baked into the panel image here (build arg): run `docker compose build frontend` after changing it.
 - Behind https set `COOKIE_INSECURE=false`; on plain http it must be `true`, or signing in doesn't stick.
 - Keep a copy of `SECRETS_KEY`: every saved password and key is sealed with it.
 - Ansible's sandbox (bubblewrap) needs user namespaces, which Docker's default profiles refuse. Without the `security_opt` lines in `compose.yml` playbooks still run, but only system admins can start them.

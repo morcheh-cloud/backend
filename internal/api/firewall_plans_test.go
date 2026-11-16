@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/firewall"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/firewall"
 )
 
 const fwTestRules = `
@@ -18,7 +18,7 @@ const fwTestRules = `
 
 func ufwState(active bool) *fwState {
 	st := &fwState{before: "*filter\nCOMMIT\n"}
-	st.o.Backend, st.o.Active, st.o.SSHPort, st.o.MorchehIP = "ufw", active, 22, "203.0.113.9"
+	st.o.Backend, st.o.Active, st.o.SSHPort, st.o.MorcheIP = "ufw", active, 22, "203.0.113.9"
 	st.o.Capabilities = FirewallCapabilities{Manage: true, Reorder: true, Forwards: true, ForwardFrom: true}
 	st.o.Rules = firewall.ParseUFW(fwTestRules, "")
 	st.o.Forwards = []firewall.Forward{}
@@ -128,7 +128,7 @@ func TestForwardPlanUFW(t *testing.T) {
 		t.Fatal(err)
 	}
 	all := strings.Join(p.cmds, "\n")
-	for _, want := range []string{"ufw route allow", "before.rules", "ip_forward=1", "ufw reload", "MORCHEH-PRE"} {
+	for _, want := range []string{"ufw route allow", "before.rules", "ip_forward=1", "ufw reload", "MORCHE-PRE"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing %q in:\n%s", want, all)
 		}

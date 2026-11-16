@@ -1,6 +1,6 @@
 package api
 
-import "github.com/morcheh/backend/internal/auth"
+import "github.com/morche/backend/internal/auth"
 
 type policyKind int
 

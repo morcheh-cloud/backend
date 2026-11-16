@@ -25,7 +25,7 @@ CREATE TABLE software_installs (
     recipe_id       text NOT NULL,
     name            text NOT NULL,
     kind            text NOT NULL CHECK (kind IN ('package', 'docker', 'script')),
-    origin          text NOT NULL DEFAULT 'morcheh' CHECK (origin IN ('morcheh', 'found')),
+    origin          text NOT NULL DEFAULT 'morche' CHECK (origin IN ('morche', 'found')),
     status          text NOT NULL DEFAULT 'installing'
         CHECK (status IN ('installing', 'installed', 'updating', 'failed', 'removing', 'missing')),
     version         text NOT NULL DEFAULT '',

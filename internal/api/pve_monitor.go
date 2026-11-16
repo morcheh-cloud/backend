@@ -12,8 +12,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/proxmox"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/proxmox"
 )
 
 // pveMonitor re-checks every Proxmox cluster in the background and runs the

@@ -22,11 +22,11 @@ const (
 
 // SelfDir holds the certificates Morche made or was given, one folder each
 // (fullchain.pem + privkey.pem). certbot's own stay in /etc/letsencrypt/live.
-const SelfDir = "/etc/ssl/morcheh"
+const SelfDir = "/etc/ssl/morche"
 
 // ACMEWebroot is where certbot leaves HTTP-01 answers; every managed site
 // serves /.well-known/acme-challenge/ from it on port 80.
-const ACMEWebroot = "/var/www/morcheh-acme"
+const ACMEWebroot = "/var/www/morche-acme"
 
 // CA is a certificate authority reachable over ACME.
 type CA struct {

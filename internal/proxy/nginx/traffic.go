@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // trafficCap is the most read from one log per call: a first look, or a
@@ -76,7 +76,7 @@ var logPathRe = regexp.MustCompile(`^/[A-Za-z0-9._/-]+$`)
 func (Driver) TrafficScript(hosts []string, marks map[string]proxy.LogMark) string {
 	var b strings.Builder
 	b.WriteString(`count() {
-  f=` + logDir + `/morcheh-$1.access.log
+  f=` + logDir + `/morche-$1.access.log
   if [ ! -f "$f" ]; then echo "@@host $1 - 0"; return; fi
   set -- "$1" "$2" "$3" $(stat -c '%i %s' "$f")
   o=$3

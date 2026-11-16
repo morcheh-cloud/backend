@@ -13,9 +13,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/cloud"
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/cloud"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 // CloudLinked is a Morche server at one of a cloud server's addresses.

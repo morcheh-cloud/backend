@@ -12,11 +12,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/secrets"
-	"github.com/morcheh/backend/internal/sshprobe"
-	"github.com/morcheh/backend/internal/storage"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/secrets"
+	"github.com/morche/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/storage"
 )
 
 // ---- Response types ----

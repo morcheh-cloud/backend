@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/argon2"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/database/sqlc"
 )
 
 // Level is how much someone can do on a server or storage. Each level includes
@@ -196,7 +196,7 @@ var hashing = make(chan struct{}, 4)
 
 // dummyHash is verified when the username doesn't exist, so that answer takes
 // as long as a wrong password.
-var dummyHash, _ = HashPassword("morcheh-no-such-user")
+var dummyHash, _ = HashPassword("morche-no-such-user")
 
 // HashPassword returns an Argon2id hash in PHC string format.
 func HashPassword(password string) (string, error) {

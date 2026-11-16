@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/morcheh/backend/internal/cloud/arvan/fake"
+	"github.com/morche/backend/internal/cloud/arvan/fake"
 )
 
 func TestResourcesFake(t *testing.T) {

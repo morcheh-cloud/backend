@@ -10,9 +10,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/proxy"
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/proxy"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // Certificates on a proxy's server: from an ACME CA with certbot (Let's
@@ -232,7 +232,7 @@ func certSource(r proxy.CertRequest) string {
 	if r.Source == proxy.CertACME {
 		return "certbot"
 	}
-	return "morcheh"
+	return "morche"
 }
 
 // certFailure picks certbot's most telling line: its "Detail:" or an error,

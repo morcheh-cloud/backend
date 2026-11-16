@@ -8,7 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/sshprobe"
+	"github.com/morche/backend/internal/sshprobe"
 )
 
 type ServerCredentials struct {

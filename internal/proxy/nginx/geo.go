@@ -3,14 +3,14 @@ package nginx
 import (
 	"strconv"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // The IP-to-country lookup behind country rules: nginx's GeoIP2 module
 // reading DB-IP's free country database (CC BY 4.0), refreshed monthly.
 
 // geoCron are the monthly cron entries that refresh the database.
-const geoCron = "/etc/cron.monthly/morcheh-geoip /etc/periodic/monthly/morcheh-geoip"
+const geoCron = "/etc/cron.monthly/morche-geoip /etc/periodic/monthly/morche-geoip"
 
 // geoConf loads the database and names the visitor's country.
 const geoConf = marker + `: the visitor's country for country rules.
@@ -62,8 +62,8 @@ func geoData(su proxy.Setup) string {
 	}
 	return `command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || ` + fetcher + `
 mkdir -p ` + GeoDir + ` || exit 1
-cat > ` + GeoUpdate + ` <<'MORCHEH_GEO_UPDATE'
-` + geoUpdate + `MORCHEH_GEO_UPDATE
+cat > ` + GeoUpdate + ` <<'MORCHE_GEO_UPDATE'
+` + geoUpdate + `MORCHE_GEO_UPDATE
 chmod 755 ` + GeoUpdate + `
 echo "Downloading the IP-to-country database (DB-IP Lite)…"
 ` + GeoUpdate + ` || exit 1
@@ -74,8 +74,8 @@ echo "Downloading the IP-to-country database (DB-IP Lite)…"
 const geoCronPart = `done_cron=
 for d in /etc/cron.monthly /etc/periodic/monthly; do
   [ -d "$d" ] || continue
-  printf '#!/bin/sh\n` + marker + `\nexec ` + GeoUpdate + ` >/dev/null 2>&1\n' > "$d/morcheh-geoip"
-  chmod 755 "$d/morcheh-geoip"; done_cron=1; break
+  printf '#!/bin/sh\n` + marker + `\nexec ` + GeoUpdate + ` >/dev/null 2>&1\n' > "$d/morche-geoip"
+  chmod 755 "$d/morche-geoip"; done_cron=1; break
 done
 [ -n "$done_cron" ] || echo "No monthly cron folder here: run ` + GeoUpdate + ` now and then to keep the countries current."
 `
@@ -90,8 +90,8 @@ if ! { ` + su.Install(pkg) + `; } >/dev/null 2>&1; then echo "The package manage
 	return head + `command -v nginx >/dev/null 2>&1 || exit ` + strconv.Itoa(proxy.ExitNotInstalled) + `
 if ! out=$(nginx -t 2>&1); then printf '%s\n' "$out"; echo "nginx's configuration already has a problem; fix it first."; exit ` + test + `; fi
 ` + module + `
-` + geoData(su) + `cat > ` + GeoConf + ` <<'MORCHEH_GEO_CONF'
-` + geoConf + `MORCHEH_GEO_CONF
+` + geoData(su) + `cat > ` + GeoConf + ` <<'MORCHE_GEO_CONF'
+` + geoConf + `MORCHE_GEO_CONF
 chmod 644 ` + GeoConf + `
 ` + writeInclude() + `if ! out=$(nginx -t 2>&1); then
   rm -f ` + GeoConf + `

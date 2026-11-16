@@ -10,13 +10,13 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/morcheh/backend/internal/firewall"
+	"github.com/morche/backend/internal/firewall"
 )
 
 const (
 	// ufw filters forwarded traffic after the rewrite, so each forward has a
 	// rule beside it. This note is how Morche knows which rules it may remove.
-	fwForwardComment = "Port forward (added by Morcheh)"
+	fwForwardComment = "Port forward (added by Morche)"
 
 	// fwNatFlush stops the forwards until before.rules is loaded again. Other
 	// programs' rules in the nat table aren't touched.

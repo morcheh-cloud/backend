@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/storage"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/storage"
 )
 
 func TestWatchEvent(t *testing.T) {

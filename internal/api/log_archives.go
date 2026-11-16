@@ -18,8 +18,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
 )
 
 // ---- Views ----
@@ -708,7 +708,7 @@ func registerLogArchives(api huma.API, h *logArchiveHandler) {
 		if !b.To.After(b.From) {
 			return nil, fieldError("body.to", "Pick an end after the start.", b.To)
 		}
-		folder := cmpOr(strings.TrimSpace(b.Folder), "/morcheh-archives")
+		folder := cmpOr(strings.TrimSpace(b.Folder), "/morche-archives")
 		ids, err := h.places(ctx, b.StorageIDs, b.KeepLocal, folder, "body", true)
 		if err != nil {
 			return nil, err

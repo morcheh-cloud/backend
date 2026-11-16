@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/morcheh/backend/internal/dbmon"
+	"github.com/morche/backend/internal/dbmon"
 )
 
 // A restore script reads the backup on stdin, plain (Morche undoes its own
@@ -192,7 +192,7 @@ func mssqlRestore(t Target, o RestoreOptions) (string, error) {
 	}
 	var b strings.Builder
 	mssqlPrelude(&b, t)
-	file := mssqlDataDir + "/morcheh-" + t.ID + ".bak"
+	file := mssqlDataDir + "/morche-" + t.ID + ".bak"
 	b.WriteString("f=" + quote(file) + "\ntrap 'rm -f \"$f\"' EXIT\n")
 	// The file has to be readable by SQL Server's own user; root wrote it here.
 	b.WriteString("cat > \"$f\" || exit 1\nchown mssql \"$f\" 2>/dev/null || chmod 644 \"$f\"\n")
@@ -218,7 +218,7 @@ func mssqlRestore(t Target, o RestoreOptions) (string, error) {
 		list := "SET NOCOUNT ON; RESTORE FILELISTONLY " + source
 		fmt.Fprintf(&b, `move=$(run -h-1 -W -s '|' -Q %s | awk -F'|' -v dir=%s -v id=%s 'NF > 2 && $1 != "" {
   n++; ext = ($3 == "L") ? ".ldf" : ".mdf"; gsub(/\047/, "\047\047", $1)
-  printf ", MOVE N\047%%s\047 TO N\047%%s/morcheh-%%s-%%d%%s\047", $1, dir, id, n, ext
+  printf ", MOVE N\047%%s\047 TO N\047%%s/morche-%%s-%%d%%s\047", $1, dir, id, n, ext
 }') || exit 1
 [ -n "$move" ] || { echo 'The backup lists no files.' >&2; exit 1; }
 `, mssqlSQL(list), quote(mssqlDataDir), quote(t.ID))

@@ -16,8 +16,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/proxmox"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/proxmox"
 )
 
 // A console is opened in two steps: the API asks Proxmox for a ticket and

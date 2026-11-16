@@ -66,7 +66,7 @@ type Rule struct {
 	Full       bool     `json:"full" doc:"Grants every command"`
 	NoPassword bool     `json:"nopasswd"`
 	Active     bool     `json:"active" doc:"false for files sudo skips (a . or ~ in the name)"`
-	Managed    bool     `json:"managed" doc:"Written by Morche (sudoers.d/morcheh-*)"`
+	Managed    bool     `json:"managed" doc:"Written by Morche (sudoers.d/morche-*)"`
 }
 
 type Session struct {
@@ -107,7 +107,7 @@ type Result struct {
 // SudoGroups are the conventional groups that grant sudo.
 var SudoGroups = []string{"sudo", "wheel", "admin"}
 
-const ManagedPrefix = "morcheh-"
+const ManagedPrefix = "morche-"
 
 // LockDay is the account expiry (days since 1970) a full lock sets.
 const LockDay = 1

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/morcheh/backend/internal/cloud"
+	"github.com/morche/backend/internal/cloud"
 )
 
 func TestState(t *testing.T) {

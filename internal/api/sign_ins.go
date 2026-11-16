@@ -16,8 +16,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/notify"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/notify"
 )
 
 // signInKeepDays is how long the sign-in log is kept.

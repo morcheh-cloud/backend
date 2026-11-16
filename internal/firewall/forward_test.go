@@ -28,9 +28,9 @@ func TestForwardsRoundTrip(t *testing.T) {
 		t.Error("the nat block must come first")
 	}
 	for _, want := range []string{
-		"-A MORCHEH-PRE -p tcp --dport 8080 -j REDIRECT --to-ports 9000",
-		"-A MORCHEH-PRE -i eth0 -p udp -s 203.0.113.0/24 --dport 5000:5010 -j DNAT --to-destination 10.0.0.5",
-		"-A MORCHEH-POST -p udp -d 10.0.0.5 --dport 5000:5010 -j MASQUERADE",
+		"-A MORCHE-PRE -p tcp --dport 8080 -j REDIRECT --to-ports 9000",
+		"-A MORCHE-PRE -i eth0 -p udp -s 203.0.113.0/24 --dport 5000:5010 -j DNAT --to-destination 10.0.0.5",
+		"-A MORCHE-POST -p udp -d 10.0.0.5 --dport 5000:5010 -j MASQUERADE",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)

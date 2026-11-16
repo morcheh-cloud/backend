@@ -19,12 +19,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/docker"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/docker"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // ---- API shapes ----
@@ -359,22 +359,22 @@ func writeFilesScript(name, dir, file string, files []string, compose, env, b64c
 	q := terminal.ShellQuote
 	var b strings.Builder
 	b.WriteString("set -e\nmkdir -p " + q(dir) + "\ncd " + q(dir) + "\nF=" + q(file) + "\n")
-	b.WriteString(`[ -f "$F" ] && cp -p "$F" "$F.morcheh-old" || true` + "\n")
-	b.WriteString("if [ -f .env ]; then cp -p .env .env.morcheh-old; fi\n")
-	b.WriteString("printf '%s' " + q(b64c) + ` | base64 -d > "$F.morcheh-new"; mv "$F.morcheh-new" "$F"` + "\n")
+	b.WriteString(`[ -f "$F" ] && cp -p "$F" "$F.morche-old" || true` + "\n")
+	b.WriteString("if [ -f .env ]; then cp -p .env .env.morche-old; fi\n")
+	b.WriteString("printf '%s' " + q(b64c) + ` | base64 -d > "$F.morche-new"; mv "$F.morche-new" "$F"` + "\n")
 	if env != "" {
-		b.WriteString("umask 077; printf '%s' " + q(b64e) + " | base64 -d > .env.morcheh-new; chmod 600 .env.morcheh-new; mv .env.morcheh-new .env\n")
+		b.WriteString("umask 077; printf '%s' " + q(b64e) + " | base64 -d > .env.morche-new; chmod 600 .env.morche-new; mv .env.morche-new .env\n")
 	} else {
 		b.WriteString("rm -f .env\n")
 	}
 	b.WriteString(composeDetect)
 	b.WriteString("set +e\nout=$($C " + composeArgs(name, dir, files) + " config -q 2>&1); code=$?\n")
 	b.WriteString(`if [ $code -ne 0 ]; then
-  if [ -f "$F.morcheh-old" ]; then mv "$F.morcheh-old" "$F"; else rm -f "$F"; fi
-  if [ -f .env.morcheh-old ]; then mv .env.morcheh-old .env; else rm -f .env; fi
+  if [ -f "$F.morche-old" ]; then mv "$F.morche-old" "$F"; else rm -f "$F"; fi
+  if [ -f .env.morche-old ]; then mv .env.morche-old .env; else rm -f .env; fi
   printf '%s\n' "$out" | tail -n 5 >&2; exit 65
 fi
-rm -f "$F.morcheh-old" .env.morcheh-old
+rm -f "$F.morche-old" .env.morche-old
 `)
 	_ = compose
 	return b.String()

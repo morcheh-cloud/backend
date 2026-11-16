@@ -1,4 +1,4 @@
-module github.com/morcheh/backend
+module github.com/morche/backend
 
 go 1.27.2
 

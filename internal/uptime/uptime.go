@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/morcheh/backend/internal/dbmon"
+	"github.com/morche/backend/internal/dbmon"
 )
 
 // Statuses a check ends in.

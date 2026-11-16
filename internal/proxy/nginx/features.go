@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // Sign-in, maintenance and error pages, hardening, and the extra path
@@ -19,7 +19,7 @@ import (
 const (
 	// AuthDir holds one password file per host using basic sign-in.
 	AuthDir        = Dir + "/auth"
-	internalPrefix = "/__morcheh/"
+	internalPrefix = "/__morche/"
 	authLocation   = internalPrefix + "auth"
 	maintPage      = internalPrefix + "maintenance.html"
 	// defaultCABundle is used when the server didn't say where its CA file is.

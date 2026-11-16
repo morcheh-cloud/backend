@@ -42,7 +42,7 @@ CREATE UNIQUE INDEX docker_templates_name_key ON docker_templates (workspace_id,
 CREATE TABLE docker_settings (
     workspace_id  uuid PRIMARY KEY REFERENCES workspaces (id) ON DELETE CASCADE,
     -- Where new compose projects go on a server (one folder per project).
-    projects_dir  text NOT NULL DEFAULT '/opt/morcheh/projects',
+    projects_dir  text NOT NULL DEFAULT '/opt/morche/projects',
     -- Look for newer images once a day on every server with Docker.
     update_check  boolean NOT NULL DEFAULT true,
     -- The image that scans for vulnerabilities when the server has no trivy.

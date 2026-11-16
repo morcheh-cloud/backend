@@ -435,8 +435,8 @@ func validatePath(h HostConfig, i int, p PathRule, add func(field, msg string, v
 	default:
 		add(f+".match", "Choose prefix, exact or regex.", p.Match)
 	}
-	if p.MatchOf() != MatchRegex && strings.HasPrefix(p.Path+"/", "/__morcheh/") {
-		add(f+".path", "Paths under /__morcheh/ are kept for the pages Morche answers itself.", p.Path)
+	if p.MatchOf() != MatchRegex && strings.HasPrefix(p.Path+"/", "/__morche/") {
+		add(f+".path", "Paths under /__morche/ are kept for the pages Morche answers itself.", p.Path)
 	}
 	switch p.ActionOf() {
 	case ActionProxy:

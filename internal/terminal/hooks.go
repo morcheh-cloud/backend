@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 // Shell integration: so the command log can list what is typed into a
@@ -22,7 +22,7 @@ import (
 // at a sudo prompt is never seen. Other shells start as before and their
 // commands aren't captured.
 //
-// The hooks live in ~/.cache/morcheh/shell on the server (not /tmp, where
+// The hooks live in ~/.cache/morche/shell on the server (not /tmp, where
 // another user could plant a file first) and are written again when they
 // change (hooksVersion).
 
@@ -43,7 +43,7 @@ type Commands interface {
 
 const (
 	hooksVersion = "1"
-	hooksDir     = ".cache/morcheh/shell"
+	hooksDir     = ".cache/morche/shell"
 	oscPrefix    = "\x1b]7766;"
 	// An unfinished sequence longer than this is not ours: let it through.
 	oscMax = 256 << 10
@@ -82,24 +82,24 @@ func newNonce() string {
 }
 
 // The start script picks the hooks for the login shell.
-const startScript = `d="$HOME/.cache/morcheh/shell"
+const startScript = `d="$HOME/.cache/morche/shell"
 [ -n "$1" ] && cd -- "$1" 2>/dev/null
 command -v base64 >/dev/null 2>&1 || exec "${SHELL:-/bin/sh}" -l
-export MORCHEH_NONCE="$2"
+export MORCHE_NONCE="$2"
 case "${SHELL##*/}" in
 bash) exec "$SHELL" --rcfile "$d/bashrc" -i ;;
 zsh)
-	export MORCHEH_USER_ZDOTDIR="${ZDOTDIR-}"
+	export MORCHE_USER_ZDOTDIR="${ZDOTDIR-}"
 	export ZDOTDIR="$d/zsh"
 	exec "$SHELL" -l ;;
 esac
-unset MORCHEH_NONCE
+unset MORCHE_NONCE
 exec "${SHELL:-/bin/sh}" -l
 `
 
 // bash isn't started as a login shell (it would skip --rcfile), so the rc
 // reads the login files itself, then adds the hooks last so they win.
-const bashRC = `__m_nonce=$MORCHEH_NONCE; unset MORCHEH_NONCE
+const bashRC = `__m_nonce=$MORCHE_NONCE; unset MORCHE_NONCE
 [ -f /etc/profile ] && . /etc/profile
 for __m_f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
 	if [ -f "$__m_f" ]; then . "$__m_f"; break; fi
@@ -123,18 +123,18 @@ printf '\033]7766;%s;r;bash;%s\007' "$__m_nonce" "$(id -u)"
 // zsh reads its files from ZDOTDIR: ours read the user's own, then the
 // last one puts ZDOTDIR back and adds the hooks.
 const zshEnv = `__m_dir=$ZDOTDIR
-ZDOTDIR=${MORCHEH_USER_ZDOTDIR:-$HOME}
+ZDOTDIR=${MORCHE_USER_ZDOTDIR:-$HOME}
 [[ -f $ZDOTDIR/.zshenv ]] && source $ZDOTDIR/.zshenv
 ZDOTDIR=$__m_dir
 `
 
-const zshProfile = `ZDOTDIR=${MORCHEH_USER_ZDOTDIR:-$HOME}
+const zshProfile = `ZDOTDIR=${MORCHE_USER_ZDOTDIR:-$HOME}
 [[ -f $ZDOTDIR/.zprofile ]] && source $ZDOTDIR/.zprofile
 ZDOTDIR=$__m_dir
 `
 
-const zshRC = `__m_nonce=$MORCHEH_NONCE; unset MORCHEH_NONCE
-ZDOTDIR=${MORCHEH_USER_ZDOTDIR:-$HOME}; unset MORCHEH_USER_ZDOTDIR __m_dir
+const zshRC = `__m_nonce=$MORCHE_NONCE; unset MORCHE_NONCE
+ZDOTDIR=${MORCHE_USER_ZDOTDIR:-$HOME}; unset MORCHE_USER_ZDOTDIR __m_dir
 [[ -f $ZDOTDIR/.zshrc ]] && source $ZDOTDIR/.zshrc
 __m_b() { printf '%s' "$1" | base64 | tr -d '\n' }
 __m_pre() { printf '\033]7766;%s;s;;%s;%s\007' "$__m_nonce" "$(__m_b "$PWD")" "$(__m_b "$1")" }
@@ -159,7 +159,7 @@ var installScript = func() string {
 		{"version", hooksVersion + "\n"},
 	}
 	for _, f := range files {
-		b.WriteString("cat > \"$d/" + f.name + ".tmp\" <<'MORCHEH_EOF'\n" + f.body + "MORCHEH_EOF\n")
+		b.WriteString("cat > \"$d/" + f.name + ".tmp\" <<'MORCHE_EOF'\n" + f.body + "MORCHE_EOF\n")
 		b.WriteString("mv -f \"$d/" + f.name + ".tmp\" \"$d/" + f.name + "\"\n")
 	}
 	return b.String()

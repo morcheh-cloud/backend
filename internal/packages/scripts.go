@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/morcheh/backend/internal/software"
+	"github.com/morche/backend/internal/software"
 )
 
 // Actions a job can run.

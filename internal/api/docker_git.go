@@ -18,12 +18,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/morcheh/backend/internal/auth"
-	"github.com/morcheh/backend/internal/cmdlog"
-	"github.com/morcheh/backend/internal/database/sqlc"
-	"github.com/morcheh/backend/internal/jobs"
-	"github.com/morcheh/backend/internal/sshpool"
-	"github.com/morcheh/backend/internal/terminal"
+	"github.com/morche/backend/internal/auth"
+	"github.com/morche/backend/internal/cmdlog"
+	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/jobs"
+	"github.com/morche/backend/internal/sshpool"
+	"github.com/morche/backend/internal/terminal"
 )
 
 // GitOps: a compose project can come from a git repository. Morche keeps a
@@ -189,12 +189,12 @@ export GIT_TERMINAL_PROMPT=0
 if [ -n "$MT" ]; then
   A=$(mktemp) || exit 3
   trap 'rm -f "$A"' EXIT
-  cat > "$A" <<'MORCHEH_ASKPASS'
+  cat > "$A" <<'MORCHE_ASKPASS'
 #!/bin/sh
-case "$1" in Username*) printf '%s\n' "$MORCHEH_GIT_USER" ;; *) printf '%s\n' "$MORCHEH_GIT_TOKEN" ;; esac
-MORCHEH_ASKPASS
+case "$1" in Username*) printf '%s\n' "$MORCHE_GIT_USER" ;; *) printf '%s\n' "$MORCHE_GIT_TOKEN" ;; esac
+MORCHE_ASKPASS
   chmod 700 "$A"
-  export GIT_ASKPASS="$A" MORCHEH_GIT_USER=` + terminal.ShellQuote(user) + ` MORCHEH_GIT_TOKEN="$MT"
+  export GIT_ASKPASS="$A" MORCHE_GIT_USER=` + terminal.ShellQuote(user) + ` MORCHE_GIT_TOKEN="$MT"
 fi
 g() { git -c safe.directory='*' -c credential.helper= "$@"; }
 `

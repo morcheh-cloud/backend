@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 func TestTuning(t *testing.T) {
@@ -64,18 +64,18 @@ func TestCache(t *testing.T) {
 	}
 	got := Driver{}.Render("h1", h, proxy.Env{Version: "1.24.0"})
 	for _, want := range []string{
-		"proxy_cache_path " + CacheDir + "/morcheh_h1 levels=1:2 keys_zone=morcheh_h1_cache:10m max_size=1024m inactive=10080m use_temp_path=off;",
-		"map $sent_http_content_type $morcheh_h1_expires {",
+		"proxy_cache_path " + CacheDir + "/morche_h1 levels=1:2 keys_zone=morche_h1_cache:10m max_size=1024m inactive=10080m use_temp_path=off;",
+		"map $sent_http_content_type $morche_h1_expires {",
 		"~^text/html -1;",
 		`"~^text/css" 30d;`,
 		`"~^/admin(?:/|$)" 1;`,
 		`"~^/wp-json/" 1;`,
 		`"~(?:^|;)\s*(?:wordpress_logged_in|session\.id)" 1;`,
-		"expires $morcheh_h1_expires;",
+		"expires $morche_h1_expires;",
 		"add_header X-Cache-Status $upstream_cache_status always;",
-		"proxy_cache morcheh_h1_cache;",
+		"proxy_cache morche_h1_cache;",
 		"proxy_cache_valid 200 301 302 5m;",
-		"proxy_cache_bypass $http_authorization $http_upgrade $morcheh_h1_skip_path $morcheh_h1_skip_cookie;",
+		"proxy_cache_bypass $http_authorization $http_upgrade $morche_h1_skip_path $morche_h1_skip_cookie;",
 		"proxy_cache_use_stale error timeout updating",
 		"proxy_ignore_headers Cache-Control Expires;",
 	} {
@@ -95,7 +95,7 @@ func TestCache(t *testing.T) {
 	if st.Cache.Enabled || len(st.Cache.SkipPaths) > 0 || st.Cache.AssetDays != 7 {
 		t.Errorf("static cache = %+v", st.Cache)
 	}
-	if got := (Driver{}).Render("s", st, proxy.Env{}); strings.Contains(got, "proxy_cache") || !strings.Contains(got, "expires $morcheh_s_expires;") {
+	if got := (Driver{}).Render("s", st, proxy.Env{}); strings.Contains(got, "proxy_cache") || !strings.Contains(got, "expires $morche_s_expires;") {
 		t.Errorf("static:\n%s", got)
 	}
 	bad := proxy.Normalize(proxy.HostConfig{
@@ -112,7 +112,7 @@ func TestCache(t *testing.T) {
 		}
 	}
 
-	if s := (Driver{}).PurgeCacheScript("01A-b", proxy.PurgeFilter{}, false); !strings.Contains(s, "d="+CacheDir+"/morcheh_01ab\n") || strings.Contains(s, "grep -l") {
+	if s := (Driver{}).PurgeCacheScript("01A-b", proxy.PurgeFilter{}, false); !strings.Contains(s, "d="+CacheDir+"/morche_01ab\n") || strings.Contains(s, "grep -l") {
 		t.Errorf("purge script:\n%s", s)
 	}
 }
@@ -170,10 +170,10 @@ func TestCacheVary(t *testing.T) {
 	}
 	got := (Driver{}).Render("k", h, proxy.Env{})
 	for _, want := range []string{
-		`proxy_cache_key "$morcheh_k_device,$morcheh_k_os,$morcheh_k_lang,$morcheh_k_vh0,$morcheh_k_vc0|$scheme$host$request_uri";`,
-		"map $http_user_agent $morcheh_k_device", "map $http_user_agent $morcheh_k_os",
-		"map $http_accept_language $morcheh_k_lang", "map $http_x_country $morcheh_k_vh0",
-		"map $cookie_currency $morcheh_k_vc0", `add_header X-Cache-Variant`,
+		`proxy_cache_key "$morche_k_device,$morche_k_os,$morche_k_lang,$morche_k_vh0,$morche_k_vc0|$scheme$host$request_uri";`,
+		"map $http_user_agent $morche_k_device", "map $http_user_agent $morche_k_os",
+		"map $http_accept_language $morche_k_lang", "map $http_x_country $morche_k_vh0",
+		"map $cookie_currency $morche_k_vc0", `add_header X-Cache-Variant`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in\n%s", want, got)
@@ -237,8 +237,8 @@ func TestCacheRules(t *testing.T) {
 	based.Upstream = "http://127.0.0.1:1/base/"
 	got = (Driver{}).Render("k", based, proxy.Env{})
 	for _, want := range []string{
-		"set $morcheh_k_asked $uri;", "rewrite ^/(.*)$ /base/$1 break;",
-		"proxy_cache_key $scheme$host$morcheh_k_asked;",
+		"set $morche_k_asked $uri;", "rewrite ^/(.*)$ /base/$1 break;",
+		"proxy_cache_key $scheme$host$morche_k_asked;",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in\n%s", want, got)
@@ -325,7 +325,7 @@ func TestPurgeRegexps(t *testing.T) {
 	if strings.Count(s, "grep -l") != 2 || strings.Contains(s, "xargs -r rm -f") {
 		t.Errorf("dry run script:\n%s", s)
 	}
-	if n, kb, ok := proxy.ParsePurge("noise\nMORCHEH_PURGE 12 340\n"); !ok || n != 12 || kb != 340 {
+	if n, kb, ok := proxy.ParsePurge("noise\nMORCHE_PURGE 12 340\n"); !ok || n != 12 || kb != 340 {
 		t.Errorf("parse = %d %d %v", n, kb, ok)
 	}
 }

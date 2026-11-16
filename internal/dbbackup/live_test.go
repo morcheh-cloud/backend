@@ -17,14 +17,14 @@ func TestLive(t *testing.T) {
 		name, container string
 		target          Target
 	}{
-		{"pg one", "morcheh-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Name: "shop", Local: true}},
-		{"pg all", "morcheh-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Local: true}},
-		{"mysql one", "morcheh-test-mysql-1", Target{Engine: "mysql", Username: "root", Password: "colony", Name: "shop", Local: true}},
-		{"mysql all", "morcheh-test-mysql-1", Target{Engine: "mysql", Username: "root", Password: "colony", Local: true}},
-		{"maria one", "morcheh-test-mariadb-1", Target{Engine: "mysql", Username: "root", Password: "colony", Name: "shop", Local: true}},
-		{"mongo", "morcheh-test-mongo-1", Target{Engine: "mongodb", Username: "ant", Password: "colony", Local: true}},
-		{"redis", "morcheh-test-redis-1", Target{Engine: "redis", Password: "colony", Local: true}},
-		{"mssql", "morcheh-test-mssql-1", Target{Engine: "mssql", Username: "sa", Password: "Colony-2026!", Name: "master", Local: true, ID: "live-test"}},
+		{"pg one", "morche-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Name: "shop", Local: true}},
+		{"pg all", "morche-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Local: true}},
+		{"mysql one", "morche-test-mysql-1", Target{Engine: "mysql", Username: "root", Password: "colony", Name: "shop", Local: true}},
+		{"mysql all", "morche-test-mysql-1", Target{Engine: "mysql", Username: "root", Password: "colony", Local: true}},
+		{"maria one", "morche-test-mariadb-1", Target{Engine: "mysql", Username: "root", Password: "colony", Name: "shop", Local: true}},
+		{"mongo", "morche-test-mongo-1", Target{Engine: "mongodb", Username: "ant", Password: "colony", Local: true}},
+		{"redis", "morche-test-redis-1", Target{Engine: "redis", Password: "colony", Local: true}},
+		{"mssql", "morche-test-mssql-1", Target{Engine: "mssql", Username: "sa", Password: "Colony-2026!", Name: "master", Local: true, ID: "live-test"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

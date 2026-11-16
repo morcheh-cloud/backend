@@ -177,7 +177,7 @@ func reservedParam(name string) bool {
 		return true
 	}
 	return strings.HasPrefix(name, "LD_") || strings.HasPrefix(name, "BASH_FUNC") ||
-		strings.HasPrefix(name, "PYTHON") || strings.HasPrefix(name, "MORCHEH_")
+		strings.HasPrefix(name, "PYTHON") || strings.HasPrefix(name, "MORCHE_")
 }
 
 // Normalize trims what a person typed.

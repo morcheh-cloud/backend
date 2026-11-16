@@ -19,7 +19,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/morcheh/backend/internal/sshpool"
+	"github.com/morche/backend/internal/sshpool"
 )
 
 const (

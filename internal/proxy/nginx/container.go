@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/morcheh/backend/internal/proxy"
+	"github.com/morche/backend/internal/proxy"
 )
 
 // ---- nginx in a container: what runs on the server around it ----
@@ -26,12 +26,12 @@ M certs
 // a server (name.1, then name.N.gz, 14 kept) and has nginx reopen them.
 func rotateScript(c proxy.Container) string {
 	return `#!/bin/sh
-# Managed by Morcheh: rotates the logs of nginx in the container ` + c.Name + `.
+# Managed by Morche: rotates the logs of nginx in the container ` + c.Name + `.
 ` + strings.TrimSuffix(proxy.HostPath(), "\n") + `
-` + c.Runtime + ` exec -i -u 0 ` + q(c.Name) + ` sh -s <<'MORCHEH_ROTATE_IN'
+` + c.Runtime + ` exec -i -u 0 ` + q(c.Name) + ` sh -s <<'MORCHE_ROTATE_IN'
 cd ` + logDir + ` 2>/dev/null || exit 0
 r=0
-for f in morcheh-*.log; do
+for f in morche-*.log; do
   [ -f "$f" ] && [ -s "$f" ] || continue
   rm -f "$f.14.gz"
   i=13
@@ -45,18 +45,18 @@ for f in morcheh-*.log; do
 done
 [ $r = 1 ] && nginx -s reopen >/dev/null 2>&1
 exit 0
-MORCHEH_ROTATE_IN
+MORCHE_ROTATE_IN
 `
 }
 
 func (Driver) HostSetupScript(c proxy.Container) string {
 	dir := c.HostDir()
 	return proxy.HostPath() + fmt.Sprintf(`mkdir -p %[1]s && chmod 700 %[1]s || exit 1
-cat > %[1]s/rotate.sh <<'MORCHEH_ROTATE'
-%[2]sMORCHEH_ROTATE
+cat > %[1]s/rotate.sh <<'MORCHE_ROTATE'
+%[2]sMORCHE_ROTATE
 chmod 700 %[1]s/rotate.sh
 if [ -d /etc/cron.d ]; then
-  printf '# Managed by Morcheh: rotates the logs of nginx in the container %%s.\n17 3 * * * root %%s >/dev/null 2>&1\n' %[3]s %[1]s/rotate.sh > %[4]s && chmod 644 %[4]s
+  printf '# Managed by Morche: rotates the logs of nginx in the container %%s.\n17 3 * * * root %%s >/dev/null 2>&1\n' %[3]s %[1]s/rotate.sh > %[4]s && chmod 644 %[4]s
 else
   echo "This server has no /etc/cron.d, so the container's logs won't be rotated: run %[1]s/rotate.sh daily yourself."
 fi
@@ -94,29 +94,29 @@ func acmeContainerScript(r proxy.CertRequest, s proxy.Setup) string {
 	b.WriteString(c.Check())
 	b.WriteString(certbotNeeded(s))
 	fmt.Fprintf(&b, `mkdir -p %[1]s && chmod 700 %[1]s || exit 1
-cat > %[1]s/auth.sh <<'MORCHEH_HOOK'
+cat > %[1]s/auth.sh <<'MORCHE_HOOK'
 #!/bin/sh
-# Managed by Morcheh: puts certbot's check into the container %[2]s.
+# Managed by Morche: puts certbot's check into the container %[2]s.
 %[3]s
 printf '%%s' "$CERTBOT_VALIDATION" | %[4]s sh -c 'd=%[5]s; mkdir -p "$d" && cat > "$d/$1" && chmod 644 "$d/$1"' sh "$CERTBOT_TOKEN"
-MORCHEH_HOOK
-cat > %[1]s/cleanup.sh <<'MORCHEH_HOOK'
+MORCHE_HOOK
+cat > %[1]s/cleanup.sh <<'MORCHE_HOOK'
 #!/bin/sh
-# Managed by Morcheh: removes certbot's check from the container %[2]s.
+# Managed by Morche: removes certbot's check from the container %[2]s.
 %[3]s
 %[4]s sh -c 'rm -f "%[5]s/$1"' sh "$CERTBOT_TOKEN" </dev/null
 exit 0
-MORCHEH_HOOK
-cat > %[1]s/deploy.sh <<'MORCHEH_HOOK'
+MORCHE_HOOK
+cat > %[1]s/deploy.sh <<'MORCHE_HOOK'
 #!/bin/sh
-# Managed by Morcheh: copies renewed certificates into the container %[2]s
+# Managed by Morche: copies renewed certificates into the container %[2]s
 # and reloads its nginx.
 %[3]s
 [ -n "$RENEWED_LINEAGE" ] || exit 0
 %[6]spush "$RENEWED_LINEAGE/fullchain.pem" "$RENEWED_LINEAGE/privkey.pem" "$RENEWED_LINEAGE/chain.pem" "$RENEWED_LINEAGE/cert.pem" || exit 1
 %[7]s sh -c 'nginx -t >/dev/null 2>&1 && nginx -s reload' </dev/null
 exit 0
-MORCHEH_HOOK
+MORCHE_HOOK
 chmod 700 %[1]s/auth.sh %[1]s/cleanup.sh %[1]s/deploy.sh
 `, dir, c.Name, path, ex, challenge, c.PushFn(), c.Runtime+" exec -u 0 "+q(c.Name))
 	// The temporary block goes in (and comes out) inside the container.
