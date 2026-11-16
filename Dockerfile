@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 
 # ---- runtime ----------------------------------------------------------------
 FROM ubuntu:${UBUNTU_VERSION}
-LABEL org.opencontainers.image.source=https://github.com/morche-cloud/backend \
+LABEL org.opencontainers.image.source=https://github.com/morcheh-cloud/backend \
       org.opencontainers.image.title="Morche backend" \
       org.opencontainers.image.description="API for Morche: SSH-based server management and monitoring"
 ARG UBUNTU_VERSION

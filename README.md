@@ -6,7 +6,7 @@ API for Morche (SSH-based server management and monitoring). Development setup a
 
 The `Dockerfile` builds the server together with every tool it drives from its own machine: ssh/sshpass and Ansible (with bubblewrap) for playbooks, and the database clients for backups that run on the Morche server (`pg_dump` 18, `mariadb-dump`/`mariadb-binlog`, `mongodump`, `redis-cli`). Migrations are applied on start (`MIGRATE_ON_START=false` to skip).
 
-Published images: `ghcr.io/morcheh-cloud/backend` (`.github/workflows/image.yml`: `edge` from main, versions from `v*` tags; amd64 + arm64). Self-hosting from the published images (compose + `install.sh`) lives in the [deploy repository](https://github.com/morcheh-cloud/morcheh).
+Published images: `ghcr.io/morcheh-cloud/backend` (`.github/workflows/image.yml`: `edge` from main, versions from `v*` tags; amd64 + arm64). Self-hosting from the published images (compose + `install.sh`) lives in the [deploy repository](https://github.com/morcheh-cloud/morche).
 
 To build the whole stack (Postgres, Redis, backend, panel) from source, use `deploy/`. It expects the frontend repository next to this one (`../frontend`):
 
