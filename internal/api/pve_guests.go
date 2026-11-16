@@ -301,6 +301,14 @@ func (h *pveHandler) detail(ctx context.Context, c sqlc.PveCluster, cl *proxmox.
 	if stErr == nil {
 		d.QMPStatus, d.HAManaged, d.HAGroup = st.QMPStatus, st.HA.Managed == 1, st.HA.Group
 		d.RunningMachine, d.RunningQEMU = st.RunningMachine, st.RunningQEMU
+		// status/current is live; cluster/resources lags pvestatd by ~10 s,
+		// so a power change shows at once.
+		if st.Status != "" {
+			d.Status = st.Status
+			if st.Status != "running" {
+				d.Uptime = 0
+			}
+		}
 		if st.QMPStatus == "paused" || st.QMPStatus == "suspended" || st.QMPStatus == "prelaunch" {
 			d.Status = "paused"
 		}
@@ -309,6 +317,9 @@ func (h *pveHandler) detail(ctx context.Context, c sqlc.PveCluster, cl *proxmox.
 		}
 	}
 	d.Digest = cfg["digest"]
+	if cfg["template"] == "1" {
+		d.Template = true // cluster/resources lags a fresh conversion
+	}
 	d.Config = redactConfig(cfg)
 	d.Description = cfg["description"]
 	d.OnBoot = cfg["onboot"] == "1"
@@ -848,7 +859,9 @@ func registerPVEGuests(api huma.API, h *pveHandler) {
 		}
 		upid, err := cl.SetConfig(ctx, r.Node, proxmox.Kind(r.Type), r.VMID, in.Body.Set, in.Body.Delete, in.Body.Digest)
 		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "digest") {
+			// Proxmox 8+ says "detected modified configuration - file changed
+			// by other user?", older ones mention the digest.
+			if msg := strings.ToLower(err.Error()); strings.Contains(msg, "digest") || strings.Contains(msg, "modified configuration") {
 				return nil, huma.Error409Conflict("The machine's settings changed since you opened them. Reload and try again.")
 			}
 			return nil, pveError(err)
@@ -977,12 +990,13 @@ func registerPVEGuests(api huma.API, h *pveHandler) {
 	}, func(ctx context.Context, in *struct {
 		PVEGuestPath
 		Body struct {
-			NewID   int    `json:"new_id,omitempty" minimum:"0" maximum:"999999999" doc:"0 = the next free id"`
-			Name    string `json:"name,omitempty" maxLength:"63"`
-			Full    bool   `json:"full" doc:"A full copy. A linked clone (templates only) shares the template's disks"`
-			Target  string `json:"target,omitempty" maxLength:"64" doc:"Node to put it on"`
-			Storage string `json:"storage,omitempty" maxLength:"64" doc:"Full clone: storage for its disks"`
-			Start   bool   `json:"start,omitempty"`
+			NewID    int    `json:"new_id,omitempty" minimum:"0" maximum:"999999999" doc:"0 = the next free id"`
+			Name     string `json:"name,omitempty" maxLength:"63"`
+			Full     bool   `json:"full" doc:"A full copy. A linked clone (templates only) shares the template's disks"`
+			Target   string `json:"target,omitempty" maxLength:"64" doc:"Node to put it on"`
+			Storage  string `json:"storage,omitempty" maxLength:"64" doc:"Full clone: storage for its disks"`
+			Start    bool   `json:"start,omitempty"`
+			Snapshot string `json:"snapshot,omitempty" maxLength:"40" doc:"Clone from this snapshot instead of the current state"`
 		}
 	}) (*JobOutput, error) {
 		c, cl, r, err := h.pveGuest(ctx, in.PVEGuestPath)
@@ -991,7 +1005,19 @@ func registerPVEGuests(api huma.API, h *pveHandler) {
 		}
 		b := in.Body
 		if !b.Full && r.Template != 1 {
+			// cluster/resources lags a fresh conversion: ask the config.
+			if cfg, err := cl.GuestConfig(ctx, r.Node, proxmox.Kind(r.Type), r.VMID); err == nil && cfg["template"] == "1" {
+				r.Template = 1
+			}
+		}
+		if !b.Full && r.Template != 1 {
 			return nil, fieldError("body.full", "Only a template can be linked-cloned: make a full copy", false)
+		}
+		if b.Snapshot == "current" {
+			b.Snapshot = ""
+		}
+		if b.Snapshot == "" && r.Type == "lxc" && r.Status == "running" && r.Template != 1 {
+			return nil, fieldError("body.snapshot", "A running container can only be copied from a snapshot: pick one, or shut it down first", "")
 		}
 		if b.NewID == 0 {
 			if b.NewID, err = cl.NextID(ctx); err != nil {
@@ -1003,6 +1029,7 @@ func registerPVEGuests(api huma.API, h *pveHandler) {
 		}
 		upid, err := cl.Clone(ctx, r.Node, proxmox.Kind(r.Type), r.VMID, proxmox.CloneOptions{
 			NewID: b.NewID, Name: b.Name, Full: b.Full, Target: b.Target, Storage: b.Storage,
+			Snapshot: b.Snapshot,
 		})
 		if err != nil {
 			return nil, pveError(err)

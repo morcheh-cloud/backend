@@ -192,6 +192,16 @@ func (e *PermissionError) Error() string {
 	return "the token isn't allowed to do this: " + e.Message
 }
 
+// NoAccessError: the token signs in but may see nothing, the usual state of
+// a privilege-separated token nobody gave a role to.
+type NoAccessError struct{}
+
+func (e *NoAccessError) Error() string {
+	return "the token signs in but may see nothing: give it a role on / in " +
+		"Datacenter › Permissions (PVEAuditor to watch, PVEAdmin to manage), " +
+		"or turn off its Privilege separation"
+}
+
 // APIError is Proxmox refusing a request: a bad value, a guest that's
 // locked, a missing VM. Fields holds per-parameter problems.
 type APIError struct {
@@ -345,6 +355,7 @@ func Classify(err error) (string, string) {
 	}
 	var auth *AuthError
 	var perm *PermissionError
+	var none *NoAccessError
 	var api *APIError
 	var notPVE *NotProxmoxError
 	var fp *FingerprintError
@@ -356,6 +367,8 @@ func Classify(err error) (string, string) {
 		return "auth_failed", auth.Error()
 	case errors.As(err, &perm):
 		return "auth_failed", perm.Error()
+	case errors.As(err, &none):
+		return "auth_failed", none.Error()
 	case errors.As(err, &fp):
 		return "tls_error", fp.Error()
 	case errors.As(err, &cert), errors.As(err, &unknown), errors.As(err, &host):

@@ -2,6 +2,7 @@ package proxmox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -49,7 +50,8 @@ func (c *Client) Check(ctx context.Context) (Info, error) {
 		return Info{}, err
 	}
 	info := Info{Version: v.Version, Latency: time.Since(start)}
-	if st, err := c.ClusterStatus(ctx); err == nil {
+	st, stErr := c.ClusterStatus(ctx)
+	if stErr == nil {
 		for _, s := range st {
 			switch s.Type {
 			case "cluster":
@@ -62,12 +64,32 @@ func (c *Client) Check(ctx context.Context) (Info, error) {
 			}
 		}
 	}
+	seen := 0
 	if res, err := c.Resources(ctx, ""); err == nil {
 		for _, r := range res {
+			if r.Type == "qemu" || r.Type == "lxc" || r.Type == "storage" {
+				seen++
+			}
 			if (r.Type == "qemu" || r.Type == "lxc") && r.Template != 1 {
 				info.Guests++
 				if r.Status == "running" {
 					info.Running++
+				}
+			}
+		}
+	}
+	var perm *PermissionError
+	if errors.As(stErr, &perm) {
+		// A token kept to some guests is fine; one that sees nothing at all
+		// is a privilege-separated token nobody gave a role to.
+		if seen == 0 {
+			return info, &NoAccessError{}
+		}
+		if nodes, err := c.Nodes(ctx); err == nil {
+			for _, n := range nodes {
+				info.Nodes++
+				if n.Status == "online" {
+					info.NodesOnline++
 				}
 			}
 		}
@@ -408,6 +430,9 @@ type CloneOptions struct {
 	Target  string
 	Storage string
 	Pool    string
+	// Snapshot clones from that snapshot instead of the current state
+	// (a running container can only be fully cloned this way).
+	Snapshot string
 }
 
 func (c *Client) Clone(ctx context.Context, node string, kind Kind, vmid int, o CloneOptions) (string, error) {
@@ -430,6 +455,9 @@ func (c *Client) Clone(ctx context.Context, node string, kind Kind, vmid int, o 
 	}
 	if o.Pool != "" {
 		form.Set("pool", o.Pool)
+	}
+	if o.Snapshot != "" {
+		form.Set("snapname", o.Snapshot)
 	}
 	return c.upid(ctx, http.MethodPost, guestPath(node, kind, vmid)+"/clone", form)
 }
@@ -909,7 +937,12 @@ func (c *Client) UpdateFirewallRule(ctx context.Context, node string, kind Kind,
 	return c.put(ctx, guestPath(node, kind, vmid)+"/firewall/rules/"+strconv.Itoa(r.Pos), form, nil)
 }
 
+// MoveFirewallRule puts the rule at pos at final position to. Proxmox's
+// moveto inserts before the rule now at that index, so moving down needs +1.
 func (c *Client) MoveFirewallRule(ctx context.Context, node string, kind Kind, vmid int, pos, to int) error {
+	if to > pos {
+		to++
+	}
 	return c.put(ctx, guestPath(node, kind, vmid)+"/firewall/rules/"+strconv.Itoa(pos), url.Values{"moveto": {strconv.Itoa(to)}}, nil)
 }
 

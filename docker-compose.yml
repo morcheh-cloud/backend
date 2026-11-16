@@ -243,17 +243,6 @@ services:
     volumes:
       - testdockerdata:/var/lib/docker
 
-  # Fake Proxmox VE cluster for the Virtual machines section (cmd/fakepve).
-  # Token root@pam!morche = 00000000-fake-4000-8000-000000000000.
-  test-pve:
-    build:
-      context: .
-      dockerfile: dev/fakepve/Dockerfile
-    ports:
-      - "127.0.0.1:8006:8006"
-    volumes:
-      - testpvedata:/data
-
   # Fake ArvanCloud API for the Cloud section (cmd/fakearvan). Backend env:
   # ARVAN_FAKE_URL=http://127.0.0.1:8091/%s/v3; key fake-arvan-0000-4000-8000-000000000000.
   test-arvan:
@@ -279,4 +268,3 @@ volumes:
   testdns1data:
   testdns2data:
   testdockerdata:
-  testpvedata:
