@@ -1289,6 +1289,7 @@ func registerDatabaseBackups(api huma.API, h *backupHandler) {
 	})
 
 	registerDatabaseRestores(api, h, tags)
+	registerDatabaseRestoreFiles(api, h, tags)
 }
 
 // storedCopies are a backup's copies that hold its file on a storage that's

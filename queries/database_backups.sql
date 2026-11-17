@@ -217,11 +217,13 @@ ORDER BY b.created_at DESC;
 -- name: CreateRestore :one
 INSERT INTO database_restores (
     workspace_id, database_id, backup_id, source, target_name, mode, runner_server_id, storage_id,
-    want_safety, username, password_enc, created_by, created_by_name
+    want_safety, username, password_enc, created_by, created_by_name,
+    source_server_id, format, source_name, safety_storage_id, safety_folder
 ) VALUES (
     @workspace_id, @database_id, @backup_id, @source, @target_name, @mode,
     sqlc.narg('runner_server_id'), sqlc.narg('storage_id'), @want_safety, @username,
-    sqlc.narg('password_enc'), sqlc.narg('created_by'), @created_by_name
+    sqlc.narg('password_enc'), sqlc.narg('created_by'), @created_by_name,
+    sqlc.narg('source_server_id'), @format, @source_name, sqlc.narg('safety_storage_id'), @safety_folder
 )
 RETURNING *;
 

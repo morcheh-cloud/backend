@@ -380,29 +380,36 @@ func (q *Queries) CreateBackupPlan(ctx context.Context, arg CreateBackupPlanPara
 const createRestore = `-- name: CreateRestore :one
 INSERT INTO database_restores (
     workspace_id, database_id, backup_id, source, target_name, mode, runner_server_id, storage_id,
-    want_safety, username, password_enc, created_by, created_by_name
+    want_safety, username, password_enc, created_by, created_by_name,
+    source_server_id, format, source_name, safety_storage_id, safety_folder
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10,
-    $11, $12, $13
+    $11, $12, $13,
+    $14, $15, $16, $17, $18
 )
-RETURNING id, workspace_id, database_id, backup_id, source, target_name, mode, runner_server_id, storage_id, want_safety, safety_backup_id, username, password_enc, state, error, job_id, created_by, created_by_name, created_at, started_at, finished_at
+RETURNING id, workspace_id, database_id, backup_id, source, target_name, mode, runner_server_id, storage_id, want_safety, safety_backup_id, username, password_enc, state, error, job_id, created_by, created_by_name, created_at, started_at, finished_at, source_server_id, format, source_name, safety_storage_id, safety_folder
 `
 
 type CreateRestoreParams struct {
-	WorkspaceID    uuid.UUID  `json:"workspace_id"`
-	DatabaseID     uuid.UUID  `json:"database_id"`
-	BackupID       *uuid.UUID `json:"backup_id"`
-	Source         string     `json:"source"`
-	TargetName     string     `json:"target_name"`
-	Mode           string     `json:"mode"`
-	RunnerServerID *uuid.UUID `json:"runner_server_id"`
-	StorageID      *uuid.UUID `json:"storage_id"`
-	WantSafety     bool       `json:"want_safety"`
-	Username       string     `json:"username"`
-	PasswordEnc    []byte     `json:"password_enc"`
-	CreatedBy      *uuid.UUID `json:"created_by"`
-	CreatedByName  string     `json:"created_by_name"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	DatabaseID      uuid.UUID  `json:"database_id"`
+	BackupID        *uuid.UUID `json:"backup_id"`
+	Source          string     `json:"source"`
+	TargetName      string     `json:"target_name"`
+	Mode            string     `json:"mode"`
+	RunnerServerID  *uuid.UUID `json:"runner_server_id"`
+	StorageID       *uuid.UUID `json:"storage_id"`
+	WantSafety      bool       `json:"want_safety"`
+	Username        string     `json:"username"`
+	PasswordEnc     []byte     `json:"password_enc"`
+	CreatedBy       *uuid.UUID `json:"created_by"`
+	CreatedByName   string     `json:"created_by_name"`
+	SourceServerID  *uuid.UUID `json:"source_server_id"`
+	Format          string     `json:"format"`
+	SourceName      string     `json:"source_name"`
+	SafetyStorageID *uuid.UUID `json:"safety_storage_id"`
+	SafetyFolder    string     `json:"safety_folder"`
 }
 
 func (q *Queries) CreateRestore(ctx context.Context, arg CreateRestoreParams) (DatabaseRestore, error) {
@@ -420,6 +427,11 @@ func (q *Queries) CreateRestore(ctx context.Context, arg CreateRestoreParams) (D
 		arg.PasswordEnc,
 		arg.CreatedBy,
 		arg.CreatedByName,
+		arg.SourceServerID,
+		arg.Format,
+		arg.SourceName,
+		arg.SafetyStorageID,
+		arg.SafetyFolder,
 	)
 	var i DatabaseRestore
 	err := row.Scan(
@@ -444,6 +456,11 @@ func (q *Queries) CreateRestore(ctx context.Context, arg CreateRestoreParams) (D
 		&i.CreatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.SourceServerID,
+		&i.Format,
+		&i.SourceName,
+		&i.SafetyStorageID,
+		&i.SafetyFolder,
 	)
 	return i, err
 }
@@ -641,7 +658,7 @@ func (q *Queries) GetBackupPlanDatabase(ctx context.Context, id uuid.UUID) (uuid
 }
 
 const getRestore = `-- name: GetRestore :one
-SELECT id, workspace_id, database_id, backup_id, source, target_name, mode, runner_server_id, storage_id, want_safety, safety_backup_id, username, password_enc, state, error, job_id, created_by, created_by_name, created_at, started_at, finished_at FROM database_restores WHERE id = $1
+SELECT id, workspace_id, database_id, backup_id, source, target_name, mode, runner_server_id, storage_id, want_safety, safety_backup_id, username, password_enc, state, error, job_id, created_by, created_by_name, created_at, started_at, finished_at, source_server_id, format, source_name, safety_storage_id, safety_folder FROM database_restores WHERE id = $1
 `
 
 func (q *Queries) GetRestore(ctx context.Context, id uuid.UUID) (DatabaseRestore, error) {
@@ -669,6 +686,11 @@ func (q *Queries) GetRestore(ctx context.Context, id uuid.UUID) (DatabaseRestore
 		&i.CreatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.SourceServerID,
+		&i.Format,
+		&i.SourceName,
+		&i.SafetyStorageID,
+		&i.SafetyFolder,
 	)
 	return i, err
 }
@@ -1354,7 +1376,7 @@ func (q *Queries) ListPlanBackups(ctx context.Context, planID *uuid.UUID) ([]Dat
 }
 
 const listRestores = `-- name: ListRestores :many
-SELECT id, workspace_id, database_id, backup_id, source, target_name, mode, runner_server_id, storage_id, want_safety, safety_backup_id, username, password_enc, state, error, job_id, created_by, created_by_name, created_at, started_at, finished_at FROM database_restores WHERE database_id = $1
+SELECT id, workspace_id, database_id, backup_id, source, target_name, mode, runner_server_id, storage_id, want_safety, safety_backup_id, username, password_enc, state, error, job_id, created_by, created_by_name, created_at, started_at, finished_at, source_server_id, format, source_name, safety_storage_id, safety_folder FROM database_restores WHERE database_id = $1
 ORDER BY id DESC LIMIT $3 OFFSET $2
 `
 
@@ -1395,6 +1417,11 @@ func (q *Queries) ListRestores(ctx context.Context, arg ListRestoresParams) ([]D
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.SourceServerID,
+			&i.Format,
+			&i.SourceName,
+			&i.SafetyStorageID,
+			&i.SafetyFolder,
 		); err != nil {
 			return nil, err
 		}

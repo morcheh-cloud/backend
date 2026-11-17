@@ -45,6 +45,7 @@ type Querier interface {
 	ChannelsToNotify(ctx context.Context, monitorID uuid.UUID) ([]NotificationChannel, error)
 	// Moves a due plan on; 0 rows means something else already did.
 	ClaimBackupPlan(ctx context.Context, arg ClaimBackupPlanParams) (int64, error)
+	ClaimDatabaseSync(ctx context.Context, arg ClaimDatabaseSyncParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
 	ClaimDockerAutoUpdate(ctx context.Context, arg ClaimDockerAutoUpdateParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
@@ -62,6 +63,8 @@ type Querier interface {
 	// Which servers commands ran on in the window, for the filter.
 	CommandLogServers(ctx context.Context, arg CommandLogServersParams) ([]CommandLogServersRow, error)
 	CountActiveAdmins(ctx context.Context) (int32, error)
+	// Runs writing into a database now, from any sync.
+	CountActiveDatabaseSyncRunsTo(ctx context.Context, arg CountActiveDatabaseSyncRunsToParams) (int64, error)
 	CountActiveRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountAnsibleRuns(ctx context.Context, arg CountAnsibleRunsParams) (int64, error)
 	CountBackupChildren(ctx context.Context, ids []uuid.UUID) ([]CountBackupChildrenRow, error)
@@ -98,6 +101,8 @@ type Querier interface {
 	CreateCloudAccount(ctx context.Context, arg CreateCloudAccountParams) (CloudAccount, error)
 	CreateDNSServer(ctx context.Context, arg CreateDNSServerParams) (DnsServer, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
+	CreateDatabaseSync(ctx context.Context, arg CreateDatabaseSyncParams) (DatabaseSync, error)
+	CreateDatabaseSyncRun(ctx context.Context, arg CreateDatabaseSyncRunParams) (DatabaseSyncRun, error)
 	CreateDockerAutoUpdate(ctx context.Context, arg CreateDockerAutoUpdateParams) (DockerAutoUpdate, error)
 	CreateDockerProjectVersion(ctx context.Context, arg CreateDockerProjectVersionParams) (CreateDockerProjectVersionRow, error)
 	CreateDockerRegistry(ctx context.Context, arg CreateDockerRegistryParams) (DockerRegistry, error)
@@ -160,6 +165,7 @@ type Querier interface {
 	DeleteCloudAccount(ctx context.Context, id uuid.UUID) error
 	DeleteDNSServer(ctx context.Context, id uuid.UUID) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteDatabaseSync(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDockerAutoUpdate(ctx context.Context, arg DeleteDockerAutoUpdateParams) (int64, error)
 	DeleteDockerGitSource(ctx context.Context, arg DeleteDockerGitSourceParams) (int64, error)
 	DeleteDockerImageScan(ctx context.Context, arg DeleteDockerImageScanParams) error
@@ -239,6 +245,7 @@ type Querier interface {
 	EndAnsibleRun(ctx context.Context, arg EndAnsibleRunParams) error
 	// Only a run still going: a run that finished keeps its outcome.
 	EndBackup(ctx context.Context, arg EndBackupParams) error
+	EndDatabaseSyncRun(ctx context.Context, arg EndDatabaseSyncRunParams) error
 	EndDockerAutoUpdateRun(ctx context.Context, arg EndDockerAutoUpdateRunParams) error
 	// Only a restore still going. The login it was given goes with it.
 	EndRestore(ctx context.Context, arg EndRestoreParams) error
@@ -262,6 +269,7 @@ type Querier interface {
 	FinishAnsibleRun(ctx context.Context, arg FinishAnsibleRunParams) error
 	// error is a warning here: a copy that failed while another worked.
 	FinishBackup(ctx context.Context, arg FinishBackupParams) error
+	FinishDatabaseSyncRun(ctx context.Context, arg FinishDatabaseSyncRunParams) error
 	FinishDockerVolumeBackup(ctx context.Context, arg FinishDockerVolumeBackupParams) error
 	FinishJob(ctx context.Context, arg FinishJobParams) error
 	FinishLogArchive(ctx context.Context, arg FinishLogArchiveParams) (LogArchive, error)
@@ -301,6 +309,11 @@ type Querier interface {
 	GetDNSServer(ctx context.Context, id uuid.UUID) (DnsServer, error)
 	GetDNSServerWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
+	GetDatabaseSync(ctx context.Context, id uuid.UUID) (DatabaseSync, error)
+	// What access to a sync follows: both databases' workspaces and servers.
+	GetDatabaseSyncEnds(ctx context.Context, id uuid.UUID) (GetDatabaseSyncEndsRow, error)
+	GetDatabaseSyncRun(ctx context.Context, id uuid.UUID) (DatabaseSyncRun, error)
+	GetDatabaseSyncRunEnds(ctx context.Context, id uuid.UUID) (GetDatabaseSyncRunEndsRow, error)
 	// What access to a database follows: its workspace, and the server it goes
 	// through.
 	GetDatabaseWorkspace(ctx context.Context, id uuid.UUID) (GetDatabaseWorkspaceRow, error)
@@ -428,6 +441,7 @@ type Querier interface {
 	LatestServerSamples(ctx context.Context, ids []uuid.UUID) ([]ServerSample, error)
 	LatestStorageUsage(ctx context.Context, ids []uuid.UUID) ([]StorageUsage, error)
 	ListActiveBackups(ctx context.Context, planID *uuid.UUID) ([]DatabaseBackup, error)
+	ListActiveDatabaseSyncRuns(ctx context.Context, syncID uuid.UUID) ([]DatabaseSyncRun, error)
 	ListActiveJobsBy(ctx context.Context, createdBy *uuid.UUID) ([]uuid.UUID, error)
 	ListActiveScheduleRuns(ctx context.Context, scheduleID *uuid.UUID) ([]ScheduleRun, error)
 	ListActiveStorageSyncRuns(ctx context.Context, syncID uuid.UUID) ([]StorageSyncRun, error)
@@ -473,6 +487,9 @@ type Querier interface {
 	// checked), the longest waiting first.
 	ListDNSServersDueForCheck(ctx context.Context, before time.Time) ([]DnsServer, error)
 	ListDatabaseEvents(ctx context.Context, arg ListDatabaseEventsParams) ([]DatabaseEvent, error)
+	ListDatabaseSyncRuns(ctx context.Context, arg ListDatabaseSyncRunsParams) ([]DatabaseSyncRun, error)
+	// With each one's newest run (skipped ones aside), for the list.
+	ListDatabaseSyncs(ctx context.Context, arg ListDatabaseSyncsParams) ([]ListDatabaseSyncsRow, error)
 	ListDatabases(ctx context.Context, arg ListDatabasesParams) ([]Database, error)
 	// What the monitor should look at now.
 	ListDatabasesDue(ctx context.Context) ([]Database, error)
@@ -492,6 +509,7 @@ type Querier interface {
 	ListDockerTemplates(ctx context.Context, workspaceID uuid.UUID) ([]DockerTemplate, error)
 	ListDockerVolumeBackups(ctx context.Context, arg ListDockerVolumeBackupsParams) ([]DockerVolumeBackup, error)
 	ListDueBackupPlans(ctx context.Context, now *time.Time) ([]DatabaseBackupPlan, error)
+	ListDueDatabaseSyncs(ctx context.Context, now *time.Time) ([]DatabaseSync, error)
 	ListDueMonitors(ctx context.Context, lim int32) ([]Monitor, error)
 	ListDueSchedules(ctx context.Context, now *time.Time) ([]Schedule, error)
 	ListDueStorageSyncs(ctx context.Context, now *time.Time) ([]StorageSync, error)
@@ -654,6 +672,7 @@ type Querier interface {
 	PruneCommandLog(ctx context.Context) (int64, error)
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
+	PruneDatabaseSyncRuns(ctx context.Context, arg PruneDatabaseSyncRunsParams) error
 	PruneDockerAutoUpdateEvents(ctx context.Context) error
 	PruneDockerProjectStats(ctx context.Context) (int64, error)
 	// Keeps the newest @keep of a project.
@@ -715,6 +734,7 @@ type Querier interface {
 	// Writes a row's whole state; called again as it ends or repeats.
 	SaveCommandLog(ctx context.Context, arg []SaveCommandLogParams) *SaveCommandLogBatchResults
 	SaveCommandLogOutput(ctx context.Context, arg []SaveCommandLogOutputParams) *SaveCommandLogOutputBatchResults
+	SaveDatabaseSyncRun(ctx context.Context, arg SaveDatabaseSyncRunParams) error
 	SaveDockerProjectScan(ctx context.Context, arg SaveDockerProjectScanParams) error
 	SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) error
 	SaveLogArchivePolicy(ctx context.Context, arg SaveLogArchivePolicyParams) (LogArchivePolicy, error)
@@ -769,6 +789,10 @@ type Querier interface {
 	SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavoriteParams) (Database, error)
 	SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMonitoringParams) (Database, error)
 	SetDatabasePaused(ctx context.Context, arg SetDatabasePausedParams) (Database, error)
+	SetDatabaseSyncMarks(ctx context.Context, arg SetDatabaseSyncMarksParams) error
+	SetDatabaseSyncPaused(ctx context.Context, arg SetDatabaseSyncPausedParams) (DatabaseSync, error)
+	SetDatabaseSyncProblem(ctx context.Context, arg SetDatabaseSyncProblemParams) error
+	SetDatabaseSyncRunJob(ctx context.Context, arg SetDatabaseSyncRunJobParams) error
 	SetDockerAutoUpdateEnabled(ctx context.Context, arg SetDockerAutoUpdateEnabledParams) (DockerAutoUpdate, error)
 	SetDockerAutoUpdateNext(ctx context.Context, arg SetDockerAutoUpdateNextParams) error
 	SetDockerAutoUpdateWebhook(ctx context.Context, arg SetDockerAutoUpdateWebhookParams) (DockerAutoUpdate, error)
@@ -821,6 +845,7 @@ type Querier interface {
 	StaleDockerUpdateServers(ctx context.Context) ([]uuid.UUID, error)
 	StartAnsibleRun(ctx context.Context, id uuid.UUID) error
 	StartBackup(ctx context.Context, arg StartBackupParams) error
+	StartDatabaseSyncRun(ctx context.Context, id uuid.UUID) error
 	StartDockerAutoUpdateRun(ctx context.Context, arg StartDockerAutoUpdateRunParams) error
 	StartJob(ctx context.Context, id uuid.UUID) error
 	StartRestore(ctx context.Context, id uuid.UUID) error
@@ -860,6 +885,7 @@ type Querier interface {
 	UpdateDNSServer(ctx context.Context, arg UpdateDNSServerParams) (DnsServer, error)
 	// Full replace of the editable fields; the handler resolves the password first.
 	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
+	UpdateDatabaseSync(ctx context.Context, arg UpdateDatabaseSyncParams) (DatabaseSync, error)
 	UpdateDockerAutoUpdate(ctx context.Context, arg UpdateDockerAutoUpdateParams) (DockerAutoUpdate, error)
 	// A NULL password keeps the saved one.
 	UpdateDockerRegistry(ctx context.Context, arg UpdateDockerRegistryParams) (DockerRegistry, error)

@@ -32,6 +32,10 @@ const (
 	// A workspace level, on the workspace of the storage sync or run in {id}.
 	kindStorageSync
 	kindStorageSyncRun
+	// The lower of the two databases' levels, for the database sync or run
+	// in {id}.
+	kindDatabaseSync
+	kindDatabaseSyncRun
 	// A workspace level, on the workspace of the DNS server in {id}.
 	kindDNSServer
 	// A workspace level, on the workspace of the saved script in {id}.
@@ -75,6 +79,12 @@ func onScheduleRun(l auth.Level) policy { return policy{kindScheduleRun, l} }
 func onStorageSync(l auth.Level) policy { return policy{kindStorageSync, l} }
 func onStorageSyncRun(l auth.Level) policy {
 	return policy{kindStorageSyncRun, l}
+}
+func onDatabaseSync(l auth.Level) policy {
+	return policy{kindDatabaseSync, l}
+}
+func onDatabaseSyncRun(l auth.Level) policy {
+	return policy{kindDatabaseSyncRun, l}
 }
 func onDNSServer(l auth.Level) policy    { return policy{kindDNSServer, l} }
 func onPVECluster(l auth.Level) policy   { return policy{kindPVECluster, l} }
@@ -742,6 +752,8 @@ var policies = map[string]policy{
 	"get-database-backup-plan":      onBackupPlan(auth.Viewer),
 	"list-database-backups":         onDatabase(auth.Viewer),
 	"list-database-restores":        onDatabase(auth.Viewer),
+	"inspect-database-restore-file": onDatabase(auth.Owner),
+	"restore-database-file":         onDatabase(auth.Owner),
 	"create-database-backup-plan":   onDatabase(auth.Owner),
 	"update-database-backup-plan":   onBackupPlan(auth.Owner),
 	"delete-database-backup-plan":   onBackupPlan(auth.Owner),
@@ -752,6 +764,22 @@ var policies = map[string]policy{
 	"download-database-backup":      onBackup(auth.Owner),
 	"delete-database-backup":        onBackup(auth.Owner),
 	"restore-database-backup":       onBackup(auth.Owner),
+
+	// Database syncs: the lower of the two databases' levels counts. Seeing
+	// one = Viewer, running or comparing = Operator, saving = Owner (it
+	// writes over the target). A server runner needs Engineer (inside).
+	"list-database-syncs":       active,
+	"create-database-sync":      active,
+	"list-database-sync-plans":  onDatabase(auth.Viewer),
+	"list-database-sync-tables": onDatabase(auth.Operator),
+	"get-database-sync":         onDatabaseSync(auth.Viewer),
+	"update-database-sync":      onDatabaseSync(auth.Owner),
+	"pause-database-sync":       onDatabaseSync(auth.Operator),
+	"delete-database-sync":      onDatabaseSync(auth.Owner),
+	"run-database-sync":         onDatabaseSync(auth.Operator),
+	"list-database-sync-runs":   onDatabaseSync(auth.Viewer),
+	"get-database-sync-run":     onDatabaseSyncRun(auth.Viewer),
+	"cancel-database-sync-run":  onDatabaseSyncRun(auth.Operator),
 
 	// Jobs: everyone sees their own, admins all.
 	"list-jobs": active,

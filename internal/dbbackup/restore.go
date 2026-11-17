@@ -1,8 +1,10 @@
 package dbbackup
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,7 +21,7 @@ const restoreLockMillis = 60_000
 // Restorable says why a file can't be restored from the panel; empty = it can.
 func Restorable(format, target string) string {
 	switch format {
-	case PgCustom, MySQLDB, MySQLBinlog, MSSQLBak, MSSQLDiff:
+	case PgCustom, PgSQL, MySQLDB, MySQLBinlog, MSSQLBak, MSSQLDiff:
 		return ""
 	case MongoArchive, MySQLSQL:
 		if target != "" {
@@ -57,6 +59,12 @@ type RestoreOptions struct {
 	Replace bool
 	// The chain's first and last files. A single file is both.
 	First, Last bool
+	// A Mongo archive whose collections aren't compressed (mongodump
+	// without --gzip; Morche's own always are).
+	MongoPlain bool
+	// A MySQL file that names its database goes into a new one: make it
+	// first (a file from elsewhere may not), drop it if the load fails.
+	CreateNamed bool
 }
 
 // BuildRestore writes the script that loads one file into t.Name.
@@ -79,6 +87,8 @@ func BuildRestore(t Target, o RestoreOptions) (string, error) {
 	switch o.Format {
 	case PgCustom:
 		return pgRestore(t, o), nil
+	case PgSQL:
+		return pgSQLRestore(t, o)
 	case MySQLDB, MySQLSQL, MySQLBinlog:
 		return mysqlRestore(t, o), nil
 	case MongoArchive:
@@ -95,12 +105,13 @@ func connInfo(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `\'`) + "'"
 }
 
-func pgRestore(t Target, o RestoreOptions) string {
-	var b strings.Builder
+// pgPrelude writes the connection environment of a restore and returns a
+// command that runs sql in the maintenance database.
+func pgPrelude(b *strings.Builder, t Target) func(sql string) string {
 	b.WriteString("umask 077\n")
 	sslmode := pgSSLMode(t)
 	if verifiesCA(t) {
-		caFile(&b, t.CACert)
+		caFile(b, t.CACert)
 		b.WriteString("export PGSSLROOTCERT=\"$ca\"\n")
 	}
 	env := []string{
@@ -112,15 +123,22 @@ func pgRestore(t Target, o RestoreOptions) string {
 		env = append(env, "PGPASSWORD="+quote(t.Password))
 	}
 	b.WriteString("export " + strings.Join(env, " ") + "\n")
-	b.WriteString("command -v pg_restore >/dev/null 2>&1 || { " + missing("pg_restore") + "; }\n")
-	ident := `"` + strings.ReplaceAll(t.Name, `"`, `""`) + `"`
 	maintenance := t.AuthDatabase
 	if maintenance == "" {
 		maintenance = "postgres"
 	}
-	admin := func(sql string) string {
+	return func(sql string) string {
 		return "psql -X -q -v ON_ERROR_STOP=1 --no-password -d " + quote("dbname="+connInfo(maintenance)) + " -c " + quote(sql) + " </dev/null"
 	}
+}
+
+func pgIdent(name string) string { return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` }
+
+func pgRestore(t Target, o RestoreOptions) string {
+	var b strings.Builder
+	admin := pgPrelude(&b, t)
+	b.WriteString("command -v pg_restore >/dev/null 2>&1 || { " + missing("pg_restore") + "; }\n")
+	ident := pgIdent(t.Name)
 	args := "pg_restore --no-owner --no-privileges --single-transaction --exit-on-error --no-password -d " + quote("dbname="+connInfo(t.Name))
 	if o.Replace {
 		b.WriteString(args + " --clean --if-exists\n")
@@ -150,7 +168,12 @@ esac
 	ident := "`" + strings.ReplaceAll(t.Name, "`", "``") + "`"
 	if o.Format == MySQLBinlog || o.Format == MySQLSQL {
 		// These files say which database they're for.
-		b.WriteString("client $safe " + login + " --binary-mode\n")
+		load := "client $safe " + login + " --binary-mode"
+		if o.CreateNamed && !o.Replace {
+			b.WriteString("client " + login + " -e " + quote("CREATE DATABASE "+ident) + " </dev/null || exit 1\n")
+			load += " || { s=$?; client " + login + " -e " + quote("DROP DATABASE IF EXISTS "+ident) + " </dev/null; exit $s; }"
+		}
+		b.WriteString(load + "\n")
 		return b.String()
 	}
 	load := "client $safe " + login + " --binary-mode -D " + quote(t.Name)
@@ -171,7 +194,11 @@ esac
 func mongoRestore(t Target, o RestoreOptions) string {
 	var b strings.Builder
 	b.WriteString("umask 077\ncommand -v mongorestore >/dev/null 2>&1 || { " + missing("mongorestore") + "; }\n")
-	args := append([]string{"mongorestore", "--quiet", "--archive", "--gzip", "--stopOnError"}, mongoAccess(&b, t)...)
+	args := []string{"mongorestore", "--quiet", "--archive", "--gzip", "--stopOnError"}
+	if o.MongoPlain {
+		args = slices.Delete(args, 3, 4)
+	}
+	args = append(args, mongoAccess(&b, t)...)
 	if o.Replace {
 		args = append(args, "--drop")
 	}
@@ -236,5 +263,68 @@ func mssqlRestore(t Target, o RestoreOptions) (string, error) {
 	} else {
 		b.WriteString(" || exit 1\n")
 	}
+	return b.String(), nil
+}
+
+// PgSQLCheck is what pgSQLRestore's psql prints when it can't run the file
+// safely (no restricted mode before 17.6 / 16.10 / 15.14 / 14.19 / 13.22).
+const PgSQLCheck = "psql on the machine that runs the restore is too old to load a plain SQL file safely: it needs PostgreSQL 17.6, 16.10, 15.14, 14.19 or 13.22 or later."
+
+// pgSQLRestore loads a plain pg_dump file (read through PlainSQL) with psql,
+// in one transaction. It goes into a new database first; replacing swaps it
+// in by name only once it has loaded, so a failure leaves the old one as is.
+func pgSQLRestore(t Target, o RestoreOptions) (string, error) {
+	if !idPattern.MatchString(t.ID) || len(strings.ReplaceAll(t.ID, "-", "")) < 8 {
+		return "", errors.New("a restore needs an id")
+	}
+	var b strings.Builder
+	admin := pgPrelude(&b, t)
+	b.WriteString("command -v psql >/dev/null 2>&1 || { " + missing("psql") + "; }\n")
+	// The file is read in restricted mode (no \! and the like): psql has to
+	// know it, or it would ignore the line and run whatever the file says.
+	b.WriteString(`out=$(printf '\\restrict morche\n\\unrestrict morche\n' | psql -X -q -v ON_ERROR_STOP=1 --no-password -d ` +
+		quote("dbname="+connInfo(cmp.Or(t.AuthDatabase, "postgres"))) + ` -f - 2>&1) || {
+  case "$out" in
+    *"invalid command"*) echo ` + quote(PgSQLCheck) + ` >&2 ;;
+    *) printf '%s\n' "$out" >&2 ;;
+  esac
+  exit 1
+}
+`)
+	short := strings.ReplaceAll(t.ID, "-", "")[:8]
+	into := t.Name
+	if o.Replace {
+		into = "morche_restore_" + short
+	}
+	load := "psql -X -q -v ON_ERROR_STOP=1 --single-transaction --no-password -d " + quote("dbname="+connInfo(into)) + " -f -"
+	b.WriteString(admin("CREATE DATABASE "+pgIdent(into)) + " || exit 1\n")
+	b.WriteString(load + " || { s=$?; " + admin("DROP DATABASE IF EXISTS "+pgIdent(into)) + " >&2; exit $s; }\n")
+	if !o.Replace {
+		return b.String(), nil
+	}
+	old := "morche_old_" + short
+	literal := "'" + strings.ReplaceAll(t.Name, "'", "''") + "'"
+	kick := admin("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = " + literal + " AND pid <> pg_backend_pid()")
+	// Sessions in the old one are ended; one that comes straight back can
+	// keep the rename from going through, so it's tried a few times.
+	b.WriteString(`n=0
+until { ` + kick + ` >/dev/null; ` + admin("ALTER DATABASE "+pgIdent(t.Name)+" RENAME TO "+pgIdent(old)) + `; }; do
+  n=$((n+1))
+  if [ "$n" -ge 5 ]; then
+    echo "The database is still in use, so it couldn't be swapped for the restored copy." >&2
+    ` + admin("DROP DATABASE IF EXISTS "+pgIdent(into)) + ` >&2
+    exit 1
+  fi
+  sleep 2
+done
+`)
+	b.WriteString(admin("ALTER DATABASE "+pgIdent(into)+" RENAME TO "+pgIdent(t.Name)) + ` || {
+  ` + admin("ALTER DATABASE "+pgIdent(old)+" RENAME TO "+pgIdent(t.Name)) + ` >&2
+  ` + admin("DROP DATABASE IF EXISTS "+pgIdent(into)) + ` >&2
+  exit 1
+}
+`)
+	b.WriteString(admin("DROP DATABASE "+pgIdent(old)+" WITH (FORCE)") + " 2>/dev/null || " + admin("DROP DATABASE "+pgIdent(old)) +
+		" || echo " + quote("The old copy was kept as "+old+": drop it once nobody uses it.") + " >&2\n")
 	return b.String(), nil
 }

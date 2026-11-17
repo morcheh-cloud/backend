@@ -284,6 +284,13 @@ func mysql(t Target) Spec {
 	if t.Name != "" {
 		what, format = "-- "+quote(t.Name), MySQLDB
 	}
+	// MySQL 8's mysqldump asks for column histograms, which MariaDB servers
+	// don't have; the table is optional, so never ask.
+	b.WriteString(`stats=
+case "$(dump --help 2>/dev/null)" in
+  *--column-statistics*) stats=--column-statistics=0 ;;
+esac
+`)
 	position := ""
 	if t.Chain {
 		// A comment at the top of the file says where the binary log stood.
@@ -294,7 +301,7 @@ esac
 `)
 		position = "$position "
 	}
-	fmt.Fprintf(&b, "dump %s --single-transaction --quick --routines --triggers --events --hex-blob --no-tablespaces %s%s </dev/null\n",
+	fmt.Fprintf(&b, "dump %s $stats --single-transaction --quick --routines --triggers --events --hex-blob --no-tablespaces %s%s </dev/null\n",
 		mysqlLogin(t), position, what)
 	return Spec{Script: b.String(), Ext: "sql.gz", Format: format, Gzip: true, HeadPosition: t.Chain}
 }

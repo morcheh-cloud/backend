@@ -5,6 +5,7 @@ package dbbackup
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"testing"
@@ -192,4 +193,71 @@ func TestLiveRestoreMSSQLDifferential(t *testing.T) {
 		t.Fatalf("new: %s rows", n)
 	}
 	t.Log("mssql full + differential into a new name ok")
+}
+
+// A plain pg_dump from elsewhere: sniffed, checked, filtered, then loaded new
+// and swapped in over a database still in use.
+func TestLiveRestorePostgresPlain(t *testing.T) {
+	const c = "morche-test-postgres-1"
+	psql := func(db, sql string) string {
+		return sh(t, c, "env", "PGPASSWORD=colony", "psql", "-U", "ant", "-h", "127.0.0.1", "-d", db, "-tAc", sql)
+	}
+	for _, db := range []string{"rt_src", "rt_new"} {
+		psql("postgres", "DROP DATABASE IF EXISTS "+db+" WITH (FORCE)")
+		defer psql("postgres", "DROP DATABASE IF EXISTS "+db+" WITH (FORCE)")
+	}
+	psql("postgres", "CREATE DATABASE rt_src")
+	psql("rt_src", "CREATE TABLE t (n int, s text); INSERT INTO t VALUES (1, E'a\\\\b'), (2, '\\restrict x'); ALTER TABLE t OWNER TO ant")
+	dump := []byte(sh(t, c, "env", "PGPASSWORD=colony", "pg_dump", "-U", "ant", "-h", "127.0.0.1", "rt_src") + "\n")
+
+	check, err := CheckFile(bytes.NewReader(dump), "postgres")
+	if err != nil || check.Format != PgSQL || check.Problem != "" {
+		t.Fatalf("%+v %v", check, err)
+	}
+	load := func(tg Target, replace bool) {
+		s, err := BuildRestore(tg, RestoreOptions{Format: PgSQL, Source: "rt_src", Replace: replace, First: true, Last: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(PlainSQL(bytes.NewReader(dump), "k3y"))
+		feed(t, c, s, body)
+	}
+	tg := Target{Engine: "postgres", Username: "ant", Password: "colony", Local: true, Name: "rt_new", ID: "0193a1b2-0000-7000"}
+	load(tg, false)
+	if n := psql("rt_new", "SELECT count(*) FROM t"); n != "2" {
+		t.Fatalf("new: %s rows", n)
+	}
+	// Replace while someone is connected.
+	psql("rt_src", "DELETE FROM t")
+	hold := exec.Command("docker", "exec", c, "env", "PGPASSWORD=colony", "psql", "-U", "ant", "-h", "127.0.0.1", "-d", "rt_src", "-c", "SELECT pg_sleep(30)")
+	hold.Start()
+	defer hold.Process.Kill()
+	tg.Name, tg.ID = "rt_src", "0193a1b2-1111-7000"
+	load(tg, true)
+	if n := psql("rt_src", "SELECT count(*) FROM t WHERE s = '\\restrict x'"); n != "1" {
+		t.Fatalf("replace: %s rows", n)
+	}
+	if left := psql("postgres", "SELECT count(*) FROM pg_database WHERE datname LIKE 'morche_%'"); left != "0" {
+		t.Fatalf("%s leftovers", left)
+	}
+}
+
+// mongodump --archive without --gzip.
+func TestLiveRestoreMongoPlain(t *testing.T) {
+	const c = "morche-test-mongo-1"
+	mongo := func(js string) string {
+		return sh(t, c, "mongosh", "--quiet", "-u", "ant", "-p", "colony", "--authenticationDatabase", "admin", "--eval", js)
+	}
+	mongo(`db.getSiblingDB("rt_src").dropDatabase(); db.getSiblingDB("rt_new").dropDatabase(); db.getSiblingDB("rt_src").t.insertMany([{n:1},{n:2}])`)
+	defer mongo(`db.getSiblingDB("rt_src").dropDatabase(); db.getSiblingDB("rt_new").dropDatabase()`)
+	file, _ := feed(t, c, "mongodump --quiet --archive -u ant -p colony --authenticationDatabase admin --db rt_src", nil)
+	s, err := Sniff(bytes.NewReader(file), "mongodb")
+	if err != nil || s.MongoGzip || s.Format != MongoArchive || strings.Join(s.Databases, ",") != "rt_src" {
+		t.Fatalf("%+v %v", s, err)
+	}
+	tg := Target{Engine: "mongodb", Username: "ant", Password: "colony", AuthDatabase: "admin", Name: "rt_new", Local: true}
+	restore(t, c, tg, RestoreOptions{Format: MongoArchive, Source: "rt_src", First: true, Last: true, MongoPlain: true}, file)
+	if n := mongo(`db.getSiblingDB("rt_new").t.countDocuments()`); n != "2" {
+		t.Fatalf("new: %s docs", n)
+	}
 }

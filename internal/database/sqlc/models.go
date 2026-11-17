@@ -414,27 +414,32 @@ type DatabaseEvent struct {
 }
 
 type DatabaseRestore struct {
-	ID             uuid.UUID  `json:"id"`
-	WorkspaceID    uuid.UUID  `json:"workspace_id"`
-	DatabaseID     uuid.UUID  `json:"database_id"`
-	BackupID       *uuid.UUID `json:"backup_id"`
-	Source         string     `json:"source"`
-	TargetName     string     `json:"target_name"`
-	Mode           string     `json:"mode"`
-	RunnerServerID *uuid.UUID `json:"runner_server_id"`
-	StorageID      *uuid.UUID `json:"storage_id"`
-	WantSafety     bool       `json:"want_safety"`
-	SafetyBackupID *uuid.UUID `json:"safety_backup_id"`
-	Username       string     `json:"username"`
-	PasswordEnc    []byte     `json:"password_enc"`
-	State          string     `json:"state"`
-	Error          string     `json:"error"`
-	JobID          *uuid.UUID `json:"job_id"`
-	CreatedBy      *uuid.UUID `json:"created_by"`
-	CreatedByName  string     `json:"created_by_name"`
-	CreatedAt      time.Time  `json:"created_at"`
-	StartedAt      *time.Time `json:"started_at"`
-	FinishedAt     *time.Time `json:"finished_at"`
+	ID              uuid.UUID  `json:"id"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	DatabaseID      uuid.UUID  `json:"database_id"`
+	BackupID        *uuid.UUID `json:"backup_id"`
+	Source          string     `json:"source"`
+	TargetName      string     `json:"target_name"`
+	Mode            string     `json:"mode"`
+	RunnerServerID  *uuid.UUID `json:"runner_server_id"`
+	StorageID       *uuid.UUID `json:"storage_id"`
+	WantSafety      bool       `json:"want_safety"`
+	SafetyBackupID  *uuid.UUID `json:"safety_backup_id"`
+	Username        string     `json:"username"`
+	PasswordEnc     []byte     `json:"password_enc"`
+	State           string     `json:"state"`
+	Error           string     `json:"error"`
+	JobID           *uuid.UUID `json:"job_id"`
+	CreatedBy       *uuid.UUID `json:"created_by"`
+	CreatedByName   string     `json:"created_by_name"`
+	CreatedAt       time.Time  `json:"created_at"`
+	StartedAt       *time.Time `json:"started_at"`
+	FinishedAt      *time.Time `json:"finished_at"`
+	SourceServerID  *uuid.UUID `json:"source_server_id"`
+	Format          string     `json:"format"`
+	SourceName      string     `json:"source_name"`
+	SafetyStorageID *uuid.UUID `json:"safety_storage_id"`
+	SafetyFolder    string     `json:"safety_folder"`
 }
 
 type DatabaseSample struct {
@@ -455,6 +460,50 @@ type DatabaseSample struct {
 	Blocked        *int32    `json:"blocked"`
 	Deadlocks      *int64    `json:"deadlocks"`
 	MemoryBytes    *int64    `json:"memory_bytes"`
+}
+
+type DatabaseSync struct {
+	ID              uuid.UUID  `json:"id"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	Name            string     `json:"name"`
+	Mode            string     `json:"mode"`
+	SourceDbID      uuid.UUID  `json:"source_db_id"`
+	SourceName      string     `json:"source_name"`
+	TargetDbID      uuid.UUID  `json:"target_db_id"`
+	TargetName      string     `json:"target_name"`
+	Trigger         string     `json:"trigger"`
+	Cron            string     `json:"cron"`
+	Timezone        string     `json:"timezone"`
+	IntervalMinutes int32      `json:"interval_minutes"`
+	Options         []byte     `json:"options"`
+	Marks           []byte     `json:"marks"`
+	FullAt          *time.Time `json:"full_at"`
+	Paused          bool       `json:"paused"`
+	NextRunAt       *time.Time `json:"next_run_at"`
+	Problem         string     `json:"problem"`
+	CreatedBy       *uuid.UUID `json:"created_by"`
+	UpdatedBy       *uuid.UUID `json:"updated_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type DatabaseSyncRun struct {
+	ID            uuid.UUID  `json:"id"`
+	SyncID        uuid.UUID  `json:"sync_id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	Trigger       string     `json:"trigger"`
+	DryRun        bool       `json:"dry_run"`
+	State         string     `json:"state"`
+	Phase         string     `json:"phase"`
+	Error         string     `json:"error"`
+	Result        []byte     `json:"result"`
+	RowsWritten   int64      `json:"rows_written"`
+	JobID         *uuid.UUID `json:"job_id"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
 }
 
 type DnsServer struct {

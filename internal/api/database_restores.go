@@ -46,7 +46,11 @@ type BackupRestore struct {
 	Source         string     `json:"source" doc:"The backup's file"`
 	TargetName     string     `json:"target_name"`
 	Mode           string     `json:"mode" enum:"replace,new"`
-	StorageName    string     `json:"storage_name"`
+	StorageName    string     `json:"storage_name" doc:"The storage the file was read from"`
+	ServerName     string     `json:"server_name" doc:"For a file on a server: that server"`
+	FromFile       bool       `json:"from_file" doc:"A file Morche didn't take, chosen on a storage or server"`
+	Format         string     `json:"format" doc:"For a file: what it turned out to be"`
+	SourceName     string     `json:"source_name" doc:"For a file holding several databases: the one taken"`
 	WantSafety     bool       `json:"want_safety"`
 	SafetyBackupID *string    `json:"safety_backup_id" format:"uuid" nullable:"true" doc:"The backup taken just before"`
 	State          string     `json:"state" enum:"queued,running,succeeded,failed,canceled,interrupted"`
@@ -172,6 +176,12 @@ func (h *backupHandler) toRestore(ctx context.Context, r sqlc.DatabaseRestore) B
 		Mode: r.Mode, WantSafety: r.WantSafety, State: r.State, Error: r.Error, CreatedByName: r.CreatedByName,
 		CreatedAt: r.CreatedAt, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt,
 		BackupID: optionalID(r.BackupID), SafetyBackupID: optionalID(r.SafetyBackupID), JobID: optionalID(r.JobID),
+		FromFile: r.Format != "", Format: r.Format, SourceName: r.SourceName,
+	}
+	if r.SourceServerID != nil {
+		if s, err := h.q.GetServer(ctx, *r.SourceServerID); err == nil {
+			out.ServerName = s.Name
+		}
 	}
 	if r.StorageID != nil {
 		if s, err := h.q.GetStorage(ctx, *r.StorageID); err == nil {
@@ -276,60 +286,18 @@ func registerDatabaseRestores(api huma.API, h *backupHandler, tags []string) {
 			}
 		}
 
-		// Where it runs: nil for a direct database = the machine Morche
-		// runs on.
-		var serverID *uuid.UUID
-		switch {
-		case d.Mode != "direct":
-			serverID = d.ServerID
-			if serverID == nil {
-				return nil, huma.Error422UnprocessableEntity("The server this database is reached through was removed.")
-			}
-		case body.RunnerServerID == localRunner:
-		case body.RunnerServerID != "":
-			id, err := uuid.Parse(body.RunnerServerID)
-			if err != nil {
-				return nil, fieldError("body.runner_server_id", "Choose a server.", nil)
-			}
-			serverID = &id
-		case b.PlanID != nil:
+		var planRunner *uuid.UUID
+		if b.PlanID != nil {
 			if p, err := h.q.GetBackupPlan(ctx, *b.PlanID); err == nil {
-				serverID = p.RunnerServerID
+				planRunner = p.RunnerServerID
 			}
 		}
-		if serverID == nil {
-			if lt := localTools(d); !lt.Supported {
-				return nil, fieldError("body.runner_server_id", lt.Note, nil)
-			}
-		} else {
-			server, err := h.q.GetServer(ctx, *serverID)
-			if isNotFound(err) {
-				return nil, fieldError("body.runner_server_id", "That server was removed. Choose another one.", nil)
-			}
-			if err != nil {
-				return nil, internalError(err)
-			}
-			if acc.ServerLevel(d.WorkspaceID, server.ID) < auth.Engineer {
-				return nil, huma.Error403Forbidden(fmt.Sprintf("You need %s access to %s.", auth.Engineer, server.Name))
-			}
-		}
-
-		// What's there now.
-		names, err := h.databaseNames(ctx, d)
+		serverID, err := h.restoreRunner(ctx, d, body.RunnerServerID, planRunner)
 		if err != nil {
-			return nil, huma.Error422UnprocessableEntity(problemText(err))
+			return nil, err
 		}
-		exists := slices.Contains(names, name)
-		switch {
-		case body.Mode == "replace" && !exists:
-			return nil, fieldError("body.target_name", "There's no database called "+name+". Restore it as a new one instead.", nil)
-		case body.Mode == "new" && exists:
-			return nil, fieldError("body.target_name", name+" exists already. Choose another name, or replace it.", nil)
-		}
-		if n, err := h.q.CountActiveRestores(ctx, d.ID); err != nil {
-			return nil, internalError(err)
-		} else if n > 0 {
-			return nil, huma.Error409Conflict("A restore into this database is running. Wait for it to finish.")
+		if err := h.checkRestoreTarget(ctx, d, body.Mode, name); err != nil {
+			return nil, err
 		}
 
 		user, sealed := strings.TrimSpace(body.Username), []byte(nil)
@@ -435,6 +403,9 @@ func (h *backupHandler) runRestore(ctx context.Context, t *jobs.Task) (any, erro
 	}
 	if err := h.q.StartRestore(bg, r.ID); err != nil {
 		return fail(err)
+	}
+	if r.BackupID == nil && r.Format != "" {
+		return h.runFileRestore(ctx, t, r, fail)
 	}
 	if r.BackupID == nil || r.StorageID == nil {
 		return fail(errors.New("The backup or its storage was removed."))
