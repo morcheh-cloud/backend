@@ -221,6 +221,150 @@ type AppSetting struct {
 	AlertFailedSignIns bool        `json:"alert_failed_sign_ins"`
 }
 
+type Asset struct {
+	ID             uuid.UUID   `json:"id"`
+	WorkspaceID    uuid.UUID   `json:"workspace_id"`
+	Kind           string      `json:"kind"`
+	Category       string      `json:"category"`
+	Name           string      `json:"name"`
+	Description    string      `json:"description"`
+	SourceKind     string      `json:"source_kind"`
+	SourceRef      string      `json:"source_ref"`
+	SourceGone     bool        `json:"source_gone"`
+	Facts          []byte      `json:"facts"`
+	LastSeenAt     *time.Time  `json:"last_seen_at"`
+	OwnerUserID    *uuid.UUID  `json:"owner_user_id"`
+	OwnerGroupID   *uuid.UUID  `json:"owner_group_id"`
+	DeputyUserID   *uuid.UUID  `json:"deputy_user_id"`
+	AssignedUserID *uuid.UUID  `json:"assigned_user_id"`
+	Environment    string      `json:"environment"`
+	Criticality    int16       `json:"criticality"`
+	Classification string      `json:"classification"`
+	Lifecycle      string      `json:"lifecycle"`
+	Tags           []string    `json:"tags"`
+	Vendor         string      `json:"vendor"`
+	Model          string      `json:"model"`
+	SerialNumber   string      `json:"serial_number"`
+	AssetTag       string      `json:"asset_tag"`
+	Location       string      `json:"location"`
+	CostCents      *int64      `json:"cost_cents"`
+	Currency       string      `json:"currency"`
+	Billing        string      `json:"billing"`
+	CostCenter     string      `json:"cost_center"`
+	PurchasedOn    string      `json:"purchased_on"`
+	WarrantyUntil  string      `json:"warranty_until"`
+	ExpiresOn      string      `json:"expires_on"`
+	AutoRenew      bool        `json:"auto_renew"`
+	Seats          *int32      `json:"seats"`
+	SeatsUsed      *int32      `json:"seats_used"`
+	LicenseKeyEnc  []byte      `json:"license_key_enc"`
+	Links          []byte      `json:"links"`
+	Fields         []byte      `json:"fields"`
+	Notes          string      `json:"notes"`
+	ChannelIds     []uuid.UUID `json:"channel_ids"`
+	ReviewDays     int32       `json:"review_days"`
+	ReviewedAt     *time.Time  `json:"reviewed_at"`
+	ReviewedByName string      `json:"reviewed_by_name"`
+	Reminded       []byte      `json:"reminded"`
+	CreatedByName  string      `json:"created_by_name"`
+	UpdatedByName  string      `json:"updated_by_name"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
+}
+
+type AssetDiscovery struct {
+	ID          uuid.UUID  `json:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	Key         string     `json:"key"`
+	Kind        string     `json:"kind"`
+	Title       string     `json:"title"`
+	Detail      string     `json:"detail"`
+	Source      string     `json:"source"`
+	ServerID    *uuid.UUID `json:"server_id"`
+	Data        []byte     `json:"data"`
+	State       string     `json:"state"`
+	AssetID     *uuid.UUID `json:"asset_id"`
+	Gone        bool       `json:"gone"`
+	FirstSeen   time.Time  `json:"first_seen"`
+	LastSeen    time.Time  `json:"last_seen"`
+}
+
+type AssetEvent struct {
+	ID      uuid.UUID `json:"id"`
+	AssetID uuid.UUID `json:"asset_id"`
+	At      time.Time `json:"at"`
+	ByName  string    `json:"by_name"`
+	Action  string    `json:"action"`
+	Changes []byte    `json:"changes"`
+}
+
+type AssetNote struct {
+	ID            uuid.UUID  `json:"id"`
+	AssetID       uuid.UUID  `json:"asset_id"`
+	Title         string     `json:"title"`
+	Body          string     `json:"body"`
+	Pinned        bool       `json:"pinned"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	UpdatedByName string     `json:"updated_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type AssetOwnerRule struct {
+	ID           uuid.UUID  `json:"id"`
+	WorkspaceID  uuid.UUID  `json:"workspace_id"`
+	Position     int32      `json:"position"`
+	Name         string     `json:"name"`
+	Kinds        []string   `json:"kinds"`
+	Tags         []string   `json:"tags"`
+	Environments []string   `json:"environments"`
+	NamePattern  string     `json:"name_pattern"`
+	OwnerUserID  *uuid.UUID `json:"owner_user_id"`
+	OwnerGroupID *uuid.UUID `json:"owner_group_id"`
+	DeputyUserID *uuid.UUID `json:"deputy_user_id"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+type AssetRelation struct {
+	ID          uuid.UUID `json:"id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	FromID      uuid.UUID `json:"from_id"`
+	ToID        uuid.UUID `json:"to_id"`
+	Kind        string    `json:"kind"`
+	Note        string    `json:"note"`
+	Origin      string    `json:"origin"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type AssetSetting struct {
+	WorkspaceID     uuid.UUID   `json:"workspace_id"`
+	AutoDiscover    bool        `json:"auto_discover"`
+	DiscoverHours   int32       `json:"discover_hours"`
+	RemindDays      []int32     `json:"remind_days"`
+	ChannelIds      []uuid.UUID `json:"channel_ids"`
+	NotifyOwners    bool        `json:"notify_owners"`
+	LastDiscoveryAt *time.Time  `json:"last_discovery_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+}
+
+type AssetSource struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	Kind        string    `json:"kind"`
+	Ref         string    `json:"ref"`
+	Name        string    `json:"name"`
+	Facts       []byte    `json:"facts"`
+}
+
+type AssetSourceLink struct {
+	FromKind string `json:"from_kind"`
+	FromRef  string `json:"from_ref"`
+	ToKind   string `json:"to_kind"`
+	ToRef    string `json:"to_ref"`
+	Kind     string `json:"kind"`
+}
+
 type CloudAccount struct {
 	ID            uuid.UUID  `json:"id"`
 	WorkspaceID   uuid.UUID  `json:"workspace_id"`
@@ -699,14 +843,26 @@ type DockerProjectVersion struct {
 }
 
 type DockerRegistry struct {
-	ID          uuid.UUID `json:"id"`
-	WorkspaceID uuid.UUID `json:"workspace_id"`
-	Name        string    `json:"name"`
-	Address     string    `json:"address"`
-	Username    string    `json:"username"`
-	PasswordEnc []byte    `json:"password_enc"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID              uuid.UUID   `json:"id"`
+	WorkspaceID     uuid.UUID   `json:"workspace_id"`
+	Name            string      `json:"name"`
+	Address         string      `json:"address"`
+	Username        string      `json:"username"`
+	PasswordEnc     []byte      `json:"password_enc"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+	Servers         string      `json:"servers"`
+	ServerIds       []uuid.UUID `json:"server_ids"`
+	SignInOnServers bool        `json:"sign_in_on_servers"`
+}
+
+type DockerRegistryLogin struct {
+	RegistryID uuid.UUID `json:"registry_id"`
+	ServerID   uuid.UUID `json:"server_id"`
+	Ok         bool      `json:"ok"`
+	Message    string    `json:"message"`
+	AsUser     string    `json:"as_user"`
+	At         time.Time `json:"at"`
 }
 
 type DockerServerSetting struct {

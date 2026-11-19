@@ -422,20 +422,35 @@ func toDockerServerSettings(r sqlc.ListDockerServerSettingsRow) DockerServerSett
 // ---- Registries ----
 
 type DockerRegistry struct {
-	ID          string    `json:"id" format:"uuid"`
-	Name        string    `json:"name"`
-	Address     string    `json:"address" doc:"Registry host, like docker.io, ghcr.io or registry.example.com:5000"`
-	Username    string    `json:"username"`
-	HasPassword bool      `json:"has_password" doc:"A password or token is saved (it never comes back)"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string                `json:"id" format:"uuid"`
+	Name        string                `json:"name"`
+	Address     string                `json:"address" doc:"Registry host, like docker.io, ghcr.io or registry.example.com:5000"`
+	Username    string                `json:"username"`
+	HasPassword bool                  `json:"has_password" doc:"A password or token is saved (it never comes back)"`
+	Servers     string                `json:"servers" enum:"all,chosen" doc:"Which servers it's for: every server of the workspace, or server_ids"`
+	ServerIDs   []string              `json:"server_ids" doc:"The chosen servers (servers = chosen)"`
+	SignIn      bool                  `json:"sign_in_on_servers" doc:"Also sign each server's own Docker in (docker login), not only Morche's pulls"`
+	Logins      []DockerRegistryLogin `json:"logins" doc:"Where Morche signed Docker in (or tried to), last time"`
+	CreatedAt   time.Time             `json:"created_at"`
+	UpdatedAt   time.Time             `json:"updated_at"`
+}
+
+type DockerRegistryLogin struct {
+	ServerID string    `json:"server_id" format:"uuid"`
+	OK       bool      `json:"ok"`
+	Message  string    `json:"message,omitempty"`
+	AsUser   string    `json:"as_user,omitempty" doc:"Whose Docker config holds it: root, or the login user"`
+	At       time.Time `json:"at"`
 }
 
 type DockerRegistryBody struct {
-	Name     string `json:"name" minLength:"1" maxLength:"100"`
-	Address  string `json:"address" minLength:"1" maxLength:"300"`
-	Username string `json:"username" maxLength:"200"`
-	Password string `json:"password,omitempty" required:"false" maxLength:"4000" doc:"Password or access token. Blank keeps the saved one when editing"`
+	Name      string   `json:"name" minLength:"1" maxLength:"100"`
+	Address   string   `json:"address" minLength:"1" maxLength:"300"`
+	Username  string   `json:"username" maxLength:"200"`
+	Password  string   `json:"password,omitempty" required:"false" maxLength:"4000" doc:"Password or access token. Blank keeps the saved one when editing"`
+	Servers   string   `json:"servers,omitempty" required:"false" enum:"all,chosen" doc:"Default all"`
+	ServerIDs []string `json:"server_ids,omitempty" required:"false" maxItems:"1000"`
+	SignIn    bool     `json:"sign_in_on_servers,omitempty" required:"false" doc:"Also docker login on the servers (start it with the sign-in action)"`
 }
 
 type DockerRegistryTestBody struct {
@@ -451,8 +466,62 @@ type DockerRegistryTest struct {
 	Message string `json:"message"`
 }
 
-func toDockerRegistry(r sqlc.DockerRegistry) DockerRegistry {
-	return DockerRegistry{ID: r.ID.String(), Name: r.Name, Address: r.Address, Username: r.Username, HasPassword: len(r.PasswordEnc) > 0, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+func toDockerRegistry(r sqlc.DockerRegistry, logins []sqlc.DockerRegistryLogin) DockerRegistry {
+	out := DockerRegistry{
+		ID: r.ID.String(), Name: r.Name, Address: r.Address, Username: r.Username, HasPassword: len(r.PasswordEnc) > 0,
+		Servers: r.Servers, ServerIDs: make([]string, len(r.ServerIds)), SignIn: r.SignInOnServers,
+		Logins: []DockerRegistryLogin{}, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+	for i, id := range r.ServerIds {
+		out.ServerIDs[i] = id.String()
+	}
+	for _, l := range logins {
+		if l.RegistryID == r.ID {
+			out.Logins = append(out.Logins, DockerRegistryLogin{ServerID: l.ServerID.String(), OK: l.Ok, Message: l.Message, AsUser: l.AsUser, At: l.At})
+		}
+	}
+	return out
+}
+
+// registryCovers says whether a registry login is for a server.
+func registryCovers(r sqlc.DockerRegistry, server uuid.UUID) bool {
+	return r.Servers != "chosen" || slices.Contains(r.ServerIds, server)
+}
+
+// registryServers checks the body's servers: chosen ones must be in the
+// workspace.
+func (h *serverHandler) registryServers(ctx context.Context, ws uuid.UUID, b DockerRegistryBody) (string, []uuid.UUID, error) {
+	mode := b.Servers
+	if mode == "" {
+		mode = "all"
+	}
+	if mode == "all" {
+		return mode, []uuid.UUID{}, nil
+	}
+	rows, err := h.q.ListWorkspaceServers(ctx, ws)
+	if err != nil {
+		return "", nil, internalError(err)
+	}
+	ids := []uuid.UUID{}
+	for i, raw := range b.ServerIDs {
+		id, err := uuid.Parse(raw)
+		if err != nil || !slices.ContainsFunc(rows, func(r sqlc.ListWorkspaceServersRow) bool { return r.ID == id }) {
+			return "", nil, fieldError(fmt.Sprintf("body.server_ids[%d]", i), "That server isn't in this workspace", raw)
+		}
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return "", nil, fieldError("body.server_ids", "Pick at least one server", b.ServerIDs)
+	}
+	return mode, ids, nil
+}
+
+// registryOut is a saved registry with where it's signed in.
+func (h *serverHandler) registryOut(ctx context.Context, r sqlc.DockerRegistry) DockerRegistry {
+	logins, _ := h.q.ListDockerRegistryLogins(ctx, r.WorkspaceID)
+	return toDockerRegistry(r, logins)
 }
 
 // registryHost tidies what someone typed into a registry host:
@@ -493,15 +562,15 @@ func registryServer(host string) string {
 
 // registryAuthFor returns the X-Registry-Auth value for pulling image on a
 // server of workspace ws, or "" when the workspace keeps no login for its
-// registry.
-func (h *serverHandler) registryAuthFor(ctx context.Context, ws uuid.UUID, image string) string {
+// registry that covers the server.
+func (h *serverHandler) registryAuthFor(ctx context.Context, ws, server uuid.UUID, image string) string {
 	host := imageRegistry(image)
 	rows, err := h.q.ListDockerRegistries(ctx, ws)
 	if err != nil {
 		return ""
 	}
 	for _, r := range rows {
-		if r.Address != host {
+		if r.Address != host || !registryCovers(r, server) {
 			continue
 		}
 		pass := ""
@@ -527,7 +596,7 @@ func (h *serverHandler) serverRegistryAuth(ctx context.Context, serverID, image 
 	if err != nil {
 		return ""
 	}
-	return h.registryAuthFor(ctx, s.WorkspaceID, image)
+	return h.registryAuthFor(ctx, s.WorkspaceID, s.ID, image)
 }
 
 // ---- Templates ----
@@ -596,7 +665,7 @@ func (h *serverHandler) findTemplate(ctx context.Context, ws uuid.UUID, id strin
 
 // ---- Handlers ----
 
-type dockerRegistryPath struct {
+type DockerRegistryPath struct {
 	WorkspacePath
 	Registry string `path:"registry" format:"uuid"`
 }
@@ -786,9 +855,13 @@ func registerDockerSettings(api huma.API, h *serverHandler) {
 				Items []DockerRegistry `json:"items"`
 			}
 		}{}
+		logins, err := h.q.ListDockerRegistryLogins(ctx, uuid.MustParse(in.ID))
+		if err != nil {
+			return nil, internalError(err)
+		}
 		out.Body.Items = make([]DockerRegistry, len(rows))
 		for i, r := range rows {
-			out.Body.Items[i] = toDockerRegistry(r)
+			out.Body.Items[i] = toDockerRegistry(r, logins)
 		}
 		return out, nil
 	})
@@ -809,9 +882,14 @@ func registerDockerSettings(api huma.API, h *serverHandler) {
 		if strings.ContainsAny(host, " \t") {
 			return nil, fieldError("body.address", "A registry address has no spaces", b.Address)
 		}
+		mode, ids, err := h.registryServers(ctx, uuid.MustParse(in.ID), b)
+		if err != nil {
+			return nil, err
+		}
 		r, err := h.q.CreateDockerRegistry(ctx, sqlc.CreateDockerRegistryParams{
 			WorkspaceID: uuid.MustParse(in.ID), Name: strings.TrimSpace(b.Name), Address: host,
 			Username: strings.TrimSpace(b.Username), PasswordEnc: h.box.Seal(b.Password),
+			Servers: mode, ServerIds: ids, SignInOnServers: b.SignIn,
 		})
 		if isUniqueViolation(err) {
 			return nil, fieldError("body.address", "This workspace already has a login for "+host, b.Address)
@@ -819,7 +897,7 @@ func registerDockerSettings(api huma.API, h *serverHandler) {
 		if err != nil {
 			return nil, internalError(err)
 		}
-		return &struct{ Body DockerRegistry }{toDockerRegistry(r)}, nil
+		return &struct{ Body DockerRegistry }{h.registryOut(ctx, r)}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -830,7 +908,7 @@ func registerDockerSettings(api huma.API, h *serverHandler) {
 		Description: "A blank password keeps the saved one.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct {
-		dockerRegistryPath
+		DockerRegistryPath
 		Body DockerRegistryBody
 	}) (*struct{ Body DockerRegistry }, error) {
 		b := in.Body
@@ -839,9 +917,14 @@ func registerDockerSettings(api huma.API, h *serverHandler) {
 		if b.Password != "" {
 			pass = h.box.Seal(b.Password)
 		}
+		mode, ids, err := h.registryServers(ctx, uuid.MustParse(in.ID), b)
+		if err != nil {
+			return nil, err
+		}
 		r, err := h.q.UpdateDockerRegistry(ctx, sqlc.UpdateDockerRegistryParams{
 			ID: uuid.MustParse(in.Registry), WorkspaceID: uuid.MustParse(in.ID),
 			Name: strings.TrimSpace(b.Name), Address: host, Username: strings.TrimSpace(b.Username), PasswordEnc: pass,
+			Servers: mode, ServerIds: ids, SignInOnServers: b.SignIn,
 		})
 		if isNotFound(err) {
 			return nil, huma.Error404NotFound("No such registry")
@@ -852,7 +935,7 @@ func registerDockerSettings(api huma.API, h *serverHandler) {
 		if err != nil {
 			return nil, internalError(err)
 		}
-		return &struct{ Body DockerRegistry }{toDockerRegistry(r)}, nil
+		return &struct{ Body DockerRegistry }{h.registryOut(ctx, r)}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -861,7 +944,7 @@ func registerDockerSettings(api huma.API, h *serverHandler) {
 		Path:        base + "/registries/{registry}",
 		Summary:     "Forget a registry login",
 		Tags:        tags,
-	}, func(ctx context.Context, in *dockerRegistryPath) (*struct{}, error) {
+	}, func(ctx context.Context, in *DockerRegistryPath) (*struct{}, error) {
 		n, err := h.q.DeleteDockerRegistry(ctx, sqlc.DeleteDockerRegistryParams{ID: uuid.MustParse(in.Registry), WorkspaceID: uuid.MustParse(in.ID)})
 		if err != nil {
 			return nil, internalError(err)

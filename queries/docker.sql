@@ -5,8 +5,8 @@ SELECT * FROM docker_registries WHERE workspace_id = $1 ORDER BY lower(name), id
 SELECT * FROM docker_registries WHERE id = @id AND workspace_id = @workspace_id;
 
 -- name: CreateDockerRegistry :one
-INSERT INTO docker_registries (workspace_id, name, address, username, password_enc)
-VALUES (@workspace_id, @name, @address, @username, @password_enc)
+INSERT INTO docker_registries (workspace_id, name, address, username, password_enc, servers, server_ids, sign_in_on_servers)
+VALUES (@workspace_id, @name, @address, @username, @password_enc, @servers, @server_ids, @sign_in_on_servers)
 RETURNING *;
 
 -- name: UpdateDockerRegistry :one
@@ -16,12 +16,29 @@ UPDATE docker_registries SET
     address = @address,
     username = @username,
     password_enc = COALESCE(sqlc.narg('password_enc'), password_enc),
+    servers = @servers,
+    server_ids = @server_ids,
+    sign_in_on_servers = @sign_in_on_servers,
     updated_at = now()
 WHERE id = @id AND workspace_id = @workspace_id
 RETURNING *;
 
 -- name: DeleteDockerRegistry :execrows
 DELETE FROM docker_registries WHERE id = @id AND workspace_id = @workspace_id;
+
+-- name: ListDockerRegistryLogins :many
+SELECT l.* FROM docker_registry_logins l
+JOIN docker_registries r ON r.id = l.registry_id
+WHERE r.workspace_id = $1;
+
+-- name: UpsertDockerRegistryLogin :exec
+INSERT INTO docker_registry_logins (registry_id, server_id, ok, message, as_user, at)
+VALUES (@registry_id, @server_id, @ok, @message, @as_user, now())
+ON CONFLICT (registry_id, server_id) DO UPDATE SET
+    ok = EXCLUDED.ok, message = EXCLUDED.message, as_user = EXCLUDED.as_user, at = now();
+
+-- name: DeleteDockerRegistryLogin :exec
+DELETE FROM docker_registry_logins WHERE registry_id = @registry_id AND server_id = @server_id;
 
 -- name: ListDockerTemplates :many
 SELECT * FROM docker_templates WHERE workspace_id = $1 ORDER BY lower(name), id;

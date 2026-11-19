@@ -180,6 +180,10 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerCloudResources(api, cloudH)
 	startCloudMonitor(cloudH, cfg.CloudCheckInterval)
 	alertRules.pve = pve
+	assets := newAssetHandler(servers, a)
+	assets.pve, assets.cloud, assets.dns, assets.up = pve, cloudH, dns, up
+	registerAssets(api, assets)
+	startAssetLoops(assets)
 	apps := newAppHandler(sqlc.New(db), db, box, a)
 	registerApps(api, apps)
 	registerAppCategories(api, apps)
@@ -189,10 +193,13 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerAnsible(api, playbooks)
 	backups := newBackupHandler(databases, st, a)
 	registerDatabaseBackups(api, backups)
+	dbSyncs := newDatabaseSyncHandler(backups, a)
+	registerDatabaseSyncs(api, dbSyncs)
 	schedules := newScheduleHandler(st, a, scripts, playbooks, backups, software)
 	schedules.pve = pve
 	registerSchedules(api, schedules)
 	startBackupScheduler(backups, cfg.ScheduleTick)
+	startDatabaseSyncScheduler(dbSyncs, cfg.ScheduleTick)
 	startScheduler(schedules, cfg.ScheduleTick)
 	storageSyncs := newStorageSyncHandler(st, a)
 	registerStorageSyncs(api, storageSyncs)

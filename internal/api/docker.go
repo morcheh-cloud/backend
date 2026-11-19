@@ -1288,6 +1288,7 @@ func registerDocker(api huma.API, h *serverHandler) {
 	registerDockerReport(api, h)
 	registerDockerUpdates(api, h)
 	registerDockerAutoUpdates(api, h)
+	registerDockerRegistryLogins(api, h)
 	registerDockerScans(api, h)
 	registerDockerSettings(api, h)
 	registerDockerVolumeFiles(api, h)

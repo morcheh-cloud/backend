@@ -16,6 +16,8 @@ type Querier interface {
 	// Runs still going that touch these servers.
 	ActiveSoftwareRunsOn(ctx context.Context, serverIds []uuid.UUID) ([]ActiveSoftwareRunsOnRow, error)
 	AddAlertRuleChannel(ctx context.Context, arg AddAlertRuleChannelParams) error
+	// ---- History ----
+	AddAssetEvent(ctx context.Context, arg AddAssetEventParams) error
 	AddDockerAutoUpdateEvent(ctx context.Context, arg AddDockerAutoUpdateEventParams) error
 	AddDockerProjectStat(ctx context.Context, arg AddDockerProjectStatParams) error
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
@@ -35,6 +37,12 @@ type Querier interface {
 	AlertRulesForServer(ctx context.Context, arg AlertRulesForServerParams) ([]AlertRule, error)
 	AnswerSignIn(ctx context.Context, arg AnswerSignInParams) (SignIn, error)
 	AnyBackupPlanEnabled(ctx context.Context, databaseID uuid.UUID) (bool, error)
+	// The channels an asset's owners asked to hear about it on.
+	AssetChannelsForSource(ctx context.Context, arg AssetChannelsForSourceParams) ([]NotificationChannel, error)
+	AssetReminderChannels(ctx context.Context, arg AssetReminderChannelsParams) ([]NotificationChannel, error)
+	// Workspaces with servers or clusters whose discovery is on and due; a
+	// workspace without settings uses the defaults (on, every 24 hours).
+	AssetWorkspacesDueForDiscovery(ctx context.Context) ([]uuid.UUID, error)
 	// A backup and all it builds on, oldest first.
 	BackupChain(ctx context.Context, id uuid.UUID) ([]DatabaseBackup, error)
 	// What builds on a backup, directly or not, newest first.
@@ -67,6 +75,9 @@ type Querier interface {
 	CountActiveDatabaseSyncRunsTo(ctx context.Context, arg CountActiveDatabaseSyncRunsToParams) (int64, error)
 	CountActiveRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountAnsibleRuns(ctx context.Context, arg CountAnsibleRunsParams) (int64, error)
+	CountAssetNotes(ctx context.Context, assetID uuid.UUID) (int32, error)
+	CountAssetNotesByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]CountAssetNotesByWorkspaceRow, error)
+	CountAssets(ctx context.Context, workspaceID uuid.UUID) (int32, error)
 	CountBackupChildren(ctx context.Context, ids []uuid.UUID) ([]CountBackupChildrenRow, error)
 	CountBackups(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountChannelMonitors(ctx context.Context, ids []uuid.UUID) ([]CountChannelMonitorsRow, error)
@@ -95,6 +106,10 @@ type Querier interface {
 	// New categories go last.
 	CreateAppCategory(ctx context.Context, arg CreateAppCategoryParams) (AppCategory, error)
 	CreateAppSecretView(ctx context.Context, arg CreateAppSecretViewParams) error
+	CreateAsset(ctx context.Context, arg CreateAssetParams) (uuid.UUID, error)
+	CreateAssetNote(ctx context.Context, arg CreateAssetNoteParams) (AssetNote, error)
+	CreateAssetOwnerRule(ctx context.Context, arg CreateAssetOwnerRuleParams) error
+	CreateAssetRelation(ctx context.Context, arg CreateAssetRelationParams) (AssetRelation, error)
 	CreateBackup(ctx context.Context, arg CreateBackupParams) (DatabaseBackup, error)
 	CreateBackupCopy(ctx context.Context, arg CreateBackupCopyParams) error
 	CreateBackupPlan(ctx context.Context, arg CreateBackupPlanParams) (DatabaseBackupPlan, error)
@@ -160,6 +175,10 @@ type Querier interface {
 	DeleteAppAccountsExcept(ctx context.Context, arg DeleteAppAccountsExceptParams) error
 	DeleteAppCategory(ctx context.Context, arg DeleteAppCategoryParams) (int64, error)
 	DeleteAppLogo(ctx context.Context, arg DeleteAppLogoParams) error
+	DeleteAsset(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteAssetNote(ctx context.Context, arg DeleteAssetNoteParams) (int64, error)
+	DeleteAssetOwnerRules(ctx context.Context, workspaceID uuid.UUID) error
+	DeleteAssetRelation(ctx context.Context, arg DeleteAssetRelationParams) (int64, error)
 	DeleteBackup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteBackupPlan(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteCloudAccount(ctx context.Context, id uuid.UUID) error
@@ -172,6 +191,7 @@ type Querier interface {
 	// Forgets images the server no longer runs.
 	DeleteDockerImageUpdatesExcept(ctx context.Context, arg DeleteDockerImageUpdatesExceptParams) error
 	DeleteDockerRegistry(ctx context.Context, arg DeleteDockerRegistryParams) (int64, error)
+	DeleteDockerRegistryLogin(ctx context.Context, arg DeleteDockerRegistryLoginParams) error
 	DeleteDockerServerSettings(ctx context.Context, serverID uuid.UUID) error
 	DeleteDockerTemplate(ctx context.Context, arg DeleteDockerTemplateParams) (int64, error)
 	DeleteDockerVolumeBackup(ctx context.Context, id uuid.UUID) error
@@ -215,6 +235,14 @@ type Querier interface {
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
 	DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) error
+	DiscoveryCloudAccounts(ctx context.Context, workspaceID uuid.UUID) ([]CloudAccount, error)
+	DiscoveryDNSServers(ctx context.Context, workspaceID uuid.UUID) ([]DnsServer, error)
+	DiscoveryDatabases(ctx context.Context, workspaceID uuid.UUID) ([]DiscoveryDatabasesRow, error)
+	DiscoveryPVEClusters(ctx context.Context, workspaceID uuid.UUID) ([]PveCluster, error)
+	DiscoveryPVELinks(ctx context.Context, workspaceID uuid.UUID) ([]DiscoveryPVELinksRow, error)
+	// Every address a server of the workspace answers on, for matching.
+	DiscoveryServerHosts(ctx context.Context, workspaceID uuid.UUID) ([]DiscoveryServerHostsRow, error)
+	DiscoveryServers(ctx context.Context, workspaceID uuid.UUID) ([]DiscoveryServersRow, error)
 	// Online servers known to run Docker whose automatic clean-up (their own
 	// setting, else their workspace's) is due.
 	DockerAutoPruneServers(ctx context.Context) ([]uuid.UUID, error)
@@ -297,6 +325,14 @@ type Querier interface {
 	GetAppCategory(ctx context.Context, id uuid.UUID) (AppCategory, error)
 	GetAppLogo(ctx context.Context, arg GetAppLogoParams) (AppLogo, error)
 	GetAppWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetAsset(ctx context.Context, id uuid.UUID) (GetAssetRow, error)
+	GetAssetDiscovery(ctx context.Context, arg GetAssetDiscoveryParams) (AssetDiscovery, error)
+	GetAssetLicenseKey(ctx context.Context, id uuid.UUID) ([]byte, error)
+	GetAssetNote(ctx context.Context, arg GetAssetNoteParams) (AssetNote, error)
+	GetAssetRelation(ctx context.Context, arg GetAssetRelationParams) (AssetRelation, error)
+	// ---- Settings ----
+	GetAssetSettings(ctx context.Context, workspaceID uuid.UUID) (AssetSetting, error)
+	GetAssetWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error)
 	GetBackupDatabase(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetBackupPlan(ctx context.Context, id uuid.UUID) (DatabaseBackupPlan, error)
@@ -392,6 +428,7 @@ type Querier interface {
 	GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error)
 	GetWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) (WorkspaceLogo, error)
 	GetWorkspaceLogoStamp(ctx context.Context, workspaceID uuid.UUID) (time.Time, error)
+	GroupMemberIDs(ctx context.Context, groupID uuid.UUID) ([]uuid.UUID, error)
 	HasSignedIn(ctx context.Context, userID *uuid.UUID) (bool, error)
 	// Restored rows that are back in the database for now: a policy must not
 	// archive them again while held.
@@ -468,6 +505,20 @@ type Querier interface {
 	// Category order first (uncategorized last), then the order inside it.
 	// pattern is an ILIKE pattern over name, address and note; '' = everything.
 	ListApps(ctx context.Context, arg ListAppsParams) ([]App, error)
+	// ---- Discovery ----
+	ListAssetDiscoveries(ctx context.Context, workspaceID uuid.UUID) ([]ListAssetDiscoveriesRow, error)
+	ListAssetEvents(ctx context.Context, arg ListAssetEventsParams) ([]AssetEvent, error)
+	ListAssetGroups(ctx context.Context) ([]ListAssetGroupsRow, error)
+	// Pinned first, then the most recently changed.
+	ListAssetNotes(ctx context.Context, assetID uuid.UUID) ([]AssetNote, error)
+	// ---- Owner rules ----
+	ListAssetOwnerRules(ctx context.Context, workspaceID uuid.UUID) ([]ListAssetOwnerRulesRow, error)
+	// ---- People who can own things ----
+	ListAssetPeople(ctx context.Context) ([]ListAssetPeopleRow, error)
+	// ---- Assets ----
+	ListAssets(ctx context.Context, workspaceID uuid.UUID) ([]ListAssetsRow, error)
+	// ---- Reminders and owner alerts ----
+	ListAssetsForReminders(ctx context.Context) ([]ListAssetsForRemindersRow, error)
 	ListBackupCopies(ctx context.Context, backupIds []uuid.UUID) ([]DatabaseBackupCopy, error)
 	ListBackupPlanStorages(ctx context.Context, planID uuid.UUID) ([]uuid.UUID, error)
 	ListBackupPlans(ctx context.Context, databaseID uuid.UUID) ([]DatabaseBackupPlan, error)
@@ -503,6 +554,7 @@ type Querier interface {
 	ListDockerImageUpdatesFor(ctx context.Context, serverIds []uuid.UUID) ([]DockerImageUpdate, error)
 	ListDockerProjectVersions(ctx context.Context, arg ListDockerProjectVersionsParams) ([]ListDockerProjectVersionsRow, error)
 	ListDockerRegistries(ctx context.Context, workspaceID uuid.UUID) ([]DockerRegistry, error)
+	ListDockerRegistryLogins(ctx context.Context, workspaceID uuid.UUID) ([]DockerRegistryLogin, error)
 	// Every server of a workspace with its own settings or an automatic
 	// clean-up on record.
 	ListDockerServerSettings(ctx context.Context, workspaceID uuid.UUID) ([]ListDockerServerSettingsRow, error)
@@ -622,6 +674,8 @@ type Querier interface {
 	// Syncs that follow a server folder's changes, for the watchers.
 	ListWatchedStorageSyncs(ctx context.Context) ([]StorageSync, error)
 	ListWorkspaceApps(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceAppsRow, error)
+	// ---- Relations ----
+	ListWorkspaceAssetRelations(ctx context.Context, workspaceID uuid.UUID) ([]AssetRelation, error)
 	// Incidents of every monitor in scope, open ones first.
 	ListWorkspaceIncidents(ctx context.Context, arg ListWorkspaceIncidentsParams) ([]ListWorkspaceIncidentsRow, error)
 	// The light list for an access page: never the sealed credentials.
@@ -635,6 +689,12 @@ type Querier interface {
 	LogArchiveTotals(ctx context.Context) ([]LogArchiveTotalsRow, error)
 	LogNotification(ctx context.Context, arg LogNotificationParams) error
 	MarkDockerImageCurrent(ctx context.Context, arg MarkDockerImageCurrentParams) error
+	// What a source that answered no longer shows is gone; a source that failed
+	// this time keeps its findings as they were.
+	MarkGoneAssetDiscoveries(ctx context.Context, arg MarkGoneAssetDiscoveriesParams) error
+	// Linked assets whose source was removed from Morche (or moved to another
+	// workspace) are kept, for their history, and flagged.
+	MarkGoneAssets(ctx context.Context, workspaceID uuid.UUID) ([]uuid.UUID, error)
 	// A scan no longer finds an app Morche installed.
 	MarkMissingSoftware(ctx context.Context, arg MarkMissingSoftwareParams) error
 	// Checks grouped into buckets of @step seconds.
@@ -666,6 +726,7 @@ type Querier interface {
 	PendingSignInAlerts(ctx context.Context, arg PendingSignInAlertsParams) ([]PendingSignInAlertsRow, error)
 	PruneAlertEvents(ctx context.Context, before time.Time) (int64, error)
 	PruneAlertMutes(ctx context.Context, before time.Time) (int64, error)
+	PruneAssetRelations(ctx context.Context, workspaceID uuid.UUID) error
 	// Rows of runs that left no backup, past the newest @keep of a plan.
 	PruneBackupRecords(ctx context.Context, arg PruneBackupRecordsParams) error
 	// Past each workspace's keep_days (90 without settings).
@@ -727,9 +788,13 @@ type Querier interface {
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
 	// Installs left mid-change by a restart.
 	ResetStuckSoftwareInstalls(ctx context.Context) error
+	// Findings now managed by Morche (their key was added to a section) count
+	// as accepted.
+	ResolveAssetDiscoveries(ctx context.Context, arg ResolveAssetDiscoveriesParams) error
 	ResolveMonitorIncident(ctx context.Context, arg ResolveMonitorIncidentParams) error
 	// Puts back a host from a history snapshot, with its old id.
 	RestoreProxyHost(ctx context.Context, arg RestoreProxyHostParams) error
+	ReviewAsset(ctx context.Context, arg ReviewAssetParams) error
 	SaveAnsibleRunProgress(ctx context.Context, arg SaveAnsibleRunProgressParams) error
 	// Writes a row's whole state; called again as it ends or repeats.
 	SaveCommandLog(ctx context.Context, arg []SaveCommandLogParams) *SaveCommandLogBatchResults
@@ -778,6 +843,12 @@ type Querier interface {
 	SetAppLogoKind(ctx context.Context, arg SetAppLogoKindParams) (App, error)
 	// A service of another workspace (or one already removed) is left alone.
 	SetAppPlace(ctx context.Context, arg SetAppPlaceParams) error
+	SetAssetDiscoveryAsset(ctx context.Context, arg SetAssetDiscoveryAssetParams) error
+	SetAssetDiscoveryState(ctx context.Context, arg SetAssetDiscoveryStateParams) error
+	SetAssetLicenseKey(ctx context.Context, arg SetAssetLicenseKeyParams) error
+	// Pinning isn't an edit: it keeps who changed it last and when.
+	SetAssetNotePinned(ctx context.Context, arg SetAssetNotePinnedParams) (AssetNote, error)
+	SetAssetReminded(ctx context.Context, arg SetAssetRemindedParams) error
 	SetBackupCopy(ctx context.Context, arg SetBackupCopyParams) error
 	SetBackupJob(ctx context.Context, arg SetBackupJobParams) error
 	SetBackupPlanNext(ctx context.Context, arg SetBackupPlanNextParams) error
@@ -871,6 +942,12 @@ type Querier interface {
 	StorageUsageHistory(ctx context.Context, arg StorageUsageHistoryParams) ([]StorageUsageHistoryRow, error)
 	// Periods already kept in a file, so a copy policy doesn't export them twice.
 	StoredLogArchiveWindows(ctx context.Context, dataset string) ([]StoredLogArchiveWindowsRow, error)
+	SyncAssetRelations(ctx context.Context, workspaceID uuid.UUID) error
+	// ---- Sync with what Morche manages ----
+	// Adds a linked asset for each server, database, storage… of the workspace
+	// that has none yet and refreshes the facts of the rest. inserted = new.
+	SyncAssetSources(ctx context.Context, workspaceID uuid.UUID) ([]SyncAssetSourcesRow, error)
+	TouchAssetDiscovery(ctx context.Context, workspaceID uuid.UUID) error
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	TouchUserLogin(ctx context.Context, id uuid.UUID) error
 	UpdateAlertChannel(ctx context.Context, arg UpdateAlertChannelParams) (AlertChannel, error)
@@ -878,6 +955,10 @@ type Querier interface {
 	UpdateApp(ctx context.Context, arg UpdateAppParams) (App, error)
 	UpdateAppAccount(ctx context.Context, arg UpdateAppAccountParams) (AppAccount, error)
 	UpdateAppCategory(ctx context.Context, arg UpdateAppCategoryParams) (AppCategory, error)
+	// kind and name of a linked asset come from its source: the handler sends
+	// the stored ones back.
+	UpdateAsset(ctx context.Context, arg UpdateAssetParams) error
+	UpdateAssetNote(ctx context.Context, arg UpdateAssetNoteParams) (AssetNote, error)
 	UpdateBackupPlan(ctx context.Context, arg UpdateBackupPlanParams) (DatabaseBackupPlan, error)
 	// Full replace of the editable fields; the handler resolves the key first.
 	UpdateCloudAccount(ctx context.Context, arg UpdateCloudAccountParams) (CloudAccount, error)
@@ -912,11 +993,14 @@ type Querier interface {
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
 	UpsertAlertState(ctx context.Context, arg UpsertAlertStateParams) error
+	UpsertAssetDiscovery(ctx context.Context, arg UpsertAssetDiscoveryParams) error
+	UpsertAssetSettings(ctx context.Context, arg UpsertAssetSettingsParams) (AssetSetting, error)
 	UpsertDockerGitSource(ctx context.Context, arg UpsertDockerGitSourceParams) (DockerGitSource, error)
 	UpsertDockerImageScan(ctx context.Context, arg UpsertDockerImageScanParams) error
 	UpsertDockerImageUpdate(ctx context.Context, arg UpsertDockerImageUpdateParams) error
 	UpsertDockerProjectMeta(ctx context.Context, arg UpsertDockerProjectMetaParams) (DockerProjectMetum, error)
 	UpsertDockerProjectPlace(ctx context.Context, arg UpsertDockerProjectPlaceParams) error
+	UpsertDockerRegistryLogin(ctx context.Context, arg UpsertDockerRegistryLoginParams) error
 	UpsertDockerServerSettings(ctx context.Context, arg UpsertDockerServerSettingsParams) (DockerServerSetting, error)
 	UpsertDockerSettings(ctx context.Context, arg UpsertDockerSettingsParams) (DockerSetting, error)
 	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)

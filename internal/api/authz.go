@@ -245,7 +245,7 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 		return auth.Owner, nil
 	}
 
-	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindBackupPlan: "backup plan", kindBackup: "backup", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run", kindStorageSync: "sync", kindStorageSyncRun: "run", kindDatabaseSync: "sync", kindDatabaseSyncRun: "run", kindDNSServer: "DNS server", kindScript: "script", kindProxy: "proxy", kindSoftwareRecipe: "application", kindSoftwareInstall: "application", kindMonitor: "monitor", kindNotificationChannel: "channel", kindMonitorIncident: "incident", kindAlertRule: "alert rule", kindPVECluster: "cluster", kindCloudAccount: "cloud account"}[pol.kind]
+	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindBackupPlan: "backup plan", kindBackup: "backup", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run", kindStorageSync: "sync", kindStorageSyncRun: "run", kindDatabaseSync: "sync", kindDatabaseSyncRun: "run", kindDNSServer: "DNS server", kindScript: "script", kindProxy: "proxy", kindSoftwareRecipe: "application", kindSoftwareInstall: "application", kindMonitor: "monitor", kindNotificationChannel: "channel", kindMonitorIncident: "incident", kindAlertRule: "alert rule", kindPVECluster: "cluster", kindCloudAccount: "cloud account", kindAsset: "asset"}[pol.kind]
 	missing := &denied{http.StatusNotFound, noun + " not found"}
 	id, err := uuid.Parse(rawID)
 	if err != nil {
@@ -384,6 +384,15 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 				ws, err = a.q.GetMonitorWorkspace(ctx, inc.MonitorID)
 			}
 		}
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		level = acc.WorkspaceLevel(ws)
+	case kindAsset:
+		ws, err := a.q.GetAssetWorkspace(ctx, id)
 		if isNotFound(err) {
 			return auth.None, missing
 		}

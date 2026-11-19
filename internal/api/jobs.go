@@ -56,6 +56,7 @@ type JobPlace struct {
 	AutoUpdate string `json:"auto_update,omitempty" format:"uuid" doc:"The container auto-update it is a run of"`
 	Dataset    string `json:"dataset,omitempty" doc:"The kind of logs it archives, puts back or compacts"`
 	Archive    string `json:"archive,omitempty" format:"uuid" doc:"The log archive it writes, restores or puts away"`
+	Registry   string `json:"registry,omitempty" format:"uuid" doc:"The container registry login it signs in or out"`
 	ClusterID  string `json:"cluster_id,omitempty" format:"uuid" doc:"The Proxmox cluster it works on"`
 	VMID       int    `json:"vmid,omitempty" doc:"The Proxmox guest it works on"`
 }

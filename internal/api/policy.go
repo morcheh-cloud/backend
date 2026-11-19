@@ -58,6 +58,8 @@ const (
 	kindPVECluster
 	// A workspace level, on the workspace of the cloud account in {id}.
 	kindCloudAccount
+	// A workspace level, on the workspace of the asset in {id}.
+	kindAsset
 )
 
 type policy struct {
@@ -105,6 +107,7 @@ func onMonitorIncident(l auth.Level) policy {
 	return policy{kindMonitorIncident, l}
 }
 func onAlertRule(l auth.Level) policy { return policy{kindAlertRule, l} }
+func onAsset(l auth.Level) policy     { return policy{kindAsset, l} }
 
 var (
 	public  = policy{kind: kindPublic}
@@ -117,6 +120,36 @@ var (
 // operation missing from here, and a test checks the two stay in step.
 var policies = map[string]policy{
 	"get-health": public,
+
+	// Asset inventory. Ownership grants nothing; the workspace level decides.
+	"list-assets":               onWorkspace(auth.Viewer),
+	"create-asset":              onWorkspace(auth.Engineer),
+	"import-assets":             onWorkspace(auth.Engineer),
+	"bulk-update-assets":        onWorkspace(auth.Engineer),
+	"list-asset-relations":      onWorkspace(auth.Viewer),
+	"list-asset-people":         onWorkspace(auth.Viewer),
+	"get-asset-owner-rules":     onWorkspace(auth.Viewer),
+	"set-asset-owner-rules":     onWorkspace(auth.Owner),
+	"get-asset-settings":        onWorkspace(auth.Viewer),
+	"set-asset-settings":        onWorkspace(auth.Owner),
+	"list-asset-discoveries":    onWorkspace(auth.Viewer),
+	"run-asset-discovery":       onWorkspace(auth.Engineer),
+	"set-asset-discovery-state": onWorkspace(auth.Engineer),
+	"track-asset-discovery":     onWorkspace(auth.Engineer),
+	"get-asset":                 onAsset(auth.Viewer),
+	"update-asset":              onAsset(auth.Engineer),
+	"delete-asset":              onAsset(auth.Engineer),
+	"review-asset":              onAsset(auth.Viewer),
+	"get-asset-license-key":     onAsset(auth.Owner),
+	"add-asset-relation":        onAsset(auth.Engineer),
+	"delete-asset-relation":     onAsset(auth.Engineer),
+	// Notes: the handler also lets the asset's owner, deputy or owning group
+	// write (else Operator).
+	"list-asset-notes":  onAsset(auth.Viewer),
+	"create-asset-note": onAsset(auth.Viewer),
+	"update-asset-note": onAsset(auth.Viewer),
+	"pin-asset-note":    onAsset(auth.Viewer),
+	"delete-asset-note": onAsset(auth.Viewer),
 
 	// Signing in.
 	"get-auth-state":  public,
@@ -448,6 +481,7 @@ var policies = map[string]policy{
 	"update-docker-registry":           onWorkspace(auth.Owner),
 	"delete-docker-registry":           onWorkspace(auth.Owner),
 	"test-docker-registry":             onWorkspace(auth.Owner),
+	"sign-in-docker-registry":          onWorkspace(auth.Owner),
 	"list-docker-templates":            onWorkspace(auth.Viewer),
 	"list-docker-auto-updates":         onWorkspace(auth.Viewer),
 	"get-docker-auto-update":           onWorkspace(auth.Viewer),
@@ -768,14 +802,14 @@ var policies = map[string]policy{
 	// Database syncs: the lower of the two databases' levels counts. Seeing
 	// one = Viewer, running or comparing = Operator, saving = Owner (it
 	// writes over the target). A server runner needs Engineer (inside).
-	"list-database-syncs":       active,
-	"create-database-sync":      active,
+	"list-database-syncs":       onWorkspace(auth.Viewer),
+	"create-database-sync":      onWorkspace(auth.Viewer),
 	"list-database-sync-plans":  onDatabase(auth.Viewer),
 	"list-database-sync-tables": onDatabase(auth.Operator),
 	"get-database-sync":         onDatabaseSync(auth.Viewer),
-	"update-database-sync":      onDatabaseSync(auth.Owner),
+	"update-database-sync":      onDatabaseSync(auth.Operator),
 	"pause-database-sync":       onDatabaseSync(auth.Operator),
-	"delete-database-sync":      onDatabaseSync(auth.Owner),
+	"delete-database-sync":      onDatabaseSync(auth.Operator),
 	"run-database-sync":         onDatabaseSync(auth.Operator),
 	"list-database-sync-runs":   onDatabaseSync(auth.Viewer),
 	"get-database-sync-run":     onDatabaseSyncRun(auth.Viewer),

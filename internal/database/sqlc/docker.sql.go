@@ -90,17 +90,20 @@ func (q *Queries) CreateDockerProjectVersion(ctx context.Context, arg CreateDock
 }
 
 const createDockerRegistry = `-- name: CreateDockerRegistry :one
-INSERT INTO docker_registries (workspace_id, name, address, username, password_enc)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, workspace_id, name, address, username, password_enc, created_at, updated_at
+INSERT INTO docker_registries (workspace_id, name, address, username, password_enc, servers, server_ids, sign_in_on_servers)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, workspace_id, name, address, username, password_enc, created_at, updated_at, servers, server_ids, sign_in_on_servers
 `
 
 type CreateDockerRegistryParams struct {
-	WorkspaceID uuid.UUID `json:"workspace_id"`
-	Name        string    `json:"name"`
-	Address     string    `json:"address"`
-	Username    string    `json:"username"`
-	PasswordEnc []byte    `json:"password_enc"`
+	WorkspaceID     uuid.UUID   `json:"workspace_id"`
+	Name            string      `json:"name"`
+	Address         string      `json:"address"`
+	Username        string      `json:"username"`
+	PasswordEnc     []byte      `json:"password_enc"`
+	Servers         string      `json:"servers"`
+	ServerIds       []uuid.UUID `json:"server_ids"`
+	SignInOnServers bool        `json:"sign_in_on_servers"`
 }
 
 func (q *Queries) CreateDockerRegistry(ctx context.Context, arg CreateDockerRegistryParams) (DockerRegistry, error) {
@@ -110,6 +113,9 @@ func (q *Queries) CreateDockerRegistry(ctx context.Context, arg CreateDockerRegi
 		arg.Address,
 		arg.Username,
 		arg.PasswordEnc,
+		arg.Servers,
+		arg.ServerIds,
+		arg.SignInOnServers,
 	)
 	var i DockerRegistry
 	err := row.Scan(
@@ -121,6 +127,9 @@ func (q *Queries) CreateDockerRegistry(ctx context.Context, arg CreateDockerRegi
 		&i.PasswordEnc,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Servers,
+		&i.ServerIds,
+		&i.SignInOnServers,
 	)
 	return i, err
 }
@@ -280,6 +289,20 @@ func (q *Queries) DeleteDockerRegistry(ctx context.Context, arg DeleteDockerRegi
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteDockerRegistryLogin = `-- name: DeleteDockerRegistryLogin :exec
+DELETE FROM docker_registry_logins WHERE registry_id = $1 AND server_id = $2
+`
+
+type DeleteDockerRegistryLoginParams struct {
+	RegistryID uuid.UUID `json:"registry_id"`
+	ServerID   uuid.UUID `json:"server_id"`
+}
+
+func (q *Queries) DeleteDockerRegistryLogin(ctx context.Context, arg DeleteDockerRegistryLoginParams) error {
+	_, err := q.db.Exec(ctx, deleteDockerRegistryLogin, arg.RegistryID, arg.ServerID)
+	return err
 }
 
 const deleteDockerServerSettings = `-- name: DeleteDockerServerSettings :exec
@@ -890,7 +913,7 @@ func (q *Queries) GetDockerProjectVersion(ctx context.Context, arg GetDockerProj
 }
 
 const getDockerRegistry = `-- name: GetDockerRegistry :one
-SELECT id, workspace_id, name, address, username, password_enc, created_at, updated_at FROM docker_registries WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, name, address, username, password_enc, created_at, updated_at, servers, server_ids, sign_in_on_servers FROM docker_registries WHERE id = $1 AND workspace_id = $2
 `
 
 type GetDockerRegistryParams struct {
@@ -910,6 +933,9 @@ func (q *Queries) GetDockerRegistry(ctx context.Context, arg GetDockerRegistryPa
 		&i.PasswordEnc,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Servers,
+		&i.ServerIds,
+		&i.SignInOnServers,
 	)
 	return i, err
 }
@@ -1365,7 +1391,7 @@ func (q *Queries) ListDockerProjectVersions(ctx context.Context, arg ListDockerP
 }
 
 const listDockerRegistries = `-- name: ListDockerRegistries :many
-SELECT id, workspace_id, name, address, username, password_enc, created_at, updated_at FROM docker_registries WHERE workspace_id = $1 ORDER BY lower(name), id
+SELECT id, workspace_id, name, address, username, password_enc, created_at, updated_at, servers, server_ids, sign_in_on_servers FROM docker_registries WHERE workspace_id = $1 ORDER BY lower(name), id
 `
 
 func (q *Queries) ListDockerRegistries(ctx context.Context, workspaceID uuid.UUID) ([]DockerRegistry, error) {
@@ -1386,6 +1412,42 @@ func (q *Queries) ListDockerRegistries(ctx context.Context, workspaceID uuid.UUI
 			&i.PasswordEnc,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Servers,
+			&i.ServerIds,
+			&i.SignInOnServers,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDockerRegistryLogins = `-- name: ListDockerRegistryLogins :many
+SELECT l.registry_id, l.server_id, l.ok, l.message, l.as_user, l.at FROM docker_registry_logins l
+JOIN docker_registries r ON r.id = l.registry_id
+WHERE r.workspace_id = $1
+`
+
+func (q *Queries) ListDockerRegistryLogins(ctx context.Context, workspaceID uuid.UUID) ([]DockerRegistryLogin, error) {
+	rows, err := q.db.Query(ctx, listDockerRegistryLogins, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerRegistryLogin{}
+	for rows.Next() {
+		var i DockerRegistryLogin
+		if err := rows.Scan(
+			&i.RegistryID,
+			&i.ServerID,
+			&i.Ok,
+			&i.Message,
+			&i.AsUser,
+			&i.At,
 		); err != nil {
 			return nil, err
 		}
@@ -1810,18 +1872,24 @@ UPDATE docker_registries SET
     address = $2,
     username = $3,
     password_enc = COALESCE($4, password_enc),
+    servers = $5,
+    server_ids = $6,
+    sign_in_on_servers = $7,
     updated_at = now()
-WHERE id = $5 AND workspace_id = $6
-RETURNING id, workspace_id, name, address, username, password_enc, created_at, updated_at
+WHERE id = $8 AND workspace_id = $9
+RETURNING id, workspace_id, name, address, username, password_enc, created_at, updated_at, servers, server_ids, sign_in_on_servers
 `
 
 type UpdateDockerRegistryParams struct {
-	Name        string    `json:"name"`
-	Address     string    `json:"address"`
-	Username    string    `json:"username"`
-	PasswordEnc []byte    `json:"password_enc"`
-	ID          uuid.UUID `json:"id"`
-	WorkspaceID uuid.UUID `json:"workspace_id"`
+	Name            string      `json:"name"`
+	Address         string      `json:"address"`
+	Username        string      `json:"username"`
+	PasswordEnc     []byte      `json:"password_enc"`
+	Servers         string      `json:"servers"`
+	ServerIds       []uuid.UUID `json:"server_ids"`
+	SignInOnServers bool        `json:"sign_in_on_servers"`
+	ID              uuid.UUID   `json:"id"`
+	WorkspaceID     uuid.UUID   `json:"workspace_id"`
 }
 
 // A NULL password keeps the saved one.
@@ -1831,6 +1899,9 @@ func (q *Queries) UpdateDockerRegistry(ctx context.Context, arg UpdateDockerRegi
 		arg.Address,
 		arg.Username,
 		arg.PasswordEnc,
+		arg.Servers,
+		arg.ServerIds,
+		arg.SignInOnServers,
 		arg.ID,
 		arg.WorkspaceID,
 	)
@@ -1844,6 +1915,9 @@ func (q *Queries) UpdateDockerRegistry(ctx context.Context, arg UpdateDockerRegi
 		&i.PasswordEnc,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Servers,
+		&i.ServerIds,
+		&i.SignInOnServers,
 	)
 	return i, err
 }
@@ -2120,6 +2194,32 @@ func (q *Queries) UpsertDockerProjectPlace(ctx context.Context, arg UpsertDocker
 		arg.Files,
 		arg.Source,
 		arg.AddedByName,
+	)
+	return err
+}
+
+const upsertDockerRegistryLogin = `-- name: UpsertDockerRegistryLogin :exec
+INSERT INTO docker_registry_logins (registry_id, server_id, ok, message, as_user, at)
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT (registry_id, server_id) DO UPDATE SET
+    ok = EXCLUDED.ok, message = EXCLUDED.message, as_user = EXCLUDED.as_user, at = now()
+`
+
+type UpsertDockerRegistryLoginParams struct {
+	RegistryID uuid.UUID `json:"registry_id"`
+	ServerID   uuid.UUID `json:"server_id"`
+	Ok         bool      `json:"ok"`
+	Message    string    `json:"message"`
+	AsUser     string    `json:"as_user"`
+}
+
+func (q *Queries) UpsertDockerRegistryLogin(ctx context.Context, arg UpsertDockerRegistryLoginParams) error {
+	_, err := q.db.Exec(ctx, upsertDockerRegistryLogin,
+		arg.RegistryID,
+		arg.ServerID,
+		arg.Ok,
+		arg.Message,
+		arg.AsUser,
 	)
 	return err
 }

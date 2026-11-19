@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -702,6 +703,16 @@ func (e *alertEngine) send(r sqlc.AlertRule, t alertTarget, kind string, v float
 		if err != nil {
 			slog.Warn("alerts: channels to notify", "rule", r.ID, "error", err)
 			return
+		}
+		// The asset's owners may have asked to hear about it on their own channels.
+		if own, err := e.q.AssetChannelsForSource(ctx, sqlc.AssetChannelsForSourceParams{
+			SourceKind: assetKindOfTarget(t.kind), SourceRef: t.id.String(),
+		}); err == nil {
+			for _, c := range own {
+				if !slices.ContainsFunc(chans, func(x sqlc.NotificationChannel) bool { return x.ID == c.ID }) {
+					chans = append(chans, c)
+				}
+			}
 		}
 		for _, c := range chans {
 			go func(c sqlc.NotificationChannel) {
