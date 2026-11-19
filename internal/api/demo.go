@@ -26,8 +26,17 @@ var demoRefused = map[string]bool{
 	"end-my-other-sessions": true,
 	"answer-sign-in-alert":  true,
 	// They'd show every visitor's address to the others.
-	"list-my-sessions": true,
-	"list-sign-ins":    true,
+	// (Sign-in alerts too: a wrong password tried on the demo account would
+	// raise one carrying the address it came from.)
+	"list-my-sessions":    true,
+	"list-sign-ins":       true,
+	"list-sign-in-alerts": true,
+	// Recordings belong to the user, and every visitor is the same user.
+	"list-workspace-recordings": true,
+	"list-server-recordings":    true,
+	"get-recording":             true,
+	"get-recording-cast":        true,
+	"delete-recording":          true,
 	// Who can reach what.
 	"set-grant":    true,
 	"delete-grant": true,

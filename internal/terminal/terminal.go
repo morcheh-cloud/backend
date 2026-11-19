@@ -467,9 +467,11 @@ func (m *Manager) All() []*Session {
 }
 
 // KillOwner ends every session someone opened, e.g. when they are blocked.
+// An owner may carry a suffix ("user/session", the public demo's per-visitor
+// terminals); the user alone matches those too.
 func (m *Manager) KillOwner(owner string) {
 	for _, s := range m.All() {
-		if s.Owner == owner {
+		if s.Owner == owner || strings.HasPrefix(s.Owner, owner+"/") {
 			s.Kill()
 		}
 	}
