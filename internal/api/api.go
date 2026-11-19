@@ -42,7 +42,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	// Off by default: without a proxy in front, anyone could fake their address
 	// with these headers and walk around the login limits.
 	if cfg.TrustProxy {
-		r.Use(middleware.RealIP)
+		r.Use(proxiedIP)
 	}
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
