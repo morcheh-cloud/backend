@@ -192,6 +192,8 @@ type AuthState struct {
 	RegistrationOpen   bool   `json:"registration_open"`
 	Address            string `json:"address" doc:"The address the panel sees for this request."`
 	AddressAllowed     bool   `json:"address_allowed" doc:"False when the allowlist keeps this address out; nothing else is said then."`
+	// Set only on the public demo.
+	Demo *DemoState `json:"demo,omitempty"`
 }
 
 type AuthStateOutput struct{ Body AuthState }
@@ -274,6 +276,7 @@ func registerAuth(api huma.API, a *authz) {
 			return out, nil
 		}
 		out.Body.AddressAllowed = true
+		out.Body.Demo = a.demoState()
 		n, err := a.q.CountUsers(ctx)
 		if err != nil {
 			return nil, internalError(err)
@@ -284,7 +287,7 @@ func registerAuth(api huma.API, a *authz) {
 		}
 		out.Body.NeedsSetup = n == 0
 		out.Body.SetupTokenRequired = n == 0 && a.cfg.SetupToken != ""
-		out.Body.RegistrationOpen = st.RegistrationOpen && n > 0
+		out.Body.RegistrationOpen = st.RegistrationOpen && n > 0 && !a.cfg.DemoMode
 		return out, nil
 	})
 

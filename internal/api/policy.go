@@ -156,6 +156,7 @@ var policies = map[string]policy{
 	"auth-setup":      public,
 	"auth-register":   public,
 	"auth-login":      public,
+	"auth-demo":       public,
 	"auth-logout":     session,
 	"auth-logout-all": session,
 	"get-me":          session,

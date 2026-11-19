@@ -81,6 +81,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 
 	registerHealth(api, db, rdb)
 	registerAuth(api, a)
+	registerDemo(api, a)
 	registerAdmin(api, a)
 	registerSignIns(api, a)
 	registerWorkspaces(api, a)

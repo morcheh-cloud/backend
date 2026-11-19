@@ -86,7 +86,7 @@ func registerTerminals(api huma.API, r chi.Router, h *serverHandler, origins []s
 			}
 		}{}
 		out.Body.Items = []TerminalSession{}
-		for _, i := range h.terms.List(in.ID, principalOf(ctx).User.ID.String()) {
+		for _, i := range h.terms.List(in.ID, h.authz.termOwner(principalOf(ctx))) {
 			out.Body.Items = append(out.Body.Items, toTerminal(i))
 		}
 		return out, nil
@@ -104,7 +104,7 @@ func registerTerminals(api huma.API, r chi.Router, h *serverHandler, origins []s
 			Title string `json:"title" minLength:"1" maxLength:"64"`
 		}
 	}) (*struct{ Body TerminalSession }, error) {
-		owner := principalOf(ctx).User.ID.String()
+		owner := h.authz.termOwner(principalOf(ctx))
 		s := h.terms.Get(in.ID, owner, in.Session)
 		if s == nil {
 			return nil, huma.Error404NotFound("terminal not found")
@@ -131,7 +131,7 @@ func registerTerminals(api huma.API, r chi.Router, h *serverHandler, origins []s
 		Tags:          tags,
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *TerminalPath) (*struct{}, error) {
-		s := h.terms.Get(in.ID, principalOf(ctx).User.ID.String(), in.Session)
+		s := h.terms.Get(in.ID, h.authz.termOwner(principalOf(ctx)), in.Session)
 		if s == nil {
 			return nil, huma.Error404NotFound("terminal not found")
 		}
@@ -204,7 +204,7 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 		}
 		ctx, stop := h.authz.track(ctx, p, pol, serverID)
 		defer stop()
-		owner := p.User.ID.String()
+		owner := h.authz.termOwner(p)
 
 		q := r.URL.Query()
 		var sess *terminal.Session
@@ -233,7 +233,7 @@ func (h *serverHandler) terminalSocket(origins []string) http.HandlerFunc {
 			if rec != nil {
 				opts.Recorder = rec
 			}
-			cmds := newTermCommands(h.cmds, serverID, p, hostOf(r.RemoteAddr), rec)
+			cmds := newTermCommands(h.cmds, serverID, p, h.authz.loggedIP(p, hostOf(r.RemoteAddr)), rec)
 			if ref := q.Get("container"); ref != "" {
 				cmd, input, title, id, err := h.containerShell(ctx, serverID, conn, ref, q.Get("user"), q.Get("shell"))
 				if err != nil {

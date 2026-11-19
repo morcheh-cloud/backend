@@ -144,6 +144,10 @@ func (a *authz) middleware(api huma.API) func(huma.Context, func(huma.Context)) 
 			}
 		}
 		if pol.kind == kindPublic {
+			if a.demoRefuses(op, nil) {
+				_ = huma.WriteErr(api, ctx, http.StatusForbidden, demoRefusal)
+				return
+			}
 			next(huma.WithContext(ctx, base))
 			return
 		}
@@ -152,8 +156,12 @@ func (a *authz) middleware(api huma.API) func(huma.Context, func(huma.Context)) 
 			_ = huma.WriteErr(api, ctx, d.status, d.message)
 			return
 		}
+		if a.demoRefuses(op, p) {
+			_ = huma.WriteErr(api, ctx, http.StatusForbidden, demoRefusal)
+			return
+		}
 		withP := context.WithValue(base, principalKey{}, p)
-		withP = cmdlog.With(withP, requestOrigin(ctx, p))
+		withP = cmdlog.With(withP, requestOrigin(ctx, p, a.loggedIP(p, hostOf(ctx.RemoteAddr()))))
 		watched, stop := a.track(withP, p, pol, ctx.Param("id"))
 		defer stop()
 		next(huma.WithContext(ctx, watched))
@@ -162,7 +170,7 @@ func (a *authz) middleware(api huma.API) func(huma.Context, func(huma.Context)) 
 
 // requestOrigin says, for the command log, that commands run while handling
 // this request are for p: a read on GET, otherwise a change.
-func requestOrigin(ctx huma.Context, p *principal) cmdlog.Origin {
+func requestOrigin(ctx huma.Context, p *principal, ip string) cmdlog.Origin {
 	op := ctx.Operation()
 	kind := cmdlog.Change
 	if op.Method == http.MethodGet || op.Method == http.MethodHead {
@@ -170,7 +178,7 @@ func requestOrigin(ctx huma.Context, p *principal) cmdlog.Origin {
 	}
 	return cmdlog.Origin{
 		Kind: kind, Source: cmpOr(op.Summary, op.OperationID),
-		UserID: &p.User.ID, ClientIP: hostOf(ctx.RemoteAddr()),
+		UserID: &p.User.ID, ClientIP: ip,
 	}
 }
 
@@ -788,7 +796,8 @@ func (a *authz) sweep(ctx context.Context) {
 	}
 
 	for _, s := range a.terms.All() {
-		owner, err := uuid.Parse(s.Owner)
+		user, _, _ := strings.Cut(s.Owner, "/")
+		owner, err := uuid.Parse(user)
 		if err != nil {
 			s.Kill()
 			continue

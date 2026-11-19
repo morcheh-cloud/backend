@@ -83,6 +83,17 @@ type Config struct {
 	TrustProxy bool `env:"TRUST_PROXY"`
 	// Send the session cookie over plain HTTP outside development.
 	CookieInsecure bool `env:"COOKIE_INSECURE"`
+	// DemoMode turns this panel into a public demo: anyone can enter as
+	// DemoUser without a password, and that account can't touch what other
+	// visitors share (its password, sessions, profile, access). The demo's
+	// own deploy resets the data every DemoResetInterval; the panel only
+	// shows when. Never on a real install.
+	DemoMode bool `env:"DEMO_MODE"`
+	// The account visitors enter as. It must exist (made by the demo seed).
+	DemoUser string `env:"DEMO_USER" envDefault:"demo"`
+	// How often the demo's data is put back, counted from midnight UTC, so the
+	// reset job and the panel agree on when without talking.
+	DemoResetInterval time.Duration `env:"DEMO_RESET_INTERVAL" envDefault:"1h"`
 }
 
 // Development reports whether this is a local dev setup.
@@ -103,5 +114,22 @@ func Load() (*Config, error) {
 	if !slices.Contains([]string{"auto", "bwrap", "off"}, cfg.AnsibleSandbox) {
 		return nil, errors.New("ANSIBLE_SANDBOX must be auto, bwrap or off")
 	}
+	if cfg.DemoMode && (cfg.DemoResetInterval < time.Minute || cfg.DemoUser == "") {
+		return nil, errors.New("DEMO_MODE needs DEMO_USER and a DEMO_RESET_INTERVAL of at least 1m")
+	}
 	return &cfg, nil
+}
+
+// NextDemoReset is when the demo's data is next put back: the next multiple
+// of DemoResetInterval since midnight UTC.
+func (c *Config) NextDemoReset(now time.Time) time.Time {
+	now = now.UTC()
+	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	step := c.DemoResetInterval
+	n := now.Sub(day)/step + 1
+	next := day.Add(n * step)
+	if tomorrow := day.AddDate(0, 0, 1); next.After(tomorrow) {
+		return tomorrow
+	}
+	return next
 }
