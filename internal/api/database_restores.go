@@ -1,7 +1,7 @@
 package api
 
 import (
-	"compress/gzip"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -36,6 +36,8 @@ type RestoreBody struct {
 	RunnerServerID string `json:"runner_server_id,omitempty" maxLength:"36" doc:"For a direct database: the server the restore runs on, or \"local\" for the machine Morche runs on; empty = the plan's (Morche's machine when there's no plan)"`
 	Username       string `json:"username,omitempty" maxLength:"256" doc:"A login for this restore only; empty = the database's saved one"`
 	Password       string `json:"password,omitempty" maxLength:"1024"`
+	Workers        int    `json:"workers,omitempty" minimum:"0" maximum:"16" doc:"For a parallel PostgreSQL backup (format pg_dir): jobs for the restore; 0 = as many as the backup used. More than one isn't a single transaction"`
+	TempDir        string `json:"temp_dir,omitempty" maxLength:"512" doc:"For a parallel PostgreSQL backup (format pg_dir), or a ClickHouse one (ch_tar) when the runner's tar can't stream it: where it's unpacked first, on the machine the restore runs on; empty = the plan's when it runs on the plan's runner, else its temporary folder"`
 }
 
 // BackupRestore is one restore and how it went.
@@ -64,6 +66,27 @@ type BackupRestore struct {
 
 type restoreParams struct {
 	Restore string `json:"restore"`
+	// Parallel jobs for a pg_dir file; 0 = the backup's.
+	Workers int `json:"workers,omitempty"`
+	// Where a pg_dir file is unpacked; empty = the system's temporary folder.
+	TempDir string `json:"temp_dir,omitempty"`
+}
+
+// restoreTempDir is the asked folder, checked; empty = the plan's when the
+// restore runs where the plan's backups do (always, for a database reached
+// through its server: both run there).
+func restoreTempDir(asked string, plan *sqlc.DatabaseBackupPlan, samePlace bool) (string, error) {
+	dir := strings.TrimSpace(asked)
+	if dir != "" && dir != "/" {
+		dir = strings.TrimRight(dir, "/")
+	}
+	if err := dbbackup.CheckTempDir(dir); err != nil {
+		return "", fieldError("body.temp_dir", err.Error(), asked)
+	}
+	if dir == "" && plan != nil && samePlace {
+		dir = plan.TempDir
+	}
+	return dir, nil
 }
 
 // restoreChain is a backup and everything it builds on, oldest first, once
@@ -287,12 +310,17 @@ func registerDatabaseRestores(api huma.API, h *backupHandler, tags []string) {
 		}
 
 		var planRunner *uuid.UUID
+		var plan *sqlc.DatabaseBackupPlan
 		if b.PlanID != nil {
 			if p, err := h.q.GetBackupPlan(ctx, *b.PlanID); err == nil {
-				planRunner = p.RunnerServerID
+				planRunner, plan = p.RunnerServerID, &p
 			}
 		}
 		serverID, err := h.restoreRunner(ctx, d, body.RunnerServerID, planRunner)
+		if err != nil {
+			return nil, err
+		}
+		tempDir, err := restoreTempDir(body.TempDir, plan, d.Mode != "direct" || runnerOf(serverID) == runnerOf(planRunner))
 		if err != nil {
 			return nil, err
 		}
@@ -322,7 +350,7 @@ func registerDatabaseRestores(api huma.API, h *backupHandler, tags []string) {
 		out, err := submit(ctx, h.runner, jobs.Spec{
 			Kind:   restoreKind,
 			Title:  fmt.Sprintf("%s %s on %s", verb, name, d.Name),
-			Params: restoreParams{Restore: r.ID.String()},
+			Params: restoreParams{Restore: r.ID.String(), Workers: in.Body.Workers, TempDir: tempDir},
 			Refs:   refs,
 			Target: JobPlace{StorageID: src.ID.String(), Name: src.Name, Path: path.Dir(b.Path), DatabaseID: d.ID.String()},
 		})
@@ -405,7 +433,7 @@ func (h *backupHandler) runRestore(ctx context.Context, t *jobs.Task) (any, erro
 		return fail(err)
 	}
 	if r.BackupID == nil && r.Format != "" {
-		return h.runFileRestore(ctx, t, r, fail)
+		return h.runFileRestore(ctx, t, r, params, fail)
 	}
 	if r.BackupID == nil || r.StorageID == nil {
 		return fail(errors.New("The backup or its storage was removed."))
@@ -488,8 +516,11 @@ func (h *backupHandler) runRestore(ctx context.Context, t *jobs.Task) (any, erro
 	target := backupTarget(d, user, password, r.TargetName, r.ID.String())
 	for i, m := range chain {
 		t.Update(func(p *jobs.Progress) { p.Items, p.Current = i, path.Base(m.Path) })
+		workers := cmp.Or(params.Workers, int(m.Workers))
 		s, err := dbbackup.BuildRestore(target, dbbackup.RestoreOptions{
 			Format: m.Format, Source: m.Target, Replace: r.Mode == "replace", First: i == 0, Last: i == len(chain)-1,
+			MongoPlain: dbbackup.Packed(m.Format, m.Compression) == dbbackup.Zstd, Workers: workers,
+			TempDir: params.TempDir,
 		})
 		if err != nil {
 			return fail(err)
@@ -511,7 +542,7 @@ func (h *backupHandler) runRestore(ctx context.Context, t *jobs.Task) (any, erro
 }
 
 // loadFile streams one backup file from the storage into the restore script,
-// unzipping Morche's own gzip on the way.
+// undoing Morche's own compression on the way.
 func (h *backupHandler) loadFile(ctx context.Context, t *jobs.Task, s dumpScript, src sqlc.Storage, b sqlc.DatabaseBackup) error {
 	return h.st.withFS(ctx, src.ID.String(), func(_ sqlc.Storage, f storage.FS) error {
 		file, err := f.Open(ctx, b.Path)
@@ -520,13 +551,13 @@ func (h *backupHandler) loadFile(ctx context.Context, t *jobs.Task, s dumpScript
 		}
 		defer file.Close()
 		var data io.Reader = &countingReader{r: file, t: t}
-		if dbbackup.Gzipped(b.Format) {
-			gz, err := gzip.NewReader(data)
+		if method := dbbackup.Packed(b.Format, b.Compression); method != "" {
+			zr, err := dbbackup.Unpack(data, method)
 			if err != nil {
-				return fmt.Errorf("The file isn't gzip: %w", err)
+				return err
 			}
-			defer gz.Close()
-			data = gz
+			defer zr.Close()
+			data = zr
 		}
 		s.data = data
 		if _, err := h.runDump(ctx, t, s, nil); err != nil {
@@ -575,7 +606,7 @@ func (h *backupHandler) safetyBackup(ctx context.Context, t *jobs.Task, r sqlc.D
 	if d.Mode == "server" {
 		script.container = d.Container
 	}
-	res, err := h.stream(ctx, t, script, spec, []sqlc.Storage{dest}, b.ID, file)
+	res, err := h.stream(dumpSizeHint(ctx, d), t, script, spec, []sqlc.Storage{dest}, b.ID, file)
 	if err != nil {
 		return end(err)
 	}

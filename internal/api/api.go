@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -15,6 +16,7 @@ import (
 	"github.com/morche/backend/internal/cache"
 	"github.com/morche/backend/internal/config"
 	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/events"
 	"github.com/morche/backend/internal/jobs"
 	_ "github.com/morche/backend/internal/proxy/nginx" // registers the nginx driver
 	"github.com/morche/backend/internal/secrets"
@@ -76,12 +78,15 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 
 	terms := terminal.NewManager(cfg.TerminalDetachedTimeout)
 	a := newAuthz(cfg, db, rdb, runner, terms)
+	a.events = events.New()
 	// Before any Register: an operation takes the middlewares in place then.
 	api.UseMiddleware(a.middleware(api))
 
 	registerHealth(api, db, rdb)
 	registerAuth(api, a)
 	registerDemo(api, a)
+	registerAPITokens(api, a)
+	registerEvents(api)
 	registerAdmin(api, a)
 	registerSignIns(api, a)
 	registerWorkspaces(api, a)
@@ -152,13 +157,18 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	databases := newDatabaseHandler(sqlc.New(db), box, servers)
 	registerDatabases(api, databases)
 	registerDatabaseInsights(api, databases)
-	dns := &dnsHandler{q: sqlc.New(db), box: box, authz: a}
+	dns := &dnsHandler{q: sqlc.New(db), box: box, authz: a, arvanFake: cfg.ArvanFakeURL}
 	startDNSMonitor(dns, cfg.DNSCheckInterval)
 	registerDNS(api, dns)
+	registerDNSCDN(api, dns)
+	registerDNSCDNSecurity(api, dns)
+	registerDNSNames(api, dns)
+	registerCDNRanges(api)
 	panelURL := cfg.PanelURL
 	if panelURL == "" && len(cfg.CORSOrigins) > 0 && cfg.CORSOrigins[0] != "*" {
 		panelURL = cfg.CORSOrigins[0]
 	}
+	a.panelURL = strings.TrimRight(panelURL, "/")
 	up := newUptimeHandler(sqlc.New(db), box, a, servers, panelURL, cfg.MonitorHistory)
 	a.up = up
 	startUptimeMonitor(up)
@@ -194,12 +204,17 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerAnsible(api, playbooks)
 	backups := newBackupHandler(databases, st, a)
 	registerDatabaseBackups(api, backups)
+	registerDatabasePitr(api, backups)
+	explorer := newExplorerHandler(databases)
+	registerDatabaseExplorer(api, explorer)
+	registerDatabaseExplorerEdit(api, explorer)
 	dbSyncs := newDatabaseSyncHandler(backups, a)
 	registerDatabaseSyncs(api, dbSyncs)
 	schedules := newScheduleHandler(st, a, scripts, playbooks, backups, software)
 	schedules.pve = pve
 	registerSchedules(api, schedules)
 	startBackupScheduler(backups, cfg.ScheduleTick)
+	startPitrScheduler(backups, cfg.ScheduleTick, pitrCheckEvery)
 	startDatabaseSyncScheduler(dbSyncs, cfg.ScheduleTick)
 	startScheduler(schedules, cfg.ScheduleTick)
 	storageSyncs := newStorageSyncHandler(st, a)
@@ -210,6 +225,13 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	startLogArchiveScheduler(logs, cfg.ScheduleTick)
 	runner.SkipCleanup = func() bool { return logOwned("jobs") }
 	registerJobs(api, a)
+	registerJobEvents(runner, servers)
+	hooks := newWebhookDispatcher(sqlc.New(db), box)
+	hooks.start(a.events)
+	registerWebhooks(api, &webhookHandler{q: sqlc.New(db), box: box, authz: a, d: hooks})
+	autos := newAutomationHandler(sqlc.New(db), box, a, servers, scripts, schedules, up)
+	registerAutomations(api, autos)
+	autos.start(a.events)
 
 	return r, api
 }

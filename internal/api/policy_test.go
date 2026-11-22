@@ -66,6 +66,8 @@ var checkedInside = []string{
 	"list-workspace-command-log", "workspace-command-log-facets", "export-workspace-command-log", "get-command-log",
 	// Checked on what the mute covers (server, database or workspace).
 	"delete-alert-mute",
+	// Only the caller's own token.
+	"delete-api-token",
 }
 
 func TestEveryOperationHasAPolicy(t *testing.T) {
@@ -80,7 +82,7 @@ func TestEveryOperationHasAPolicy(t *testing.T) {
 		}
 		hasID := strings.Contains(op.path, "{id}")
 		switch pol.kind {
-		case kindServer, kindStorage, kindWorkspace, kindDatabase, kindBackupPlan, kindBackup, kindApp, kindPlaybook, kindAnsibleRun, kindSchedule, kindScheduleRun, kindDNSServer, kindPVECluster, kindScript, kindProxy, kindSoftwareRecipe, kindSoftwareInstall:
+		case kindServer, kindStorage, kindWorkspace, kindDatabase, kindBackupPlan, kindBackup, kindApp, kindPlaybook, kindAnsibleRun, kindSchedule, kindScheduleRun, kindDNSServer, kindPVECluster, kindScript, kindProxy, kindSoftwareRecipe, kindSoftwareInstall, kindWebhook, kindWebhookDelivery:
 			if !hasID {
 				t.Errorf("%s checks the path's {id}, but %s has none", op.id, op.path)
 			}

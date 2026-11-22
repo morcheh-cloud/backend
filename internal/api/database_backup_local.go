@@ -118,6 +118,10 @@ func localTools(d sqlc.Database) LocalTools {
 		need = [][]string{{"mongodump"}, {"mongorestore"}}
 	case dbmon.Redis:
 		need = [][]string{{"redis-cli", "valkey-cli"}}
+	case dbmon.ClickHouse:
+		// The client is the whole ClickHouse binary (about 700 MB), so the
+		// image leaves it out: install it, or run the backups on a server.
+		need = [][]string{{"clickhouse-client", "clickhouse"}, {"tar"}}
 	case dbmon.MSSQL:
 		return LocalTools{Missing: []string{}, Note: "SQL Server writes its backups on its own disk, so they run on its own machine."}
 	}

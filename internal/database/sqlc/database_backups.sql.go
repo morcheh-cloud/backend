@@ -30,7 +30,7 @@ WITH RECURSIVE chain AS (
     SELECT p.id, p.parent_id, chain.depth + 1
     FROM database_backups p JOIN chain ON p.id = chain.parent_id
 )
-SELECT b.id, b.workspace_id, b.database_id, b.plan_id, b.plan_name, b.path, b.engine, b.target, b.format, b.trigger, b.state, b.error, b.bytes, b.sha256, b.verified_at, b.verify_error, b.job_id, b.created_by, b.created_by_name, b.created_at, b.started_at, b.finished_at, b.kind, b.parent_id, b.position FROM database_backups b JOIN chain ON chain.id = b.id ORDER BY chain.depth DESC
+SELECT b.id, b.workspace_id, b.database_id, b.plan_id, b.plan_name, b.path, b.engine, b.target, b.format, b.trigger, b.state, b.error, b.bytes, b.sha256, b.verified_at, b.verify_error, b.job_id, b.created_by, b.created_by_name, b.created_at, b.started_at, b.finished_at, b.kind, b.parent_id, b.position, b.compression, b.workers FROM database_backups b JOIN chain ON chain.id = b.id ORDER BY chain.depth DESC
 `
 
 // A backup and all it builds on, oldest first.
@@ -69,6 +69,8 @@ func (q *Queries) BackupChain(ctx context.Context, id uuid.UUID) ([]DatabaseBack
 			&i.Kind,
 			&i.ParentID,
 			&i.Position,
+			&i.Compression,
+			&i.Workers,
 		); err != nil {
 			return nil, err
 		}
@@ -201,7 +203,7 @@ INSERT INTO database_backups (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12
 )
-RETURNING id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position
+RETURNING id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position, compression, workers
 `
 
 type CreateBackupParams struct {
@@ -261,6 +263,8 @@ func (q *Queries) CreateBackup(ctx context.Context, arg CreateBackupParams) (Dat
 		&i.Kind,
 		&i.ParentID,
 		&i.Position,
+		&i.Compression,
+		&i.Workers,
 	)
 	return i, err
 }
@@ -285,39 +289,45 @@ const createBackupPlan = `-- name: CreateBackupPlan :one
 INSERT INTO database_backup_plans (
     workspace_id, database_id, name, folder, selection, targets, pattern, method,
     full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly, runner_server_id,
-    username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by
+    username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by,
+    compression, compression_level, workers, temp_dir
 ) VALUES (
     $1, $2, $3, $4, $5, $6::text[], $7, $8,
     $9, $10, $11, $12, $13, $14,
     $15, $16, $17, $18, $19,
-    $20, $21, $22, $22
+    $20, $21, $22, $22,
+    $23, $24, $25, $26
 )
-RETURNING id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly
+RETURNING id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly, compression, compression_level, workers, temp_dir
 `
 
 type CreateBackupPlanParams struct {
-	WorkspaceID    uuid.UUID  `json:"workspace_id"`
-	DatabaseID     uuid.UUID  `json:"database_id"`
-	Name           string     `json:"name"`
-	Folder         string     `json:"folder"`
-	Selection      string     `json:"selection"`
-	Targets        []string   `json:"targets"`
-	Pattern        string     `json:"pattern"`
-	Method         string     `json:"method"`
-	FullEveryDays  int32      `json:"full_every_days"`
-	Retention      string     `json:"retention"`
-	KeepDays       int32      `json:"keep_days"`
-	GfsDaily       int32      `json:"gfs_daily"`
-	GfsWeekly      int32      `json:"gfs_weekly"`
-	GfsMonthly     int32      `json:"gfs_monthly"`
-	RunnerServerID *uuid.UUID `json:"runner_server_id"`
-	Username       string     `json:"username"`
-	PasswordEnc    []byte     `json:"password_enc"`
-	Cron           string     `json:"cron"`
-	Timezone       string     `json:"timezone"`
-	Enabled        bool       `json:"enabled"`
-	NextRunAt      *time.Time `json:"next_run_at"`
-	CreatedBy      *uuid.UUID `json:"created_by"`
+	WorkspaceID      uuid.UUID  `json:"workspace_id"`
+	DatabaseID       uuid.UUID  `json:"database_id"`
+	Name             string     `json:"name"`
+	Folder           string     `json:"folder"`
+	Selection        string     `json:"selection"`
+	Targets          []string   `json:"targets"`
+	Pattern          string     `json:"pattern"`
+	Method           string     `json:"method"`
+	FullEveryDays    int32      `json:"full_every_days"`
+	Retention        string     `json:"retention"`
+	KeepDays         int32      `json:"keep_days"`
+	GfsDaily         int32      `json:"gfs_daily"`
+	GfsWeekly        int32      `json:"gfs_weekly"`
+	GfsMonthly       int32      `json:"gfs_monthly"`
+	RunnerServerID   *uuid.UUID `json:"runner_server_id"`
+	Username         string     `json:"username"`
+	PasswordEnc      []byte     `json:"password_enc"`
+	Cron             string     `json:"cron"`
+	Timezone         string     `json:"timezone"`
+	Enabled          bool       `json:"enabled"`
+	NextRunAt        *time.Time `json:"next_run_at"`
+	CreatedBy        *uuid.UUID `json:"created_by"`
+	Compression      string     `json:"compression"`
+	CompressionLevel string     `json:"compression_level"`
+	Workers          int32      `json:"workers"`
+	TempDir          string     `json:"temp_dir"`
 }
 
 func (q *Queries) CreateBackupPlan(ctx context.Context, arg CreateBackupPlanParams) (DatabaseBackupPlan, error) {
@@ -344,6 +354,10 @@ func (q *Queries) CreateBackupPlan(ctx context.Context, arg CreateBackupPlanPara
 		arg.Enabled,
 		arg.NextRunAt,
 		arg.CreatedBy,
+		arg.Compression,
+		arg.CompressionLevel,
+		arg.Workers,
+		arg.TempDir,
 	)
 	var i DatabaseBackupPlan
 	err := row.Scan(
@@ -373,6 +387,10 @@ func (q *Queries) CreateBackupPlan(ctx context.Context, arg CreateBackupPlanPara
 		&i.GfsDaily,
 		&i.GfsWeekly,
 		&i.GfsMonthly,
+		&i.Compression,
+		&i.CompressionLevel,
+		&i.Workers,
+		&i.TempDir,
 	)
 	return i, err
 }
@@ -536,32 +554,36 @@ func (q *Queries) FailBackupCopies(ctx context.Context, backupID uuid.UUID) erro
 
 const finishBackup = `-- name: FinishBackup :exec
 UPDATE database_backups SET state = 'succeeded', bytes = $1, sha256 = $2, position = $3,
-    error = $4, finished_at = now()
-WHERE id = $5
+    error = $4, finished_at = now(),
+    compression = CASE WHEN $5::text = '' THEN compression ELSE $5::text END
+WHERE id = $6
 `
 
 type FinishBackupParams struct {
-	Bytes    int64     `json:"bytes"`
-	Sha256   string    `json:"sha256"`
-	Position string    `json:"position"`
-	Error    string    `json:"error"`
-	ID       uuid.UUID `json:"id"`
+	Bytes       int64     `json:"bytes"`
+	Sha256      string    `json:"sha256"`
+	Position    string    `json:"position"`
+	Error       string    `json:"error"`
+	Compression string    `json:"compression"`
+	ID          uuid.UUID `json:"id"`
 }
 
 // error is a warning here: a copy that failed while another worked.
+// compression: what the script said it used instead; empty = as started.
 func (q *Queries) FinishBackup(ctx context.Context, arg FinishBackupParams) error {
 	_, err := q.db.Exec(ctx, finishBackup,
 		arg.Bytes,
 		arg.Sha256,
 		arg.Position,
 		arg.Error,
+		arg.Compression,
 		arg.ID,
 	)
 	return err
 }
 
 const getBackup = `-- name: GetBackup :one
-SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position FROM database_backups WHERE id = $1
+SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position, compression, workers FROM database_backups WHERE id = $1
 `
 
 func (q *Queries) GetBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error) {
@@ -593,6 +615,8 @@ func (q *Queries) GetBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, 
 		&i.Kind,
 		&i.ParentID,
 		&i.Position,
+		&i.Compression,
+		&i.Workers,
 	)
 	return i, err
 }
@@ -609,7 +633,7 @@ func (q *Queries) GetBackupDatabase(ctx context.Context, id uuid.UUID) (uuid.UUI
 }
 
 const getBackupPlan = `-- name: GetBackupPlan :one
-SELECT id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly FROM database_backup_plans WHERE id = $1
+SELECT id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly, compression, compression_level, workers, temp_dir FROM database_backup_plans WHERE id = $1
 `
 
 func (q *Queries) GetBackupPlan(ctx context.Context, id uuid.UUID) (DatabaseBackupPlan, error) {
@@ -642,6 +666,10 @@ func (q *Queries) GetBackupPlan(ctx context.Context, id uuid.UUID) (DatabaseBack
 		&i.GfsDaily,
 		&i.GfsWeekly,
 		&i.GfsMonthly,
+		&i.Compression,
+		&i.CompressionLevel,
+		&i.Workers,
+		&i.TempDir,
 	)
 	return i, err
 }
@@ -743,7 +771,7 @@ func (q *Queries) LastBackups(ctx context.Context, planIds []uuid.UUID) ([]LastB
 }
 
 const lastGoodBackup = `-- name: LastGoodBackup :one
-SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position FROM database_backups
+SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position, compression, workers FROM database_backups
 WHERE database_id = $1 AND state = 'succeeded'
 ORDER BY id DESC LIMIT 1
 `
@@ -777,6 +805,8 @@ func (q *Queries) LastGoodBackup(ctx context.Context, databaseID uuid.UUID) (Dat
 		&i.Kind,
 		&i.ParentID,
 		&i.Position,
+		&i.Compression,
+		&i.Workers,
 	)
 	return i, err
 }
@@ -813,7 +843,7 @@ func (q *Queries) LastGoodBackupTimes(ctx context.Context, planIds []uuid.UUID) 
 }
 
 const lastPlanBackup = `-- name: LastPlanBackup :one
-SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position FROM database_backups
+SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position, compression, workers FROM database_backups
 WHERE plan_id = $1 AND target = $2 AND state = 'succeeded'
 ORDER BY id DESC LIMIT 1
 `
@@ -853,6 +883,8 @@ func (q *Queries) LastPlanBackup(ctx context.Context, arg LastPlanBackupParams) 
 		&i.Kind,
 		&i.ParentID,
 		&i.Position,
+		&i.Compression,
+		&i.Workers,
 	)
 	return i, err
 }
@@ -877,7 +909,7 @@ func (q *Queries) LastRestoreAt(ctx context.Context, arg LastRestoreAtParams) (t
 }
 
 const latestGoodBackups = `-- name: LatestGoodBackups :many
-SELECT DISTINCT ON (target) id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position FROM database_backups
+SELECT DISTINCT ON (target) id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position, compression, workers FROM database_backups
 WHERE database_id = $1 AND state = 'succeeded'
   AND ($2::uuid IS NULL OR plan_id = $2)
 ORDER BY target, id DESC
@@ -925,6 +957,8 @@ func (q *Queries) LatestGoodBackups(ctx context.Context, arg LatestGoodBackupsPa
 			&i.Kind,
 			&i.ParentID,
 			&i.Position,
+			&i.Compression,
+			&i.Workers,
 		); err != nil {
 			return nil, err
 		}
@@ -937,7 +971,7 @@ func (q *Queries) LatestGoodBackups(ctx context.Context, arg LatestGoodBackupsPa
 }
 
 const listActiveBackups = `-- name: ListActiveBackups :many
-SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position FROM database_backups WHERE plan_id = $1 AND state IN ('queued', 'running')
+SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position, compression, workers FROM database_backups WHERE plan_id = $1 AND state IN ('queued', 'running')
 `
 
 func (q *Queries) ListActiveBackups(ctx context.Context, planID *uuid.UUID) ([]DatabaseBackup, error) {
@@ -975,6 +1009,8 @@ func (q *Queries) ListActiveBackups(ctx context.Context, planID *uuid.UUID) ([]D
 			&i.Kind,
 			&i.ParentID,
 			&i.Position,
+			&i.Compression,
+			&i.Workers,
 		); err != nil {
 			return nil, err
 		}
@@ -1042,7 +1078,7 @@ func (q *Queries) ListBackupPlanStorages(ctx context.Context, planID uuid.UUID) 
 }
 
 const listBackupPlans = `-- name: ListBackupPlans :many
-SELECT id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly FROM database_backup_plans WHERE database_id = $1 ORDER BY lower(name)
+SELECT id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly, compression, compression_level, workers, temp_dir FROM database_backup_plans WHERE database_id = $1 ORDER BY lower(name)
 `
 
 func (q *Queries) ListBackupPlans(ctx context.Context, databaseID uuid.UUID) ([]DatabaseBackupPlan, error) {
@@ -1081,6 +1117,10 @@ func (q *Queries) ListBackupPlans(ctx context.Context, databaseID uuid.UUID) ([]
 			&i.GfsDaily,
 			&i.GfsWeekly,
 			&i.GfsMonthly,
+			&i.Compression,
+			&i.CompressionLevel,
+			&i.Workers,
+			&i.TempDir,
 		); err != nil {
 			return nil, err
 		}
@@ -1093,7 +1133,7 @@ func (q *Queries) ListBackupPlans(ctx context.Context, databaseID uuid.UUID) ([]
 }
 
 const listBackupPlansWithoutNext = `-- name: ListBackupPlansWithoutNext :many
-SELECT id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly FROM database_backup_plans WHERE enabled AND cron <> '' AND next_run_at IS NULL
+SELECT id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly, compression, compression_level, workers, temp_dir FROM database_backup_plans WHERE enabled AND cron <> '' AND next_run_at IS NULL
 `
 
 func (q *Queries) ListBackupPlansWithoutNext(ctx context.Context) ([]DatabaseBackupPlan, error) {
@@ -1132,6 +1172,10 @@ func (q *Queries) ListBackupPlansWithoutNext(ctx context.Context) ([]DatabaseBac
 			&i.GfsDaily,
 			&i.GfsWeekly,
 			&i.GfsMonthly,
+			&i.Compression,
+			&i.CompressionLevel,
+			&i.Workers,
+			&i.TempDir,
 		); err != nil {
 			return nil, err
 		}
@@ -1213,7 +1257,7 @@ func (q *Queries) ListBackupProblems(ctx context.Context, arg ListBackupProblems
 }
 
 const listBackups = `-- name: ListBackups :many
-SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position FROM database_backups WHERE database_id = $1
+SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position, compression, workers FROM database_backups WHERE database_id = $1
 ORDER BY id DESC LIMIT $3 OFFSET $2
 `
 
@@ -1258,6 +1302,8 @@ func (q *Queries) ListBackups(ctx context.Context, arg ListBackupsParams) ([]Dat
 			&i.Kind,
 			&i.ParentID,
 			&i.Position,
+			&i.Compression,
+			&i.Workers,
 		); err != nil {
 			return nil, err
 		}
@@ -1270,7 +1316,7 @@ func (q *Queries) ListBackups(ctx context.Context, arg ListBackupsParams) ([]Dat
 }
 
 const listDueBackupPlans = `-- name: ListDueBackupPlans :many
-SELECT id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly FROM database_backup_plans
+SELECT id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly, compression, compression_level, workers, temp_dir FROM database_backup_plans
 WHERE enabled AND next_run_at IS NOT NULL AND next_run_at <= $1::timestamptz
 ORDER BY next_run_at
 `
@@ -1311,6 +1357,10 @@ func (q *Queries) ListDueBackupPlans(ctx context.Context, now *time.Time) ([]Dat
 			&i.GfsDaily,
 			&i.GfsWeekly,
 			&i.GfsMonthly,
+			&i.Compression,
+			&i.CompressionLevel,
+			&i.Workers,
+			&i.TempDir,
 		); err != nil {
 			return nil, err
 		}
@@ -1323,7 +1373,7 @@ func (q *Queries) ListDueBackupPlans(ctx context.Context, now *time.Time) ([]Dat
 }
 
 const listPlanBackups = `-- name: ListPlanBackups :many
-SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position FROM database_backups
+SELECT id, workspace_id, database_id, plan_id, plan_name, path, engine, target, format, trigger, state, error, bytes, sha256, verified_at, verify_error, job_id, created_by, created_by_name, created_at, started_at, finished_at, kind, parent_id, position, compression, workers FROM database_backups
 WHERE plan_id = $1 AND state = 'succeeded'
 ORDER BY id DESC
 `
@@ -1364,6 +1414,8 @@ func (q *Queries) ListPlanBackups(ctx context.Context, planID *uuid.UUID) ([]Dat
 			&i.Kind,
 			&i.ParentID,
 			&i.Position,
+			&i.Compression,
+			&i.Workers,
 		); err != nil {
 			return nil, err
 		}
@@ -1568,16 +1620,19 @@ func (q *Queries) SetRestoreSafety(ctx context.Context, arg SetRestoreSafetyPara
 
 const startBackup = `-- name: StartBackup :exec
 UPDATE database_backups SET state = 'running', started_at = coalesce(started_at, now()), path = $1,
-    format = $2, kind = $3, parent_id = $4
-WHERE id = $5
+    format = $2, kind = $3, parent_id = $4,
+    compression = $5, workers = $6
+WHERE id = $7
 `
 
 type StartBackupParams struct {
-	Path     string     `json:"path"`
-	Format   string     `json:"format"`
-	Kind     string     `json:"kind"`
-	ParentID *uuid.UUID `json:"parent_id"`
-	ID       uuid.UUID  `json:"id"`
+	Path        string     `json:"path"`
+	Format      string     `json:"format"`
+	Kind        string     `json:"kind"`
+	ParentID    *uuid.UUID `json:"parent_id"`
+	Compression string     `json:"compression"`
+	Workers     int32      `json:"workers"`
+	ID          uuid.UUID  `json:"id"`
 }
 
 func (q *Queries) StartBackup(ctx context.Context, arg StartBackupParams) error {
@@ -1586,6 +1641,8 @@ func (q *Queries) StartBackup(ctx context.Context, arg StartBackupParams) error 
 		arg.Format,
 		arg.Kind,
 		arg.ParentID,
+		arg.Compression,
+		arg.Workers,
 		arg.ID,
 	)
 	return err
@@ -1609,33 +1666,39 @@ UPDATE database_backup_plans SET
     runner_server_id = $13, username = $14,
     password_enc = $15, cron = $16, timezone = $17,
     enabled = $18, next_run_at = $19,
-    updated_by = $20, updated_at = now()
-WHERE id = $21
-RETURNING id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly
+    compression = $20, compression_level = $21, workers = $22,
+    temp_dir = $23,
+    updated_by = $24, updated_at = now()
+WHERE id = $25
+RETURNING id, workspace_id, database_id, name, folder, runner_server_id, username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by, created_at, updated_at, selection, targets, pattern, method, full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly, compression, compression_level, workers, temp_dir
 `
 
 type UpdateBackupPlanParams struct {
-	Name           string     `json:"name"`
-	Folder         string     `json:"folder"`
-	Selection      string     `json:"selection"`
-	Targets        []string   `json:"targets"`
-	Pattern        string     `json:"pattern"`
-	Method         string     `json:"method"`
-	FullEveryDays  int32      `json:"full_every_days"`
-	Retention      string     `json:"retention"`
-	KeepDays       int32      `json:"keep_days"`
-	GfsDaily       int32      `json:"gfs_daily"`
-	GfsWeekly      int32      `json:"gfs_weekly"`
-	GfsMonthly     int32      `json:"gfs_monthly"`
-	RunnerServerID *uuid.UUID `json:"runner_server_id"`
-	Username       string     `json:"username"`
-	PasswordEnc    []byte     `json:"password_enc"`
-	Cron           string     `json:"cron"`
-	Timezone       string     `json:"timezone"`
-	Enabled        bool       `json:"enabled"`
-	NextRunAt      *time.Time `json:"next_run_at"`
-	UpdatedBy      *uuid.UUID `json:"updated_by"`
-	ID             uuid.UUID  `json:"id"`
+	Name             string     `json:"name"`
+	Folder           string     `json:"folder"`
+	Selection        string     `json:"selection"`
+	Targets          []string   `json:"targets"`
+	Pattern          string     `json:"pattern"`
+	Method           string     `json:"method"`
+	FullEveryDays    int32      `json:"full_every_days"`
+	Retention        string     `json:"retention"`
+	KeepDays         int32      `json:"keep_days"`
+	GfsDaily         int32      `json:"gfs_daily"`
+	GfsWeekly        int32      `json:"gfs_weekly"`
+	GfsMonthly       int32      `json:"gfs_monthly"`
+	RunnerServerID   *uuid.UUID `json:"runner_server_id"`
+	Username         string     `json:"username"`
+	PasswordEnc      []byte     `json:"password_enc"`
+	Cron             string     `json:"cron"`
+	Timezone         string     `json:"timezone"`
+	Enabled          bool       `json:"enabled"`
+	NextRunAt        *time.Time `json:"next_run_at"`
+	Compression      string     `json:"compression"`
+	CompressionLevel string     `json:"compression_level"`
+	Workers          int32      `json:"workers"`
+	TempDir          string     `json:"temp_dir"`
+	UpdatedBy        *uuid.UUID `json:"updated_by"`
+	ID               uuid.UUID  `json:"id"`
 }
 
 func (q *Queries) UpdateBackupPlan(ctx context.Context, arg UpdateBackupPlanParams) (DatabaseBackupPlan, error) {
@@ -1659,6 +1722,10 @@ func (q *Queries) UpdateBackupPlan(ctx context.Context, arg UpdateBackupPlanPara
 		arg.Timezone,
 		arg.Enabled,
 		arg.NextRunAt,
+		arg.Compression,
+		arg.CompressionLevel,
+		arg.Workers,
+		arg.TempDir,
 		arg.UpdatedBy,
 		arg.ID,
 	)
@@ -1690,6 +1757,10 @@ func (q *Queries) UpdateBackupPlan(ctx context.Context, arg UpdateBackupPlanPara
 		&i.GfsDaily,
 		&i.GfsWeekly,
 		&i.GfsMonthly,
+		&i.Compression,
+		&i.CompressionLevel,
+		&i.Workers,
+		&i.TempDir,
 	)
 	return i, err
 }

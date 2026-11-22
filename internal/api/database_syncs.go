@@ -33,7 +33,9 @@ import (
 //     growing column (id or updated_at);
 //   - replace: the target is dropped and loaded again from a fresh dump
 //     (any engine with backups; the target is briefly empty).
-// Row modes work on PostgreSQL and MySQL/MariaDB, between the same engine.
+// Row modes work on PostgreSQL, MySQL/MariaDB and ClickHouse, between the
+// same engine, and from PostgreSQL or MySQL/MariaDB into ClickHouse
+// (analytics copies; see dbsync's clickhouse.go for what it can't write).
 
 const (
 	databaseSyncKind     = "database-sync"
@@ -150,8 +152,9 @@ type DatabaseSyncRun struct {
 type DatabaseSyncTables struct {
 	Name      string         `json:"name"`
 	Databases []string       `json:"databases" doc:"Databases on this connection"`
-	Tables    []dbsync.Table `json:"tables" doc:"Tables of name (PostgreSQL and MySQL only)"`
+	Tables    []dbsync.Table `json:"tables" doc:"Tables of name (engines with row modes only)"`
 	Rows      bool           `json:"rows" doc:"Row-by-row modes work on this engine"`
+	RowsInto  []string       `json:"rows_into" doc:"Engines this database's rows can be synced into (tables, mirror, incremental)"`
 }
 
 // ---- Handler ----
@@ -168,7 +171,21 @@ func newDatabaseSyncHandler(b *backupHandler, a *authz) *databaseSyncHandler {
 	return &databaseSyncHandler{q: b.q, db: b.db, backups: b, authz: a, runner: b.runner}
 }
 
-func rowEngine(engine string) bool { return engine == dbmon.Postgres || engine == dbmon.MySQL }
+func rowEngine(engine string) bool {
+	return engine == dbmon.Postgres || engine == dbmon.MySQL || engine == dbmon.ClickHouse
+}
+
+// rowTargets are the engines a row sync from engine can write into: its own,
+// and ClickHouse from PostgreSQL and MySQL/MariaDB.
+func rowTargets(engine string) []string {
+	switch engine {
+	case dbmon.Postgres, dbmon.MySQL:
+		return []string{engine, dbmon.ClickHouse}
+	case dbmon.ClickHouse:
+		return []string{engine}
+	}
+	return []string{}
+}
 
 func destructive(mode string, o DatabaseSyncOptions) bool {
 	return mode == "mirror" || mode == "replace" || (mode == "tables" && o.Delete)
@@ -390,16 +407,22 @@ func (h *databaseSyncHandler) check(ctx context.Context, ws uuid.UUID, b Databas
 	if err := dbbackup.CheckName(b.TargetName); err != nil {
 		return c, fieldError("body.target_name", problemText(err), b.TargetName)
 	}
-	if c.src.Engine != c.tgt.Engine {
-		return c, fieldError("body.target_database_id", "Both databases must be the same engine.", b.TargetDatabaseID)
+	if c.src.Engine != c.tgt.Engine && (b.Mode == "replace" || !slices.Contains(rowTargets(c.src.Engine), c.tgt.Engine)) {
+		msg := "Both databases must be the same engine."
+		if b.Mode != "replace" && c.tgt.Engine == dbmon.ClickHouse {
+			msg = "ClickHouse takes rows from PostgreSQL, MySQL/MariaDB or another ClickHouse."
+		} else if b.Mode == "replace" && c.tgt.Engine == dbmon.ClickHouse && rowEngine(c.src.Engine) {
+			msg = "Replacing needs the same engine on both sides. To copy into ClickHouse, sync row by row."
+		}
+		return c, fieldError("body.target_database_id", msg, b.TargetDatabaseID)
 	}
 	o := &b.Options
 	switch b.Mode {
 	case "replace":
 		switch c.src.Engine {
-		case dbmon.Postgres, dbmon.MySQL, dbmon.Mongo:
+		case dbmon.Postgres, dbmon.MySQL, dbmon.Mongo, dbmon.ClickHouse:
 		default:
-			return c, fieldError("body.mode", "Replacing works on PostgreSQL, MySQL/MariaDB and MongoDB.", b.Mode)
+			return c, fieldError("body.mode", "Replacing works on PostgreSQL, MySQL/MariaDB, MongoDB and ClickHouse.", b.Mode)
 		}
 		src, err := h.syncRunner(ctx, c.src, o.SourceRunner, "body.options.source_runner")
 		if err != nil {
@@ -412,7 +435,7 @@ func (h *databaseSyncHandler) check(ctx context.Context, ws uuid.UUID, b Databas
 		*o = DatabaseSyncOptions{SourceRunner: src, TargetRunner: tgt}
 	default:
 		if !rowEngine(c.src.Engine) {
-			return c, fieldError("body.mode", "Row by row works on PostgreSQL and MySQL/MariaDB. Use Replace for this engine.", b.Mode)
+			return c, fieldError("body.mode", "Row by row works on PostgreSQL, MySQL/MariaDB and ClickHouse. Use Replace for this engine.", b.Mode)
 		}
 		o.SourceRunner, o.TargetRunner = "", ""
 		if o.Conflict == "" {
@@ -462,6 +485,9 @@ func (h *databaseSyncHandler) check(ctx context.Context, ws uuid.UUID, b Databas
 		for i, p := range o.Pairs {
 			if p.To.Name == "" {
 				o.Pairs[i].To = p.From
+			}
+			if c.tgt.Engine == dbmon.ClickHouse {
+				o.Pairs[i].To.Schema = "" // its tables sit right in the database
 			}
 		}
 	}
@@ -1048,7 +1074,7 @@ func registerDatabaseSyncs(api huma.API, h *databaseSyncHandler) {
 			return nil, internalError(err)
 		}
 		out := &struct{ Body DatabaseSyncTables }{}
-		out.Body = DatabaseSyncTables{Name: in.Name, Databases: []string{}, Tables: []dbsync.Table{}, Rows: rowEngine(d.Engine)}
+		out.Body = DatabaseSyncTables{Name: in.Name, Databases: []string{}, Tables: []dbsync.Table{}, Rows: rowEngine(d.Engine), RowsInto: rowTargets(d.Engine)}
 		names, err := h.backups.databaseNames(ctx, d)
 		if err != nil {
 			return nil, huma.Error422UnprocessableEntity(problemText(err))

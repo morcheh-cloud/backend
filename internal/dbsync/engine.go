@@ -147,6 +147,9 @@ func (r *Run) logf(format string, args ...any) {
 func (r *Run) Do(ctx context.Context, pairs []Pair) ([]TableResult, error) {
 	if r.Rules.Batch <= 0 {
 		r.Rules.Batch = 500
+		if r.Dst.Dialect == ClickHouse {
+			r.Rules.Batch = 5000 // ClickHouse wants big blocks
+		}
 	}
 	if r.Rules.Conflict == "" {
 		r.Rules.Conflict = Overwrite
@@ -177,7 +180,7 @@ func (r *Run) Do(ctx context.Context, pairs []Pair) ([]TableResult, error) {
 			return nil, err
 		}
 		defer r.release()
-		if r.Rules.PauseChecks {
+		if r.Rules.PauseChecks && r.Dst.Dialect != ClickHouse {
 			r.pauseChecks(ctx)
 		}
 	}
@@ -188,6 +191,9 @@ func (r *Run) Do(ctx context.Context, pairs []Pair) ([]TableResult, error) {
 			return out, err
 		}
 		started := time.Now()
+		if r.Dst.Dialect == ClickHouse {
+			p.To.Schema = "" // the connection's database is the schema
+		}
 		res := TableResult{From: p.From, To: p.To, State: "done"}
 		if r.Progress != nil {
 			r.Progress(p.From.String(), i, len(pairs), 0, src[p.From].Rows)
@@ -252,7 +258,7 @@ func (r *Run) pauseChecks(ctx context.Context) {
 func (r *Run) release() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if r.Rules.PauseChecks {
+	if r.Rules.PauseChecks && r.Dst.Dialect != ClickHouse {
 		if r.Dst.Dialect == MySQL {
 			r.w.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 1")
 		} else {
@@ -266,13 +272,16 @@ func (r *Run) release() {
 
 type plan struct {
 	from, to   Table
-	cols       []Column // source columns copied, in order
-	dcols      []Column // the same columns on the target (their types)
-	key        []int    // indexes into cols
-	newer      int      // index of NewerColumn in cols, -1 if none
-	track      int      // incremental column index, -1 if none
-	identity   bool     // target has GENERATED ALWAYS identity columns
-	serials    []Column // target columns fed by a sequence
+	cols       []Column              // source columns copied, in order
+	dcols      []Column              // the same columns on the target (their types)
+	key        []int                 // indexes into cols
+	newer      int                   // index of NewerColumn in cols, -1 if none
+	track      int                   // incremental column index, -1 if none
+	identity   bool                  // target has GENERATED ALWAYS identity columns
+	serials    []Column              // target columns fed by a sequence
+	snorm      []func(string) string // across engines: canonical text, per column
+	dnorm      []func(string) string
+	pending    []pending // ClickHouse target: rows waiting for the next block
 	res        *TableResult
 	rules      Rules
 	index, all int
@@ -300,13 +309,22 @@ func (r *Run) table(ctx context.Context, p Pair, src, dst map[Ref]Table, res *Ta
 				}
 			}
 			var n int64
-			if err := r.Src.DB.QueryRowContext(ctx, "SELECT count(*) FROM "+r.Src.Dialect.table(from.Ref)).Scan(&n); err != nil {
+			if err := r.Src.DB.QueryRowContext(ctx, countSQL(r.Src.Dialect, from)).Scan(&n); err != nil {
 				return err
 			}
 			res.Read, res.Inserted = n, n
+			if r.Dst.Dialect == ClickHouse && r.Src.Dialect != ClickHouse && len(from.Key) == 0 {
+				res.Note = "would be created without a key: only full copies work"
+			}
 			return nil
 		}
-		if err := createTable(ctx, r.Src, r.Dst, from, p.To); err != nil {
+		var err error
+		if r.Dst.Dialect == ClickHouse {
+			res.Note, err = createClickHouse(ctx, r.Src, r.Dst, from, p.To)
+		} else {
+			err = createTable(ctx, r.Src, r.Dst, from, p.To)
+		}
+		if err != nil {
 			res.Failures = append(res.Failures, Failure{Op: "table", Error: err.Error()})
 			return fmt.Errorf("couldn't create %s on the target: %w", p.To, err)
 		}
@@ -326,6 +344,7 @@ func (r *Run) table(ctx context.Context, p Pair, src, dst map[Ref]Table, res *Ta
 	}
 
 	pl := &plan{from: from, to: to, res: res, rules: r.Rules, newer: -1, track: -1, index: index, all: all}
+	var unwritable []string
 	want := map[string]bool{}
 	for _, c := range p.Columns {
 		want[c] = true
@@ -349,6 +368,10 @@ func (r *Run) table(ctx context.Context, p Pair, src, dst map[Ref]Table, res *Ta
 		if dc.Generated {
 			continue
 		}
+		if r.Dst.Dialect == ClickHouse && !chWritable(dc.Type) {
+			unwritable = append(unwritable, c.Name)
+			continue
+		}
 		pl.cols = append(pl.cols, c)
 		pl.dcols = append(pl.dcols, dc)
 		res.Columns = append(res.Columns, c.Name)
@@ -359,11 +382,19 @@ func (r *Run) table(ctx context.Context, p Pair, src, dst map[Ref]Table, res *Ta
 			pl.serials = append(pl.serials, dc)
 		}
 	}
+	if len(unwritable) > 0 {
+		note := "left out (types a row sync can't write): " + strings.Join(unwritable, ", ")
+		if res.Note != "" {
+			note = res.Note + "; " + note
+		}
+		res.Note = note
+	}
 	if len(pl.cols) == 0 {
 		res.State = "skipped"
 		res.Note = "no columns in common"
 		return nil
 	}
+	r.setCanon(pl)
 	index_ := func(name string) int {
 		for i, c := range pl.cols {
 			if c.Name == name {
@@ -391,7 +422,13 @@ func (r *Run) table(ctx context.Context, p Pair, src, dst map[Ref]Table, res *Ta
 		if r.Incremental || r.Rules.NoKey != "reload" {
 			res.State = "skipped"
 			res.Note = "no primary key or unique key to match rows by"
+			if r.Src.Dialect == ClickHouse || r.Dst.Dialect == ClickHouse {
+				res.Note = "no key to match rows by (only a ReplacingMergeTree's ORDER BY counts; name the key columns, or copy it whole)"
+			}
 			return nil
+		}
+		if r.Dst.Dialect == ClickHouse {
+			return r.chReload(ctx, pl)
 		}
 		return r.reload(ctx, pl)
 	}
@@ -404,12 +441,24 @@ func (r *Run) table(ctx context.Context, p Pair, src, dst map[Ref]Table, res *Ta
 		if pl.track < 0 {
 			return fmt.Errorf("the column %s isn't on both sides", track)
 		}
-		err := r.incremental(ctx, pl, p)
+		err := r.flushAfter(ctx, pl, r.incremental(ctx, pl, p))
 		r.fixSequences(ctx, pl)
 		return err
 	}
-	err := r.compare(ctx, pl)
+	err := r.flushAfter(ctx, pl, r.compare(ctx, pl))
 	r.fixSequences(ctx, pl)
+	return err
+}
+
+// flushAfter sends rows still waiting for a ClickHouse block, also when the
+// table stopped part way (what was decided before is written, as elsewhere).
+func (r *Run) flushAfter(ctx context.Context, pl *plan, err error) error {
+	if len(pl.pending) == 0 || ctx.Err() != nil {
+		return err
+	}
+	if ferr := r.chFlush(ctx, pl); err == nil {
+		err = ferr
+	}
 	return err
 }
 
@@ -495,6 +544,9 @@ func (d Dialect) names(cols []Column) string {
 
 // param is the n-th placeholder, read as a value of c's type.
 func (d Dialect) param(n int, c Column) string {
+	if d == ClickHouse {
+		return chParam(c)
+	}
 	if d == MySQL {
 		return "?"
 	}
@@ -503,6 +555,9 @@ func (d Dialect) param(n int, c Column) string {
 
 // paramOrd is a placeholder compared the way ord(c) orders.
 func (d Dialect) paramOrd(n int, c Column) string {
+	if d == ClickHouse {
+		return chParamOrd(c)
+	}
 	if c.Kind != KindText {
 		return d.param(n, c)
 	}
@@ -566,12 +621,12 @@ func (r *Run) compare(ctx context.Context, pl *plan) error {
 	sd, dd := r.Src.Dialect, r.Dst.Dialect
 	skeys, dkeys := pick(pl.cols, pl.key), pick(pl.dcols, pl.key)
 	n := r.Rules.Batch
-	var lo row
+	var lo, tlo0 row // lo as the source reads it, tlo0 as the target does
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		q := "SELECT " + sd.list(pl.cols) + " FROM " + sd.table(pl.from.Ref)
+		q := "SELECT " + sd.list(pl.cols) + " FROM " + sd.from(pl.from)
 		var args []any
 		if lo != nil {
 			q += " WHERE " + sd.after(skeys, 1, ">")
@@ -582,13 +637,14 @@ func (r *Run) compare(ctx context.Context, pl *plan) error {
 		if err != nil {
 			return fmt.Errorf("reading the source: %w", err)
 		}
-		page, err := scanRows(rows, len(pl.cols))
+		raw, err := scanRows(rows, len(pl.cols))
 		if err != nil {
 			return fmt.Errorf("reading the source: %w", err)
 		}
-		var hi row
+		page := normRows(pl.snorm, raw)
+		var hi, hiRaw row
 		if len(page) == n {
-			hi = page[len(page)-1]
+			hi, hiRaw = page[len(page)-1], raw[len(raw)-1]
 		}
 		pl.res.Read += int64(len(page))
 
@@ -600,9 +656,9 @@ func (r *Run) compare(ctx context.Context, pl *plan) error {
 		var gone []row
 
 		// The target's rows in (lo, hi], in chunks.
-		tlo := lo
+		tlo := tlo0
 		for {
-			q := "SELECT " + dd.list(pl.dcols) + " FROM " + dd.table(pl.to.Ref)
+			q := "SELECT " + dd.list(pl.dcols) + " FROM " + dd.from(pl.to)
 			var where []string
 			var args []any
 			if tlo != nil {
@@ -625,6 +681,7 @@ func (r *Run) compare(ctx context.Context, pl *plan) error {
 			if err != nil {
 				return fmt.Errorf("reading the target: %w", err)
 			}
+			chunk = normRows(pl.dnorm, chunk)
 			for _, t := range chunk {
 				if i, ok := byKey[t.key(pl.key)]; ok {
 					matched[i] = t
@@ -654,14 +711,14 @@ func (r *Run) compare(ctx context.Context, pl *plan) error {
 		if hi == nil {
 			return nil
 		}
-		lo = hi
+		lo, tlo0 = hiRaw, hi
 	}
 }
 
 // apply writes one page of source rows; matched[i] is the target's copy of
 // page[i], or nil.
 func (r *Run) apply(ctx context.Context, pl *plan, page, matched []row) error {
-	var inserts []row
+	var inserts, updates []row
 	for i, s := range page {
 		t := matched[i]
 		if t == nil {
@@ -702,6 +759,10 @@ func (r *Run) apply(ctx context.Context, pl *plan, page, matched []row) error {
 			pl.res.Updated++
 			continue
 		}
+		if r.Dst.Dialect == ClickHouse {
+			updates = append(updates, s) // no UPDATE: deleted and inserted again
+			continue
+		}
 		if err := r.update(ctx, pl, s, diff); err != nil {
 			if stop := r.failed(pl, "update", s, err); stop != nil {
 				return stop
@@ -710,11 +771,14 @@ func (r *Run) apply(ctx context.Context, pl *plan, page, matched []row) error {
 		}
 		pl.res.Updated++
 	}
-	if len(inserts) == 0 {
-		return nil
-	}
 	if r.DryRun {
 		pl.res.Inserted += int64(len(inserts))
+		return nil
+	}
+	if r.Dst.Dialect == ClickHouse {
+		return r.chQueue(ctx, pl, inserts, updates)
+	}
+	if len(inserts) == 0 {
 		return nil
 	}
 	return r.insert(ctx, pl, r.w, inserts)
@@ -918,6 +982,11 @@ func (r *Run) update(ctx context.Context, pl *plan, s row, diff []int) error {
 }
 
 func (r *Run) deleteSQL(pl *plan, count int) string {
+	return "DELETE FROM " + r.Dst.Dialect.table(pl.to.Ref) + " WHERE " + r.keysWhere(pl, count)
+}
+
+// keysWhere is "(keys) IN ((…), …)" for count rows, on the target.
+func (r *Run) keysWhere(pl *plan, count int) string {
 	d := r.Dst.Dialect
 	keys := pick(pl.dcols, pl.key)
 	n := 1
@@ -940,7 +1009,7 @@ func (r *Run) deleteSQL(pl *plan, count int) string {
 	for i := range items {
 		items[i] = tuple()
 	}
-	return "DELETE FROM " + d.table(pl.to.Ref) + " WHERE " + lhs + " IN (" + strings.Join(items, ", ") + ")"
+	return lhs + " IN (" + strings.Join(items, ", ") + ")"
 }
 
 func (r *Run) remove(ctx context.Context, pl *plan, rows []row) error {
@@ -948,6 +1017,22 @@ func (r *Run) remove(ctx context.Context, pl *plan, rows []row) error {
 		r.sample(pl, Change{Op: "delete", Key: t.keyText(pl.key)})
 	}
 	if r.DryRun {
+		pl.res.Deleted += int64(len(rows))
+		return nil
+	}
+	if r.Dst.Dialect == ClickHouse {
+		// Rows waiting for a block go first, in case they're among these.
+		if err := r.chFlush(ctx, pl); err != nil {
+			return err
+		}
+		if err := r.chDelete(ctx, pl, rows); err != nil {
+			for _, t := range rows {
+				if stop := r.failed(pl, "delete", t, err); stop != nil {
+					return stop
+				}
+			}
+			return nil
+		}
 		pl.res.Deleted += int64(len(rows))
 		return nil
 	}
@@ -1003,15 +1088,18 @@ func (r *Run) incremental(ctx context.Context, pl *plan, p Pair) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		q := "SELECT " + sd.list(pl.cols) + " FROM " + sd.table(pl.from.Ref)
+		q := "SELECT " + sd.list(pl.cols) + " FROM " + sd.from(pl.from)
 		var args []any
 		switch {
 		case mark.Value == nil:
 			q += " WHERE " + sd.quote(track.Name) + " IS NOT NULL"
 		case first && r.Rules.Lookback > 0 && track.Kind == KindTime:
-			if sd == MySQL {
+			switch sd {
+			case MySQL:
 				q += fmt.Sprintf(" WHERE %s >= (? - INTERVAL %d SECOND)", sd.quote(track.Name), r.Rules.Lookback)
-			} else {
+			case ClickHouse:
+				q += fmt.Sprintf(" WHERE %s >= (%s - INTERVAL %d SECOND)", sd.quote(track.Name), sd.param(1, track), r.Rules.Lookback)
+			default:
 				q += fmt.Sprintf(" WHERE %s >= (%s - interval '%d seconds')", sd.quote(track.Name), sd.param(1, track), r.Rules.Lookback)
 			}
 			args = []any{*mark.Value}
@@ -1036,13 +1124,14 @@ func (r *Run) incremental(ctx context.Context, pl *plan, p Pair) error {
 		if err != nil {
 			return fmt.Errorf("reading the source: %w", err)
 		}
-		page, err := scanRows(rows, len(pl.cols))
+		raw, err := scanRows(rows, len(pl.cols))
 		if err != nil {
 			return fmt.Errorf("reading the source: %w", err)
 		}
-		if len(page) == 0 {
+		if len(raw) == 0 {
 			break
 		}
+		page := normRows(pl.snorm, raw)
 		pl.res.Read += int64(len(page))
 
 		// The target's copies of these rows.
@@ -1050,7 +1139,7 @@ func (r *Run) incremental(ctx context.Context, pl *plan, p Pair) error {
 		for _, s := range page {
 			targs = append(targs, keyArgs(dd, pl.dcols, s, pl.key)...)
 		}
-		q = strings.Replace(r.deleteSQL(pl, len(page)), "DELETE FROM "+dd.table(pl.to.Ref), "SELECT "+dd.list(pl.dcols)+" FROM "+dd.table(pl.to.Ref), 1)
+		q = "SELECT " + dd.list(pl.dcols) + " FROM " + dd.from(pl.to) + " WHERE " + r.keysWhere(pl, len(page))
 		trows, err := r.Dst.DB.QueryContext(ctx, q, targs...)
 		if err != nil {
 			return fmt.Errorf("reading the target: %w", err)
@@ -1059,6 +1148,7 @@ func (r *Run) incremental(ctx context.Context, pl *plan, p Pair) error {
 		if err != nil {
 			return fmt.Errorf("reading the target: %w", err)
 		}
+		have = normRows(pl.dnorm, have)
 		byKey := map[string]row{}
 		for _, t := range have {
 			byKey[t.key(pl.key)] = t
@@ -1071,7 +1161,7 @@ func (r *Run) incremental(ctx context.Context, pl *plan, p Pair) error {
 			pl.res.Mark = &mark
 			return err
 		}
-		last := page[len(page)-1]
+		last := raw[len(raw)-1] // the mark is read back by the source
 		v := last[pl.track].String
 		mark.Value = &v
 		mark.Key = nil

@@ -156,6 +156,19 @@ type AnsibleRun struct {
 	FinishedAt      *time.Time  `json:"finished_at"`
 }
 
+type ApiToken struct {
+	ID         uuid.UUID  `json:"id"`
+	UserID     uuid.UUID  `json:"user_id"`
+	Name       string     `json:"name"`
+	Prefix     string     `json:"prefix"`
+	TokenHash  []byte     `json:"token_hash"`
+	ReadOnly   bool       `json:"read_only"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	LastUsedIp string     `json:"last_used_ip"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
 type App struct {
 	ID          uuid.UUID  `json:"id"`
 	WorkspaceID uuid.UUID  `json:"workspace_id"`
@@ -365,6 +378,44 @@ type AssetSourceLink struct {
 	Kind     string `json:"kind"`
 }
 
+type Automation struct {
+	ID              uuid.UUID  `json:"id"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description"`
+	Enabled         bool       `json:"enabled"`
+	Trigger         []byte     `json:"trigger"`
+	Actions         []byte     `json:"actions"`
+	CooldownSeconds int32      `json:"cooldown_seconds"`
+	MaxRunsPerHour  int32      `json:"max_runs_per_hour"`
+	HookTokenHash   *string    `json:"hook_token_hash"`
+	UpdatedBy       *uuid.UUID `json:"updated_by"`
+	CreatedBy       *uuid.UUID `json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	LastRunAt       *time.Time `json:"last_run_at"`
+	LastStatus      string     `json:"last_status"`
+	Problem         string     `json:"problem"`
+}
+
+type AutomationRun struct {
+	ID            uuid.UUID  `json:"id"`
+	AutomationID  uuid.UUID  `json:"automation_id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	TriggerKind   string     `json:"trigger_kind"`
+	Event         []byte     `json:"event"`
+	SubjectID     string     `json:"subject_id"`
+	Status        string     `json:"status"`
+	Steps         []byte     `json:"steps"`
+	Reason        string     `json:"reason"`
+	JobID         *uuid.UUID `json:"job_id"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+	StartedBy     *uuid.UUID `json:"started_by"`
+	StartedByName string     `json:"started_by_name"`
+}
+
 type CloudAccount struct {
 	ID            uuid.UUID  `json:"id"`
 	WorkspaceID   uuid.UUID  `json:"workspace_id"`
@@ -500,6 +551,8 @@ type DatabaseBackup struct {
 	Kind          string     `json:"kind"`
 	ParentID      *uuid.UUID `json:"parent_id"`
 	Position      string     `json:"position"`
+	Compression   string     `json:"compression"`
+	Workers       int32      `json:"workers"`
 }
 
 type DatabaseBackupCopy struct {
@@ -512,32 +565,36 @@ type DatabaseBackupCopy struct {
 }
 
 type DatabaseBackupPlan struct {
-	ID             uuid.UUID  `json:"id"`
-	WorkspaceID    uuid.UUID  `json:"workspace_id"`
-	DatabaseID     uuid.UUID  `json:"database_id"`
-	Name           string     `json:"name"`
-	Folder         string     `json:"folder"`
-	RunnerServerID *uuid.UUID `json:"runner_server_id"`
-	Username       string     `json:"username"`
-	PasswordEnc    []byte     `json:"password_enc"`
-	Cron           string     `json:"cron"`
-	Timezone       string     `json:"timezone"`
-	Enabled        bool       `json:"enabled"`
-	NextRunAt      *time.Time `json:"next_run_at"`
-	CreatedBy      *uuid.UUID `json:"created_by"`
-	UpdatedBy      *uuid.UUID `json:"updated_by"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	Selection      string     `json:"selection"`
-	Targets        []string   `json:"targets"`
-	Pattern        string     `json:"pattern"`
-	Method         string     `json:"method"`
-	FullEveryDays  int32      `json:"full_every_days"`
-	Retention      string     `json:"retention"`
-	KeepDays       int32      `json:"keep_days"`
-	GfsDaily       int32      `json:"gfs_daily"`
-	GfsWeekly      int32      `json:"gfs_weekly"`
-	GfsMonthly     int32      `json:"gfs_monthly"`
+	ID               uuid.UUID  `json:"id"`
+	WorkspaceID      uuid.UUID  `json:"workspace_id"`
+	DatabaseID       uuid.UUID  `json:"database_id"`
+	Name             string     `json:"name"`
+	Folder           string     `json:"folder"`
+	RunnerServerID   *uuid.UUID `json:"runner_server_id"`
+	Username         string     `json:"username"`
+	PasswordEnc      []byte     `json:"password_enc"`
+	Cron             string     `json:"cron"`
+	Timezone         string     `json:"timezone"`
+	Enabled          bool       `json:"enabled"`
+	NextRunAt        *time.Time `json:"next_run_at"`
+	CreatedBy        *uuid.UUID `json:"created_by"`
+	UpdatedBy        *uuid.UUID `json:"updated_by"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	Selection        string     `json:"selection"`
+	Targets          []string   `json:"targets"`
+	Pattern          string     `json:"pattern"`
+	Method           string     `json:"method"`
+	FullEveryDays    int32      `json:"full_every_days"`
+	Retention        string     `json:"retention"`
+	KeepDays         int32      `json:"keep_days"`
+	GfsDaily         int32      `json:"gfs_daily"`
+	GfsWeekly        int32      `json:"gfs_weekly"`
+	GfsMonthly       int32      `json:"gfs_monthly"`
+	Compression      string     `json:"compression"`
+	CompressionLevel string     `json:"compression_level"`
+	Workers          int32      `json:"workers"`
+	TempDir          string     `json:"temp_dir"`
 }
 
 type DatabaseBackupPlanStorage struct {
@@ -555,6 +612,72 @@ type DatabaseEvent struct {
 	CheckID    string    `json:"check_id"`
 	Title      string    `json:"title"`
 	Detail     string    `json:"detail"`
+}
+
+type DatabasePitr struct {
+	DatabaseID     uuid.UUID  `json:"database_id"`
+	WorkspaceID    uuid.UUID  `json:"workspace_id"`
+	StorageID      *uuid.UUID `json:"storage_id"`
+	Folder         string     `json:"folder"`
+	State          string     `json:"state"`
+	Problem        string     `json:"problem"`
+	FullCron       string     `json:"full_cron"`
+	DiffCron       string     `json:"diff_cron"`
+	IncrCron       string     `json:"incr_cron"`
+	Timezone       string     `json:"timezone"`
+	NextFullAt     *time.Time `json:"next_full_at"`
+	NextDiffAt     *time.Time `json:"next_diff_at"`
+	NextIncrAt     *time.Time `json:"next_incr_at"`
+	RetentionFull  int32      `json:"retention_full"`
+	CompressLevel  int32      `json:"compress_level"`
+	ProcessMax     int32      `json:"process_max"`
+	ArchiveTimeout int32      `json:"archive_timeout"`
+	CipherPassEnc  []byte     `json:"cipher_pass_enc"`
+	Enabled        bool       `json:"enabled"`
+	RestartAt      *time.Time `json:"restart_at"`
+	Cluster        []byte     `json:"cluster"`
+	Info           []byte     `json:"info"`
+	CheckedAt      *time.Time `json:"checked_at"`
+	CreatedBy      *uuid.UUID `json:"created_by"`
+	UpdatedBy      *uuid.UUID `json:"updated_by"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+type DatabasePitrRun struct {
+	ID                uuid.UUID  `json:"id"`
+	DatabaseID        uuid.UUID  `json:"database_id"`
+	Kind              string     `json:"kind"`
+	Variant           string     `json:"variant"`
+	Trigger           string     `json:"trigger"`
+	TargetTime        *time.Time `json:"target_time"`
+	State             string     `json:"state"`
+	Error             string     `json:"error"`
+	JobID             *uuid.UUID `json:"job_id"`
+	RestoreDir        string     `json:"restore_dir"`
+	RestorePort       *int32     `json:"restore_port"`
+	RestoreDatabaseID *uuid.UUID `json:"restore_database_id"`
+	RemovedAt         *time.Time `json:"removed_at"`
+	CreatedBy         *uuid.UUID `json:"created_by"`
+	CreatedByName     string     `json:"created_by_name"`
+	CreatedAt         time.Time  `json:"created_at"`
+	StartedAt         *time.Time `json:"started_at"`
+	FinishedAt        *time.Time `json:"finished_at"`
+}
+
+type DatabaseQueryRun struct {
+	ID         uuid.UUID  `json:"id"`
+	DatabaseID uuid.UUID  `json:"database_id"`
+	UserID     *uuid.UUID `json:"user_id"`
+	UserName   string     `json:"user_name"`
+	Dbname     string     `json:"dbname"`
+	Query      string     `json:"query"`
+	Mode       string     `json:"mode"`
+	Ok         bool       `json:"ok"`
+	Error      string     `json:"error"`
+	Rows       int64      `json:"rows"`
+	Ms         int64      `json:"ms"`
+	At         time.Time  `json:"at"`
 }
 
 type DatabaseRestore struct {
@@ -604,6 +727,40 @@ type DatabaseSample struct {
 	Blocked        *int32    `json:"blocked"`
 	Deadlocks      *int64    `json:"deadlocks"`
 	MemoryBytes    *int64    `json:"memory_bytes"`
+}
+
+type DatabaseSavedQuery struct {
+	ID            uuid.UUID  `json:"id"`
+	DatabaseID    uuid.UUID  `json:"database_id"`
+	Title         string     `json:"title"`
+	Description   string     `json:"description"`
+	Dbname        string     `json:"dbname"`
+	Query         string     `json:"query"`
+	Shared        bool       `json:"shared"`
+	Pinned        bool       `json:"pinned"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	UpdatedByName string     `json:"updated_by_name"`
+	RunCount      int32      `json:"run_count"`
+	LastRunAt     *time.Time `json:"last_run_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type DatabaseSavedView struct {
+	ID            uuid.UUID  `json:"id"`
+	DatabaseID    uuid.UUID  `json:"database_id"`
+	Dbname        string     `json:"dbname"`
+	SchemaName    string     `json:"schema_name"`
+	TableName     string     `json:"table_name"`
+	Title         string     `json:"title"`
+	State         []byte     `json:"state"`
+	Shared        bool       `json:"shared"`
+	CreatedBy     *uuid.UUID `json:"created_by"`
+	CreatedByName string     `json:"created_by_name"`
+	UpdatedByName string     `json:"updated_by_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type DatabaseSync struct {
@@ -670,6 +827,8 @@ type DnsServer struct {
 	LastOnlineAt  *time.Time `json:"last_online_at"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	Kind          string     `json:"kind"`
+	AllowChanges  bool       `json:"allow_changes"`
 }
 
 type DockerAutoPrune struct {
@@ -1687,6 +1846,44 @@ type UserGroup struct {
 	Description string    `json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type Webhook struct {
+	ID             uuid.UUID  `json:"id"`
+	WorkspaceID    uuid.UUID  `json:"workspace_id"`
+	Name           string     `json:"name"`
+	Url            string     `json:"url"`
+	Events         []string   `json:"events"`
+	SecretEnc      []byte     `json:"secret_enc"`
+	HeadersEnc     []byte     `json:"headers_enc"`
+	Enabled        bool       `json:"enabled"`
+	IncludeMuted   bool       `json:"include_muted"`
+	AllowInternal  bool       `json:"allow_internal"`
+	CreatedBy      *uuid.UUID `json:"created_by"`
+	CreatedByName  string     `json:"created_by_name"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	LastStatus     string     `json:"last_status"`
+	LastDeliveryAt *time.Time `json:"last_delivery_at"`
+	FailingSince   *time.Time `json:"failing_since"`
+}
+
+type WebhookDelivery struct {
+	ID           uuid.UUID  `json:"id"`
+	WebhookID    uuid.UUID  `json:"webhook_id"`
+	EventID      uuid.UUID  `json:"event_id"`
+	EventType    string     `json:"event_type"`
+	Body         string     `json:"body"`
+	Attempt      int32      `json:"attempt"`
+	Status       string     `json:"status"`
+	HttpStatus   *int32     `json:"http_status"`
+	Response     string     `json:"response"`
+	DurationMs   int32      `json:"duration_ms"`
+	Error        string     `json:"error"`
+	NextTryAt    *time.Time `json:"next_try_at"`
+	RedeliveryOf *uuid.UUID `json:"redelivery_of"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 type Workspace struct {

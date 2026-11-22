@@ -69,6 +69,8 @@ func Open(ctx context.Context, cfg Config) (*Conn, error) {
 		e, err = openRedis(ctx, cfg)
 	case Mongo:
 		e, err = openMongo(ctx, cfg)
+	case ClickHouse:
+		e, err = openClickHouse(ctx, cfg)
 	default:
 		return nil, fmt.Errorf("unknown engine %q", cfg.Engine)
 	}

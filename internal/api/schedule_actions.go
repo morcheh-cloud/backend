@@ -938,7 +938,6 @@ func (r *taskRun) service(ctx context.Context) (any, error) {
 	if t.Force {
 		need = auth.Engineer
 	}
-	done := map[string]string{"start": "Started", "stop": "Stopped", "restart": "Restarted", "reload": "Reloaded"}[t.Action]
 	srv := r.h.st.servers
 	for i, d := range r.plan.Destinations {
 		if ctx.Err() != nil {
@@ -948,21 +947,34 @@ func (r *taskRun) service(ctx context.Context) (any, error) {
 		err := mayUse(r.acc, r.ws, d, need, r.who)
 		note := ""
 		if err == nil {
-			err = srv.withService(ctx, &ServicePath{ID: *d.ServerID, Unit: t.Unit}, true, func(sh *rootShell, init, unit string) error {
-				if t.Action == "stop" && !t.Force && services.Protected(unit) {
-					return errors.New(unit + " is protected, so it wasn't stopped. Edit the cron job and tick Force to stop it anyway.")
-				}
-				script, err := actionScript(init, unit, ServiceActionBody{Action: t.Action, Force: t.Force})
-				if err != nil {
-					return err
-				}
-				note = done + " " + unit + "."
-				return runChange(ctx, sh, script)
-			})
+			note, err = srv.serviceAction(ctx, *d.ServerID, t.Unit, t.Action, t.Force, "Edit the cron job and tick Force to stop it anyway.")
 		}
 		r.end(ctx, i, err, note)
 	}
 	return r.finish(ctx, "")
+}
+
+// serviceAction starts, stops, restarts or reloads a unit on a server, as the
+// person in ctx, and answers what it did. A protected unit is only stopped
+// with force; hint says how to give it.
+func (h *serverHandler) serviceAction(ctx context.Context, serverID, unit, action string, force bool, hint string) (string, error) {
+	done := map[string]string{"start": "Started", "stop": "Stopped", "restart": "Restarted", "reload": "Reloaded"}[action]
+	if done == "" {
+		return "", fmt.Errorf("Unknown service action %q.", action)
+	}
+	note := ""
+	err := h.withService(ctx, &ServicePath{ID: serverID, Unit: unit}, true, func(sh *rootShell, init, unit string) error {
+		if action == "stop" && !force && services.Protected(unit) {
+			return errors.New(unit + " is protected, so it wasn't stopped. " + hint)
+		}
+		script, err := actionScript(init, unit, ServiceActionBody{Action: action, Force: force})
+		if err != nil {
+			return err
+		}
+		note = done + " " + unit + "."
+		return runChange(ctx, sh, script)
+	})
+	return note, err
 }
 
 func (r *taskRun) reboot(ctx context.Context) (any, error) {

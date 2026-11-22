@@ -1,7 +1,7 @@
 package api
 
 import (
-	"compress/gzip"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -46,6 +46,7 @@ type RestoreFileInfo struct {
 	Engine    string     `json:"engine" doc:"The database engine it is for; empty when unknown"`
 	Label     string     `json:"label" doc:"What it is, in words"`
 	Gzip      bool       `json:"gzip"`
+	Packed    string     `json:"compression" doc:"gzip or zstd around the file; empty = neither"`
 	Databases []string   `json:"databases" doc:"The databases the file names (a MySQL dump's USE, a mongodump archive's); empty = it holds one, unnamed"`
 	Named     bool       `json:"named" doc:"The file names its database and can only go back under that name (a MySQL dump made with --databases)"`
 	Problem   string     `json:"problem" doc:"Why it can't be restored into this database; empty = it can"`
@@ -64,6 +65,8 @@ type RestoreFileBody struct {
 	RunnerServerID  string            `json:"runner_server_id,omitempty" maxLength:"36" doc:"For a direct database: the server the restore runs on, or \"local\" (also empty) for the machine Morche runs on"`
 	Username        string            `json:"username,omitempty" maxLength:"256" doc:"A login for this restore only; empty = the database's saved one"`
 	Password        string            `json:"password,omitempty" maxLength:"1024"`
+	Workers         int               `json:"workers,omitempty" minimum:"0" maximum:"16" doc:"For a parallel PostgreSQL archive (format pg_dir): jobs for the restore; 0 = 4. More than one isn't a single transaction"`
+	TempDir         string            `json:"temp_dir,omitempty" maxLength:"512" doc:"For a parallel PostgreSQL archive (format pg_dir), or a ClickHouse dump (ch_tar) when the runner's tar can't stream it: where it's unpacked first, on the machine the restore runs on; empty = its temporary folder"`
 }
 
 // restoreRunner is where a restore runs: nil = the machine Morche runs on.
@@ -128,6 +131,10 @@ func (h *backupHandler) checkRestoreTarget(ctx context.Context, d sqlc.Database,
 	return nil
 }
 
+// fileRestoreWorkers is how many jobs restore a parallel archive from a file
+// when the request doesn't say.
+const fileRestoreWorkers = 4
+
 // fileRestoreOptions is how a file of what s says goes into target. why says
 // why it can't.
 func fileRestoreOptions(s dbbackup.Sniffed, sourceName, target, mode string) (dbbackup.RestoreOptions, string, string) {
@@ -136,7 +143,7 @@ func fileRestoreOptions(s dbbackup.Sniffed, sourceName, target, mode string) (db
 		MongoPlain: !s.MongoGzip, CreateNamed: true,
 	}
 	switch s.Format {
-	case dbbackup.MongoArchive:
+	case dbbackup.MongoArchive, dbbackup.ClickHouseTar:
 		switch {
 		case len(s.Databases) == 0:
 			return o, "body.source", "The archive holds no databases."
@@ -205,7 +212,7 @@ func (h *backupHandler) inspectFile(ctx context.Context, src RestoreFileSource, 
 		if err != nil {
 			return huma.Error422UnprocessableEntity("Couldn't read the file: " + problemText(err))
 		}
-		out.Format, out.Engine, out.Label, out.Gzip = s.Format, s.Engine, s.Label, s.Gzip
+		out.Format, out.Engine, out.Label, out.Gzip, out.Packed = s.Format, s.Engine, s.Label, s.Gzip, s.Pack
 		out.Databases = append([]string{}, s.Databases...)
 		out.Named = s.Format == dbbackup.MySQLSQL
 		out.Problem = s.ForEngine(engine)
@@ -251,7 +258,7 @@ func registerDatabaseRestoreFiles(api huma.API, h *backupHandler, tags []string)
 		Method:        http.MethodPost,
 		Path:          "/databases/{id}/restore-file",
 		Summary:       "Restore a backup file from a storage or server",
-		Description:   "Loads a dump Morche didn't take (pg_dump plain or custom, mysqldump, mongodump --archive, SQL Server .bak; gzip or not) from a storage or a server into a database that exists (replace, with its name typed again, optionally backed up first) or a new one. The whole file is read and checked before the database is touched.",
+		Description:   "Loads a dump Morche didn't take (pg_dump plain or custom, mysqldump, mongodump --archive, SQL Server .bak, a ClickHouse dump Morche made; gzip/zstd or not) from a storage or a server into a database that exists (replace, with its name typed again, optionally backed up first) or a new one. The whole file is read and checked before the database is touched.",
 		DefaultStatus: http.StatusAccepted,
 		Tags:          tags,
 	}, func(ctx context.Context, in *struct {
@@ -265,6 +272,10 @@ func registerDatabaseRestoreFiles(api huma.API, h *backupHandler, tags []string)
 		}
 		if body.Mode == "replace" && body.Confirm != name {
 			return nil, fieldError("body.confirm", "Type the database's name to confirm.", nil)
+		}
+		tempDir, err := restoreTempDir(body.TempDir, nil, false)
+		if err != nil {
+			return nil, err
 		}
 		d, err := h.q.GetDatabase(ctx, uuid.MustParse(in.ID))
 		if err != nil {
@@ -382,7 +393,7 @@ func registerDatabaseRestoreFiles(api huma.API, h *backupHandler, tags []string)
 		out, err := submit(ctx, h.runner, jobs.Spec{
 			Kind:   restoreKind,
 			Title:  fmt.Sprintf("%s %s on %s from %s", verb, name, d.Name, info.Name),
-			Params: restoreParams{Restore: r.ID.String()},
+			Params: restoreParams{Restore: r.ID.String(), Workers: body.Workers, TempDir: tempDir},
 			Refs:   refs,
 			Target: place,
 		})
@@ -399,7 +410,7 @@ func registerDatabaseRestoreFiles(api huma.API, h *backupHandler, tags []string)
 
 // runFileRestore is the restore job for a file Morche didn't take: read it
 // whole and check it again, back the target up when asked, then load it.
-func (h *backupHandler) runFileRestore(ctx context.Context, t *jobs.Task, r sqlc.DatabaseRestore, fail func(error) (any, error)) (any, error) {
+func (h *backupHandler) runFileRestore(ctx context.Context, t *jobs.Task, r sqlc.DatabaseRestore, params restoreParams, fail func(error) (any, error)) (any, error) {
 	bg := context.WithoutCancel(ctx)
 	end, ok := fileEnd(r)
 	if !ok {
@@ -462,6 +473,7 @@ func (h *backupHandler) runFileRestore(ctx context.Context, t *jobs.Task, r sqlc
 	if why != "" {
 		return fail(errors.New(why))
 	}
+	opts.Workers, opts.TempDir = cmp.Or(params.Workers, fileRestoreWorkers), params.TempDir
 	t.Logf("Checked %s on %s (%s, %d bytes)", name, from, check.Label, check.Bytes)
 
 	// 2. What's there now, kept in case the file isn't what was wanted.
@@ -509,13 +521,13 @@ func (h *backupHandler) runFileRestore(ctx context.Context, t *jobs.Task, r sqlc
 		}
 		defer f.Close()
 		var data io.Reader = &countingReader{r: f, t: t}
-		if check.Gzip {
-			gz, err := gzip.NewReader(data)
+		if check.Pack != "" {
+			zr, err := dbbackup.Unpack(data, check.Pack)
 			if err != nil {
-				return fmt.Errorf("The file isn't gzip: %w", err)
+				return err
 			}
-			defer gz.Close()
-			data = gz
+			defer zr.Close()
+			data = zr
 		}
 		if check.Format == dbbackup.PgSQL {
 			// psql runs the file in restricted mode under a key the file

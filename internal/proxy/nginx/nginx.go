@@ -150,8 +150,8 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 	cacheBlocks(w, id, t, h)
 	featureBlocks(w, t, h)
 	imageBlocks(w, t, h)
-	upstreamBlock(w, t, h)
-	mirrorBlocks(w, t, h)
+	upstreamBlock(w, t, h, env)
+	mirrorBlocks(w, t, h, env)
 	redirectBlocks(w, t, h)
 	names := strings.Join(h.Domains, " ")
 	def := ""
@@ -303,7 +303,7 @@ func (d Driver) Render(id string, h proxy.HostConfig, env proxy.Env) string {
 		slow := slowWait(h)
 		main := func(slow int) {
 			proxyPass(w, t, h, env, h.Upstream, h.WebSockets, slow)
-			cacheRules(w, t, h, slow)
+			cacheRules(w, t, h, env, slow)
 		}
 		paths(w, id, h, env, lim, func() { main(0) })
 		w.line("")
@@ -341,8 +341,8 @@ func renderStream(id string, h proxy.HostConfig, env proxy.Env) string {
 	t := tag(id)
 	lim := newLimits(t, h)
 	w.b.WriteString(lim.blocks.b.String())
-	upstreamBlock(w, t, h)
-	streamCountries(w, t, h)
+	upstreamBlock(w, t, h, env)
+	streamCountries(w, t, h, env)
 	w.line("")
 	w.open("server")
 	udp := ""
@@ -365,9 +365,11 @@ func renderStream(id string, h proxy.HostConfig, env proxy.Env) string {
 		if h.Balance.On() {
 			retryLines(w, h.Balance, true)
 		}
-	} else if h.Balance.On() {
+	} else if pooledOn(h, env) {
 		w.line("proxy_pass %s;", poolName(t))
-		retryLines(w, h.Balance, true)
+		if h.Balance.On() {
+			retryLines(w, h.Balance, true)
+		}
 	} else {
 		w.line("proxy_pass %s;", h.StreamTo)
 	}
@@ -427,7 +429,7 @@ func paths(w *writer, id string, h proxy.HostConfig, env proxy.Env, lim *limits,
 // slow > 0 = Always online's wait for a page to start coming back (the
 // location also carries slowRoute, so only pages get it).
 func proxyPass(w *writer, t string, h proxy.HostConfig, env proxy.Env, upstream string, ws bool, slow int) {
-	upstream, pool := pooled(t, h, upstream)
+	upstream, pool := pooled(t, h, env, upstream)
 	if h.Cache.Online.Mode == "copies" {
 		upstream, pool = offlineUpstream, false
 	}
@@ -589,6 +591,8 @@ if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then echo
 elif command -v rc-service >/dev/null 2>&1 && [ -d /run/openrc ]; then echo "init openrc"
 else echo "init none"; fi
 [ -f /proc/net/if_inet6 ] && echo ipv6
+r=$(sed -n 's/^[[:space:]]*nameserver[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' /etc/resolv.conf 2>/dev/null | head -n 1)
+[ -n "$r" ] && echo "resolver $r"
 if ! command -v nginx >/dev/null 2>&1; then echo missing; M end; exit 0; fi
 echo "version $(nginx -v 2>&1 | sed -n 's#.*nginx/\([0-9][0-9.]*\).*#\1#p')"
 running && echo running
@@ -612,7 +616,9 @@ nginx -V 2>&1 | grep -qi -- 'modsecurity' && echo modsecurity
 nginx -V 2>&1 | grep -qE -- '--with-http_image_filter_module( |$)' && echo image_filter
 [ -f ` + WAFConf + ` ] && echo waf_rules
 for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do [ -f "$f" ] && { echo "cabundle $f"; break; }; done
-` + certbotVersion + `M end
+` + certbotVersion + `M hosts
+cat /etc/hosts 2>/dev/null
+M end
 `
 }
 

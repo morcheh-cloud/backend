@@ -29,6 +29,8 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 			in.Init = v
 		case "ipv6":
 			in.IPv6 = true
+		case "resolver":
+			in.Resolver = v
 		case "version":
 			in.Installed, in.Version = true, v
 		case "running":
@@ -109,7 +111,22 @@ func (Driver) ParseInspect(out string) proxy.Inspection {
 		}
 	}
 	in.WAF = waf && wafRules
+	in.HostsNames = hostsNames(sections["hosts"])
+	in.Resolves = resolves(proxy.Env{Resolver: in.Resolver, Version: in.Version})
 	return in
+}
+
+// hostsNames are the names an /etc/hosts gives, lower case.
+func hostsNames(text string) []string {
+	var out []string
+	for _, l := range strings.Split(text, "\n") {
+		l, _, _ = strings.Cut(l, "#")
+		f := strings.Fields(l)
+		for _, n := range f[min(1, len(f)):] {
+			out = append(out, strings.ToLower(n))
+		}
+	}
+	return out
 }
 
 // splitMarked cuts output at lines like "<mark>name@@"; each part loses the

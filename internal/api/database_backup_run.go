@@ -1,7 +1,6 @@
 package api
 
 import (
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -332,6 +331,8 @@ func (h *backupHandler) dumpOne(ctx context.Context, t *jobs.Task, b sqlc.Databa
 	d sqlc.Database, place backupPlace, user, password string) (backupResult, error) {
 	now := time.Now().In(scheduleLoc(p.Timezone))
 	target := backupTarget(d, user, password, b.Target, b.ID.String())
+	target.Compression, target.Level, target.Workers = p.Compression, p.CompressionLevel, int(p.Workers)
+	target.TempDir = p.TempDir
 	kind, parent := "full", (*uuid.UUID)(nil)
 	if p.Method == "incremental" && dbbackup.Incremental(d.Engine).Supported {
 		base, why, err := h.incrementalBase(ctx, p, d, b.Target, place.storages)
@@ -364,11 +365,14 @@ func (h *backupHandler) dumpOne(ctx context.Context, t *jobs.Task, b sqlc.Databa
 			return backupResult{}, err
 		}
 		file := backupPath(backupFolder(p.Folder, now), d.Name, b.Target, now, b.ID, spec.Ext)
-		if err := h.q.StartBackup(ctx, sqlc.StartBackupParams{ID: b.ID, Path: file, Format: spec.Format, Kind: kind, ParentID: parent}); err != nil {
+		if err := h.q.StartBackup(ctx, sqlc.StartBackupParams{
+			ID: b.ID, Path: file, Format: spec.Format, Kind: kind, ParentID: parent,
+			Compression: spec.Compression, Workers: int32(spec.Workers),
+		}); err != nil {
 			return backupResult{}, err
 		}
 		script.script = spec.Script
-		res, err := h.stream(ctx, t, script, spec, place.storages, b.ID, file)
+		res, err := h.stream(dumpSizeHint(ctx, d), t, script, spec, place.storages, b.ID, file)
 		if errors.Is(err, errChainBroken) && target.Incremental && attempt == 0 {
 			t.Logf("%s: the backup it builds on no longer fits the database (another backup or a restore moved it on); taking a full one instead.", cmpOr(b.Target, d.Name))
 			target.Incremental, target.Chain, target.Position = false, true, ""
@@ -393,6 +397,7 @@ func (h *backupHandler) dumpOne(ctx context.Context, t *jobs.Task, b sqlc.Databa
 		}
 		if err := h.q.FinishBackup(context.WithoutCancel(ctx), sqlc.FinishBackupParams{
 			ID: b.ID, Bytes: res.bytes, Sha256: res.sum, Position: position, Error: res.warning,
+			Compression: res.marks.compression,
 		}); err != nil {
 			return res, err
 		}
@@ -572,6 +577,8 @@ type dumpScript struct {
 type dumpMarks struct {
 	position string
 	broken   bool
+	// What it compressed with, when not what was asked.
+	compression string
 }
 
 // readMarks takes Morche's lines out of what a script printed.
@@ -585,6 +592,8 @@ func readMarks(s string) (dumpMarks, string) {
 			m.position = strings.TrimPrefix(l, dbbackup.PositionMark)
 		case l == dbbackup.BrokenMark:
 			m.broken = true
+		case strings.HasPrefix(l, dbbackup.CompressionMark):
+			m.compression = strings.TrimPrefix(l, dbbackup.CompressionMark)
 		default:
 			rest = append(rest, line)
 		}
@@ -677,7 +686,8 @@ func execDump(ctx context.Context, t *jobs.Task, c *sshpool.Conn, cmd string, st
 	var missing *ssh.ExitMissingError
 	switch {
 	case err == nil:
-		if text != "" {
+		// A quick read outside a job has no task to log to.
+		if text != "" && t != nil {
 			t.Logf("%s", text)
 		}
 		return true, marks, nil
@@ -744,7 +754,17 @@ func (f *fanWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// stream pipes the dump into every Storage at once: SSH → gzip (when asked) →
+// dumpSizeHint tells the Storages how big a dump of d may get: the size the
+// monitor last read (all of the server's databases for PostgreSQL and MySQL,
+// so more than one database's dump), else nothing. S3 sizes its parts by it.
+func dumpSizeHint(ctx context.Context, d sqlc.Database) context.Context {
+	if d.SizeBytes == nil {
+		return ctx
+	}
+	return storage.WithSizeHint(ctx, *d.SizeBytes)
+}
+
+// stream pipes the dump into every Storage at once: SSH → gzip/zstd (when asked) →
 // hash → each Storage's Put. It works when at least one Storage got the whole
 // file; the others are marked failed on the backup.
 func (h *backupHandler) stream(ctx context.Context, t *jobs.Task, s dumpScript, spec dbbackup.Spec,
@@ -796,9 +816,13 @@ func (h *backupHandler) stream(ctx context.Context, t *jobs.Task, s dumpScript, 
 
 	out := &sink{w: &fanWriter{dests: dests, cancel: cancel}, hash: sha256.New(), t: t}
 	var w io.Writer = out
-	var gz *gzip.Writer
-	if spec.Gzip {
-		gz = gzip.NewWriter(out)
+	var gz io.WriteCloser
+	if spec.Pack {
+		method, level, _ := strings.Cut(spec.Compression, ":")
+		var err error
+		if gz, err = dbbackup.Pack(out, method, level); err != nil {
+			return backupResult{}, err
+		}
 		w = gz
 	}
 	var head headWriter
@@ -806,8 +830,14 @@ func (h *backupHandler) stream(ctx context.Context, t *jobs.Task, s dumpScript, 
 		w = io.MultiWriter(&head, w)
 	}
 	marks, dumpErr := h.runDump(run, t, s, w)
-	if dumpErr == nil && gz != nil {
-		dumpErr = gz.Close()
+	if gz != nil {
+		if dumpErr == nil {
+			dumpErr = gz.Close()
+		} else if r, ok := gz.(interface{ Reset(io.Writer) }); ok {
+			// Free the compressor without writing more to the storages.
+			r.Reset(io.Discard)
+			_ = gz.Close()
+		}
 	}
 	for _, d := range dests {
 		if dumpErr != nil {

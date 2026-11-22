@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
-// OpenSQL opens a database/sql handle on one database of a Postgres or
-// MySQL/MariaDB connection, reached the same way monitoring reaches it, for
+// OpenSQL opens a database/sql handle on one database of a Postgres,
+// MySQL/MariaDB, SQL Server or ClickHouse connection, reached the same way monitoring reaches it, for
 // work that moves rows (database syncs). No statement timeout: copying a big
 // table takes as long as it takes. The caller closes it.
 func OpenSQL(ctx context.Context, cfg Config, database, app string) (*sql.DB, error) {
@@ -78,8 +78,20 @@ func OpenSQL(ctx context.Context, cfg Config, database, app string) (*sql.DB, er
 			return nil, err
 		}
 		db = sql.OpenDB(conn)
+	case MSSQL:
+		conn, err := mssqlConnector(cfg, database, app)
+		if err != nil {
+			return nil, err
+		}
+		db = sql.OpenDB(conn)
+	case ClickHouse:
+		var err error
+		db, err = openClickHouseDB(cfg, database, app)
+		if err != nil {
+			return nil, err
+		}
 	default:
-		return nil, fmt.Errorf("%s can't be synced row by row", cfg.Engine)
+		return nil, fmt.Errorf("%s can't be opened as a SQL database", cfg.Engine)
 	}
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(3)

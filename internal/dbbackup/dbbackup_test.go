@@ -112,3 +112,25 @@ func TestVerify(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestTempDir(t *testing.T) {
+	for dir, ok := range map[string]bool{"": true, "/var/tmp": true, "/mnt/big disk": true, "tmp": false, "/a\nb": false} {
+		if err := CheckTempDir(dir); (err == nil) != ok {
+			t.Errorf("%q: %v", dir, err)
+		}
+	}
+	spec, err := Build(Target{Engine: "postgres", Username: "u", Name: "shop", Local: true, Workers: 4, TempDir: "/mnt/big disk/it's"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(spec.Script, `parent='/mnt/big disk/it'\''s'`) || !strings.Contains(spec.Script, `mktemp -d "$parent/morche-backup.XXXXXX"`) {
+		t.Errorf("the folder isn't used, quoted:\n%s", spec.Script)
+	}
+	s, err := BuildRestore(Target{Engine: "postgres", Username: "u", Name: "shop", Local: true}, RestoreOptions{Format: PgDir, Workers: 2, TempDir: "/srv/tmp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(s, `mktemp -d "$parent/morche-restore.XXXXXX"`) {
+		t.Errorf("the restore doesn't use the folder:\n%s", s)
+	}
+}

@@ -482,3 +482,21 @@ func SpaceOf(ctx context.Context, f FS) (Space, error) {
 	}
 	return Space{}, ErrUnsupported
 }
+
+type sizeHintKey struct{}
+
+// WithSizeHint tells a Put of unknown size (-1) about how big the file may get,
+// so a Storage that uploads in parts (S3) picks parts large enough for it.
+// It's a hint, never a limit: 0 or less means unknown.
+func WithSizeHint(ctx context.Context, bytes int64) context.Context {
+	if bytes <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, sizeHintKey{}, bytes)
+}
+
+// SizeHint is what WithSizeHint put on ctx, or 0.
+func SizeHint(ctx context.Context) int64 {
+	n, _ := ctx.Value(sizeHintKey{}).(int64)
+	return n
+}

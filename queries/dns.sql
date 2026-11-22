@@ -18,8 +18,8 @@ WHERE last_checked_at IS NULL OR last_checked_at < @before::timestamptz
 ORDER BY last_checked_at NULLS FIRST;
 
 -- name: CreateDNSServer :one
-INSERT INTO dns_servers (workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description)
-VALUES (@workspace_id, @name, @url, @token_enc, @tls_skip_verify, @allow_internal, @description)
+INSERT INTO dns_servers (workspace_id, kind, name, url, token_enc, tls_skip_verify, allow_internal, allow_changes, description)
+VALUES (@workspace_id, @kind, @name, @url, @token_enc, @tls_skip_verify, @allow_internal, @allow_changes, @description)
 RETURNING *;
 
 -- name: UpdateDNSServer :one
@@ -30,6 +30,7 @@ UPDATE dns_servers SET
     token_enc = @token_enc,
     tls_skip_verify = @tls_skip_verify,
     allow_internal = @allow_internal,
+    allow_changes = @allow_changes,
     description = @description,
     updated_at = now()
 WHERE id = @id

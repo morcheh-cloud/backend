@@ -34,6 +34,7 @@ var allowlistExempt = map[string]bool{
 	"push-heartbeat":      true,
 	"push-heartbeat-post": true,
 	"docker-git-webhook":  true,
+	"automation-hook":     true,
 	"get-auth-state":      true,
 }
 

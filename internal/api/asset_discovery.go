@@ -20,7 +20,6 @@ import (
 	"github.com/morche/backend/internal/notify"
 	"github.com/morche/backend/internal/ports"
 	"github.com/morche/backend/internal/sshpool"
-	"github.com/morche/backend/internal/technitium"
 	"github.com/morche/backend/internal/terminal"
 )
 
@@ -61,7 +60,7 @@ type AssetDiscoveryResult struct {
 	Problems []string `json:"problems"`
 }
 
-var dbEngines = map[string]string{"postgresql": "postgres", "mysql": "mysql", "mariadb": "mysql", "mongodb": "mongodb", "redis": "redis", "sql server": "mssql", "microsoft sql server": "mssql"}
+var dbEngines = map[string]string{"postgresql": "postgres", "mysql": "mysql", "mariadb": "mysql", "mongodb": "mongodb", "redis": "redis", "sql server": "mssql", "microsoft sql server": "mssql", "clickhouse": "clickhouse"}
 
 func engineOfService(s string) string {
 	l := strings.ToLower(s)
@@ -303,16 +302,14 @@ func (h *assetHandler) runDiscovery(ctx context.Context, t *jobs.Task) (any, err
 		ok := true
 		seen := map[string]bool{}
 		for _, s := range servers {
-			cl, err := h.dns.savedClient(s)
-			if err == nil {
-				var zones []technitium.Zone
-				zctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-				zones, err = cl.ListZones(zctx)
-				cancel()
+			zctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			zones, err := h.dns.zonesFor(zctx, s)
+			cancel()
+			{
 				if err == nil {
 					for _, z := range zones {
 						name := strings.ToLower(strings.TrimSuffix(z.Name, "."))
-						if z.Internal || z.Type != "Primary" || name == "" || strings.HasSuffix(name, ".arpa") || !strings.Contains(name, ".") || seen[name] {
+						if z.Type != "Primary" || name == "" || strings.HasSuffix(name, ".arpa") || !strings.Contains(name, ".") || seen[name] {
 							continue
 						}
 						seen[name] = true
@@ -321,7 +318,7 @@ func (h *assetHandler) runDiscovery(ctx context.Context, t *jobs.Task) (any, err
 							cover(key)
 							continue
 						}
-						add(discoveryFinding{key: key, kind: "domain", source: "dns", title: name, detail: "Primary zone on " + s.Name,
+						add(discoveryFinding{key: key, kind: "domain", source: "dns", title: name, detail: dnsZoneSourceText(s),
 							data: map[string]any{"zone": name, "dns_server_id": s.ID.String(), "dns_server_name": s.Name}})
 					}
 				}

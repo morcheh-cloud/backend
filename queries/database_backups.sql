@@ -11,12 +11,14 @@ SELECT database_id FROM database_backup_plans WHERE id = $1;
 INSERT INTO database_backup_plans (
     workspace_id, database_id, name, folder, selection, targets, pattern, method,
     full_every_days, retention, keep_days, gfs_daily, gfs_weekly, gfs_monthly, runner_server_id,
-    username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by
+    username, password_enc, cron, timezone, enabled, next_run_at, created_by, updated_by,
+    compression, compression_level, workers, temp_dir
 ) VALUES (
     @workspace_id, @database_id, @name, @folder, @selection, @targets::text[], @pattern, @method,
     @full_every_days, @retention, @keep_days, @gfs_daily, @gfs_weekly, @gfs_monthly,
     sqlc.narg('runner_server_id'), @username, sqlc.narg('password_enc'), @cron, @timezone,
-    @enabled, sqlc.narg('next_run_at'), sqlc.narg('created_by'), sqlc.narg('created_by')
+    @enabled, sqlc.narg('next_run_at'), sqlc.narg('created_by'), sqlc.narg('created_by'),
+    @compression, @compression_level, @workers, @temp_dir
 )
 RETURNING *;
 
@@ -29,6 +31,8 @@ UPDATE database_backup_plans SET
     runner_server_id = sqlc.narg('runner_server_id'), username = @username,
     password_enc = sqlc.narg('password_enc'), cron = @cron, timezone = @timezone,
     enabled = @enabled, next_run_at = sqlc.narg('next_run_at'),
+    compression = @compression, compression_level = @compression_level, workers = @workers,
+    temp_dir = @temp_dir,
     updated_by = sqlc.narg('updated_by'), updated_at = now()
 WHERE id = @id
 RETURNING *;
@@ -119,13 +123,16 @@ SELECT * FROM database_backups WHERE plan_id = $1 AND state IN ('queued', 'runni
 
 -- name: StartBackup :exec
 UPDATE database_backups SET state = 'running', started_at = coalesce(started_at, now()), path = @path,
-    format = @format, kind = @kind, parent_id = sqlc.narg('parent_id')
+    format = @format, kind = @kind, parent_id = sqlc.narg('parent_id'),
+    compression = @compression, workers = @workers
 WHERE id = @id;
 
 -- name: FinishBackup :exec
 -- error is a warning here: a copy that failed while another worked.
+-- compression: what the script said it used instead; empty = as started.
 UPDATE database_backups SET state = 'succeeded', bytes = @bytes, sha256 = @sha256, position = @position,
-    error = @error, finished_at = now()
+    error = @error, finished_at = now(),
+    compression = CASE WHEN @compression::text = '' THEN compression ELSE @compression::text END
 WHERE id = @id;
 
 -- name: EndBackup :exec

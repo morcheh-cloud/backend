@@ -75,3 +75,34 @@ The password must be at least 12 characters. Open terminals and streams of that 
 make reset-admin                     # or: make reset-admin args="-user alice -temporary"
 bin/server reset-admin -h            # all flags
 ```
+
+## API tokens and the CLI
+
+Make a personal API token in the panel (Account › API tokens, or `POST /auth/tokens`). It acts as you: same access, nothing more; it can't sign in or out, change your account, sessions or sign-in security, or make tokens. A read-only token only does GET requests. Send it as a header:
+
+```bash
+curl -H "Authorization: Bearer morche_…" https://panel.example.com/api/servers
+```
+
+The token is only read when the request has no session cookie, and the address allowlist still applies. Revoking or expiring a token ends its open streams within a minute.
+
+`cmd/morche` is a small client over the same token (`make cli` → `bin/morche`; standard library only):
+
+```bash
+morche login                                 # asks for the API address and the token, saved in ~/.config/morche/config.json (0600)
+morche whoami
+morche servers list -q web                   # --json on any list
+morche servers check web-1
+morche run deploy.sh --on web-1,web-2 --wait # a saved script, output per server
+morche jobs list; morche jobs watch <id>
+morche cronjobs list; morche cronjobs run "Nightly sync" --wait
+morche automations list; morche automations run <name|id>
+morche api GET /events/catalog               # any endpoint, like gh api
+morche api POST /servers/<id>/check -d '{}'
+```
+
+`MORCHE_URL`, `MORCHE_TOKEN` and `MORCHE_WORKSPACE` override the saved values (handy in CI); `--workspace <name|id>` picks the workspace for workspace lists.
+
+## Outgoing webhooks
+
+A workspace Owner can send the workspace's events (`GET /events/catalog`: alerts, monitors, servers, cron jobs, backups, deploys…) to any URL (`/workspaces/{id}/webhooks`). Each delivery is a JSON POST with `X-Morche-Event`, `X-Morche-Delivery`, `X-Morche-Timestamp` and `X-Morche-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + body)>`; compare it in constant time and refuse old timestamps. A failed delivery is tried again after 30 s, 5 min and 30 min. Private addresses need a system admin's `allow_internal`.

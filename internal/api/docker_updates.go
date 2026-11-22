@@ -18,8 +18,6 @@ import (
 	"github.com/morche/backend/internal/database/sqlc"
 	"github.com/morche/backend/internal/docker"
 	"github.com/morche/backend/internal/jobs"
-	"github.com/morche/backend/internal/sshpool"
-	"github.com/morche/backend/internal/terminal"
 )
 
 type DockerUpdateUser struct {
@@ -437,9 +435,7 @@ func (h *serverHandler) recreateContainer(ctx context.Context, t *jobs.Task, ser
 			}
 		}
 		t.Logf("Recreating %s (service %s of %s)", name, service, project)
-		return h.withShell(ctx, serverID, func(_ *sshpool.Conn, sh *rootShell) error {
-			return h.composeRun(ctx, t, sh, cp, "up -d --no-deps "+terminal.ShellQuote(service))
-		})
+		return h.updateService(ctx, t, cp, service, "", -1)
 	}
 	t.Logf("Recreating %s", name)
 	return h.dockerDo(ctx, serverID, "docker recreate "+name+" ("+c.Image+")", func(e *dockerEngine) error {

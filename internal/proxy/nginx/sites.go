@@ -116,7 +116,7 @@ func mirrorTarget(m proxy.Mirror) (hostPort, name string, https bool) {
 // mirrorBlocks are the http-level parts of a mirror: the test server as an
 // upstream (so proxy_pass can carry $request_uri without a resolver) and,
 // for a share of requests, the split that picks them.
-func mirrorBlocks(w *writer, t string, h proxy.HostConfig) {
+func mirrorBlocks(w *writer, t string, h proxy.HostConfig, env proxy.Env) {
 	m := h.Mirror
 	if !m.On() {
 		return
@@ -124,7 +124,13 @@ func mirrorBlocks(w *writer, t string, h proxy.HostConfig) {
 	hostPort, _, _ := mirrorTarget(m)
 	w.line("")
 	w.open("upstream %s_mirror", t)
-	w.line("server %s;", hostPort)
+	if named(env, hostPort) {
+		w.line("zone %s_mirror 64k;", t)
+		resolverLine(w, env)
+		w.line("server %s resolve;", hostPort)
+	} else {
+		w.line("server %s;", hostPort)
+	}
 	w.line("keepalive 8;")
 	w.close()
 	if m.Percent > 0 {

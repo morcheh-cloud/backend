@@ -187,6 +187,7 @@ type ProxyInspection struct {
 	ImageFilter  bool                 `json:"image_filter" doc:"The image filter module is loaded (resizing pictures)"`
 	StreamGeo    string               `json:"stream_geo" enum:",ready,off" doc:"Country rules for port forwards: ready, off (not turned on yet). Empty when the kind can't"`
 	CABundle     string               `json:"ca_bundle,omitempty" doc:"The system's CA file, used to check https upstreams"`
+	Resolves     bool                 `json:"resolves_names" doc:"nginx in a container: upstream names (other containers) are looked up again every 10 s, so a recreated container is found at its new address without a reload. False on the server itself, or with nginx older than 1.27.3"`
 	Container    *proxy.ContainerInfo `json:"container,omitempty" doc:"What the runtime says about the proxy's container (docker/podman only)"`
 	Released     []string             `json:"released_default" doc:"Hand-written files Morche took default_server from (ports 80 and 443) because one of its sites answers unknown names; they get it back when none does, or when the proxy is removed with its files"`
 }
@@ -473,6 +474,9 @@ func inspectWith(ctx context.Context, sh *proxyShell, d proxy.Driver) (proxy.Ins
 		sh.hostInspect(ctx, d, &in)
 		in.Init = sh.box.Runtime
 		in.Enabled = sh.ci.Restart == "always" || sh.ci.Restart == "unless-stopped"
+	} else {
+		// Only nginx in a container looks names up again (see the driver).
+		in.Resolver, in.HostsNames, in.Resolves = "", nil, false
 	}
 	return in, nil
 }
@@ -523,6 +527,7 @@ func envOf(in proxy.Inspection) proxy.Env {
 	return proxy.Env{
 		Version: in.Version, IPv6: in.IPv6, Brotli: in.Brotli, CABundle: in.CABundle,
 		WAF: in.WAF, ImageFilter: in.ImageFilter,
+		Resolver: in.Resolver, HostsNames: in.HostsNames,
 	}
 }
 
@@ -1292,7 +1297,7 @@ func registerProxies(api huma.API, h *proxyHandler) {
 			IPv6: ins.IPv6, Init: ins.Init, Sites: sites, Certificates: certs, Hosts: hs, Unknown: unknown,
 			Streams: ins.Streams, Geo: geoState(d, *ins),
 			HTTP3: ins.HTTP3, Certbot: ins.Certbot,
-			AuthRequest: ins.AuthRequest, Brotli: ins.Brotli, CABundle: ins.CABundle,
+			AuthRequest: ins.AuthRequest, Brotli: ins.Brotli, CABundle: ins.CABundle, Resolves: ins.Resolves,
 			WAF: ins.WAF, ImageFilter: ins.ImageFilter, StreamGeo: streamGeoState(d, *ins),
 			Released: released, Container: h.containerOf(r.Proxy),
 		}}, nil

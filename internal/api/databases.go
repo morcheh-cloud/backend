@@ -30,7 +30,7 @@ type Database struct {
 	ID          string  `json:"id" format:"uuid"`
 	WorkspaceID string  `json:"workspace_id" format:"uuid"`
 	Name        string  `json:"name" example:"Shop primary"`
-	Engine      string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb"`
+	Engine      string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse"`
 	Mode        string  `json:"mode" enum:"server,direct" doc:"server: reached through one of your servers over SSH; direct: Morche connects itself"`
 	ServerID    *string `json:"server_id" format:"uuid" nullable:"true" doc:"The server it's reached through; null when direct, or when that server was removed"`
 	Host        string  `json:"host" doc:"As the server sees it (mode server), or its public address"`
@@ -118,7 +118,7 @@ type DatabaseIDPath struct {
 
 // DatabaseSettings is how to reach a database.
 type DatabaseSettings struct {
-	Engine   string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb"`
+	Engine   string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse"`
 	Mode     string  `json:"mode" enum:"server,direct" doc:"server: through one of your servers over SSH (the database may run on it, in Docker on it, or behind it); direct: Morche connects to a public address itself"`
 	ServerID *string `json:"server_id,omitempty" format:"uuid" doc:"mode server: the server it's reached through"`
 	Host     string  `json:"host,omitempty" maxLength:"255" doc:"mode server: as that server sees it (empty = 127.0.0.1, or the container's own address when a container is set). direct: public IP or domain"`
@@ -180,13 +180,17 @@ func (s *DatabaseSettings) normalize() error {
 		}
 		s.Host = host
 	}
-	if s.Port == 0 {
-		s.Port = int32(dbmon.DefaultPort(s.Engine))
-	}
 	if s.TLS == "" {
 		s.TLS = dbmon.TLSDisable
 		if s.Mode == "direct" {
 			s.TLS = dbmon.TLSRequire
+		}
+	}
+	if s.Port == 0 {
+		s.Port = int32(dbmon.DefaultPort(s.Engine))
+		// ClickHouse serves TLS on its own port.
+		if s.Engine == dbmon.ClickHouse && s.TLS != dbmon.TLSDisable {
+			s.Port = 9440
 		}
 	}
 	if s.TLS != dbmon.TLSVerify {
@@ -735,7 +739,7 @@ func fetchIP(ctx context.Context, url string) (string, error) {
 // ---- Credentials ----
 
 type DatabaseCredentials struct {
-	Engine   string `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb"`
+	Engine   string `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse"`
 	Host     string `json:"host" doc:"As the server it goes through sees it, when mode is server"`
 	Port     int32  `json:"port"`
 	Username string `json:"username"`
@@ -879,6 +883,10 @@ func registerDatabases(api huma.API, h *databaseHandler) {
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *DatabaseIDPath) (*struct{}, error) {
 		id := uuid.MustParse(in.ID)
+		// Archiving would go on on the server with nobody watching it.
+		if _, err := h.q.GetPitr(ctx, id); err == nil {
+			return nil, huma.Error409Conflict("Continuous backup is on for this database: turn it off first (Backups › Point in time › ⋯ › Turn off), or archiving goes on on the server unwatched.")
+		}
 		n, err := h.q.DeleteDatabase(ctx, id)
 		if err != nil {
 			return nil, internalError(err)
@@ -1036,7 +1044,7 @@ func registerDatabases(api huma.API, h *databaseHandler) {
 		Method:        http.MethodPost,
 		Path:          "/databases/{id}/kill",
 		Summary:       "Stop a session's statement, or close it",
-		Description:   "connection=false cancels what it runs (where the engine can); true closes the connection and rolls back its transaction.",
+		Description:   "connection=false cancels what it runs (where the engine can); true closes the connection and rolls back its transaction (MongoDB and ClickHouse can't close one connection: true cancels its operation or query).",
 		Tags:          tags,
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *struct {
@@ -1062,7 +1070,7 @@ func registerDatabases(api huma.API, h *databaseHandler) {
 		Method:      http.MethodPost,
 		Path:        "/databases/{id}/explain",
 		Summary:     "Show a query's plan",
-		Description: "Asks the database how it would run the statement, without running it (EXPLAIN without ANALYZE, SHOWPLAN, explain queryPlanner). Not available for Redis.",
+		Description: "Asks the database how it would run the statement, without running it (EXPLAIN without ANALYZE, SHOWPLAN, explain queryPlanner, ClickHouse EXPLAIN indexes = 1). Not available for Redis.",
 		Tags:        tags,
 	}, func(ctx context.Context, in *struct {
 		DatabaseIDPath

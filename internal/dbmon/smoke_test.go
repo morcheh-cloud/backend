@@ -28,6 +28,7 @@ func TestSmoke(t *testing.T) {
 		{"mssql", Config{Engine: MSSQL, Port: 14330, Username: "sa", Password: "Colony-2026!", TLS: TLSRequire}, "SELECT * FROM sys.objects WHERE name = 'x'", "master"},
 		{"mongo", Config{Engine: Mongo, Port: 27018, Username: "ant", Password: "colony"}, `{"collection": "system.version", "filter": {"x": 1}}`, "admin"},
 		{"redis", Config{Engine: Redis, Port: 6381, Password: "colony"}, "", ""},
+		{"clickhouse", Config{Engine: ClickHouse, Port: 9002, Username: "ant", Password: "colony", Database: "shop"}, "SELECT count() FROM orders WHERE status = 'paid'", "shop"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

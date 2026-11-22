@@ -207,6 +207,26 @@ services:
       timeout: 3s
       retries: 10
 
+  test-clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    environment:
+      CLICKHOUSE_USER: ant
+      CLICKHOUSE_PASSWORD: colony
+      CLICKHOUSE_DB: shop
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    ports:
+      - "127.0.0.1:9002:9000"
+      - "127.0.0.1:8124:8123"
+    volumes:
+      - testclickhousedata:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client -u ant --password colony -q 'SELECT 1'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   # Two authoritative DNS servers for the /dns section. Web UI and API on 5381
   # and 5382, DNS on 5354 and 5355 (TCP and UDP). admin / colony.
   test-dns-1:
@@ -233,6 +253,31 @@ services:
     volumes:
       - testdns2data:/etc/dns
 
+  # PostgreSQL continuous backup (PITR) target (dev/test-pitr): Debian's
+  # PostgreSQL + sshd. SSH on 2225: ops / colony (passwordless sudo).
+  # Its repo is test-minio-tls, at https://127.0.0.1:9120 from here and there.
+  test-pitr:
+    build: dev/test-pitr
+    ports:
+      - "127.0.0.1:2225:22"
+    volumes:
+      - testpitrdata:/var/lib/postgresql
+    depends_on:
+      - test-minio-tls
+
+  # MinIO over HTTPS (self-signed) for pgBackRest repos: morche / morche-secret.
+  test-minio-tls:
+    build: dev/test-minio-tls
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: morche
+      MINIO_ROOT_PASSWORD: morche-secret
+    ports:
+      - "127.0.0.1:9120:9000"
+      - "127.0.0.1:9121:9001"
+    volumes:
+      - miniotlsdata:/data
+
   # Docker in Docker over SSH for the Containers section (dev/test-docker).
   # SSH on 2224: ant / colony (docker group), ops / colony (sudo only).
   test-docker:
@@ -257,6 +302,8 @@ volumes:
   redisdata:
   miniodata:
   minio2data:
+  miniotlsdata:
+  testpitrdata:
   ftpdata:
   webdavdata:
   testpgdata:
@@ -265,6 +312,7 @@ volumes:
   testmssqldata:
   testmongodata:
   testredisdata:
+  testclickhousedata:
   testdns1data:
   testdns2data:
   testdockerdata:

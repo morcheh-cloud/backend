@@ -3,7 +3,6 @@ package dbbackup
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -37,6 +36,8 @@ type Sniffed struct {
 	Label string
 	// The file is gzip around what it holds.
 	Gzip bool
+	// gzip or zstd around what it holds; empty = neither.
+	Pack string
 	// The databases it names, when it does (MySQL's USE, Mongo's archive).
 	Databases []string
 	// A Mongo archive whose collections are compressed (mongodump --gzip).
@@ -48,7 +49,7 @@ type Sniffed struct {
 // engineNames are the engines in words.
 var engineNames = map[string]string{
 	dbmon.Postgres: "PostgreSQL", dbmon.MySQL: "MySQL / MariaDB", dbmon.MSSQL: "SQL Server",
-	dbmon.Redis: "Redis", dbmon.Mongo: "MongoDB",
+	dbmon.Redis: "Redis", dbmon.Mongo: "MongoDB", dbmon.ClickHouse: "ClickHouse",
 }
 
 // Sniff reads the start of a backup file to tell what it is. engine is the
@@ -56,41 +57,37 @@ var engineNames = map[string]string{
 // it's read as that engine's.
 func Sniff(r io.Reader, engine string) (Sniffed, error) {
 	br := bufio.NewReaderSize(r, 64<<10)
-	gz, data, err := unpack(br)
+	method, data, err := unpack(br)
 	if err != nil {
 		return Sniffed{}, err
 	}
+	defer data.Close()
 	head, err := io.ReadAll(io.LimitReader(data, sniffHead))
 	if err != nil {
-		if gz && isDamaged(err) {
-			return Sniffed{Gzip: true, Label: "gzip file", Problem: "The compressed data is damaged."}, nil
+		if method != "" && isDamaged(err) {
+			return Sniffed{Gzip: method == Gzip, Pack: method, Label: method + " file", Problem: "The compressed data is damaged."}, nil
 		}
 		return Sniffed{}, err
 	}
 	s := sniff(head, engine)
-	s.Gzip = gz
+	s.Gzip, s.Pack = method == Gzip, method
 	return s, nil
 }
 
-// unpack undoes gzip when the stream starts with it.
-func unpack(br *bufio.Reader) (bool, io.Reader, error) {
-	magic, err := br.Peek(2)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false, nil, err
+// unpack undoes gzip or zstd when the stream starts with it.
+func unpack(br *bufio.Reader) (string, io.ReadCloser, error) {
+	method, err := packOf(br)
+	if err != nil {
+		return "", nil, err
 	}
-	if len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
-		zr, err := gzip.NewReader(br)
-		if err != nil {
-			return true, nil, fmt.Errorf("the file looks like gzip but isn't: %w", err)
-		}
-		zr.Multistream(true)
-		return true, zr, nil
+	if method == "" {
+		return "", io.NopCloser(br), nil
 	}
-	return false, br, nil
-}
-
-func isDamaged(err error) bool {
-	return errors.Is(err, gzip.ErrChecksum) || errors.Is(err, gzip.ErrHeader) || errors.Is(err, io.ErrUnexpectedEOF)
+	zr, err := Unpack(br, method)
+	if err != nil {
+		return method, nil, fmt.Errorf("the file looks like %s but isn't: %w", method, err)
+	}
+	return method, zr, nil
 }
 
 var (
@@ -105,6 +102,10 @@ func sniff(head []byte, engine string) Sniffed {
 		return Sniffed{Label: "Empty file", Problem: "The file is empty."}
 	case has("PGDMP"):
 		return Sniffed{Format: PgCustom, Engine: dbmon.Postgres, Label: "PostgreSQL archive (pg_dump -Fc)"}
+	case isTar(head) && tarHasToc(head):
+		return Sniffed{Format: PgDir, Engine: dbmon.Postgres, Label: "PostgreSQL parallel archive (pg_dump -Fd, tar)"}
+	case isTar(head) && tarIsChDump(head):
+		return sniffClickHouse(head)
 	case bytes.HasPrefix(head, mongoMagic):
 		return sniffMongo(head)
 	case has("TAPE"):
@@ -113,7 +114,7 @@ func sniff(head []byte, engine string) Sniffed {
 		return Sniffed{Format: RedisRDB, Engine: dbmon.Redis, Label: "Redis snapshot (RDB)",
 			Problem: Restorable(RedisRDB, "")}
 	case !isText(head):
-		return Sniffed{Label: "Unknown file", Problem: "This isn't a backup Morche knows: not a SQL dump, a pg_dump archive, a mongodump archive or a SQL Server backup."}
+		return Sniffed{Label: "Unknown file", Problem: "This isn't a backup Morche knows: not a SQL dump, a pg_dump archive, a mongodump archive, a SQL Server backup or a ClickHouse dump Morche made."}
 	}
 	text := string(head)
 	switch {
@@ -151,6 +152,22 @@ func isText(head []byte) bool {
 		sample = sample[n:]
 	}
 	return bad < 32
+}
+
+// sniffClickHouse reads a ClickHouse dump's table of contents: the
+// databases in it.
+func sniffClickHouse(head []byte) Sniffed {
+	s := Sniffed{Format: ClickHouseTar, Engine: dbmon.ClickHouse, Label: "ClickHouse dump (Morche, tar)"}
+	toc, err := chTocIn(head)
+	if err != nil {
+		s.Problem = "The dump can't be read: " + err.Error() + "."
+		return s
+	}
+	s.Databases = chDatabases(toc)
+	if len(s.Databases) == 0 {
+		s.Problem = "The dump holds no databases."
+	}
+	return s
 }
 
 func pgPlain(head []byte) Sniffed {
@@ -324,12 +341,13 @@ func CheckFile(r io.Reader, engine string) (FileCheck, error) {
 	var size keeper
 	raw := io.TeeReader(r, io.MultiWriter(sum, &size))
 	br := bufio.NewReaderSize(raw, 64<<10)
-	gz, data, err := unpack(br)
+	method, data, err := unpack(br)
 	if err != nil {
 		return FileCheck{}, err
 	}
+	defer data.Close()
 	finish := func(out FileCheck) (FileCheck, error) {
-		// What gzip didn't read still counts.
+		// What the decompressor didn't read still counts.
 		if _, err := io.Copy(io.Discard, br); err != nil {
 			return FileCheck{}, err
 		}
@@ -337,8 +355,8 @@ func CheckFile(r io.Reader, engine string) (FileCheck, error) {
 		return out, nil
 	}
 	damaged := func(err error) (FileCheck, error) {
-		if gz && isDamaged(err) {
-			return finish(FileCheck{Sniffed: Sniffed{Gzip: true, Problem: "The compressed data is damaged: " + err.Error()}})
+		if method != "" && isDamaged(err) {
+			return finish(FileCheck{Sniffed: Sniffed{Gzip: method == Gzip, Pack: method, Problem: "The compressed data is damaged: " + err.Error()}})
 		}
 		return FileCheck{}, err
 	}
@@ -347,7 +365,27 @@ func CheckFile(r io.Reader, engine string) (FileCheck, error) {
 		return damaged(err)
 	}
 	out := FileCheck{Sniffed: sniff(head, engine)}
-	out.Gzip = gz
+	out.Gzip, out.Pack = method == Gzip, method
+	if out.Format == ClickHouseTar {
+		_, verdict, err := checkChTar(io.MultiReader(bytes.NewReader(head), data))
+		if err != nil {
+			return damaged(err)
+		}
+		if verdict != nil && out.Problem == "" {
+			out.Problem = "The archive is damaged: " + verdict.Error() + "."
+		}
+		return finish(out)
+	}
+	if out.Format == PgDir {
+		verdict, err := checkPgDir(io.MultiReader(bytes.NewReader(head), data))
+		if err != nil {
+			return damaged(err)
+		}
+		if verdict != nil {
+			out.Problem = "The archive is damaged: " + verdict.Error() + "."
+		}
+		return finish(out)
+	}
 	var tail keeper
 	tail.Write(head)
 	lines := newLineScan()

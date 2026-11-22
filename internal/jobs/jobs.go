@@ -88,6 +88,10 @@ type Spec struct {
 	// no time and shouldn't wait behind long jobs (a rename). Not stored, so
 	// after a restart or a retry it waits its turn like any other.
 	Quick bool
+	// Light starts it at once and never takes one of the Limit slots: for
+	// work that mostly waits on other jobs (an automation's run), so it can't
+	// hold up the jobs it waits for.
+	Light bool
 }
 
 // Event is one change: Job is set when a job changed, Removed when one was
@@ -100,6 +104,8 @@ type Event struct {
 type Runner struct {
 	q        sqlc.Querier
 	handlers map[string]Handler
+	// ends are called with a job of their kind once it has finished.
+	ends map[string][]func(sqlc.Job)
 	// Limit is how many jobs run at once; PerRef how many of them may touch
 	// one server or storage.
 	Limit, PerRef int
@@ -126,6 +132,7 @@ type entry struct {
 	canceled bool // by the user, as opposed to a shutdown
 	dirty    bool // changed since the last event
 	quick    bool
+	light    bool
 	saved    time.Time
 	// For the rate.
 	lastDone int64
@@ -135,7 +142,7 @@ type entry struct {
 func New(q sqlc.Querier) *Runner {
 	base, stop := context.WithCancel(context.Background())
 	return &Runner{
-		q: q, handlers: map[string]Handler{},
+		q: q, handlers: map[string]Handler{}, ends: map[string][]func(sqlc.Job){},
 		Limit: 4, PerRef: 2,
 		base: base, stop: stop,
 		running: map[uuid.UUID]*entry{},
@@ -146,6 +153,10 @@ func New(q sqlc.Querier) *Runner {
 
 // Handle registers the handler for a kind. Call it before Start.
 func (r *Runner) Handle(kind string, h Handler) { r.handlers[kind] = h }
+
+// OnEnd calls fn, in its own goroutine, with every job of kind once it has
+// finished and been saved (any state: check j.State). Call it before Start.
+func (r *Runner) OnEnd(kind string, fn func(j sqlc.Job)) { r.ends[kind] = append(r.ends[kind], fn) }
 
 // Start marks jobs the last process left running as interrupted, picks up
 // the queued ones and starts the background loops.
@@ -210,7 +221,7 @@ func (r *Runner) Submit(ctx context.Context, s Spec) (sqlc.Job, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	e := &entry{job: j, quick: s.Quick}
+	e := &entry{job: j, quick: s.Quick, light: s.Light}
 	r.queue = append(r.queue, e)
 	r.emit(e)
 	r.schedule()
@@ -357,15 +368,27 @@ func (r *Runner) schedule() {
 	}
 	for i := 0; i < len(r.queue); {
 		e := r.queue[i]
-		full := len(r.running) >= r.Limit ||
+		full := r.slots() >= r.Limit ||
 			slices.ContainsFunc(e.job.Refs, func(ref uuid.UUID) bool { return r.busy[ref] >= r.PerRef })
-		if full && !e.quick {
+		if full && !e.quick && !e.light {
 			i++
 			continue
 		}
 		r.queue = slices.Delete(r.queue, i, i+1)
 		r.start(e)
 	}
+}
+
+// slots is how many running jobs count against Limit (light ones don't).
+// Called with r.mu held.
+func (r *Runner) slots() int {
+	n := 0
+	for _, e := range r.running {
+		if !e.light {
+			n++
+		}
+	}
+	return n
 }
 
 // Called with r.mu held.
@@ -464,6 +487,9 @@ func (r *Runner) finish(e *entry, result any, err error) {
 	}
 	r.broadcast(Event{Job: &j})
 	r.schedule()
+	for _, fn := range r.ends[j.Kind] {
+		go fn(j)
+	}
 }
 
 // snapshot copies the job with its live progress and log.

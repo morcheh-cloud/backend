@@ -1,8 +1,8 @@
 package dbbackup
 
 import (
+	"bufio"
 	"bytes"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -36,9 +36,10 @@ func (k *keeper) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Verify reads a whole backup file: its checksum, that gzip holds to the
-// end, and that the content is the kind and complete as far as the format
-// can tell. It's no restore, but it catches a file cut short or corrupted.
+// Verify reads a whole backup file: its checksum, that its compression holds
+// to the end, and that the content is the kind and complete as far as the
+// format can tell. It's no restore, but it catches a file cut short or
+// corrupted.
 func Verify(format string, r io.Reader) (Result, error) {
 	sum := sha256.New()
 	var size keeper
@@ -51,22 +52,52 @@ func Verify(format string, r io.Reader) (Result, error) {
 		if _, err := io.Copy(&out, raw); err != nil {
 			return Result{}, err
 		}
-	default:
-		zr, err := gzip.NewReader(raw)
+	case PgDir:
+		verdict, err := checkPgDir(io.TeeReader(raw, &out))
 		if err != nil {
-			bad = errors.New("the file isn't gzip")
+			return Result{}, err
+		}
+		bad = verdict
+	default:
+		// gzip or zstd, told by the file itself.
+		br := bufio.NewReaderSize(raw, 64<<10)
+		method, err := packOf(br)
+		if err != nil {
+			return Result{}, err
+		}
+		if method == "" {
+			bad = errors.New("the file isn't gzip or zstd")
 			break
 		}
-		if _, err := io.Copy(&out, zr); err != nil {
+		zr, err := Unpack(br, method)
+		if err != nil {
+			bad = err
+			break
+		}
+		if format == ClickHouseTar {
+			// The tar is read member by member.
+			var verdict error
+			_, verdict, err = checkChTar(io.TeeReader(zr, &out))
+			if err == nil && verdict == nil {
+				_, err = io.Copy(&out, zr)
+			}
+			bad = verdict
+		} else {
+			_, err = io.Copy(&out, zr)
+		}
+		zr.Close()
+		if err != nil {
 			// A failing read of the storage isn't a verdict on the file.
-			if errors.Is(err, gzip.ErrChecksum) || errors.Is(err, gzip.ErrHeader) || errors.Is(err, io.ErrUnexpectedEOF) {
-				bad = fmt.Errorf("the compressed data is damaged: %w", err)
-			} else {
+			if !isDamaged(err) {
 				return Result{}, err
 			}
+			bad = fmt.Errorf("the compressed data is damaged: %w", err)
+		}
+		// What the decompressor didn't read still counts for the checksum.
+		if _, err := io.Copy(io.Discard, br); err != nil {
+			return Result{}, err
 		}
 	}
-	// What gzip didn't read still counts for the checksum.
 	if _, err := io.Copy(io.Discard, raw); err != nil {
 		return Result{}, err
 	}
@@ -88,6 +119,8 @@ func check(format string, k *keeper) error {
 		if !has("PGDMP") {
 			return errors.New("it isn't a pg_dump archive")
 		}
+	case PgDir:
+		// checkPgDir read it all.
 	case PgAll:
 		if !ends("cluster dump complete") {
 			return errors.New("the dump doesn't reach its last line, so it was cut short")
@@ -106,6 +139,8 @@ func check(format string, k *keeper) error {
 		}
 	case MySQLBinlog:
 		// The server may have had nothing new: an empty file is a good one.
+	case ClickHouseTar:
+		// checkChTar read it all.
 	case MSSQLBak, MSSQLDiff:
 		if !has("TAPE") {
 			return errors.New("it isn't a SQL Server backup")

@@ -23,14 +23,16 @@ import (
 // the file is checked.
 const (
 	PgCustom     = "pg_custom"    // pg_dump -Fc: compressed already
+	PgDir        = "pg_dir"       // pg_dump -Fd -j N, tarred: each file compressed by pg_dump
 	PgAll        = "pg_all"       // pg_dumpall, gzipped by Morche
 	MySQLSQL     = "mysql_sql"    // mysqldump --databases, gzipped by Morche
 	MySQLDB      = "mysql_db"     // mysqldump of one database, gzipped by Morche
 	MySQLBinlog  = "mysql_binlog" // mysqlbinlog's text, gzipped by Morche
-	MongoArchive = "mongo_arch"   // mongodump --archive --gzip
+	MongoArchive = "mongo_arch"   // mongodump --archive --gzip, or plain and zstd by Morche
 	RedisRDB     = "redis_rdb"    // RDB snapshot, gzipped by Morche
 	MSSQLBak     = "mssql_bak"    // BACKUP DATABASE, gzipped by Morche
 	MSSQLDiff    = "mssql_diff"   // BACKUP DATABASE ... WITH DIFFERENTIAL, gzipped by Morche
+	// ClickHouseTar ("ch_tar") is in clickhouse.go.
 	mssqlDataDir = "/var/opt/mssql/data"
 )
 
@@ -40,16 +42,6 @@ const (
 	PositionMark = "MORCHE_POSITION="
 	BrokenMark   = "MORCHE_CHAIN_BROKEN"
 )
-
-// Gzipped says Morche compressed the file itself, so it's the one to undo that
-// on the way back.
-func Gzipped(format string) bool {
-	switch format {
-	case PgAll, MySQLSQL, MySQLDB, MySQLBinlog, RedisRDB, MSSQLBak, MSSQLDiff:
-		return true
-	}
-	return false
-}
 
 // IncrementalSupport says whether an engine can back up only what changed.
 type IncrementalSupport struct {
@@ -73,6 +65,8 @@ func Incremental(engine string) IncrementalSupport {
 		return IncrementalSupport{false, "MongoDB only has this through the oplog of a replica set, not per database."}
 	case dbmon.Redis:
 		return IncrementalSupport{false, "Redis only makes whole snapshots."}
+	case dbmon.ClickHouse:
+		return IncrementalSupport{false, "ClickHouse's own incremental backups (BACKUP … base_backup) are written on the server's disk or to S3, not sent as a stream, so only full backups are offered."}
 	}
 	return IncrementalSupport{false, "This engine doesn't have one."}
 }
@@ -100,6 +94,13 @@ type Target struct {
 	Incremental bool
 	// Where the chain stands: binary log file:offset, or SQL Server's base.
 	Position string
+	// How to compress (Gzip or Zstd) and how hard; empty = gzip, balanced.
+	Compression, Level string
+	// Parallel jobs, where the engine's tool has them; 0 or 1 = one.
+	Workers int
+	// Where a parallel PostgreSQL dump is written before it's sent (it needs
+	// room for the whole dump); empty = the runner's temporary folder.
+	TempDir string
 }
 
 // Spec is a script and what comes out of it.
@@ -108,8 +109,14 @@ type Spec struct {
 	// File extension, without the dot.
 	Ext    string
 	Format string
-	// Morche should gzip the output while storing it.
-	Gzip bool
+	// Morche should compress the output while storing it (with Compression's
+	// method).
+	Pack bool
+	// What it's compressed with, as stored on the backup ("zstd:fast"). A
+	// script may say otherwise on stderr (CompressionMark).
+	Compression string
+	// Parallel jobs it uses.
+	Workers int
 	// The chain's position is in the file's first lines (see PositionIn).
 	HeadPosition bool
 }
@@ -147,19 +154,47 @@ func Build(t Target) (Spec, error) {
 	if t.Host == "" {
 		t.Host = "127.0.0.1"
 	}
+	if t.Compression == "" {
+		t.Compression = Gzip
+	}
+	if t.Level == "" {
+		t.Level = LevelBalanced
+	}
+	if err := CheckCompression(t.Compression, t.Level); err != nil {
+		return Spec{}, err
+	}
+	t.Workers = max(1, min(t.Workers, MaxWorkers))
+	var s Spec
+	var err error
 	switch t.Engine {
 	case dbmon.Postgres:
-		return postgres(t), nil
+		s = postgres(t)
 	case dbmon.MySQL:
-		return mysql(t), nil
+		s = mysql(t)
 	case dbmon.Mongo:
-		return mongo(t), nil
+		s = mongo(t)
 	case dbmon.Redis:
-		return redis(t), nil
+		s = redis(t)
 	case dbmon.MSSQL:
-		return mssql(t)
+		s, err = mssql(t)
+	case dbmon.ClickHouse:
+		s = clickhouse(t)
+	default:
+		return Spec{}, fmt.Errorf("backups don't support %s", t.Engine)
 	}
-	return Spec{}, fmt.Errorf("backups don't support %s", t.Engine)
+	if err != nil {
+		return Spec{}, err
+	}
+	if s.Compression == "" {
+		s.Compression = Compression(t.Compression, t.Level)
+	}
+	if s.Workers == 0 {
+		s.Workers = 1
+	}
+	if s.Pack && t.Compression == Zstd {
+		s.Ext = strings.TrimSuffix(s.Ext, ".gz") + ".zst"
+	}
+	return s, nil
 }
 
 // Quote makes a string one shell word.
@@ -216,11 +251,86 @@ func postgres(t Target) Spec {
 	if t.Name == "" {
 		b.WriteString("command -v pg_dumpall >/dev/null 2>&1 || { " + missing("pg_dumpall") + "; }\n")
 		b.WriteString("pg_dumpall --no-password </dev/null\n")
-		return Spec{Script: b.String(), Ext: "sql.gz", Format: PgAll, Gzip: true}
+		return Spec{Script: b.String(), Ext: "sql.gz", Format: PgAll, Pack: true}
 	}
 	b.WriteString("command -v pg_dump >/dev/null 2>&1 || { " + missing("pg_dump") + "; }\n")
-	b.WriteString("pg_dump -Fc --no-password </dev/null\n")
-	return Spec{Script: b.String(), Ext: "dump", Format: PgCustom}
+	pgCompression(&b, t)
+	if t.Workers <= 1 {
+		b.WriteString("pg_dump -Fc $comp --no-password </dev/null\n")
+		return Spec{Script: b.String(), Ext: "dump", Format: PgCustom}
+	}
+	// Parallel jobs need pg_dump's directory format: it's written to a
+	// temporary folder, then sent as one tar, table of contents first.
+	b.WriteString("command -v tar >/dev/null 2>&1 || { " + missing("tar") + "; }\n")
+	tempFolder(&b, t.TempDir, "backup")
+	fmt.Fprintf(&b, `pg_dump -Fd -j %d $comp --no-password -f "$dir/d" </dev/null || {
+  code=$?
+  free=$(df -Pk "$dir" 2>/dev/null | awk 'NR == 2 {print $4}')
+  [ "${free:-1048576}" -ge 65536 ] || echo "The temporary folder $(dirname "$dir") ran out of space: a parallel backup is written there first. Free some space, pick a temporary folder on a bigger disk in the plan, or use one worker." >&2
+  exit $code
+}
+cd "$dir/d" || exit 1
+# shellcheck disable=SC2046
+tar -cf - %s $(ls -A | grep -vx %s) || exit 1
+`, t.Workers, tocName, tocName)
+	return Spec{Script: b.String(), Ext: "tar", Format: PgDir, Workers: t.Workers}
+}
+
+// tempFolder makes $dir, a fresh folder inside parent (empty = the system's
+// temporary folder), removed when the script ends, and says how much room
+// the disk under it has before the work starts.
+func tempFolder(b *strings.Builder, parent, what string) {
+	if parent == "" {
+		b.WriteString("dir=$(mktemp -d) || exit 1\n")
+	} else {
+		fmt.Fprintf(b, `parent=%s
+[ -d "$parent" ] || { echo "The temporary folder $parent doesn't exist on this machine." >&2; exit 1; }
+[ -w "$parent" ] || { echo "The temporary folder $parent can't be written to by $(id -un)." >&2; exit 1; }
+dir=$(mktemp -d "$parent/morche-%s.XXXXXX") || exit 1
+`, quote(parent), what)
+	}
+	b.WriteString("trap 'rm -rf \"$dir\"; [ -z \"${ca:-}\" ] || rm -f \"$ca\"' EXIT\n")
+	b.WriteString(`free=$(df -Pk "$dir" 2>/dev/null | awk 'NR == 2 {print $4}')
+[ -z "$free" ] || echo "Temporary folder $(dirname "$dir"): $((free / 1048576)) GiB free" >&2
+`)
+}
+
+// CheckTempDir refuses a temporary folder that isn't a plain absolute path.
+func CheckTempDir(dir string) error {
+	switch {
+	case dir == "":
+		return nil
+	case !strings.HasPrefix(dir, "/"):
+		return errors.New("Use an absolute path, like /var/tmp.")
+	case len(dir) > 512:
+		return errors.New("Use 512 characters or fewer.")
+	}
+	for _, r := range dir {
+		if unicode.IsControl(r) {
+			return errors.New("The path has a character that can't be used.")
+		}
+	}
+	return nil
+}
+
+// pgCompression sets $comp to pg_dump's compression flag. zstd needs pg_dump
+// 16 built with it; otherwise it's gzip, and the script says so.
+func pgCompression(b *strings.Builder, t Target) {
+	gz := fmt.Sprintf("comp='-Z %d'\n", gzipLevel(t.Level))
+	if t.Compression != Zstd {
+		b.WriteString(gz)
+		return
+	}
+	// The flag is checked before connecting: a host that can't exist makes
+	// the probe end at once.
+	fmt.Fprintf(b, `major=$(pg_dump --version 2>/dev/null | sed -n 's/^[^0-9]*\([0-9][0-9]*\).*/\1/p')
+if [ "${major:-0}" -ge 16 ] && ! pg_dump -Fc --compress=zstd:1 -f /dev/null --host=/nonexistent-morche --no-password </dev/null 2>&1 | grep -qi zstd; then
+  comp='--compress=zstd:%d'
+else
+  %s  echo "pg_dump ${major:-?} can't compress with zstd (it needs version 16 built with it), so gzip was used." >&2
+  echo %s >&2
+fi
+`, zstdLevel(t.Level), gz, CompressionMark+Compression(Gzip, t.Level))
 }
 
 // mysqlFlags are the TLS flags, by client family.
@@ -303,7 +413,7 @@ esac
 	}
 	fmt.Fprintf(&b, "dump %s $stats --single-transaction --quick --routines --triggers --events --hex-blob --no-tablespaces %s%s </dev/null\n",
 		mysqlLogin(t), position, what)
-	return Spec{Script: b.String(), Ext: "sql.gz", Format: format, Gzip: true, HeadPosition: t.Chain}
+	return Spec{Script: b.String(), Ext: "sql.gz", Format: format, Pack: true, HeadPosition: t.Chain}
 }
 
 var headPosition = regexp.MustCompile(`(?:MASTER|SOURCE)_LOG_FILE='([^']+)',\s*(?:MASTER|SOURCE)_LOG_POS=(\d+)`)
@@ -341,7 +451,7 @@ esac
 [ -z "$files" ] || logs %[1]s --read-from-remote-server --start-position=%[4]s --database=%[5]s $gtids $files </dev/null || exit 1
 echo %[6]s"$newest":4 >&2
 `, login, quote(file), BrokenMark, quote(offset), quote(t.Name), PositionMark)
-	return Spec{Script: b.String(), Ext: "binlog.sql.gz", Format: MySQLBinlog, Gzip: true}
+	return Spec{Script: b.String(), Ext: "binlog.sql.gz", Format: MySQLBinlog, Pack: true}
 }
 
 // mongoAccess writes the login's private files and gives the shared flags.
@@ -383,12 +493,26 @@ func mongoAccess(b *strings.Builder, t Target) []string {
 func mongo(t Target) Spec {
 	var b strings.Builder
 	b.WriteString("umask 077\ncommand -v mongodump >/dev/null 2>&1 || { " + missing("mongodump") + "; }\n")
-	args := append([]string{"mongodump", "--quiet", "--archive", "--gzip"}, mongoAccess(&b, t)...)
+	// zstd: the archive comes plain and Morche compresses it.
+	zstd := t.Compression == Zstd
+	args := []string{"mongodump", "--quiet", "--archive"}
+	if !zstd {
+		args = append(args, "--gzip")
+	}
+	if t.Workers > 1 {
+		args = append(args, "--numParallelCollections="+strconv.Itoa(t.Workers))
+	}
+	args = append(args, mongoAccess(&b, t)...)
 	if t.Name != "" {
 		args = append(args, "--db="+quote(t.Name))
 	}
 	b.WriteString(strings.Join(args, " ") + " </dev/null\n")
-	return Spec{Script: b.String(), Ext: "archive.gz", Format: MongoArchive}
+	s := Spec{Script: b.String(), Ext: "archive.gz", Format: MongoArchive, Pack: zstd, Workers: t.Workers}
+	if !zstd {
+		// mongodump's gzip has no level.
+		s.Compression = Gzip
+	}
+	return s
 }
 
 func redis(t Target) Spec {
@@ -433,7 +557,7 @@ else
   cat "$f"
 fi
 `)
-	return Spec{Script: b.String(), Ext: "rdb.gz", Format: RedisRDB, Gzip: true}
+	return Spec{Script: b.String(), Ext: "rdb.gz", Format: RedisRDB, Pack: true}
 }
 
 // mssqlPrelude finds sqlcmd and defines `run`, which takes sqlcmd's flags.
@@ -496,36 +620,52 @@ func mssql(t Target) (Spec, error) {
 	if t.Chain || t.Incremental {
 		b.WriteString("echo " + PositionMark + "\"$base\" >&2\n")
 	}
-	return Spec{Script: b.String(), Ext: ext, Format: format, Gzip: true}, nil
+	return Spec{Script: b.String(), Ext: ext, Format: format, Pack: true}, nil
 }
 
 // Restore explains how to bring a backup back by hand: for what the panel
 // can't do, or when it has to happen somewhere Morche doesn't reach.
-func Restore(format, target, file string) string {
+func Restore(format, compression, target, file string) string {
 	q := quote(file)
 	name := target
 	if name == "" {
 		name = "<database>"
 	}
+	cat, unpack, bare := "gunzip -c "+q, "gunzip "+q, strings.TrimSuffix(file, ".gz")
+	if Packed(format, compression) == Zstd {
+		cat, unpack, bare = "zstd -dc "+q, "zstd -d --rm "+q, strings.TrimSuffix(file, ".zst")
+	}
 	switch format {
 	case PgCustom:
 		return "# Into an empty database (add --clean --if-exists to replace one):\npg_restore --no-owner -d " + quote(name) + " " + q
+	case PgDir:
+		return "# Unpack it, then load it with 4 jobs (add --clean --if-exists to replace a database):\nmkdir dump && tar -xf " + q + " -C dump\npg_restore -j 4 --no-owner -d " + quote(name) + " dump"
 	case PgAll:
-		return "# Recreates every database and role:\ngunzip -c " + q + " | psql -d postgres"
+		return "# Recreates every database and role:\n" + cat + " | psql -d postgres"
 	case MySQLSQL:
-		return "# The file recreates its databases:\ngunzip -c " + q + " | mysql -u root -p"
+		return "# The file recreates its databases:\n" + cat + " | mysql -u root -p"
 	case MySQLDB:
-		return "# Into an existing database:\ngunzip -c " + q + " | mysql -u root -p " + quote(name)
+		return "# Into an existing database:\n" + cat + " | mysql -u root -p " + quote(name)
 	case MySQLBinlog:
-		return "# After the full backup and the incrementals before this one, in order:\ngunzip -c " + q + " | mysql -u root -p"
+		return "# After the full backup and the incrementals before this one, in order:\n" + cat + " | mysql -u root -p"
 	case MongoArchive:
+		if Packed(format, compression) == Zstd {
+			return "# Add --drop to replace what's there:\n" + cat + " | mongorestore --archive"
+		}
 		return "# Add --drop to replace what's there:\nmongorestore --gzip --archive=" + q
 	case RedisRDB:
-		return "# Stop Redis, then put the snapshot in its data folder:\ngunzip -c " + q + " > /var/lib/redis/dump.rdb\n# Turn appendonly off for this start, or Redis ignores the file. Start Redis."
+		return "# Stop Redis, then put the snapshot in its data folder:\n" + cat + " > /var/lib/redis/dump.rdb\n# Turn appendonly off for this start, or Redis ignores the file. Start Redis."
 	case MSSQLBak:
-		return "# Unpack it where SQL Server can read it, then:\ngunzip " + q + "\nsqlcmd -C -Q \"RESTORE DATABASE " + mssqlName(name) + " FROM DISK=N'/var/opt/mssql/data/" + strings.TrimSuffix(file, ".gz") + "' WITH REPLACE\""
+		return "# Unpack it where SQL Server can read it, then:\n" + unpack + "\nsqlcmd -C -Q \"RESTORE DATABASE " + mssqlName(name) + " FROM DISK=N'/var/opt/mssql/data/" + bare + "' WITH REPLACE\""
+	case ClickHouseTar:
+		return "# Unpack it, make the database, then go through clickhouse.toc in order (skipping the database line):\n" +
+			"# NNNN.sql = run it in the database, NNNN.native = load it into the table the line names.\n" +
+			"mkdir dump && " + cat + " | tar -xf - -C dump\n" +
+			"clickhouse client -q " + quote("CREATE DATABASE "+chIdent(name)) + "\n" +
+			"clickhouse client -d " + quote(name) + " < dump/0002.sql\n" +
+			"clickhouse client -d " + quote(name) + " -q 'INSERT INTO `<table>` FORMAT Native' < dump/0003.native"
 	case MSSQLDiff:
-		return "# Restore its full backup WITH NORECOVERY first, then:\ngunzip " + q + "\nsqlcmd -C -Q \"RESTORE DATABASE " + mssqlName(name) + " FROM DISK=N'/var/opt/mssql/data/" + strings.TrimSuffix(file, ".gz") + "' WITH RECOVERY\""
+		return "# Restore its full backup WITH NORECOVERY first, then:\n" + unpack + "\nsqlcmd -C -Q \"RESTORE DATABASE " + mssqlName(name) + " FROM DISK=N'/var/opt/mssql/data/" + bare + "' WITH RECOVERY\""
 	}
 	return ""
 }

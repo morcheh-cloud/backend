@@ -35,10 +35,11 @@ func (d hostDialer) DialContext(ctx context.Context, network, addr string) (net.
 }
 func (d hostDialer) HostName() string { return d.host }
 
-func openMSSQL(ctx context.Context, cfg Config) (engine, error) {
+// mssqlConnector reaches one database of a SQL Server connection.
+func mssqlConnector(cfg Config, database, app string) (*mssql.Connector, error) {
 	q := url.Values{}
-	q.Set("database", cmp(cfg.Database, "master"))
-	q.Set("app name", "morche-monitor")
+	q.Set("database", cmp(database, "master"))
+	q.Set("app name", app)
 	q.Set("dial timeout", strconv.Itoa(int(cfg.timeout().Seconds())))
 	switch cfg.TLS {
 	case TLSDisable:
@@ -69,6 +70,14 @@ func openMSSQL(ctx context.Context, cfg Config) (engine, error) {
 	}
 	conn := mssql.NewConnectorConfig(p)
 	conn.Dialer = hostDialer{dial: cfg.dialer(), host: cfg.Host}
+	return conn, nil
+}
+
+func openMSSQL(ctx context.Context, cfg Config) (engine, error) {
+	conn, err := mssqlConnector(cfg, cfg.Database, "morche-monitor")
+	if err != nil {
+		return nil, err
+	}
 	db := sql.OpenDB(conn)
 	db.SetMaxOpenConns(2)
 	db.SetMaxIdleConns(2)

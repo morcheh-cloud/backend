@@ -518,6 +518,7 @@ func (e *alertEngine) event(ctx context.Context, r sqlc.AlertRule, t alertTarget
 	if err := e.q.InsertAlertEvent(ctx, p); err != nil {
 		slog.Warn("alerts: record event", "rule", r.ID, "target", t.id, "error", err)
 	}
+	e.publishAlert(r, t, kind, v, detail, lasted, muted, at)
 }
 
 // alertText says what's wrong (or right again) in a sentence.

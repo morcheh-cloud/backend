@@ -377,9 +377,7 @@ func (h *serverHandler) runGitDeploy(ctx context.Context, t *jobs.Task) (any, er
 		}
 	}
 	t.Update(func(pr *jobs.Progress) { pr.Phase, pr.Current = "Deploying", p.Project })
-	err = h.withShell(ctx, p.ServerID, func(_ *sshpool.Conn, sh *rootShell) error {
-		return h.composeRun(ctx, t, sh, cp, h.composeUpArgs(ctx, p.ServerID)+" --build")
-	})
+	err = h.composeUp(ctx, t, cp, h.composeUpArgs(ctx, p.ServerID), true)
 	if err != nil {
 		return fail(err)
 	}

@@ -62,6 +62,7 @@ func (h *serverHandler) recordCheckHistory(ctx context.Context, prev sqlc.Server
 	}); err != nil {
 		slog.Warn("record server status change", "server", prev.ID, "error", err)
 	}
+	h.publishServerStatus(ctx, prev, res)
 }
 
 func startServerSampler(h *serverHandler, every, keep time.Duration) {

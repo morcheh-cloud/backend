@@ -90,7 +90,7 @@ func (e *env) user(t *testing.T, role string) *tclient {
 
 func (e *env) workspace(t *testing.T) uuid.UUID {
 	t.Helper()
-	w, err := e.q.CreateWorkspace(context.Background(), sqlc.CreateWorkspaceParams{Name: "ws-" + suffix()})
+	w, err := e.q.CreateWorkspace(context.Background(), sqlc.CreateWorkspaceParams{Name: "ws-" + suffix(), Color: "indigo", LogoKind: "letter"})
 	if err != nil {
 		t.Fatal(err)
 	}

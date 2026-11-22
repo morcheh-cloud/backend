@@ -55,39 +55,111 @@ func restore(t *testing.T, container string, tg Target, o RestoreOptions, file [
 	feed(t, container, s, file)
 }
 
+// packed compresses a dump the way the API does when Spec.Pack asks.
+func packed(t *testing.T, spec Spec, file []byte) []byte {
+	t.Helper()
+	if !spec.Pack {
+		return file
+	}
+	method, level, _ := strings.Cut(spec.Compression, ":")
+	var z bytes.Buffer
+	w, err := Pack(&z, method, level)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Write(file)
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return z.Bytes()
+}
+
+// unpacked undoes it on the way back.
+func unpacked(t *testing.T, format, compression string, file []byte) []byte {
+	t.Helper()
+	r, err := Unpack(bytes.NewReader(file), Packed(format, compression))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func TestLiveRestorePostgres(t *testing.T) {
 	const c = "morche-test-postgres-1"
 	psql := func(db, sql string) string {
 		return sh(t, c, "env", "PGPASSWORD=colony", "psql", "-U", "ant", "-h", "127.0.0.1", "-d", db, "-tAc", sql)
 	}
-	psql("postgres", "DROP DATABASE IF EXISTS rt_src")
-	psql("postgres", "DROP DATABASE IF EXISTS rt_new")
-	psql("postgres", "CREATE DATABASE rt_src")
-	defer psql("postgres", "DROP DATABASE IF EXISTS rt_src")
-	defer psql("postgres", "DROP DATABASE IF EXISTS rt_new")
-	psql("rt_src", "CREATE TABLE t (n int); INSERT INTO t VALUES (1), (2)")
+	for _, v := range []struct {
+		compression, level string
+		workers            int
+		format             string
+	}{
+		{Gzip, LevelBalanced, 1, PgCustom},
+		{Zstd, LevelFast, 1, PgCustom},
+		{Zstd, LevelBalanced, 4, PgDir},
+		{Gzip, LevelSmall, 3, PgDir},
+	} {
+		t.Run(fmt.Sprintf("%s-%s-%d", v.compression, v.level, v.workers), func(t *testing.T) {
+			psql("postgres", "DROP DATABASE IF EXISTS rt_src")
+			psql("postgres", "DROP DATABASE IF EXISTS rt_new")
+			psql("postgres", "CREATE DATABASE rt_src")
+			defer psql("postgres", "DROP DATABASE IF EXISTS rt_src")
+			defer psql("postgres", "DROP DATABASE IF EXISTS rt_new")
+			psql("rt_src", "CREATE TABLE t (n int); INSERT INTO t SELECT generate_series(1, 2000); CREATE TABLE u (s text); INSERT INTO u SELECT md5(i::text) FROM generate_series(1, 5000) i; SELECT lo_from_bytea(0, 'blob')")
 
-	login := Target{Engine: "postgres", Username: "ant", Password: "colony", Local: true}
-	src := login
-	src.Name = "rt_src"
-	spec, err := Build(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, _ := feed(t, c, spec.Script, nil)
+			login := Target{Engine: "postgres", Username: "ant", Password: "colony", Local: true}
+			src := login
+			src.Name, src.Compression, src.Level, src.Workers = "rt_src", v.compression, v.level, v.workers
+			spec, err := Build(src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if spec.Format != v.format || spec.Workers != v.workers {
+				t.Fatalf("format %s workers %d", spec.Format, spec.Workers)
+			}
+			file, stderr := feed(t, c, spec.Script, nil)
+			if strings.Contains(stderr, CompressionMark) {
+				t.Fatalf("fell back: %s", stderr)
+			}
+			if _, err := Verify(spec.Format, bytes.NewReader(file)); err != nil {
+				t.Fatalf("verify: %v", err)
+			}
+			if s, err := Sniff(bytes.NewReader(file), "postgres"); err != nil || s.Format != v.format {
+				t.Fatalf("sniff: %+v %v", s, err)
+			}
+			if fc, err := CheckFile(bytes.NewReader(file), "postgres"); err != nil || fc.Problem != "" {
+				t.Fatalf("check: %+v %v", fc, err)
+			}
+			if v.workers > 1 {
+				// Cut short, it's found out.
+				if _, err := Verify(spec.Format, bytes.NewReader(file[:len(file)/2])); err == nil {
+					t.Fatal("a cut archive passed")
+				}
+			}
+			t.Logf("%s: %d bytes", spec.Compression, len(file))
 
-	into := login
-	into.Name = "rt_new"
-	restore(t, c, into, RestoreOptions{Format: spec.Format, Source: "rt_src", First: true, Last: true}, file)
-	if n := psql("rt_new", "SELECT count(*) FROM t"); n != "2" {
-		t.Fatalf("new: %s rows", n)
+			into := login
+			into.Name = "rt_new"
+			o := RestoreOptions{Format: spec.Format, Source: "rt_src", First: true, Last: true, Workers: v.workers}
+			restore(t, c, into, o, file)
+			if n := psql("rt_new", "SELECT count(*) FROM t"); n != "2000" {
+				t.Fatalf("new: %s rows", n)
+			}
+			psql("rt_new", "INSERT INTO t VALUES (3); CREATE TABLE extra (x int)")
+			o.Replace = true
+			restore(t, c, into, o, file)
+			if n := psql("rt_new", "SELECT count(*) FROM t"); n != "2000" {
+				t.Fatalf("replace: %s rows", n)
+			}
+			if n := psql("rt_new", "SELECT count(*) FROM u"); n != "5000" {
+				t.Fatalf("replace u: %s rows", n)
+			}
+		})
 	}
-	psql("rt_new", "INSERT INTO t VALUES (3); CREATE TABLE extra (x int)")
-	restore(t, c, into, RestoreOptions{Format: spec.Format, Source: "rt_src", Replace: true, First: true, Last: true}, file)
-	if n := psql("rt_new", "SELECT count(*) FROM t"); n != "2" {
-		t.Fatalf("replace: %s rows", n)
-	}
-	t.Log("postgres new + replace ok")
 }
 
 func TestLiveRestoreMySQLIncremental(t *testing.T) {
@@ -142,21 +214,31 @@ func TestLiveRestoreMongo(t *testing.T) {
 	mongo := func(js string) string {
 		return sh(t, c, "mongosh", "--quiet", "-u", "ant", "-p", "colony", "--authenticationDatabase", "admin", "--eval", js)
 	}
-	mongo(`db.getSiblingDB("rt_src").dropDatabase(); db.getSiblingDB("rt_new").dropDatabase(); db.getSiblingDB("rt_src").t.insertMany([{n:1},{n:2}])`)
-	defer mongo(`db.getSiblingDB("rt_src").dropDatabase(); db.getSiblingDB("rt_new").dropDatabase()`)
+	for _, method := range []string{Gzip, Zstd} {
+		t.Run(method, func(t *testing.T) {
+			mongo(`db.getSiblingDB("rt_src").dropDatabase(); db.getSiblingDB("rt_new").dropDatabase(); db.getSiblingDB("rt_src").t.insertMany([{n:1},{n:2}])`)
+			defer mongo(`db.getSiblingDB("rt_src").dropDatabase(); db.getSiblingDB("rt_new").dropDatabase()`)
 
-	tg := Target{Engine: "mongodb", Username: "ant", Password: "colony", AuthDatabase: "admin", Name: "rt_src", Local: true}
-	spec, err := Build(tg)
-	if err != nil {
-		t.Fatal(err)
+			tg := Target{Engine: "mongodb", Username: "ant", Password: "colony", AuthDatabase: "admin", Name: "rt_src", Local: true, Compression: method, Workers: 2}
+			spec, err := Build(tg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, _ := feed(t, c, spec.Script, nil)
+			file := packed(t, spec, out)
+			if _, err := Verify(spec.Format, bytes.NewReader(file)); err != nil {
+				t.Fatalf("verify: %v", err)
+			}
+			tg.Name = "rt_new"
+			restore(t, c, tg, RestoreOptions{
+				Format: spec.Format, Source: "rt_src", First: true, Last: true,
+				MongoPlain: Packed(spec.Format, spec.Compression) == Zstd,
+			}, unpacked(t, spec.Format, spec.Compression, file))
+			if n := mongo(`db.getSiblingDB("rt_new").t.countDocuments()`); n != "2" {
+				t.Fatalf("new: %s docs", n)
+			}
+		})
 	}
-	file, _ := feed(t, c, spec.Script, nil)
-	tg.Name = "rt_new"
-	restore(t, c, tg, RestoreOptions{Format: spec.Format, Source: "rt_src", First: true, Last: true}, file)
-	if n := mongo(`db.getSiblingDB("rt_new").t.countDocuments()`); n != "2" {
-		t.Fatalf("new: %s docs", n)
-	}
-	t.Log("mongo new ok")
 }
 
 func TestLiveRestoreMSSQLDifferential(t *testing.T) {

@@ -56,7 +56,8 @@ var Checks = []DatabaseCheckInfo{
 	{ID: "database_state", Area: "availability", Title: "Database states", About: "SQL Server: every database is ONLINE."},
 	{ID: "disk", Area: "capacity", Title: "Disk", About: "Share of the data disk in use.", Unit: "ratio", Limit: lim(0.85, 0.95)},
 	{ID: "connections", Area: "capacity", Title: "Connections", About: "Share of the connection limit in use.", Unit: "ratio", Limit: lim(0.8, 0.95)},
-	{ID: "memory", Area: "capacity", Title: "Memory limit", About: "Redis: share of maxmemory in use.", Unit: "ratio", Limit: lim(0.85, 0.95)},
+	{ID: "memory", Area: "capacity", Title: "Memory limit", About: "Redis: share of maxmemory in use. ClickHouse: share of max_server_memory_usage.", Unit: "ratio", Limit: lim(0.85, 0.95)},
+	{ID: "parts", Area: "capacity", Title: "Parts per partition", About: "ClickHouse: the partition with the most active parts, as a share of parts_to_throw_insert. Inserts slow down at parts_to_delay_insert and fail at the limit.", Unit: "ratio", Limit: lim(0.3, 0.8)},
 	{ID: "id_columns", Area: "capacity", Title: "Auto-increment IDs", About: "The fullest auto-increment column, as a share of its type's maximum.", Unit: "ratio", Limit: lim(0.7, 0.9)},
 	{ID: "log_space", Area: "capacity", Title: "Transaction log", About: "SQL Server: share of the fullest transaction log in use.", Unit: "ratio", Limit: lim(0.8, 0.95)},
 	{ID: "replication_slots", Area: "capacity", Title: "Replication slots", About: "PostgreSQL: WAL kept for slots; an inactive slot keeps it forever.", Unit: "bytes", Limit: lim(10<<30, 50<<30)},
@@ -65,6 +66,7 @@ var Checks = []DatabaseCheckInfo{
 	{ID: "long_queries", Area: "performance", Title: "Long queries", About: "Longest running statement.", Unit: "seconds", Limit: lim(60, 600)},
 	{ID: "long_transactions", Area: "performance", Title: "Long transactions", About: "Oldest open transaction. It holds locks and stops cleanup.", Unit: "seconds", Limit: lim(600, 3600)},
 	{ID: "idle_in_transaction", Area: "performance", Title: "Idle in transaction", About: "Longest a connection sat idle inside an open transaction.", Unit: "seconds", Limit: lim(60, 600)},
+	{ID: "mutations", Area: "performance", Title: "Mutations", About: "ClickHouse: the oldest ALTER UPDATE/DELETE still being applied. A failing one holds back every later one on its table.", Unit: "seconds", Limit: lim(3600, 6*3600)},
 	{ID: "deadlocks", Area: "performance", Title: "Deadlocks", About: "New deadlocks since the previous look.", Unit: "count", Limit: lim(1, 5)},
 	{ID: "cache_hit", Area: "performance", Title: "Cache hit", About: "Share of reads served from memory.", Unit: "ratio", Lower: true, Limit: lim(0.9, 0.8)},
 	{ID: "replication", Area: "replication", Title: "Replication", About: "Replicas are connected and how far behind they are.", Unit: "seconds", Limit: lim(30, 300)},
@@ -230,6 +232,32 @@ func (e *evaluator) capacity(s *DatabaseSnapshot) {
 		e.add("connections", LevelUnknown, "The connection limit isn't known.", "", nil)
 	}
 
+	if e.in.Engine == ClickHouse && s.Memory != nil && s.Memory.LimitBytes > 0 {
+		used := float64(s.Memory.UsedBytes) / float64(s.Memory.LimitBytes)
+		e.add("memory", e.grade("memory", used),
+			fmt.Sprintf("%s of %s max_server_memory_usage (%s)", humanBytes(s.Memory.UsedBytes), humanBytes(s.Memory.LimitBytes), pct(used)),
+			"At the limit ClickHouse refuses queries (MEMORY_LIMIT_EXCEEDED). Find the queries using the most memory in Sessions, or lower max_memory_usage per query.", &used)
+	}
+	if p := s.Parts; e.in.Engine == ClickHouse {
+		switch {
+		case p != nil && p.ThrowAt > 0:
+			v := float64(p.Count) / float64(p.ThrowAt)
+			level := e.grade("parts", v)
+			if p.DelayAt > 0 && p.Count >= p.DelayAt {
+				level = worse(level, LevelWarning)
+			}
+			if p.Count >= p.ThrowAt {
+				level = LevelCritical
+			}
+			e.add("parts", level,
+				fmt.Sprintf("%s.%s partition %s has %s active parts (inserts slow down at %s, fail at %s)",
+					p.Database, p.Table, cmp(p.Partition, "tuple()"), groupDigits(p.Count), groupDigits(p.DelayAt), groupDigits(p.ThrowAt)),
+				"Insert in bigger, fewer batches (or use async_insert), and check that merges keep up. A partition key that's too fine (per hour, per user) also makes many parts.", &v)
+		case p == nil && s.DetailsAt != nil:
+			e.add("parts", LevelOK, "No MergeTree parts", "", f64(0))
+		}
+	}
+
 	if e.in.Engine == Redis && s.Memory != nil {
 		if s.Memory.LimitBytes > 0 {
 			used := float64(s.Memory.UsedBytes) / float64(s.Memory.LimitBytes)
@@ -242,7 +270,7 @@ func (e *evaluator) capacity(s *DatabaseSnapshot) {
 		}
 	}
 
-	if e.in.Engine != Redis && e.in.Engine != Mongo {
+	if e.in.Engine != Redis && e.in.Engine != Mongo && e.in.Engine != ClickHouse {
 		if len(s.IDColumns) > 0 {
 			c := s.IDColumns[0]
 			e.add("id_columns", e.grade("id_columns", c.Ratio),
@@ -319,7 +347,8 @@ func (e *evaluator) performance(s *DatabaseSnapshot) {
 		}
 		e.add(id, e.grade(id, v), fmt.Sprintf("%s for %s", who, humanSeconds(v)), action, f64(v))
 	}
-	if e.in.Engine != Redis {
+	// ClickHouse has no row locks and no transactions to leave open.
+	if e.in.Engine != Redis && e.in.Engine != ClickHouse {
 		if s.Connections.Blocked > 0 && blocked == 0 {
 			e.add("blocking", LevelWarning, fmt.Sprintf("%d waiting for locks", s.Connections.Blocked),
 				"See the blocking tree on the dashboard.", f64(0))
@@ -337,6 +366,22 @@ func (e *evaluator) performance(s *DatabaseSnapshot) {
 	if e.in.Engine != Redis {
 		timed("long_queries", query, qWho, "No long-running statement",
 			"Look at the statement and its plan (Explain); it may need an index.")
+	}
+
+	if e.in.Engine == ClickHouse {
+		switch m := s.Mutations; {
+		case m == nil:
+			e.add("mutations", LevelOK, "No mutation waiting", "", f64(0))
+		default:
+			level := e.grade("mutations", m.Seconds)
+			reason := fmt.Sprintf("%d waiting; %s on %s for %s, %s parts to do", m.Running, m.ID, m.Table, humanSeconds(m.Seconds), groupDigits(m.PartsToDo))
+			if m.Failed > 0 {
+				level = worse(level, LevelWarning)
+				reason = fmt.Sprintf("%d failing; %s on %s: %s", m.Failed, m.ID, m.Table, truncate(m.Error, 200))
+			}
+			e.add("mutations", level, reason,
+				"Look at system.mutations for the error. Fix its cause, or cancel it with KILL MUTATION WHERE mutation_id = '…'.", f64(m.Seconds))
+		}
 	}
 
 	if s.Rates != nil && s.Rates.Deadlocks != nil {

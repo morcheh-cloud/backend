@@ -40,8 +40,36 @@ var demoRefused = map[string]bool{
 	// Who can reach what.
 	"set-grant":    true,
 	"delete-grant": true,
+	// Writing into the demo's databases would spoil them for the others.
+	"run-database-change": true,
+	"edit-database-rows":  true,
+	// Continuous backup changes the demo PostgreSQL for everyone (installs,
+	// restarts, restores over it), and its passphrase is a real secret.
+	"save-database-pitr":              true,
+	"resetup-database-pitr":           true,
+	"restart-database-pitr":           true,
+	"restore-database-pitr":           true,
+	"remove-database-pitr":            true,
+	"reveal-database-pitr-passphrase": true,
 	// Playbooks run on Morche's own machine; never for a stranger.
 	"start-ansible-run": true,
+	// A token would outlive the visit (bearer auth is refused for the demo
+	// user anyway), and webhooks send the workspace's events anywhere.
+	"create-api-token":           true,
+	"create-webhook":             true,
+	"update-webhook":             true,
+	"delete-webhook":             true,
+	"test-webhook":               true,
+	"rotate-webhook-secret":      true,
+	"redeliver-webhook-delivery": true,
+	// Automations run commands and send things out as the shared account.
+	"create-automation":      true,
+	"update-automation":      true,
+	"delete-automation":      true,
+	"run-automation":         true,
+	"test-automation":        true,
+	"create-automation-hook": true,
+	"delete-automation-hook": true,
 }
 
 const demoRefusal = "That isn't available in the demo."

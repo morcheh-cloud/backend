@@ -4,7 +4,6 @@ package dbbackup
 
 import (
 	"bytes"
-	"compress/gzip"
 	"os/exec"
 	"strings"
 	"testing"
@@ -18,6 +17,11 @@ func TestLive(t *testing.T) {
 		target          Target
 	}{
 		{"pg one", "morche-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Name: "shop", Local: true}},
+		{"pg one zstd", "morche-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Name: "shop", Local: true, Compression: Zstd}},
+		{"pg one parallel", "morche-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Name: "shop", Local: true, Compression: Zstd, Workers: 4}},
+		{"pg one parallel temp dir", "morche-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Name: "shop", Local: true, Workers: 2, TempDir: "/var/tmp"}},
+		{"pg all zstd", "morche-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Local: true, Compression: Zstd}},
+		{"maria one zstd", "morche-test-mariadb-1", Target{Engine: "mysql", Username: "root", Password: "colony", Name: "shop", Local: true, Compression: Zstd, Level: LevelSmall}},
 		{"pg all", "morche-test-postgres-1", Target{Engine: "postgres", Username: "ant", Password: "colony", Local: true}},
 		{"mysql one", "morche-test-mysql-1", Target{Engine: "mysql", Username: "root", Password: "colony", Name: "shop", Local: true}},
 		{"mysql all", "morche-test-mysql-1", Target{Engine: "mysql", Username: "root", Password: "colony", Local: true}},
@@ -42,18 +46,30 @@ func TestLive(t *testing.T) {
 				t.Fatalf("%v", runErr)
 			}
 			file := out.Bytes()
-			if spec.Gzip {
-				var z bytes.Buffer
-				w := gzip.NewWriter(&z)
-				w.Write(file)
-				w.Close()
-				file = z.Bytes()
-			}
+			file = packed(t, spec, file)
 			res, err := Verify(spec.Format, bytes.NewReader(file))
 			if err != nil {
 				t.Fatalf("verify: %v", err)
 			}
 			t.Logf("verified %d bytes %s", res.Bytes, res.SHA256[:12])
 		})
+	}
+}
+
+// A temporary folder that isn't there stops the dump before it starts, saying so.
+func TestLiveMissingTempDir(t *testing.T) {
+	spec, err := Build(Target{Engine: "postgres", Username: "ant", Password: "colony", Name: "shop", Local: true, Workers: 2, TempDir: "/no/such dir"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("docker", "exec", "-i", "morche-test-postgres-1", "sh", "-s")
+	cmd.Stdin = strings.NewReader(spec.Script)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if cmd.Run() == nil {
+		t.Fatal("it ran")
+	}
+	if !strings.Contains(errb.String(), "The temporary folder /no/such dir doesn't exist") || out.Len() != 0 {
+		t.Fatalf("stdout %d bytes, stderr %q", out.Len(), errb.String())
 	}
 }

@@ -593,6 +593,9 @@ func (h *scheduleHandler) start(ctx context.Context, s sqlc.Schedule, by *princi
 	if busy {
 		return run, nil, nil
 	}
+	if o := originOf(ctx); o != "" {
+		cronOrigins.Store(run.ID, o)
+	}
 	kind, title := scheduleRunKind, "Run "+s.Name
 	switch {
 	case dryRun:
@@ -626,11 +629,18 @@ func (h *scheduleHandler) runAs(ctx context.Context, s sqlc.Schedule) (string, *
 
 // runUser is runAs with the person too, to act as them.
 func (h *scheduleHandler) runUser(ctx context.Context, s sqlc.Schedule) (sqlc.User, string, *auth.Access, error) {
-	gone := errors.New("The person who saved this cron job was removed. Someone with access should open it and save it again.")
-	if s.UpdatedBy == nil {
+	return runAsUser(ctx, h.q, h.authz, s.UpdatedBy, "cron job")
+}
+
+// runAsUser is the person something saved by `by` runs as (cron jobs,
+// automations), with their access now: an error when they were removed or
+// aren't active. noun names the thing ("cron job").
+func runAsUser(ctx context.Context, q *sqlc.Queries, a *authz, by *uuid.UUID, noun string) (sqlc.User, string, *auth.Access, error) {
+	gone := fmt.Errorf("The person who saved this %s was removed. Someone with access should open it and save it again.", noun)
+	if by == nil {
 		return sqlc.User{}, "", nil, gone
 	}
-	u, err := h.q.GetUser(ctx, *s.UpdatedBy)
+	u, err := q.GetUser(ctx, *by)
 	if isNotFound(err) {
 		return u, "", nil, gone
 	}
@@ -639,9 +649,9 @@ func (h *scheduleHandler) runUser(ctx context.Context, s sqlc.Schedule) (sqlc.Us
 	}
 	name := cmpOr(u.FullName, u.Username)
 	if u.Status != "active" {
-		return u, name, nil, fmt.Errorf("%s's account isn't active, so their cron jobs don't run. Someone with access should open it and save it again.", name)
+		return u, name, nil, fmt.Errorf("%s's account isn't active, so their %ss don't run. Someone with access should open it and save it again.", name, noun)
 	}
-	acc, err := h.authz.accessOf(ctx, u)
+	acc, err := a.accessOf(ctx, u)
 	return u, name, acc, err
 }
 
@@ -852,6 +862,7 @@ func (h *scheduleHandler) closeRun(ctx context.Context, runID uuid.UUID, state, 
 	}); err != nil {
 		slog.Warn("finish a cron job run", "run", runID, "error", err)
 	}
+	h.publishCronRun(context.WithoutCancel(ctx), runID, state, msg, files, bytes)
 	switch state {
 	case jobs.Canceled, jobs.Interrupted:
 		if ctx.Err() != nil {

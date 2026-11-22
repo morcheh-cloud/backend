@@ -432,7 +432,7 @@ func (l *limits) extraPaths(h proxy.HostConfig) []string {
 // return, so the check picks where the connection goes: the real upstream,
 // or one that's never up (nginx closes the connection). The address lists
 // are part of it, like a site's.
-func streamCountries(w *writer, t string, h proxy.HostConfig) {
+func streamCountries(w *writer, t string, h proxy.HostConfig, env proxy.Env) {
 	if len(h.Countries) == 0 {
 		return
 	}
@@ -445,7 +445,7 @@ func streamCountries(w *writer, t string, h proxy.HostConfig) {
 		listed, other = no, unknown
 	}
 	target := t + "_main"
-	if h.Balance.On() {
+	if pooledOn(h, env) {
 		target = poolName(t)
 	} else {
 		w.line("")

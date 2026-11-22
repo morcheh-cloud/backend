@@ -13,6 +13,8 @@ import (
 
 type Querier interface {
 	AcknowledgeMonitorIncident(ctx context.Context, arg AcknowledgeMonitorIncidentParams) (MonitorIncident, error)
+	ActivePitrRun(ctx context.Context, databaseID uuid.UUID) (int64, error)
+	ActivePitrRunRow(ctx context.Context, databaseID uuid.UUID) (DatabasePitrRun, error)
 	// Runs still going that touch these servers.
 	ActiveSoftwareRunsOn(ctx context.Context, serverIds []uuid.UUID) ([]ActiveSoftwareRunsOnRow, error)
 	AddAlertRuleChannel(ctx context.Context, arg AddAlertRuleChannelParams) error
@@ -56,9 +58,13 @@ type Querier interface {
 	ClaimDatabaseSync(ctx context.Context, arg ClaimDatabaseSyncParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
 	ClaimDockerAutoUpdate(ctx context.Context, arg ClaimDockerAutoUpdateParams) (int64, error)
+	// Takes due deliveries for a while (lease_until), so two loops never send the
+	// same one and one stuck by a crash is tried again after the lease.
+	ClaimDueWebhookDeliveries(ctx context.Context, arg ClaimDueWebhookDeliveriesParams) ([]WebhookDelivery, error)
 	// Moves next_run_at on, only if nobody else did first.
 	ClaimLogArchivePolicy(ctx context.Context, arg ClaimLogArchivePolicyParams) (int64, error)
 	ClaimLogArchiveRestore(ctx context.Context, id uuid.UUID) (int64, error)
+	ClaimPitrBackups(ctx context.Context, arg ClaimPitrBackupsParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
 	ClaimSchedule(ctx context.Context, arg ClaimScheduleParams) (int64, error)
 	// Moves next_run_at on, only if nobody else did first.
@@ -71,6 +77,9 @@ type Querier interface {
 	// Which servers commands ran on in the window, for the filter.
 	CommandLogServers(ctx context.Context, arg CommandLogServersParams) ([]CommandLogServersRow, error)
 	CountActiveAdmins(ctx context.Context) (int32, error)
+	CountActiveAutomationRuns(ctx context.Context, automationID uuid.UUID) (int64, error)
+	// Runs going for one subject (an event about another subject may still run).
+	CountActiveAutomationRunsFor(ctx context.Context, arg CountActiveAutomationRunsForParams) (int64, error)
 	// Runs writing into a database now, from any sync.
 	CountActiveDatabaseSyncRunsTo(ctx context.Context, arg CountActiveDatabaseSyncRunsToParams) (int64, error)
 	CountActiveRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
@@ -78,13 +87,19 @@ type Querier interface {
 	CountAssetNotes(ctx context.Context, assetID uuid.UUID) (int32, error)
 	CountAssetNotesByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]CountAssetNotesByWorkspaceRow, error)
 	CountAssets(ctx context.Context, workspaceID uuid.UUID) (int32, error)
+	CountAutomationRuns(ctx context.Context, arg CountAutomationRunsParams) (int64, error)
+	// Runs that weren't skipped, for max_runs_per_hour.
+	CountAutomationRunsSince(ctx context.Context, arg CountAutomationRunsSinceParams) (int64, error)
 	CountBackupChildren(ctx context.Context, ids []uuid.UUID) ([]CountBackupChildrenRow, error)
 	CountBackups(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountChannelMonitors(ctx context.Context, ids []uuid.UUID) ([]CountChannelMonitorsRow, error)
 	CountChannelRules(ctx context.Context, ids []uuid.UUID) ([]CountChannelRulesRow, error)
+	CountDatabaseSavedQueries(ctx context.Context, databaseID uuid.UUID) (int32, error)
+	CountDatabaseSavedViews(ctx context.Context, databaseID uuid.UUID) (int32, error)
 	// Per policy, what the last 30 days held.
 	CountDockerAutoUpdateEvents(ctx context.Context, workspaceID uuid.UUID) ([]CountDockerAutoUpdateEventsRow, error)
 	CountLogArchives(ctx context.Context, arg CountLogArchivesParams) (int64, error)
+	CountPitrRuns(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountRestores(ctx context.Context, databaseID uuid.UUID) (int64, error)
 	CountScheduleRuns(ctx context.Context, arg CountScheduleRunsParams) (int64, error)
 	CountScriptRuns(ctx context.Context, arg CountScriptRunsParams) (int64, error)
@@ -93,14 +108,18 @@ type Querier interface {
 	CountServers(ctx context.Context, arg CountServersParams) (CountServersRow, error)
 	CountSoftwareRuns(ctx context.Context, arg CountSoftwareRunsParams) (int64, error)
 	CountTerminalRecordings(ctx context.Context, arg CountTerminalRecordingsParams) (int32, error)
+	CountUserApiTokens(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountUserSessions(ctx context.Context, userID uuid.UUID) (int32, error)
 	CountUsers(ctx context.Context) (int32, error)
+	CountWebhookDeliveries(ctx context.Context, arg CountWebhookDeliveriesParams) (int64, error)
 	CountWorkspaceResources(ctx context.Context, workspaceID uuid.UUID) (CountWorkspaceResourcesRow, error)
 	CountWorkspaces(ctx context.Context) (int32, error)
 	CreateAlertChannel(ctx context.Context, arg CreateAlertChannelParams) (AlertChannel, error)
 	CreateAlertMute(ctx context.Context, arg CreateAlertMuteParams) (AlertMute, error)
 	CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams) (AlertRule, error)
 	CreateAnsibleRun(ctx context.Context, arg CreateAnsibleRunParams) (AnsibleRun, error)
+	// ---- API tokens ----
+	CreateApiToken(ctx context.Context, arg CreateApiTokenParams) (ApiToken, error)
 	CreateApp(ctx context.Context, arg CreateAppParams) (App, error)
 	CreateAppAccount(ctx context.Context, arg CreateAppAccountParams) (AppAccount, error)
 	// New categories go last.
@@ -110,12 +129,19 @@ type Querier interface {
 	CreateAssetNote(ctx context.Context, arg CreateAssetNoteParams) (AssetNote, error)
 	CreateAssetOwnerRule(ctx context.Context, arg CreateAssetOwnerRuleParams) error
 	CreateAssetRelation(ctx context.Context, arg CreateAssetRelationParams) (AssetRelation, error)
+	// ---- Automations ----
+	CreateAutomation(ctx context.Context, arg CreateAutomationParams) (Automation, error)
+	// ---- Runs ----
+	CreateAutomationRun(ctx context.Context, arg CreateAutomationRunParams) (AutomationRun, error)
 	CreateBackup(ctx context.Context, arg CreateBackupParams) (DatabaseBackup, error)
 	CreateBackupCopy(ctx context.Context, arg CreateBackupCopyParams) error
 	CreateBackupPlan(ctx context.Context, arg CreateBackupPlanParams) (DatabaseBackupPlan, error)
 	CreateCloudAccount(ctx context.Context, arg CreateCloudAccountParams) (CloudAccount, error)
 	CreateDNSServer(ctx context.Context, arg CreateDNSServerParams) (DnsServer, error)
 	CreateDatabase(ctx context.Context, arg CreateDatabaseParams) (Database, error)
+	CreateDatabaseQueryRun(ctx context.Context, arg CreateDatabaseQueryRunParams) (DatabaseQueryRun, error)
+	CreateDatabaseSavedQuery(ctx context.Context, arg CreateDatabaseSavedQueryParams) (DatabaseSavedQuery, error)
+	CreateDatabaseSavedView(ctx context.Context, arg CreateDatabaseSavedViewParams) (DatabaseSavedView, error)
 	CreateDatabaseSync(ctx context.Context, arg CreateDatabaseSyncParams) (DatabaseSync, error)
 	CreateDatabaseSyncRun(ctx context.Context, arg CreateDatabaseSyncRunParams) (DatabaseSyncRun, error)
 	CreateDockerAutoUpdate(ctx context.Context, arg CreateDockerAutoUpdateParams) (DockerAutoUpdate, error)
@@ -130,6 +156,7 @@ type Querier interface {
 	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
 	CreateNotificationChannel(ctx context.Context, arg CreateNotificationChannelParams) (NotificationChannel, error)
 	CreatePVECluster(ctx context.Context, arg CreatePVEClusterParams) (PveCluster, error)
+	CreatePitrRun(ctx context.Context, arg CreatePitrRunParams) (DatabasePitrRun, error)
 	CreatePlaybook(ctx context.Context, arg CreatePlaybookParams) (AnsiblePlaybook, error)
 	CreateProxy(ctx context.Context, arg CreateProxyParams) (Proxy, error)
 	CreateProxyHost(ctx context.Context, arg CreateProxyHostParams) (ProxyHost, error)
@@ -151,6 +178,8 @@ type Querier interface {
 	CreateStorageSyncRun(ctx context.Context, arg CreateStorageSyncRunParams) (StorageSyncRun, error)
 	CreateTerminalRecording(ctx context.Context, arg CreateTerminalRecordingParams) (uuid.UUID, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// ---- Outgoing webhooks ----
+	CreateWebhook(ctx context.Context, arg CreateWebhookParams) (Webhook, error)
 	CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error)
 	// What this hour normally looks like: the same hour on earlier days.
 	DatabaseAverages(ctx context.Context, arg DatabaseAveragesParams) (DatabaseAveragesRow, error)
@@ -171,6 +200,7 @@ type Querier interface {
 	DeleteAlertRule(ctx context.Context, id uuid.UUID) error
 	DeleteAlertStates(ctx context.Context, ruleID uuid.UUID) error
 	DeleteAnsibleRun(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteApiToken(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteApp(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteAppAccountsExcept(ctx context.Context, arg DeleteAppAccountsExceptParams) error
 	DeleteAppCategory(ctx context.Context, arg DeleteAppCategoryParams) (int64, error)
@@ -179,11 +209,15 @@ type Querier interface {
 	DeleteAssetNote(ctx context.Context, arg DeleteAssetNoteParams) (int64, error)
 	DeleteAssetOwnerRules(ctx context.Context, workspaceID uuid.UUID) error
 	DeleteAssetRelation(ctx context.Context, arg DeleteAssetRelationParams) (int64, error)
+	DeleteAutomation(ctx context.Context, id uuid.UUID) error
+	DeleteAutomationRun(ctx context.Context, id uuid.UUID) error
 	DeleteBackup(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteBackupPlan(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteCloudAccount(ctx context.Context, id uuid.UUID) error
 	DeleteDNSServer(ctx context.Context, id uuid.UUID) error
 	DeleteDatabase(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteDatabaseSavedQuery(ctx context.Context, arg DeleteDatabaseSavedQueryParams) (int64, error)
+	DeleteDatabaseSavedView(ctx context.Context, arg DeleteDatabaseSavedViewParams) (int64, error)
 	DeleteDatabaseSync(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteDockerAutoUpdate(ctx context.Context, arg DeleteDockerAutoUpdateParams) (int64, error)
 	DeleteDockerGitSource(ctx context.Context, arg DeleteDockerGitSourceParams) (int64, error)
@@ -214,6 +248,7 @@ type Querier interface {
 	DeletePVECluster(ctx context.Context, id uuid.UUID) error
 	DeletePVELink(ctx context.Context, arg DeletePVELinkParams) error
 	DeletePVELinkForServer(ctx context.Context, serverID uuid.UUID) error
+	DeletePitr(ctx context.Context, databaseID uuid.UUID) error
 	DeletePlaybook(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteProxy(ctx context.Context, id uuid.UUID) error
 	DeleteProxyHost(ctx context.Context, arg DeleteProxyHostParams) error
@@ -232,7 +267,9 @@ type Querier interface {
 	DeleteStorageSync(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteTerminalRecording(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUser(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteUserApiToken(ctx context.Context, arg DeleteUserApiTokenParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
+	DeleteWebhook(ctx context.Context, id uuid.UUID) error
 	DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) error
 	DiscoveryCloudAccounts(ctx context.Context, workspaceID uuid.UUID) ([]CloudAccount, error)
@@ -271,10 +308,12 @@ type Querier interface {
 	EndAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error)
 	// A run whose job ended without it (canceled while queued, Morche restarted).
 	EndAnsibleRun(ctx context.Context, arg EndAnsibleRunParams) error
+	EndAutomationRun(ctx context.Context, arg EndAutomationRunParams) error
 	// Only a run still going: a run that finished keeps its outcome.
 	EndBackup(ctx context.Context, arg EndBackupParams) error
 	EndDatabaseSyncRun(ctx context.Context, arg EndDatabaseSyncRunParams) error
 	EndDockerAutoUpdateRun(ctx context.Context, arg EndDockerAutoUpdateRunParams) error
+	EndPitrRun(ctx context.Context, arg EndPitrRunParams) error
 	// Only a restore still going. The login it was given goes with it.
 	EndRestore(ctx context.Context, arg EndRestoreParams) error
 	// Ends a run that's still queued or running, keeping what it recorded.
@@ -296,6 +335,7 @@ type Querier interface {
 	FindGrant(ctx context.Context, arg FindGrantParams) (AccessGrant, error)
 	FinishAnsibleRun(ctx context.Context, arg FinishAnsibleRunParams) error
 	// error is a warning here: a copy that failed while another worked.
+	// compression: what the script said it used instead; empty = as started.
 	FinishBackup(ctx context.Context, arg FinishBackupParams) error
 	FinishDatabaseSyncRun(ctx context.Context, arg FinishDatabaseSyncRunParams) error
 	FinishDockerVolumeBackup(ctx context.Context, arg FinishDockerVolumeBackupParams) error
@@ -309,6 +349,7 @@ type Querier interface {
 	FinishSoftwareRun(ctx context.Context, arg FinishSoftwareRunParams) error
 	FinishSoftwareTarget(ctx context.Context, arg FinishSoftwareTargetParams) error
 	FinishStorageSyncRun(ctx context.Context, arg FinishStorageSyncRunParams) error
+	FinishWebhookAttempt(ctx context.Context, arg FinishWebhookAttemptParams) (WebhookDelivery, error)
 	FirstDockerProjectStat(ctx context.Context, arg FirstDockerProjectStatParams) (time.Time, error)
 	// Whether candidate is folder_id itself or one of its descendants; moving a
 	// folder under such a candidate would make a cycle.
@@ -320,6 +361,11 @@ type Querier interface {
 	GetAlertState(ctx context.Context, arg GetAlertStateParams) (AlertState, error)
 	GetAnsibleRun(ctx context.Context, id uuid.UUID) (AnsibleRun, error)
 	GetAnsibleRunWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetApiToken(ctx context.Context, id uuid.UUID) (ApiToken, error)
+	// A token that is still good, with its user.
+	GetApiTokenByHash(ctx context.Context, tokenHash []byte) (GetApiTokenByHashRow, error)
+	// For re-checking a token a stream is still open with.
+	GetApiTokenUser(ctx context.Context, id uuid.UUID) (GetApiTokenUserRow, error)
 	GetApp(ctx context.Context, id uuid.UUID) (App, error)
 	GetAppAccount(ctx context.Context, arg GetAppAccountParams) (AppAccount, error)
 	GetAppCategory(ctx context.Context, id uuid.UUID) (AppCategory, error)
@@ -333,6 +379,11 @@ type Querier interface {
 	// ---- Settings ----
 	GetAssetSettings(ctx context.Context, workspaceID uuid.UUID) (AssetSetting, error)
 	GetAssetWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetAutomation(ctx context.Context, id uuid.UUID) (Automation, error)
+	GetAutomationByHook(ctx context.Context, hookTokenHash *string) (Automation, error)
+	GetAutomationRun(ctx context.Context, id uuid.UUID) (AutomationRun, error)
+	GetAutomationRunWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetAutomationWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetBackup(ctx context.Context, id uuid.UUID) (DatabaseBackup, error)
 	GetBackupDatabase(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetBackupPlan(ctx context.Context, id uuid.UUID) (DatabaseBackupPlan, error)
@@ -345,6 +396,8 @@ type Querier interface {
 	GetDNSServer(ctx context.Context, id uuid.UUID) (DnsServer, error)
 	GetDNSServerWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
+	GetDatabaseSavedQuery(ctx context.Context, arg GetDatabaseSavedQueryParams) (DatabaseSavedQuery, error)
+	GetDatabaseSavedView(ctx context.Context, arg GetDatabaseSavedViewParams) (DatabaseSavedView, error)
 	GetDatabaseSync(ctx context.Context, id uuid.UUID) (DatabaseSync, error)
 	// What access to a sync follows: both databases' workspaces and servers.
 	GetDatabaseSyncEnds(ctx context.Context, id uuid.UUID) (GetDatabaseSyncEndsRow, error)
@@ -381,6 +434,8 @@ type Querier interface {
 	GetPVEClusterWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPVELink(ctx context.Context, arg GetPVELinkParams) (PveVmLink, error)
 	GetPVELinkForServer(ctx context.Context, serverID uuid.UUID) (GetPVELinkForServerRow, error)
+	GetPitr(ctx context.Context, databaseID uuid.UUID) (DatabasePitr, error)
+	GetPitrRun(ctx context.Context, id uuid.UUID) (DatabasePitrRun, error)
 	GetPlaybook(ctx context.Context, id uuid.UUID) (AnsiblePlaybook, error)
 	GetPlaybookWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetProxy(ctx context.Context, id uuid.UUID) (GetProxyRow, error)
@@ -425,6 +480,10 @@ type Querier interface {
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
 	GetUserSession(ctx context.Context, arg GetUserSessionParams) (Session, error)
+	GetWebhook(ctx context.Context, id uuid.UUID) (Webhook, error)
+	GetWebhookDelivery(ctx context.Context, id uuid.UUID) (WebhookDelivery, error)
+	GetWebhookDeliveryWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetWebhookWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error)
 	GetWorkspaceLogo(ctx context.Context, workspaceID uuid.UUID) (WorkspaceLogo, error)
 	GetWorkspaceLogoStamp(ctx context.Context, workspaceID uuid.UUID) (time.Time, error)
@@ -445,10 +504,16 @@ type Querier interface {
 	InsertServerStatusChange(ctx context.Context, arg InsertServerStatusChangeParams) error
 	InsertStorageCheck(ctx context.Context, arg InsertStorageCheckParams) error
 	InsertStorageUsage(ctx context.Context, arg InsertStorageUsageParams) (StorageUsage, error)
+	// ---- Deliveries ----
+	InsertWebhookDelivery(ctx context.Context, arg InsertWebhookDeliveryParams) (WebhookDelivery, error)
+	// Runs left going when Morche stopped.
+	InterruptAutomationRuns(ctx context.Context) error
 	// At start-up: commands a previous run of Morche was waiting on.
 	InterruptCommandLog(ctx context.Context) (int64, error)
 	// At start: nothing is running any more.
 	InterruptLogArchives(ctx context.Context) error
+	// At start: nothing is running any more.
+	InterruptPitrRuns(ctx context.Context) error
 	// At startup: whatever was running died with the last process.
 	InterruptRunningJobs(ctx context.Context) (int64, error)
 	// What the last process left running can't go on after a restart.
@@ -460,6 +525,8 @@ type Querier interface {
 	KeepMonitorLocations(ctx context.Context, arg KeepMonitorLocationsParams) error
 	// Has this person signed in from this network before (in what's kept)?
 	KnownNetwork(ctx context.Context, arg KnownNetworkParams) (bool, error)
+	// When it last ran (not skipped) for a subject, for the cooldown.
+	LastAutomationRunFor(ctx context.Context, arg LastAutomationRunForParams) (time.Time, error)
 	// Each plan's newest finished run; of a run over several databases, the one
 	// that failed if any did.
 	LastBackups(ctx context.Context, planIds []uuid.UUID) ([]LastBackupsRow, error)
@@ -471,6 +538,7 @@ type Querier interface {
 	LastRestoreAt(ctx context.Context, arg LastRestoreAtParams) (time.Time, error)
 	// Each script's latest run on one server.
 	LastScriptRuns(ctx context.Context, serverID *uuid.UUID) ([]LastScriptRunsRow, error)
+	LastSkippedAutomationRun(ctx context.Context, automationID uuid.UUID) (time.Time, error)
 	LatestDockerProjectVersion(ctx context.Context, arg LatestDockerProjectVersionParams) (DockerProjectVersion, error)
 	// The newest good backup of each database a connection holds (optionally of
 	// one plan): what a cron job checks.
@@ -519,6 +587,9 @@ type Querier interface {
 	ListAssets(ctx context.Context, workspaceID uuid.UUID) ([]ListAssetsRow, error)
 	// ---- Reminders and owner alerts ----
 	ListAssetsForReminders(ctx context.Context) ([]ListAssetsForRemindersRow, error)
+	// Newest first, of one automation or (automation_id NULL) the whole workspace.
+	ListAutomationRuns(ctx context.Context, arg ListAutomationRunsParams) ([]ListAutomationRunsRow, error)
+	ListAutomations(ctx context.Context, workspaceID uuid.UUID) ([]Automation, error)
 	ListBackupCopies(ctx context.Context, backupIds []uuid.UUID) ([]DatabaseBackupCopy, error)
 	ListBackupPlanStorages(ctx context.Context, planID uuid.UUID) ([]uuid.UUID, error)
 	ListBackupPlans(ctx context.Context, databaseID uuid.UUID) ([]DatabaseBackupPlan, error)
@@ -538,6 +609,12 @@ type Querier interface {
 	// checked), the longest waiting first.
 	ListDNSServersDueForCheck(ctx context.Context, before time.Time) ([]DnsServer, error)
 	ListDatabaseEvents(ctx context.Context, arg ListDatabaseEventsParams) ([]DatabaseEvent, error)
+	// Newest first; only one person's when user_id is given.
+	ListDatabaseQueryRuns(ctx context.Context, arg ListDatabaseQueryRunsParams) ([]DatabaseQueryRun, error)
+	// Shared ones and the caller's own; pinned first, then by title.
+	ListDatabaseSavedQueries(ctx context.Context, arg ListDatabaseSavedQueriesParams) ([]DatabaseSavedQuery, error)
+	// One table's: shared ones and the caller's own, by title.
+	ListDatabaseSavedViews(ctx context.Context, arg ListDatabaseSavedViewsParams) ([]DatabaseSavedView, error)
 	ListDatabaseSyncRuns(ctx context.Context, arg ListDatabaseSyncRunsParams) ([]DatabaseSyncRun, error)
 	// With each one's newest run (skipped ones aside), for the list.
 	ListDatabaseSyncs(ctx context.Context, arg ListDatabaseSyncsParams) ([]ListDatabaseSyncsRow, error)
@@ -563,9 +640,15 @@ type Querier interface {
 	ListDueBackupPlans(ctx context.Context, now *time.Time) ([]DatabaseBackupPlan, error)
 	ListDueDatabaseSyncs(ctx context.Context, now *time.Time) ([]DatabaseSync, error)
 	ListDueMonitors(ctx context.Context, lim int32) ([]Monitor, error)
+	ListDuePitrBackups(ctx context.Context, now *time.Time) ([]DatabasePitr, error)
+	ListDuePitrRestarts(ctx context.Context, now *time.Time) ([]DatabasePitr, error)
 	ListDueSchedules(ctx context.Context, now *time.Time) ([]Schedule, error)
 	ListDueStorageSyncs(ctx context.Context, now *time.Time) ([]StorageSync, error)
 	ListEnabledSchedulesWithoutNext(ctx context.Context) ([]Schedule, error)
+	// The webhooks an event of this workspace may go to.
+	ListEnabledWebhooks(ctx context.Context, workspaceID uuid.UUID) ([]Webhook, error)
+	// The workspace's automations an event may start.
+	ListEventAutomations(ctx context.Context, workspaceID uuid.UUID) ([]Automation, error)
 	ListFirewallChanges(ctx context.Context, serverID uuid.UUID) ([]ListFirewallChangesRow, error)
 	// server_count counts only the folder's own servers the caller can see; the
 	// client sums subtrees. folder_workspace_ids also lists workspaces the caller
@@ -602,6 +685,9 @@ type Querier interface {
 	ListPVEClustersDueForCheck(ctx context.Context, before time.Time) ([]PveCluster, error)
 	// Machines linked to servers, with the server's name, on the given clusters.
 	ListPVELinks(ctx context.Context, clusterIds []uuid.UUID) ([]ListPVELinksRow, error)
+	ListPitrCopies(ctx context.Context, databaseID uuid.UUID) ([]DatabasePitrRun, error)
+	ListPitrRuns(ctx context.Context, arg ListPitrRunsParams) ([]DatabasePitrRun, error)
+	ListPitrs(ctx context.Context) ([]DatabasePitr, error)
 	// Every good backup of a plan, newest first: what retention looks at.
 	ListPlanBackups(ctx context.Context, planID *uuid.UUID) ([]DatabaseBackup, error)
 	// With each playbook's newest run, for the list.
@@ -615,6 +701,7 @@ type Querier interface {
 	// Every host of every proxy the caller can see, for the fleet view.
 	ListProxyHostsEverywhere(ctx context.Context, arg ListProxyHostsEverywhereParams) ([]ListProxyHostsEverywhereRow, error)
 	ListQueuedJobs(ctx context.Context) ([]Job, error)
+	ListReadyPitrs(ctx context.Context) ([]DatabasePitr, error)
 	ListRestores(ctx context.Context, arg ListRestoresParams) ([]DatabaseRestore, error)
 	// Names of the servers, storages, scripts, playbooks and databases schedules
 	// point at.
@@ -665,6 +752,7 @@ type Querier interface {
 	ListStoragesDueForScan(ctx context.Context, before time.Time) ([]Storage, error)
 	// Without the data. user_id narrows to one person's sessions.
 	ListTerminalRecordings(ctx context.Context, arg ListTerminalRecordingsParams) ([]ListTerminalRecordingsRow, error)
+	ListUserApiTokens(ctx context.Context, userID uuid.UUID) ([]ApiToken, error)
 	// ---- Grants ----
 	// Every grant that applies to a user, directly or through a group.
 	ListUserGrants(ctx context.Context, userID *uuid.UUID) ([]AccessGrant, error)
@@ -673,6 +761,8 @@ type Querier interface {
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	// Syncs that follow a server folder's changes, for the watchers.
 	ListWatchedStorageSyncs(ctx context.Context) ([]StorageSync, error)
+	ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeliveriesParams) ([]WebhookDelivery, error)
+	ListWebhooks(ctx context.Context, workspaceID uuid.UUID) ([]Webhook, error)
 	ListWorkspaceApps(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceAppsRow, error)
 	// ---- Relations ----
 	ListWorkspaceAssetRelations(ctx context.Context, workspaceID uuid.UUID) ([]AssetRelation, error)
@@ -688,6 +778,7 @@ type Querier interface {
 	LogArchivePoliciesWithoutNext(ctx context.Context) ([]LogArchivePolicy, error)
 	LogArchiveTotals(ctx context.Context) ([]LogArchiveTotalsRow, error)
 	LogNotification(ctx context.Context, arg LogNotificationParams) error
+	MarkDatabaseSavedQueryRun(ctx context.Context, arg MarkDatabaseSavedQueryRunParams) error
 	MarkDockerImageCurrent(ctx context.Context, arg MarkDockerImageCurrentParams) error
 	// What a source that answered no longer shows is gone; a source that failed
 	// this time keeps its findings as they were.
@@ -718,20 +809,30 @@ type Querier interface {
 	MoveStoragesToWorkspace(ctx context.Context, arg MoveStoragesToWorkspaceParams) (int64, error)
 	// Where a service lands at the end of its category (or of the uncategorized).
 	NextAppPosition(ctx context.Context, arg NextAppPositionParams) (int32, error)
+	// How its latest run (not a skipped one) ended.
+	NoteAutomationRun(ctx context.Context, arg NoteAutomationRunParams) error
+	// How the latest attempt went.
+	NoteWebhookAttempt(ctx context.Context, arg NoteWebhookAttemptParams) error
 	// Stored copies of a volume beyond the newest @keep made by one cron job.
 	OldDockerVolumeBackups(ctx context.Context, arg OldDockerVolumeBackupsParams) ([]DockerVolumeBackup, error)
 	// ---- Incidents ----
 	OpenMonitorIncident(ctx context.Context, arg OpenMonitorIncidentParams) error
 	// New-address sign-ins nobody has answered yet, for the person's other devices.
 	PendingSignInAlerts(ctx context.Context, arg PendingSignInAlertsParams) ([]PendingSignInAlertsRow, error)
+	// Another database row for the same PostgreSQL (server and port) that
+	// already has continuous backup: a second setup would overwrite its config.
+	PitrSibling(ctx context.Context, arg PitrSiblingParams) (PitrSiblingRow, error)
 	PruneAlertEvents(ctx context.Context, before time.Time) (int64, error)
 	PruneAlertMutes(ctx context.Context, before time.Time) (int64, error)
 	PruneAssetRelations(ctx context.Context, workspaceID uuid.UUID) error
+	// Keeps each automation's newest runs within the days, and every one still going.
+	PruneAutomationRuns(ctx context.Context, arg PruneAutomationRunsParams) (int64, error)
 	// Rows of runs that left no backup, past the newest @keep of a plan.
 	PruneBackupRecords(ctx context.Context, arg PruneBackupRecordsParams) error
 	// Past each workspace's keep_days (90 without settings).
 	PruneCommandLog(ctx context.Context) (int64, error)
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
+	PruneDatabaseQueryRuns(ctx context.Context) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
 	PruneDatabaseSyncRuns(ctx context.Context, arg PruneDatabaseSyncRunsParams) error
 	PruneDockerAutoUpdateEvents(ctx context.Context) error
@@ -751,12 +852,16 @@ type Querier interface {
 	PruneStorageUsage(ctx context.Context, before time.Time) (int64, error)
 	// Past each workspace's keep_days (90 without settings). Live ones stay.
 	PruneTerminalRecordings(ctx context.Context) (int64, error)
+	// Older than the cut-off, or past the newest keep of their webhook.
+	PruneWebhookDeliveries(ctx context.Context, arg PruneWebhookDeliveriesParams) (int64, error)
 	// PutAppFavicon stores a fetched favicon only while the service still exists
 	// at the address it was fetched from, so a slow fetch can't overwrite a
 	// newer one.
 	PutAppFavicon(ctx context.Context, arg PutAppFaviconParams) (int64, error)
 	PutAppLogo(ctx context.Context, arg PutAppLogoParams) error
 	PutWorkspaceLogo(ctx context.Context, arg PutWorkspaceLogoParams) error
+	// The last 10 runs of every automation in a workspace, for the list.
+	RecentAutomationRuns(ctx context.Context, workspaceID uuid.UUID) ([]RecentAutomationRunsRow, error)
 	// Each monitor's newest checks, newest first, for the list's bars.
 	RecentMonitorChecks(ctx context.Context, arg RecentMonitorChecksParams) ([]RecentMonitorChecksRow, error)
 	RecordAlertDelivery(ctx context.Context, arg RecordAlertDeliveryParams) error
@@ -786,6 +891,8 @@ type Querier interface {
 	ResetMonitorLocations(ctx context.Context, monitorID uuid.UUID) error
 	ResetServerHostKey(ctx context.Context, id uuid.UUID) error
 	ResetStorageHostKey(ctx context.Context, id uuid.UUID) error
+	// At start: a setup or removal cut off by a restart needs a look.
+	ResetStuckPitrs(ctx context.Context) error
 	// Installs left mid-change by a restart.
 	ResetStuckSoftwareInstalls(ctx context.Context) error
 	// Findings now managed by Morche (their key was added to a section) count
@@ -796,6 +903,7 @@ type Querier interface {
 	RestoreProxyHost(ctx context.Context, arg RestoreProxyHostParams) error
 	ReviewAsset(ctx context.Context, arg ReviewAssetParams) error
 	SaveAnsibleRunProgress(ctx context.Context, arg SaveAnsibleRunProgressParams) error
+	SaveAutomationRunSteps(ctx context.Context, arg SaveAutomationRunStepsParams) error
 	// Writes a row's whole state; called again as it ends or repeats.
 	SaveCommandLog(ctx context.Context, arg []SaveCommandLogParams) *SaveCommandLogBatchResults
 	SaveCommandLogOutput(ctx context.Context, arg []SaveCommandLogOutputParams) *SaveCommandLogOutputBatchResults
@@ -849,6 +957,9 @@ type Querier interface {
 	// Pinning isn't an edit: it keeps who changed it last and when.
 	SetAssetNotePinned(ctx context.Context, arg SetAssetNotePinnedParams) (AssetNote, error)
 	SetAssetReminded(ctx context.Context, arg SetAssetRemindedParams) error
+	SetAutomationHook(ctx context.Context, arg SetAutomationHookParams) (Automation, error)
+	SetAutomationProblem(ctx context.Context, arg SetAutomationProblemParams) error
+	SetAutomationRunJob(ctx context.Context, arg SetAutomationRunJobParams) error
 	SetBackupCopy(ctx context.Context, arg SetBackupCopyParams) error
 	SetBackupJob(ctx context.Context, arg SetBackupJobParams) error
 	SetBackupPlanNext(ctx context.Context, arg SetBackupPlanNextParams) error
@@ -879,6 +990,13 @@ type Querier interface {
 	// A machine links to one server; run DeletePVELinkForServer first so a
 	// server links to one machine too.
 	SetPVELink(ctx context.Context, arg SetPVELinkParams) (PveVmLink, error)
+	SetPitrCluster(ctx context.Context, arg SetPitrClusterParams) error
+	SetPitrInfo(ctx context.Context, arg SetPitrInfoParams) error
+	SetPitrRestartAt(ctx context.Context, arg SetPitrRestartAtParams) error
+	SetPitrRunJob(ctx context.Context, arg SetPitrRunJobParams) error
+	SetPitrRunRemoved(ctx context.Context, id uuid.UUID) error
+	SetPitrRunRestore(ctx context.Context, arg SetPitrRunRestoreParams) error
+	SetPitrState(ctx context.Context, arg SetPitrStateParams) error
 	SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error)
 	SetRestoreJob(ctx context.Context, arg SetRestoreJobParams) error
 	SetRestoreSafety(ctx context.Context, arg SetRestoreSafetyParams) error
@@ -908,6 +1026,7 @@ type Querier interface {
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
 	SetUsername(ctx context.Context, arg SetUsernameParams) (User, error)
+	SetWebhookSecret(ctx context.Context, arg SetWebhookSecretParams) (Webhook, error)
 	SetWorkspaceLogoKind(ctx context.Context, arg SetWorkspaceLogoKindParams) (Workspace, error)
 	SettleFirewallChanges(ctx context.Context, arg SettleFirewallChangesParams) error
 	// Online servers whose image updates were checked before (they have rows)
@@ -915,10 +1034,12 @@ type Querier interface {
 	// workspace's), where the automatic check is on.
 	StaleDockerUpdateServers(ctx context.Context) ([]uuid.UUID, error)
 	StartAnsibleRun(ctx context.Context, id uuid.UUID) error
+	StartAutomationRun(ctx context.Context, id uuid.UUID) error
 	StartBackup(ctx context.Context, arg StartBackupParams) error
 	StartDatabaseSyncRun(ctx context.Context, id uuid.UUID) error
 	StartDockerAutoUpdateRun(ctx context.Context, arg StartDockerAutoUpdateRunParams) error
 	StartJob(ctx context.Context, id uuid.UUID) error
+	StartPitrRun(ctx context.Context, id uuid.UUID) error
 	StartRestore(ctx context.Context, id uuid.UUID) error
 	StartScheduleRun(ctx context.Context, id uuid.UUID) error
 	StartScriptRun(ctx context.Context, id uuid.UUID) error
@@ -947,6 +1068,7 @@ type Querier interface {
 	// Adds a linked asset for each server, database, storage… of the workspace
 	// that has none yet and refreshes the facts of the rest. inserted = new.
 	SyncAssetSources(ctx context.Context, workspaceID uuid.UUID) ([]SyncAssetSourcesRow, error)
+	TouchApiToken(ctx context.Context, arg TouchApiTokenParams) error
 	TouchAssetDiscovery(ctx context.Context, workspaceID uuid.UUID) error
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	TouchUserLogin(ctx context.Context, id uuid.UUID) error
@@ -959,6 +1081,8 @@ type Querier interface {
 	// the stored ones back.
 	UpdateAsset(ctx context.Context, arg UpdateAssetParams) error
 	UpdateAssetNote(ctx context.Context, arg UpdateAssetNoteParams) (AssetNote, error)
+	// Saving clears the problem: it runs as whoever saved it now.
+	UpdateAutomation(ctx context.Context, arg UpdateAutomationParams) (Automation, error)
 	UpdateBackupPlan(ctx context.Context, arg UpdateBackupPlanParams) (DatabaseBackupPlan, error)
 	// Full replace of the editable fields; the handler resolves the key first.
 	UpdateCloudAccount(ctx context.Context, arg UpdateCloudAccountParams) (CloudAccount, error)
@@ -966,6 +1090,8 @@ type Querier interface {
 	UpdateDNSServer(ctx context.Context, arg UpdateDNSServerParams) (DnsServer, error)
 	// Full replace of the editable fields; the handler resolves the password first.
 	UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) (Database, error)
+	UpdateDatabaseSavedQuery(ctx context.Context, arg UpdateDatabaseSavedQueryParams) (DatabaseSavedQuery, error)
+	UpdateDatabaseSavedView(ctx context.Context, arg UpdateDatabaseSavedViewParams) (DatabaseSavedView, error)
 	UpdateDatabaseSync(ctx context.Context, arg UpdateDatabaseSyncParams) (DatabaseSync, error)
 	UpdateDockerAutoUpdate(ctx context.Context, arg UpdateDockerAutoUpdateParams) (DockerAutoUpdate, error)
 	// A NULL password keeps the saved one.
@@ -991,6 +1117,7 @@ type Querier interface {
 	UpdateStorage(ctx context.Context, arg UpdateStorageParams) (Storage, error)
 	UpdateStorageSync(ctx context.Context, arg UpdateStorageSyncParams) (StorageSync, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
+	UpdateWebhook(ctx context.Context, arg UpdateWebhookParams) (Webhook, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
 	UpsertAlertState(ctx context.Context, arg UpsertAlertStateParams) error
 	UpsertAssetDiscovery(ctx context.Context, arg UpsertAssetDiscoveryParams) error
@@ -1004,6 +1131,7 @@ type Querier interface {
 	UpsertDockerServerSettings(ctx context.Context, arg UpsertDockerServerSettingsParams) (DockerServerSetting, error)
 	UpsertDockerSettings(ctx context.Context, arg UpsertDockerSettingsParams) (DockerSetting, error)
 	UpsertGrant(ctx context.Context, arg UpsertGrantParams) (AccessGrant, error)
+	UpsertPitr(ctx context.Context, arg UpsertPitrParams) (DatabasePitr, error)
 	UserStatusCounts(ctx context.Context) ([]UserStatusCountsRow, error)
 	// A workspace's servers a scan can reach now.
 	WorkspaceServersToScan(ctx context.Context, workspaceID uuid.UUID) ([]uuid.UUID, error)

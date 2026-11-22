@@ -58,6 +58,10 @@ type BackupPlanBody struct {
 	Pattern        string   `json:"pattern,omitempty" maxLength:"256" doc:"A regular expression, for selection=pattern" example:"^shop_"`
 	Method         string   `json:"method" enum:"full,incremental" doc:"incremental: only what changed since the backup before (MySQL/MariaDB, SQL Server)"`
 	FullEveryDays  int32    `json:"full_every_days" minimum:"1" maximum:"365" doc:"An incremental plan starts over with a full backup this often"`
+	Compression    string   `json:"compression,omitempty" enum:"gzip,zstd" default:"gzip" doc:"How its files are compressed. zstd is faster and smaller; PostgreSQL needs pg_dump 16 for it (older ones fall back to gzip)"`
+	Level          string   `json:"compression_level,omitempty" enum:"fast,balanced,small" default:"balanced" doc:"fast = least CPU, small = smallest file"`
+	Workers        int32    `json:"workers,omitempty" minimum:"1" maximum:"16" default:"1" doc:"Parallel jobs for each dump (PostgreSQL, MongoDB); see the options' parallel note"`
+	TempDir        string   `json:"temp_dir,omitempty" maxLength:"512" doc:"PostgreSQL with workers > 1: the folder on the machine that runs the dump where it's written before it's sent (room for the whole dump); ClickHouse: where each table is written before it's sent (room for the biggest table); empty = its temporary folder" example:"/var/backups/tmp"`
 	Retention      string   `json:"retention" enum:"days,gfs,forever" doc:"How old backups are deleted"`
 	KeepDays       int32    `json:"keep_days" minimum:"1" maximum:"3650" doc:"For retention=days"`
 	GFSDaily       int32    `json:"gfs_daily" minimum:"0" maximum:"1000" doc:"For retention=gfs: the newest backup of this many days"`
@@ -99,6 +103,10 @@ type BackupPlan struct {
 	Pattern        string              `json:"pattern"`
 	Method         string              `json:"method" enum:"full,incremental"`
 	FullEveryDays  int32               `json:"full_every_days"`
+	Compression    string              `json:"compression" enum:"gzip,zstd"`
+	Level          string              `json:"compression_level" enum:"fast,balanced,small"`
+	Workers        int32               `json:"workers"`
+	TempDir        string              `json:"temp_dir"`
 	Retention      string              `json:"retention" enum:"days,gfs,forever"`
 	KeepDays       int32               `json:"keep_days"`
 	GFSDaily       int32               `json:"gfs_daily"`
@@ -147,6 +155,8 @@ type Backup struct {
 	Error          string       `json:"error" doc:"Why it failed; on a backup that worked, a storage that didn't get its copy"`
 	Bytes          int64        `json:"bytes"`
 	SHA256         string       `json:"sha256"`
+	Compression    string       `json:"compression" doc:"method:level it was compressed with (\"zstd:fast\"); empty = before Morche kept it (gzip)"`
+	Workers        int32        `json:"workers" doc:"Parallel jobs the dump used"`
 	Copies         []BackupCopy `json:"copies"`
 	VerifiedAt     *time.Time   `json:"verified_at" nullable:"true" doc:"When the stored file was last read back"`
 	VerifyError    string       `json:"verify_error" doc:"What that check found wrong; empty = it passed"`
@@ -162,7 +172,8 @@ type Backup struct {
 
 // BackupProblem is a plan whose newest run failed.
 type BackupProblem struct {
-	PlanID       string    `json:"plan_id" format:"uuid"`
+	Kind         string    `json:"kind" enum:"plan,pitr" doc:"A plan whose newest run failed, or continuous backup (point in time) needing a look; pitr rows have no plan_id"`
+	PlanID       string    `json:"plan_id"`
 	PlanName     string    `json:"plan_name"`
 	DatabaseID   string    `json:"database_id" format:"uuid"`
 	DatabaseName string    `json:"database_name"`
@@ -183,6 +194,8 @@ type BackupOptions struct {
 	Selections     []string          `json:"selections" doc:"Which ways of choosing databases work here"`
 	SelectionNote  string            `json:"selection_note" doc:"Why some don't"`
 	Incremental    BackupIncremental `json:"incremental"`
+	Parallel       BackupIncremental `json:"parallel" doc:"Whether dumps can use several jobs at once"`
+	Compression    string            `json:"compression_note" doc:"How this engine's files are compressed"`
 	Local          LocalTools        `json:"local" doc:"Whether the machine Morche runs on can run its backups and restores"`
 }
 
@@ -219,6 +232,7 @@ func (h *backupHandler) toBackups(ctx context.Context, rows []sqlc.DatabaseBacku
 			PlanName: b.PlanName, Path: b.Path, Engine: b.Engine, Target: b.Target, Format: b.Format,
 			Kind: b.Kind, ParentID: optionalIDString(b.ParentID), Dependents: childrenOf[b.ID],
 			Trigger: b.Trigger, State: b.State, Error: b.Error, Bytes: b.Bytes, SHA256: b.Sha256,
+			Compression: b.Compression, Workers: b.Workers,
 			Copies: copiesOf[b.ID], VerifiedAt: b.VerifiedAt, VerifyError: b.VerifyError,
 			JobID: optionalIDString(b.JobID), CreatedByName: b.CreatedByName,
 			CreatedAt: b.CreatedAt, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt,
@@ -227,7 +241,7 @@ func (h *backupHandler) toBackups(ctx context.Context, rows []sqlc.DatabaseBacku
 			v.Copies = []BackupCopy{}
 		}
 		if b.State == jobs.Succeeded {
-			v.Restore = dbbackup.Restore(b.Format, b.Target, path.Base(b.Path))
+			v.Restore = dbbackup.Restore(b.Format, b.Compression, b.Target, path.Base(b.Path))
 			v.RestoreProblem = dbbackup.Restorable(b.Format, b.Target)
 			if v.RestoreProblem == "" && !slices.ContainsFunc(v.Copies, func(c BackupCopy) bool {
 				return c.State == "stored" && c.StorageID != nil
@@ -430,6 +444,7 @@ func (h *backupHandler) views(ctx context.Context, d sqlc.Database, plans []sqlc
 			Storages: make([]BackupPlanStorage, len(place.storages)), Folder: p.Folder,
 			Selection: p.Selection, Targets: p.Targets, Pattern: p.Pattern, Method: p.Method,
 			FullEveryDays: p.FullEveryDays, Retention: p.Retention, KeepDays: p.KeepDays,
+			Compression: p.Compression, Level: p.CompressionLevel, Workers: p.Workers, TempDir: p.TempDir,
 			GFSDaily: p.GfsDaily, GFSWeekly: p.GfsWeekly, GFSMonthly: p.GfsMonthly,
 			RunnerServerID: optionalIDString(p.RunnerServerID), RunnerName: place.server.Name,
 			Username: p.Username, HasPassword: len(p.PasswordEnc) > 0, Cron: p.Cron,
@@ -477,14 +492,17 @@ func (h *backupHandler) view(ctx context.Context, d sqlc.Database, p sqlc.Databa
 // ---- Saving a plan ----
 
 type checkedPlan struct {
-	storages []uuid.UUID
-	folder   string
-	targets  []string
-	pattern  string
-	runner   *uuid.UUID
-	cron     string
-	timezone string
-	next     *time.Time
+	compression, level string
+	workers            int32
+	tempDir            string
+	storages           []uuid.UUID
+	folder             string
+	targets            []string
+	pattern            string
+	runner             *uuid.UUID
+	cron               string
+	timezone           string
+	next               *time.Time
 }
 
 func (h *backupHandler) check(ctx context.Context, d sqlc.Database, b BackupPlanBody) (checkedPlan, error) {
@@ -555,6 +573,26 @@ func (h *backupHandler) check(ctx context.Context, d sqlc.Database, b BackupPlan
 	if b.Method == "incremental" {
 		if inc := dbbackup.Incremental(d.Engine); !inc.Supported {
 			return out, fieldError("body.method", inc.Note, b.Method)
+		}
+	}
+	out.compression, out.level, out.workers = cmpOr(b.Compression, dbbackup.Gzip), cmpOr(b.Level, dbbackup.LevelBalanced), max(1, b.Workers)
+	if err := dbbackup.CheckCompression(out.compression, out.level); err != nil {
+		return out, fieldError("body.compression", err.Error(), b.Compression)
+	}
+	if out.workers > 1 {
+		if par := dbbackup.Parallel(d.Engine); !par.Supported {
+			return out, fieldError("body.workers", par.Note, fmt.Sprint(b.Workers))
+		}
+	}
+	// Only a parallel PostgreSQL dump and a ClickHouse one (a table at a
+	// time) go through a folder.
+	if (out.workers > 1 && d.Engine == dbmon.Postgres) || d.Engine == dbmon.ClickHouse {
+		out.tempDir = strings.TrimRight(strings.TrimSpace(b.TempDir), "/")
+		if b.TempDir != "" && out.tempDir == "" {
+			out.tempDir = "/"
+		}
+		if err := dbbackup.CheckTempDir(out.tempDir); err != nil {
+			return out, fieldError("body.temp_dir", err.Error(), b.TempDir)
 		}
 	}
 
@@ -653,10 +691,11 @@ func backupSelectionProblem(d sqlc.Database, selection string, targets []string,
 
 // systemDatabases are left out of "all" and patterns: the engine's own.
 var systemDatabases = map[string][]string{
-	dbmon.Postgres: {"postgres", "template0", "template1", "rdsadmin", "azure_maintenance", "azure_sys", "cloudsqladmin"},
-	dbmon.MySQL:    {"mysql", "sys", "performance_schema", "information_schema"},
-	dbmon.Mongo:    {"admin", "local", "config"},
-	dbmon.MSSQL:    {"master", "model", "msdb", "tempdb", "rdsadmin"},
+	dbmon.Postgres:   {"postgres", "template0", "template1", "rdsadmin", "azure_maintenance", "azure_sys", "cloudsqladmin"},
+	dbmon.MySQL:      {"mysql", "sys", "performance_schema", "information_schema"},
+	dbmon.Mongo:      {"admin", "local", "config"},
+	dbmon.MSSQL:      {"master", "model", "msdb", "tempdb", "rdsadmin"},
+	dbmon.ClickHouse: {"system", "INFORMATION_SCHEMA", "information_schema"},
 }
 
 // listDatabases is what a database server holds, without its own.
@@ -827,11 +866,13 @@ func registerDatabaseBackups(api huma.API, h *backupHandler) {
 		if err != nil {
 			return nil, err
 		}
-		inc := dbbackup.Incremental(d.Engine)
+		inc, par := dbbackup.Incremental(d.Engine), dbbackup.Parallel(d.Engine)
 		out := BackupOptions{
 			Databases:   []string{},
 			Selections:  []string{"all", "selected", "pattern"},
 			Incremental: BackupIncremental{Supported: inc.Supported, Note: inc.Note},
+			Parallel:    BackupIncremental{Supported: par.Supported, Note: par.Note},
+			Compression: dbbackup.CompressionNote(d.Engine),
 			Local:       localTools(d),
 		}
 		if d.Engine == dbmon.Redis {
@@ -916,7 +957,8 @@ func registerDatabaseBackups(api huma.API, h *backupHandler) {
 				GfsDaily: body.GFSDaily, GfsWeekly: body.GFSWeekly, GfsMonthly: body.GFSMonthly,
 				RunnerServerID: c.runner, Username: user, PasswordEnc: sealed, Cron: c.cron,
 				Timezone: c.timezone, Enabled: body.Enabled, NextRunAt: c.next,
-				CreatedBy: principalOf(ctx).ID(),
+				CreatedBy: principalOf(ctx).ID(), Compression: c.compression, CompressionLevel: c.level,
+				Workers: c.workers, TempDir: c.tempDir,
 			})
 		} else {
 			p, err = q.UpdateBackupPlan(ctx, sqlc.UpdateBackupPlanParams{
@@ -926,6 +968,8 @@ func registerDatabaseBackups(api huma.API, h *backupHandler) {
 				GfsWeekly: body.GFSWeekly, GfsMonthly: body.GFSMonthly, RunnerServerID: c.runner,
 				Username: user, PasswordEnc: sealed, Cron: c.cron, Timezone: c.timezone,
 				Enabled: body.Enabled, NextRunAt: c.next, UpdatedBy: principalOf(ctx).ID(),
+				Compression: c.compression, CompressionLevel: c.level, Workers: c.workers,
+				TempDir: c.tempDir,
 			})
 		}
 		if err != nil {
@@ -1281,10 +1325,11 @@ func registerDatabaseBackups(api huma.API, h *backupHandler) {
 		out.Body.Items = make([]BackupProblem, len(rows))
 		for i, r := range rows {
 			out.Body.Items[i] = BackupProblem{
-				PlanID: r.PlanID.String(), PlanName: r.PlanName, DatabaseID: r.DatabaseID.String(),
+				Kind: "plan", PlanID: r.PlanID.String(), PlanName: r.PlanName, DatabaseID: r.DatabaseID.String(),
 				DatabaseName: r.DatabaseName, Error: r.Error, At: r.CreatedAt,
 			}
 		}
+		out.Body.Items = append(out.Body.Items, h.pitrProblemsFor(ctx, s)...)
 		return out, nil
 	})
 

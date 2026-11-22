@@ -181,7 +181,7 @@ const offlineUpstream = "http://unix:/run/morche-nginx-offline.sock"
 // first rule matching the path wins.
 // slow > 0 when the parent location sends what can't have a copy away
 // (slowRoute): a rule's location must too, or it keeps the short wait.
-func cacheRules(w *writer, t string, h proxy.HostConfig, slow int) {
+func cacheRules(w *writer, t string, h proxy.HostConfig, env proxy.Env, slow int) {
 	c := h.Cache
 	if !c.Enabled {
 		return
@@ -200,7 +200,7 @@ func cacheRules(w *writer, t string, h proxy.HostConfig, slow int) {
 		if slow > 0 {
 			slowRoute(w, t, h)
 		}
-		rulePass(w, t, h)
+		rulePass(w, t, h, env)
 		if g.Never {
 			w.line("proxy_no_cache 1;")
 			w.line("proxy_cache_bypass 1;")
@@ -216,8 +216,8 @@ func cacheRules(w *writer, t string, h proxy.HostConfig, slow int) {
 // inherit it). A regex location can't pass with a path part, so a base
 // path the upstream has (http://app/base/) is put in with a rewrite, and
 // the key, which may use $uri, reads the path as it was asked.
-func rulePass(w *writer, t string, h proxy.HostConfig) {
-	upstream, _ := pooled(t, h, h.Upstream)
+func rulePass(w *writer, t string, h proxy.HostConfig, env proxy.Env) {
+	upstream, _ := pooled(t, h, env, h.Upstream)
 	origin, base := upstream, ""
 	if i := strings.Index(upstream, "://"); i >= 0 {
 		if j := strings.Index(upstream[i+3:], "/"); j >= 0 {

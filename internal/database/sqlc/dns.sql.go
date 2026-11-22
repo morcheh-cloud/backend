@@ -13,29 +13,33 @@ import (
 )
 
 const createDNSServer = `-- name: CreateDNSServer :one
-INSERT INTO dns_servers (workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at
+INSERT INTO dns_servers (workspace_id, kind, name, url, token_enc, tls_skip_verify, allow_internal, allow_changes, description)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, kind, allow_changes
 `
 
 type CreateDNSServerParams struct {
 	WorkspaceID   uuid.UUID `json:"workspace_id"`
+	Kind          string    `json:"kind"`
 	Name          string    `json:"name"`
 	Url           string    `json:"url"`
 	TokenEnc      []byte    `json:"token_enc"`
 	TlsSkipVerify bool      `json:"tls_skip_verify"`
 	AllowInternal bool      `json:"allow_internal"`
+	AllowChanges  bool      `json:"allow_changes"`
 	Description   string    `json:"description"`
 }
 
 func (q *Queries) CreateDNSServer(ctx context.Context, arg CreateDNSServerParams) (DnsServer, error) {
 	row := q.db.QueryRow(ctx, createDNSServer,
 		arg.WorkspaceID,
+		arg.Kind,
 		arg.Name,
 		arg.Url,
 		arg.TokenEnc,
 		arg.TlsSkipVerify,
 		arg.AllowInternal,
+		arg.AllowChanges,
 		arg.Description,
 	)
 	var i DnsServer
@@ -59,6 +63,8 @@ func (q *Queries) CreateDNSServer(ctx context.Context, arg CreateDNSServerParams
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Kind,
+		&i.AllowChanges,
 	)
 	return i, err
 }
@@ -73,7 +79,7 @@ func (q *Queries) DeleteDNSServer(ctx context.Context, id uuid.UUID) error {
 }
 
 const getDNSServer = `-- name: GetDNSServer :one
-SELECT id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at FROM dns_servers WHERE id = $1
+SELECT id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, kind, allow_changes FROM dns_servers WHERE id = $1
 `
 
 func (q *Queries) GetDNSServer(ctx context.Context, id uuid.UUID) (DnsServer, error) {
@@ -99,6 +105,8 @@ func (q *Queries) GetDNSServer(ctx context.Context, id uuid.UUID) (DnsServer, er
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Kind,
+		&i.AllowChanges,
 	)
 	return i, err
 }
@@ -115,7 +123,7 @@ func (q *Queries) GetDNSServerWorkspace(ctx context.Context, id uuid.UUID) (uuid
 }
 
 const listDNSServers = `-- name: ListDNSServers :many
-SELECT id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at FROM dns_servers
+SELECT id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, kind, allow_changes FROM dns_servers
 WHERE ($1::bool OR workspace_id = ANY ($2::uuid[]))
   AND ($3::uuid IS NULL OR workspace_id = $3::uuid)
 ORDER BY favorite DESC, lower(name)
@@ -156,6 +164,8 @@ func (q *Queries) ListDNSServers(ctx context.Context, arg ListDNSServersParams) 
 			&i.LastOnlineAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Kind,
+			&i.AllowChanges,
 		); err != nil {
 			return nil, err
 		}
@@ -168,7 +178,7 @@ func (q *Queries) ListDNSServers(ctx context.Context, arg ListDNSServersParams) 
 }
 
 const listDNSServersDueForCheck = `-- name: ListDNSServersDueForCheck :many
-SELECT id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at FROM dns_servers
+SELECT id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, kind, allow_changes FROM dns_servers
 WHERE last_checked_at IS NULL OR last_checked_at < $1::timestamptz
 ORDER BY last_checked_at NULLS FIRST
 `
@@ -204,6 +214,8 @@ func (q *Queries) ListDNSServersDueForCheck(ctx context.Context, before time.Tim
 			&i.LastOnlineAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Kind,
+			&i.AllowChanges,
 		); err != nil {
 			return nil, err
 		}
@@ -226,7 +238,7 @@ UPDATE dns_servers SET
     last_checked_at = now(),
     last_online_at = CASE WHEN $1 = 'online' THEN now() ELSE last_online_at END
 WHERE id = $7
-RETURNING id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at
+RETURNING id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, kind, allow_changes
 `
 
 type RecordDNSServerCheckParams struct {
@@ -271,12 +283,14 @@ func (q *Queries) RecordDNSServerCheck(ctx context.Context, arg RecordDNSServerC
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Kind,
+		&i.AllowChanges,
 	)
 	return i, err
 }
 
 const setDNSServerFavorite = `-- name: SetDNSServerFavorite :one
-UPDATE dns_servers SET favorite = $1, updated_at = now() WHERE id = $2 RETURNING id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at
+UPDATE dns_servers SET favorite = $1, updated_at = now() WHERE id = $2 RETURNING id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, kind, allow_changes
 `
 
 type SetDNSServerFavoriteParams struct {
@@ -307,6 +321,8 @@ func (q *Queries) SetDNSServerFavorite(ctx context.Context, arg SetDNSServerFavo
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Kind,
+		&i.AllowChanges,
 	)
 	return i, err
 }
@@ -318,10 +334,11 @@ UPDATE dns_servers SET
     token_enc = $3,
     tls_skip_verify = $4,
     allow_internal = $5,
-    description = $6,
+    allow_changes = $6,
+    description = $7,
     updated_at = now()
-WHERE id = $7
-RETURNING id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at
+WHERE id = $8
+RETURNING id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, kind, allow_changes
 `
 
 type UpdateDNSServerParams struct {
@@ -330,6 +347,7 @@ type UpdateDNSServerParams struct {
 	TokenEnc      []byte    `json:"token_enc"`
 	TlsSkipVerify bool      `json:"tls_skip_verify"`
 	AllowInternal bool      `json:"allow_internal"`
+	AllowChanges  bool      `json:"allow_changes"`
 	Description   string    `json:"description"`
 	ID            uuid.UUID `json:"id"`
 }
@@ -342,6 +360,7 @@ func (q *Queries) UpdateDNSServer(ctx context.Context, arg UpdateDNSServerParams
 		arg.TokenEnc,
 		arg.TlsSkipVerify,
 		arg.AllowInternal,
+		arg.AllowChanges,
 		arg.Description,
 		arg.ID,
 	)
@@ -366,6 +385,8 @@ func (q *Queries) UpdateDNSServer(ctx context.Context, arg UpdateDNSServerParams
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Kind,
+		&i.AllowChanges,
 	)
 	return i, err
 }

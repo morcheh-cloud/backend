@@ -434,7 +434,7 @@ func (q *Queries) DiscoveryCloudAccounts(ctx context.Context, workspaceID uuid.U
 }
 
 const discoveryDNSServers = `-- name: DiscoveryDNSServers :many
-SELECT id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at FROM dns_servers WHERE workspace_id = $1
+SELECT id, workspace_id, name, url, token_enc, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, server_domain, zone_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, kind, allow_changes FROM dns_servers WHERE workspace_id = $1
 `
 
 func (q *Queries) DiscoveryDNSServers(ctx context.Context, workspaceID uuid.UUID) ([]DnsServer, error) {
@@ -466,6 +466,8 @@ func (q *Queries) DiscoveryDNSServers(ctx context.Context, workspaceID uuid.UUID
 			&i.LastOnlineAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Kind,
+			&i.AllowChanges,
 		); err != nil {
 			return nil, err
 		}

@@ -705,7 +705,7 @@ func (h *serverHandler) composeRun(ctx context.Context, t *jobs.Task, sh *rootSh
 		mu.Lock()
 		defer mu.Unlock()
 		// Compose prints each progress state twice without a TTY.
-		if s == last {
+		if s == last || strings.Contains(s, rolloutWarning) {
 			return
 		}
 		last = s
@@ -786,10 +786,15 @@ func (h *serverHandler) runDockerCompose(ctx context.Context, t *jobs.Task) (any
 			pr.Phase, pr.Current = composePhases[p.Action], p.Project
 			pr.Done, pr.Items, pr.ItemsTotal = 0, 0, 0
 		})
-		t.Logf("==> docker compose %s", args)
-		err := h.withShell(ctx, p.ServerID, func(_ *sshpool.Conn, sh *rootShell) error {
-			return h.composeRun(ctx, t, sh, p, args)
-		})
+		var err error
+		if p.Action == "up" || p.Action == "redeploy" {
+			err = h.composeUp(ctx, t, p, args, false)
+		} else {
+			t.Logf("==> docker compose %s", args)
+			err = h.withShell(ctx, p.ServerID, func(_ *sshpool.Conn, sh *rootShell) error {
+				return h.composeRun(ctx, t, sh, p, args)
+			})
+		}
 		if err != nil {
 			return nil, jobError(err)
 		}

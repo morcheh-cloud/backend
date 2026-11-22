@@ -322,7 +322,7 @@ func (h *uptimeHandler) apply(ctx context.Context, m sqlc.Monitor, r uptime.Chec
 		if prev == uptime.Down {
 			_ = h.q.ResolveMonitorIncident(ctx, sqlc.ResolveMonitorIncidentParams{MonitorID: m.ID, ResolvedAt: &at})
 		}
-		h.alertChange(m, prev, next, r, at)
+		h.alertChange(ctx, m, prev, next, r, at)
 	} else if next == uptime.Down {
 		st.DownChecks++
 		if m.ResendEvery > 0 && st.DownChecks > 1 && (st.DownChecks-1)%m.ResendEvery == 0 {
@@ -339,7 +339,8 @@ func (h *uptimeHandler) apply(ctx context.Context, m sqlc.Monitor, r uptime.Chec
 }
 
 // alertChange sends the alert for a status change, if it deserves one.
-func (h *uptimeHandler) alertChange(m sqlc.Monitor, prev, next string, r uptime.CheckResult, at time.Time) {
+func (h *uptimeHandler) alertChange(ctx context.Context, m sqlc.Monitor, prev, next string, r uptime.CheckResult, at time.Time) {
+	h.publishMonitor(ctx, m, prev, next, r, at)
 	lasted := at.Sub(m.StatusSince)
 	switch {
 	case next == uptime.Down:

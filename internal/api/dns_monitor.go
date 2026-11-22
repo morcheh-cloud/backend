@@ -53,12 +53,7 @@ func (m *dnsMonitor) loop() {
 }
 
 func (m *dnsMonitor) check(ctx context.Context, s sqlc.DnsServer) {
-	c, err := m.h.savedClient(s)
-	if err != nil {
-		slog.Warn("background DNS check", "server", s.ID, "error", err)
-		return
-	}
-	info, checkErr := c.Check(ctx)
+	info, checkErr := m.h.checkServer(ctx, s)
 	if _, err := m.h.record(ctx, s.ID, info, checkErr); err != nil {
 		slog.Warn("record DNS check", "server", s.ID, "error", err)
 	}

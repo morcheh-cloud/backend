@@ -131,7 +131,7 @@ func FileText(d Driver, id string, h HostConfig, env Env) string {
 // counts for logs, access lists, countries and rate limits.
 type RealIP struct {
 	From   []string `json:"from,omitempty" maxItems:"200" doc:"Addresses or ranges of the CDN or load balancer"`
-	Header string   `json:"header,omitempty" enum:",X-Forwarded-For,X-Real-IP,CF-Connecting-IP,True-Client-IP" doc:"Header holding the visitor's address; empty = X-Forwarded-For"`
+	Header string   `json:"header,omitempty" enum:",X-Forwarded-For,X-Real-IP,CF-Connecting-IP,True-Client-IP,AR-Real-IP" doc:"Header holding the visitor's address; empty = X-Forwarded-For"`
 }
 
 // Cache is a site's caching: what browsers keep (proxy and static sites) and
@@ -342,7 +342,7 @@ func (c Cache) SizeMB() int {
 }
 
 // RealIPHeaders are the headers RealIP can read.
-var RealIPHeaders = []string{"X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "True-Client-IP"}
+var RealIPHeaders = []string{"X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "True-Client-IP", "AR-Real-IP"}
 
 // HostTLS serves the site over HTTPS with a certificate already on the server.
 type HostTLS struct {
@@ -1208,6 +1208,11 @@ type Env struct {
 	CABundle string
 	// WAF, ImageFilter: those modules are ready (see Status).
 	WAF, ImageFilter bool
+	// Resolver is the DNS server nginx asks again for upstream names (only
+	// for a proxy in a container); HostsNames are the names /etc/hosts
+	// gives there, which that server doesn't know.
+	Resolver   string
+	HostsNames []string
 }
 
 // File is one host rendered for the server.
@@ -1327,6 +1332,14 @@ type Status struct {
 	StreamGeo string
 	// CABundle is the system's CA file, for checking https upstreams.
 	CABundle string
+	// Resolver is the first nameserver of /etc/resolv.conf (in a container:
+	// Docker's 127.0.0.11 or Podman's gateway), HostsNames the names in
+	// /etc/hosts.
+	Resolver   string
+	HostsNames []string
+	// Resolves: upstream names are looked up again while the proxy runs
+	// (set only for a proxy in a container whose nginx can).
+	Resolves bool
 	// Released are the hand-written files Morche took default_server from
 	// (see Takeover); they get it back when no site of Morche's answers
 	// unknown names any more.

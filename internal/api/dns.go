@@ -27,6 +27,8 @@ type dnsHandler struct {
 	q     *sqlc.Queries
 	box   *secrets.Box
 	authz *authz
+	// arvanFake is where ArvanCloud keys starting with "fake-" go (dev).
+	arvanFake string
 }
 
 type DNSServerIDPath struct {
@@ -42,6 +44,8 @@ type DNSZonePath struct {
 type DNSServer struct {
 	ID            string     `json:"id" format:"uuid"`
 	WorkspaceID   string     `json:"workspace_id" format:"uuid"`
+	Kind          string     `json:"kind" enum:"technitium,arvan" doc:"technitium = a DNS server; arvan = an ArvanCloud CDN account, whose domains are the zones"`
+	AllowChanges  bool       `json:"allow_changes" doc:"Morche may change zones, records and settings. Off = read only."`
 	Name          string     `json:"name"`
 	URL           string     `json:"url"`
 	TLSSkipVerify bool       `json:"tls_skip_verify"`
@@ -62,7 +66,8 @@ type DNSServer struct {
 
 func toDNSServer(s sqlc.DnsServer) DNSServer {
 	return DNSServer{
-		ID: s.ID.String(), WorkspaceID: s.WorkspaceID.String(), Name: s.Name, URL: s.Url,
+		ID: s.ID.String(), WorkspaceID: s.WorkspaceID.String(), Kind: s.Kind, AllowChanges: s.AllowChanges,
+		Name: s.Name, URL: s.Url,
 		TLSSkipVerify: s.TlsSkipVerify, AllowInternal: s.AllowInternal, Description: s.Description,
 		Favorite: s.Favorite, Status: s.Status, StatusMessage: s.StatusMessage, Version: s.Version,
 		ServerDomain: s.ServerDomain, ZoneCount: s.ZoneCount, LatencyMs: s.LatencyMs,
@@ -76,9 +81,11 @@ type DNSServerOutput struct {
 }
 
 type DNSServerBody struct {
+	Kind          string `json:"kind,omitempty" enum:"technitium,arvan" doc:"technitium when left out. Can't change once saved."`
 	Name          string `json:"name" minLength:"1" maxLength:"100"`
-	URL           string `json:"url" minLength:"1" maxLength:"500" doc:"The server's web console, like https://ns1.example.com:53443"`
-	Token         string `json:"token,omitempty" maxLength:"500" doc:"API token. Blank on update keeps the saved one."`
+	URL           string `json:"url,omitempty" maxLength:"500" doc:"Technitium: the server's web console, like https://ns1.example.com:53443. Not used for ArvanCloud."`
+	Token         string `json:"token,omitempty" maxLength:"500" doc:"API token (ArvanCloud: the API key). Blank on update keeps the saved one."`
+	AllowChanges  *bool  `json:"allow_changes,omitempty" doc:"Let Morche write. Left out: on for Technitium, off for ArvanCloud (and kept as saved on update)."`
 	TLSSkipVerify bool   `json:"tls_skip_verify,omitempty"`
 	AllowInternal bool   `json:"allow_internal,omitempty" doc:"Reach a private or loopback address. System admins only."`
 	Description   string `json:"description,omitempty" maxLength:"500"`
@@ -121,6 +128,9 @@ type dnsConnection struct {
 }
 
 func (h *dnsHandler) savedClient(s sqlc.DnsServer) (*technitium.Client, error) {
+	if s.Kind == dnsKindArvan {
+		return nil, errArvanConnection
+	}
 	token, err := h.box.Open(s.TokenEnc)
 	if err != nil {
 		return nil, err
@@ -133,6 +143,9 @@ func dnsStatus(err error) (string, string) {
 	var blocked *dbmon.BlockedError
 	if errors.As(err, &blocked) {
 		return dbmon.StatusBlocked, blocked.Error()
+	}
+	if isArvanError(err) {
+		return arvanStatus(err)
 	}
 	return technitium.Classify(err)
 }
@@ -153,6 +166,12 @@ func (h *dnsHandler) record(ctx context.Context, id uuid.UUID, info technitium.I
 // dnsError turns what a DNS server said into the API's answer. A refusal from
 // the server (a bad value, an existing record) is the caller's to fix.
 func dnsError(err error) error {
+	if errors.Is(err, errArvanConnection) {
+		return huma.Error409Conflict("This is an ArvanCloud connection: its zones are managed through the CDN endpoints.")
+	}
+	if isArvanError(err) {
+		return arvanError(err)
+	}
 	var api *technitium.APIError
 	if errors.As(err, &api) {
 		if strings.Contains(strings.ToLower(api.Message), "no such zone") {
@@ -176,6 +195,9 @@ func (h *dnsHandler) withDNS(ctx context.Context, rawID string) (sqlc.DnsServer,
 	}
 	if err != nil {
 		return sqlc.DnsServer{}, nil, internalError(err)
+	}
+	if s.Kind == dnsKindArvan {
+		return s, nil, nil
 	}
 	c, err := h.savedClient(s)
 	if err != nil {
@@ -215,6 +237,8 @@ type DNSZone struct {
 	Expired      bool       `json:"expired"`
 	Expiry       *time.Time `json:"expiry,omitempty"`
 	LastModified *time.Time `json:"last_modified,omitempty"`
+	// CDN is set for an ArvanCloud domain.
+	CDN *DNSZoneCDN `json:"cdn,omitempty" required:"false"`
 }
 
 func toDNSZone(z technitium.Zone) DNSZone {
@@ -347,21 +371,16 @@ func (h *dnsHandler) create(ctx context.Context, in *struct{ Body DNSServerBody 
 	if p.Access.WorkspaceLevel(ws) < auth.Engineer {
 		return nil, huma.Error403Forbidden("You need Engineer access to the workspace to add a DNS server.")
 	}
-	clean, err := cleanDNSURL(b.URL)
-	if err != nil {
-		return nil, err
-	}
-	if err := allowInternal(p, nil, clean, b.AllowInternal); err != nil {
-		return nil, err
-	}
-	token, err := h.resolveToken(nil, clean, strings.TrimSpace(b.Token))
+	kind := dnsKindOf(b.Kind)
+	conn, err := h.connectionOf(p, nil, kind, b.URL, b.Token, b.TLSSkipVerify, b.AllowInternal)
 	if err != nil {
 		return nil, err
 	}
 	s, err := h.q.CreateDNSServer(ctx, sqlc.CreateDNSServerParams{
-		WorkspaceID: ws, Name: strings.TrimSpace(b.Name), Url: clean, TokenEnc: h.box.Seal(token),
-		TlsSkipVerify: b.TLSSkipVerify, AllowInternal: b.AllowInternal,
-		Description: strings.TrimSpace(b.Description),
+		WorkspaceID: ws, Kind: kind, Name: strings.TrimSpace(b.Name), Url: conn.url, TokenEnc: h.box.Seal(conn.token),
+		TlsSkipVerify: conn.skipVerify, AllowInternal: conn.allowInternal,
+		AllowChanges: allowChangesOf(b.AllowChanges, nil, kind),
+		Description:  strings.TrimSpace(b.Description),
 	})
 	if isUniqueViolation(err) {
 		return nil, fieldError("body.name", "A DNS server with this name already exists", b.Name)
@@ -376,13 +395,9 @@ func (h *dnsHandler) create(ctx context.Context, in *struct{ Body DNSServerBody 
 // the monitor comes round. A failure to check is the server's status, not an
 // error of the save.
 func (h *dnsHandler) checkNow(ctx context.Context, s sqlc.DnsServer) sqlc.DnsServer {
-	c, err := h.savedClient(s)
-	if err != nil {
-		return s
-	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	info, checkErr := c.Check(cctx)
+	info, checkErr := h.checkServer(cctx, s)
 	saved, err := h.record(ctx, s.ID, info, checkErr)
 	if err != nil {
 		return s
@@ -400,21 +415,18 @@ func (h *dnsHandler) update(ctx context.Context, in *struct {
 	if err != nil {
 		return nil, err
 	}
-	clean, err := cleanDNSURL(b.URL)
-	if err != nil {
-		return nil, err
+	if b.Kind != "" && dnsKindOf(b.Kind) != prev.Kind {
+		return nil, fieldError("body.kind", "A connection's kind can't change: add a new one", b.Kind)
 	}
-	if err := allowInternal(p, &prev, clean, b.AllowInternal); err != nil {
-		return nil, err
-	}
-	token, err := h.resolveToken(&prev, clean, strings.TrimSpace(b.Token))
+	conn, err := h.connectionOf(p, &prev, prev.Kind, b.URL, b.Token, b.TLSSkipVerify, b.AllowInternal)
 	if err != nil {
 		return nil, err
 	}
 	s, err := h.q.UpdateDNSServer(ctx, sqlc.UpdateDNSServerParams{
-		ID: prev.ID, Name: strings.TrimSpace(b.Name), Url: clean, TokenEnc: h.box.Seal(token),
-		TlsSkipVerify: b.TLSSkipVerify, AllowInternal: b.AllowInternal,
-		Description: strings.TrimSpace(b.Description),
+		ID: prev.ID, Name: strings.TrimSpace(b.Name), Url: conn.url, TokenEnc: h.box.Seal(conn.token),
+		TlsSkipVerify: conn.skipVerify, AllowInternal: conn.allowInternal,
+		AllowChanges: allowChangesOf(b.AllowChanges, &prev, prev.Kind),
+		Description:  strings.TrimSpace(b.Description),
 	})
 	if isUniqueViolation(err) {
 		return nil, fieldError("body.name", "A DNS server with this name already exists", b.Name)
@@ -426,7 +438,8 @@ func (h *dnsHandler) update(ctx context.Context, in *struct {
 }
 
 type DNSTestBody struct {
-	URL           string  `json:"url" minLength:"1" maxLength:"500"`
+	Kind          string  `json:"kind,omitempty" enum:"technitium,arvan"`
+	URL           string  `json:"url,omitempty" maxLength:"500"`
 	Token         string  `json:"token,omitempty" maxLength:"500"`
 	TLSSkipVerify bool    `json:"tls_skip_verify,omitempty"`
 	AllowInternal bool    `json:"allow_internal,omitempty"`
@@ -470,21 +483,17 @@ func (h *dnsHandler) test(ctx context.Context, in *struct{ Body DNSTestBody }) (
 			return nil, huma.Error403Forbidden("You need Engineer access to the workspace to add a DNS server.")
 		}
 	}
-	clean, err := cleanDNSURL(b.URL)
+	kind := dnsKindOf(b.Kind)
+	if prev != nil {
+		kind = prev.Kind
+	}
+	conn, err := h.connectionOf(p, prev, kind, b.URL, b.Token, b.TLSSkipVerify, b.AllowInternal)
 	if err != nil {
 		return nil, err
 	}
-	if err := allowInternal(p, prev, clean, b.AllowInternal); err != nil {
-		return nil, err
-	}
-	token, err := h.resolveToken(prev, clean, strings.TrimSpace(b.Token))
-	if err != nil {
-		return nil, err
-	}
-	c := h.client(dnsConnection{clean, token, b.TLSSkipVerify, b.AllowInternal})
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	info, checkErr := c.Check(ctx)
+	info, checkErr := h.checkConnection(ctx, kind, conn)
 	out := &DNSTestOutput{}
 	out.Body.Status, out.Body.Message = dnsStatus(checkErr)
 	out.Body.OK = checkErr == nil
@@ -569,7 +578,7 @@ func registerDNS(api huma.API, h *dnsHandler) {
 					return
 				}
 				for _, z := range zones {
-					copies = append(copies, DNSZoneCopy{ServerID: s.ID.String(), ServerName: s.Name, DNSZone: toDNSZone(z)})
+					copies = append(copies, DNSZoneCopy{ServerID: s.ID.String(), ServerName: s.Name, DNSZone: z})
 				}
 			}()
 		}
@@ -635,13 +644,13 @@ func registerDNS(api huma.API, h *dnsHandler) {
 		OperationID: "check-dns-server", Method: http.MethodPost, Path: "/dns-servers/{id}/check",
 		Summary: "Check a DNS server's connection", Tags: tags,
 	}, func(ctx context.Context, in *struct{ DNSServerIDPath }) (*DNSServerOutput, error) {
-		s, c, err := h.withDNS(ctx, in.ID)
+		s, _, err := h.withDNS(ctx, in.ID)
 		if err != nil {
 			return nil, err
 		}
 		cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		info, checkErr := c.Check(cctx)
+		info, checkErr := h.checkServer(cctx, s)
 		saved, err := h.record(ctx, s.ID, info, checkErr)
 		if err != nil {
 			return nil, internalError(err)
@@ -658,19 +667,16 @@ func registerDNS(api huma.API, h *dnsHandler) {
 		OperationID: "list-dns-zones", Method: http.MethodGet, Path: "/dns-servers/{id}/zones",
 		Summary: "List a DNS server's zones", Description: "The server's built-in zones are left out.", Tags: tags,
 	}, func(ctx context.Context, in *struct{ DNSServerIDPath }) (*zonesOutput, error) {
-		_, c, err := h.withDNS(ctx, in.ID)
+		s, _, err := h.withDNS(ctx, in.ID)
 		if err != nil {
 			return nil, err
 		}
-		zones, err := c.ListZones(ctx)
+		zones, err := h.zonesFor(ctx, s)
 		if err != nil {
 			return nil, dnsError(err)
 		}
 		out := &zonesOutput{}
-		out.Body.Items = make([]DNSZone, 0, len(zones))
-		for _, z := range zones {
-			out.Body.Items = append(out.Body.Items, toDNSZone(z))
-		}
+		out.Body.Items = zones
 		return out, nil
 	})
 
@@ -681,21 +687,39 @@ func registerDNS(api huma.API, h *dnsHandler) {
 		DNSServerIDPath
 		Body struct {
 			Name             string   `json:"name" minLength:"1" maxLength:"255" doc:"A domain, or an IP or network for a reverse zone"`
-			Type             string   `json:"type" enum:"Primary,Secondary" doc:"Primary holds the records; Secondary copies them from a primary."`
+			Type             string   `json:"type,omitempty" enum:"Primary,Secondary" doc:"Technitium: Primary holds the records; Secondary copies them from a primary."`
 			PrimaryAddresses []string `json:"primary_addresses,omitempty" maxItems:"10" doc:"Secondary: where to copy from. Blank asks the zone's SOA."`
+			Setup            string   `json:"setup,omitempty" enum:"full,partial" doc:"ArvanCloud: full = its nameservers answer for the domain; partial = only chosen names, by CNAME. full when left out."`
+			ImportRecords    *bool    `json:"import_records,omitempty" doc:"ArvanCloud: read the domain's current records into it. On when left out."`
 		}
 	}) (*struct {
 		Body struct {
 			Name string `json:"name"`
 		}
 	}, error) {
-		_, c, err := h.withDNS(ctx, in.ID)
+		s, c, err := h.withDNS(ctx, in.ID)
 		if err != nil {
+			return nil, err
+		}
+		if err := mustWrite(s); err != nil {
 			return nil, err
 		}
 		zone, err := cleanZone(in.Body.Name)
 		if err != nil {
 			return nil, fieldError("body.name", "Enter a domain like example.com, or a network like 10.0.0.0/24", in.Body.Name)
+		}
+		if s.Kind == dnsKindArvan {
+			name, err := h.createArvanDomain(ctx, s, zone, in.Body.Setup, in.Body.ImportRecords)
+			if err != nil {
+				return nil, err
+			}
+			out := &struct {
+				Body struct {
+					Name string `json:"name"`
+				}
+			}{}
+			out.Body.Name = name
+			return out, nil
 		}
 		var primaries []string
 		for _, a := range in.Body.PrimaryAddresses {
@@ -724,7 +748,14 @@ func registerDNS(api huma.API, h *dnsHandler) {
 		Summary: "Delete a zone", Description: "Deletes it from the DNS server, with every record in it.",
 		Tags: tags, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *struct{ DNSZonePath }) (*struct{}, error) {
-		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		s, _, err := h.withDNS(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if s.Kind == dnsKindArvan {
+			return nil, h.deleteArvanDomain(ctx, s, in.Zone)
+		}
+		_, c, zone, err := h.zoneWrite(ctx, in.DNSZonePath)
 		if err != nil {
 			return nil, err
 		}
@@ -744,7 +775,7 @@ func registerDNS(api huma.API, h *dnsHandler) {
 			Enabled bool `json:"enabled"`
 		}
 	}) (*struct{}, error) {
-		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		_, c, zone, err := h.zoneWrite(ctx, in.DNSZonePath)
 		if err != nil {
 			return nil, err
 		}
@@ -772,7 +803,7 @@ func registerDNS(api huma.API, h *dnsHandler) {
 		DNSZonePath
 		Body DNSZoneOptionsBody
 	}) (*DNSZoneOptionsOutput, error) {
-		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		_, c, zone, err := h.zoneWrite(ctx, in.DNSZonePath)
 		if err != nil {
 			return nil, err
 		}
@@ -791,7 +822,7 @@ func registerDNS(api huma.API, h *dnsHandler) {
 		Summary: "Copy a Secondary zone again", Description: "The server fetches the zone from its primary now instead of waiting.",
 		Tags: tags, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *struct{ DNSZonePath }) (*struct{}, error) {
-		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		_, c, zone, err := h.zoneWrite(ctx, in.DNSZonePath)
 		if err != nil {
 			return nil, err
 		}
@@ -819,7 +850,7 @@ func registerDNS(api huma.API, h *dnsHandler) {
 		DNSZonePath
 		Body DNSRecordBody
 	}) (*DNSRecordsOutput, error) {
-		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		_, c, zone, err := h.zoneWrite(ctx, in.DNSZonePath)
 		if err != nil {
 			return nil, err
 		}
@@ -848,7 +879,7 @@ func registerDNS(api huma.API, h *dnsHandler) {
 			New     DNSRecordBody `json:"new"`
 		}
 	}) (*DNSRecordsOutput, error) {
-		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		_, c, zone, err := h.zoneWrite(ctx, in.DNSZonePath)
 		if err != nil {
 			return nil, err
 		}
@@ -875,7 +906,7 @@ func registerDNS(api huma.API, h *dnsHandler) {
 		DNSZonePath
 		Body DNSRecordBody
 	}) (*DNSRecordsOutput, error) {
-		_, c, zone, err := h.zoneRequest(ctx, in.DNSZonePath)
+		_, c, zone, err := h.zoneWrite(ctx, in.DNSZonePath)
 		if err != nil {
 			return nil, err
 		}
@@ -895,11 +926,23 @@ func (h *dnsHandler) zoneRequest(ctx context.Context, path DNSZonePath) (sqlc.Dn
 	if err != nil {
 		return s, nil, "", err
 	}
+	if s.Kind == dnsKindArvan {
+		return s, nil, "", dnsError(errArvanConnection)
+	}
 	zone, err := cleanZone(path.Zone)
 	if err != nil {
 		return s, nil, "", err
 	}
 	return s, c, zone, nil
+}
+
+// zoneWrite is zoneRequest for a change: the connection must allow changes.
+func (h *dnsHandler) zoneWrite(ctx context.Context, path DNSZonePath) (sqlc.DnsServer, *technitium.Client, string, error) {
+	s, c, zone, err := h.zoneRequest(ctx, path)
+	if err != nil {
+		return s, c, zone, err
+	}
+	return s, c, zone, mustWrite(s)
 }
 
 func (h *dnsHandler) recordsOf(ctx context.Context, c *technitium.Client, zone string) (*DNSRecordsOutput, error) {
@@ -918,12 +961,8 @@ func (h *dnsHandler) recordsOf(ctx context.Context, c *technitium.Client, zone s
 
 // zonesOf reads one server's zones for the view across servers, giving up
 // soon so one dead server doesn't hold up the page.
-func (h *dnsHandler) zonesOf(ctx context.Context, s sqlc.DnsServer) ([]technitium.Zone, error) {
-	c, err := h.savedClient(s)
-	if err != nil {
-		return nil, err
-	}
+func (h *dnsHandler) zonesOf(ctx context.Context, s sqlc.DnsServer) ([]DNSZone, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	return c.ListZones(ctx)
+	return h.zonesFor(ctx, s)
 }

@@ -1550,8 +1550,11 @@ func (h *serverHandler) recreateAuto(ctx context.Context, t *jobs.Task, serverID
 			if !start {
 				return h.composeRun(ctx, t, sh, cp, "up --no-start --no-deps "+svc)
 			}
-			return h.composeRun(ctx, t, sh, cp, "up -d --no-deps --timeout "+strconv.Itoa(stop)+" "+svc)
+			return errRollLater
 		})
+		if errors.Is(err, errRollLater) {
+			return h.updateService(ctx, t, cp, service, "--timeout "+strconv.Itoa(stop), stop)
+		}
 		if !missing {
 			return err
 		}

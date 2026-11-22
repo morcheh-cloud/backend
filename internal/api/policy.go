@@ -60,6 +60,14 @@ const (
 	kindCloudAccount
 	// A workspace level, on the workspace of the asset in {id}.
 	kindAsset
+	// A workspace level, on the workspace of the outgoing webhook or webhook
+	// delivery in {id}.
+	kindWebhook
+	kindWebhookDelivery
+	// A workspace level, on the workspace of the automation or automation
+	// run in {id}.
+	kindAutomation
+	kindAutomationRun
 )
 
 type policy struct {
@@ -108,6 +116,14 @@ func onMonitorIncident(l auth.Level) policy {
 }
 func onAlertRule(l auth.Level) policy { return policy{kindAlertRule, l} }
 func onAsset(l auth.Level) policy     { return policy{kindAsset, l} }
+func onWebhook(l auth.Level) policy   { return policy{kindWebhook, l} }
+func onWebhookDelivery(l auth.Level) policy {
+	return policy{kindWebhookDelivery, l}
+}
+func onAutomation(l auth.Level) policy { return policy{kindAutomation, l} }
+func onAutomationRun(l auth.Level) policy {
+	return policy{kindAutomationRun, l}
+}
 
 var (
 	public  = policy{kind: kindPublic}
@@ -163,6 +179,45 @@ var policies = map[string]policy{
 	"change-password": session,
 	"update-me":       active,
 	"get-my-access":   active,
+
+	// API tokens: your own; admins see and revoke anyone's. A token can't
+	// call any of these (tokenRefused).
+	"list-api-tokens":        active,
+	"create-api-token":       active,
+	"delete-api-token":       active,
+	"admin-list-user-tokens": admin,
+	"admin-delete-api-token": admin,
+
+	// The event bus: what event types exist (for pickers).
+	"get-event-catalog": active,
+	// Outgoing webhooks: the workspace's Owner.
+	"list-webhooks":              onWorkspace(auth.Owner),
+	"create-webhook":             onWorkspace(auth.Owner),
+	"get-webhook":                onWebhook(auth.Owner),
+	"update-webhook":             onWebhook(auth.Owner),
+	"delete-webhook":             onWebhook(auth.Owner),
+	"test-webhook":               onWebhook(auth.Owner),
+	"rotate-webhook-secret":      onWebhook(auth.Owner),
+	"list-webhook-deliveries":    onWebhook(auth.Owner),
+	"get-webhook-delivery":       onWebhookDelivery(auth.Owner),
+	"redeliver-webhook-delivery": onWebhookDelivery(auth.Owner),
+	// Automations: Viewer reads, Operator runs and stops, Engineer edits.
+	// Steps that run commands also need Engineer on each server, checked in
+	// the handler (as the person it runs as, again at run time).
+	"list-automations":               onWorkspace(auth.Viewer),
+	"create-automation":              onWorkspace(auth.Engineer),
+	"preview-automation":             onWorkspace(auth.Engineer),
+	"get-automation":                 onAutomation(auth.Viewer),
+	"update-automation":              onAutomation(auth.Engineer),
+	"delete-automation":              onAutomation(auth.Engineer),
+	"run-automation":                 onAutomation(auth.Operator),
+	"test-automation":                onAutomation(auth.Operator),
+	"create-automation-hook":         onAutomation(auth.Engineer),
+	"delete-automation-hook":         onAutomation(auth.Engineer),
+	"list-automation-runs":           onAutomation(auth.Viewer),
+	"list-workspace-automation-runs": onWorkspace(auth.Viewer),
+	"get-automation-run":             onAutomationRun(auth.Viewer),
+	"cancel-automation-run":          onAutomationRun(auth.Operator),
 
 	// Sessions and the sign-in log.
 	"list-my-sessions":         active,
@@ -648,6 +703,55 @@ var policies = map[string]policy{
 	"delete-dns-record":         onDNSServer(auth.Engineer),
 	"update-dns-server":         onDNSServer(auth.Owner),
 	"delete-dns-server":         onDNSServer(auth.Owner),
+	// ArvanCloud domains (CDN): writes also need the connection to allow changes.
+	"list-cdn-records":                onDNSServer(auth.Viewer),
+	"export-cdn-records":              onDNSServer(auth.Viewer),
+	"get-cdn-ssl":                     onDNSServer(auth.Viewer),
+	"get-cdn-caching":                 onDNSServer(auth.Viewer),
+	"get-cdn-redirect":                onDNSServer(auth.Viewer),
+	"get-cdn-acceleration":            onDNSServer(auth.Viewer),
+	"get-cdn-report":                  onDNSServer(auth.Viewer),
+	"check-cdn-domain":                onDNSServer(auth.Operator),
+	"purge-cdn-cache":                 onDNSServer(auth.Operator),
+	"add-cdn-record":                  onDNSServer(auth.Engineer),
+	"update-cdn-record":               onDNSServer(auth.Engineer),
+	"delete-cdn-record":               onDNSServer(auth.Engineer),
+	"set-cdn-record-cloud":            onDNSServer(auth.Engineer),
+	"import-cdn-records":              onDNSServer(auth.Engineer),
+	"set-cdn-dnssec":                  onDNSServer(auth.Engineer),
+	"update-cdn-ssl":                  onDNSServer(auth.Engineer),
+	"issue-cdn-certificate":           onDNSServer(auth.Engineer),
+	"update-cdn-caching":              onDNSServer(auth.Engineer),
+	"update-cdn-redirect":             onDNSServer(auth.Engineer),
+	"update-cdn-acceleration":         onDNSServer(auth.Engineer),
+	"get-cdn-firewall":                onDNSServer(auth.Viewer),
+	"get-cdn-rate-limit":              onDNSServer(auth.Viewer),
+	"get-cdn-waf":                     onDNSServer(auth.Viewer),
+	"update-cdn-firewall-settings":    onDNSServer(auth.Engineer),
+	"add-cdn-firewall-rule":           onDNSServer(auth.Engineer),
+	"update-cdn-firewall-rule":        onDNSServer(auth.Engineer),
+	"delete-cdn-firewall-rule":        onDNSServer(auth.Engineer),
+	"set-cdn-firewall-rule-enabled":   onDNSServer(auth.Engineer),
+	"move-cdn-firewall-rule":          onDNSServer(auth.Engineer),
+	"update-cdn-rate-limit-settings":  onDNSServer(auth.Engineer),
+	"add-cdn-rate-limit-rule":         onDNSServer(auth.Engineer),
+	"update-cdn-rate-limit-rule":      onDNSServer(auth.Engineer),
+	"delete-cdn-rate-limit-rule":      onDNSServer(auth.Engineer),
+	"set-cdn-rate-limit-rule-enabled": onDNSServer(auth.Engineer),
+	"move-cdn-rate-limit-rule":        onDNSServer(auth.Engineer),
+	"update-cdn-waf-mode":             onDNSServer(auth.Engineer),
+	"add-cdn-waf-package":             onDNSServer(auth.Engineer),
+	"set-cdn-waf-package":             onDNSServer(auth.Engineer),
+	"delete-cdn-waf-package":          onDNSServer(auth.Engineer),
+	"add-cdn-waf-rule":                onDNSServer(auth.Engineer),
+	"update-cdn-waf-rule":             onDNSServer(auth.Engineer),
+	"delete-cdn-waf-rule":             onDNSServer(auth.Engineer),
+	"set-cdn-waf-rule-enabled":        onDNSServer(auth.Engineer),
+	"move-cdn-waf-rule":               onDNSServer(auth.Engineer),
+	// Names across every DNS connection (the reverse proxy's domains).
+	"find-dns-names":   active,
+	"point-dns-name":   onDNSServer(auth.Engineer),
+	"get-arvan-ranges": active,
 
 	// Proxmox: a cluster's level is its workspace's.
 	"list-pve-clusters":              active,
@@ -776,6 +880,26 @@ var policies = map[string]policy{
 	"delete-database":             onDatabase(auth.Owner),
 	"reveal-database-credentials": onDatabase(auth.Owner),
 
+	// Data explorer: the data itself, so Engineer to read (like Explain);
+	// a run that may write is an Owner's. Saved queries: your own, or a
+	// shared one as Owner (inside).
+	"get-database-explorer":       onDatabase(auth.Engineer),
+	"describe-database-object":    onDatabase(auth.Engineer),
+	"list-database-rows":          onDatabase(auth.Engineer),
+	"get-database-key":            onDatabase(auth.Engineer),
+	"run-database-query":          onDatabase(auth.Engineer),
+	"run-database-change":         onDatabase(auth.Owner),
+	"list-database-query-runs":    onDatabase(auth.Engineer),
+	"list-database-saved-queries": onDatabase(auth.Engineer),
+	"create-database-saved-query": onDatabase(auth.Engineer),
+	"update-database-saved-query": onDatabase(auth.Engineer),
+	"delete-database-saved-query": onDatabase(auth.Engineer),
+	"edit-database-rows":          onDatabase(auth.Owner),
+	"list-database-saved-views":   onDatabase(auth.Engineer),
+	"create-database-saved-view":  onDatabase(auth.Engineer),
+	"update-database-saved-view":  onDatabase(auth.Engineer),
+	"delete-database-saved-view":  onDatabase(auth.Engineer),
+
 	// Backups: a plan and its login are an Owner's; starting and checking one
 	// an Operator's. A backup is the whole database, so downloading or
 	// deleting one is an Owner's too (and the storage is checked inside).
@@ -799,6 +923,22 @@ var policies = map[string]policy{
 	"download-database-backup":      onBackup(auth.Owner),
 	"delete-database-backup":        onBackup(auth.Owner),
 	"restore-database-backup":       onBackup(auth.Owner),
+	// Continuous backup: changes also need Engineer on the server (the
+	// handler checks); backups and checks are Operator, like a plan's run.
+	"get-database-pitr":               onDatabase(auth.Viewer),
+	"refresh-database-pitr":           onDatabase(auth.Viewer),
+	"list-database-pitr-runs":         onDatabase(auth.Viewer),
+	"backup-database-pitr":            onDatabase(auth.Operator),
+	"check-database-pitr":             onDatabase(auth.Operator),
+	"detect-database-pitr":            onDatabase(auth.Owner),
+	"save-database-pitr":              onDatabase(auth.Owner),
+	"resetup-database-pitr":           onDatabase(auth.Owner),
+	"restart-database-pitr":           onDatabase(auth.Owner),
+	"cancel-database-pitr-restart":    onDatabase(auth.Owner),
+	"restore-database-pitr":           onDatabase(auth.Owner),
+	"teardown-database-pitr-copy":     onDatabase(auth.Owner),
+	"reveal-database-pitr-passphrase": onDatabase(auth.Owner),
+	"remove-database-pitr":            onDatabase(auth.Owner),
 
 	// Database syncs: the lower of the two databases' levels counts. Seeing
 	// one = Viewer, running or comparing = Operator, saving = Owner (it
@@ -893,6 +1033,7 @@ var policies = map[string]policy{
 	"push-heartbeat":               public,
 	"push-heartbeat-post":          public,
 	"docker-git-webhook":           public,
+	"automation-hook":              public,
 	"docker-auto-update-webhook":   public,
 
 	// Notification channels.

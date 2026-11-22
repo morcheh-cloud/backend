@@ -1,5 +1,5 @@
 // Package dbmon watches databases: it connects to PostgreSQL, MySQL/MariaDB,
-// SQL Server, Redis and MongoDB with read-only monitoring queries, turns what
+// SQL Server, Redis, MongoDB and ClickHouse with read-only monitoring queries, turns what
 // each engine reports into one shape (a snapshot), and judges that snapshot
 // against limits (checks). It knows nothing about HTTP or Morche's own
 // tables; the API decides how a database is reached (directly or through a
@@ -14,15 +14,16 @@ import (
 
 // Engines.
 const (
-	Postgres = "postgres"
-	MySQL    = "mysql"
-	MSSQL    = "mssql"
-	Redis    = "redis"
-	Mongo    = "mongodb"
+	Postgres   = "postgres"
+	MySQL      = "mysql"
+	MSSQL      = "mssql"
+	Redis      = "redis"
+	Mongo      = "mongodb"
+	ClickHouse = "clickhouse"
 )
 
 // Engines lists every engine, in the order the UI offers them.
-var Engines = []string{Postgres, MySQL, MSSQL, Redis, Mongo}
+var Engines = []string{Postgres, MySQL, MSSQL, Redis, Mongo, ClickHouse}
 
 // DefaultPort is each engine's usual port.
 func DefaultPort(engine string) int {
@@ -37,6 +38,8 @@ func DefaultPort(engine string) int {
 		return 6379
 	case Mongo:
 		return 27017
+	case ClickHouse:
+		return 9000 // native protocol (9440 with TLS)
 	}
 	return 0
 }
@@ -60,7 +63,7 @@ type Config struct {
 	Password string
 	// Database to connect to (Postgres: default postgres; MySQL: none; SQL
 	// Server: default master; MongoDB: the auth source, default admin; Redis:
-	// the db number, default 0).
+	// the db number, default 0; ClickHouse: default "default").
 	Database string
 	TLS      string
 	CACert   string
@@ -89,8 +92,8 @@ func (c Config) addr() string {
 // capped; a part an engine or the login's privileges can't give is left empty
 // and explained in Notes.
 type DatabaseSnapshot struct {
-	Engine      string    `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb"`
-	Flavor      string    `json:"flavor" doc:"What it really is: PostgreSQL, MySQL, MariaDB, SQL Server, Redis, Valkey, MongoDB" example:"PostgreSQL"`
+	Engine      string    `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse"`
+	Flavor      string    `json:"flavor" doc:"What it really is: PostgreSQL, MySQL, MariaDB, SQL Server, Redis, Valkey, MongoDB, ClickHouse" example:"PostgreSQL"`
 	Version     string    `json:"version" example:"17.2"`
 	Edition     string    `json:"edition,omitempty" doc:"SQL Server edition, managed-service hints" example:"Developer Edition (64-bit)"`
 	CollectedAt time.Time `json:"collected_at"`
@@ -126,6 +129,8 @@ type DatabaseSnapshot struct {
 	Settings      []DatabaseSetting   `json:"settings" doc:"Settings worth knowing (and watching for changes)"`
 	Users         []DatabaseUser      `json:"users"`
 	Security      DatabaseSecurity    `json:"security"`
+	Parts         *DatabaseParts      `json:"parts,omitempty" doc:"ClickHouse: the partition with the most active parts"`
+	Mutations     *DatabaseMutations  `json:"mutations,omitempty" doc:"ClickHouse: ALTER UPDATE/DELETE still being applied"`
 	Facts         []DatabaseFact      `json:"facts" doc:"Engine-specific numbers"`
 	Notes         []DatabaseNote      `json:"notes" doc:"What couldn't be read, and why"`
 
@@ -321,6 +326,30 @@ type DatabaseSecurity struct {
 	NoPassword   *int32   `json:"no_password" nullable:"true" doc:"Logins without a password"`
 	FailedLogins *int64   `json:"failed_logins" nullable:"true" doc:"Since start"`
 	Risks        []string `json:"risks" doc:"Settings that open a door, e.g. xp_cmdshell"`
+}
+
+// DatabaseParts is the ClickHouse partition with the most active parts.
+// Inserts slow down past DelayAt and fail ("Too many parts") past ThrowAt.
+type DatabaseParts struct {
+	Database  string `json:"database"`
+	Table     string `json:"table"`
+	Partition string `json:"partition" example:"202611"`
+	Count     int64  `json:"count"`
+	DelayAt   int64  `json:"delay_at" doc:"parts_to_delay_insert"`
+	ThrowAt   int64  `json:"throw_at" doc:"parts_to_throw_insert"`
+}
+
+// DatabaseMutations sums the unfinished ClickHouse mutations; the named one is
+// the oldest failing one, else the oldest.
+type DatabaseMutations struct {
+	Running   int32   `json:"running" doc:"Not done yet, failing ones included"`
+	Failed    int32   `json:"failed" doc:"Retried after an error; they hold back later mutations on their table"`
+	Table     string  `json:"table"`
+	ID        string  `json:"id"`
+	Command   string  `json:"command"`
+	Error     string  `json:"error,omitempty"`
+	PartsToDo int64   `json:"parts_to_do"`
+	Seconds   float64 `json:"seconds" doc:"Since it was created"`
 }
 
 type DatabaseFact struct {

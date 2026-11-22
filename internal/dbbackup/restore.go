@@ -12,7 +12,7 @@ import (
 )
 
 // A restore script reads the backup on stdin, plain (Morche undoes its own
-// gzip), so it needs nothing on the server beyond the database's client tools.
+// compression), so it needs nothing on the server beyond the database's client tools.
 // It must keep its other commands off stdin.
 
 // Why restores lock out: a table in use shouldn't hang a restore forever.
@@ -21,9 +21,9 @@ const restoreLockMillis = 60_000
 // Restorable says why a file can't be restored from the panel; empty = it can.
 func Restorable(format, target string) string {
 	switch format {
-	case PgCustom, PgSQL, MySQLDB, MySQLBinlog, MSSQLBak, MSSQLDiff:
+	case PgCustom, PgDir, PgSQL, MySQLDB, MySQLBinlog, MSSQLBak, MSSQLDiff:
 		return ""
-	case MongoArchive, MySQLSQL:
+	case MongoArchive, MySQLSQL, ClickHouseTar:
 		if target != "" {
 			return ""
 		}
@@ -65,6 +65,12 @@ type RestoreOptions struct {
 	// A MySQL file that names its database goes into a new one: make it
 	// first (a file from elsewhere may not), drop it if the load fails.
 	CreateNamed bool
+	// Parallel jobs for a pg_dir file; 0 or 1 = one, in a single transaction.
+	Workers int
+	// Where a pg_dir file is unpacked first (a ClickHouse dump, when the
+	// runner's tar can't stream it into the database); empty = the system's temporary
+	// folder.
+	TempDir string
 }
 
 // BuildRestore writes the script that loads one file into t.Name.
@@ -85,7 +91,7 @@ func BuildRestore(t Target, o RestoreOptions) (string, error) {
 		return "", errors.New(why)
 	}
 	switch o.Format {
-	case PgCustom:
+	case PgCustom, PgDir:
 		return pgRestore(t, o), nil
 	case PgSQL:
 		return pgSQLRestore(t, o)
@@ -95,6 +101,8 @@ func BuildRestore(t Target, o RestoreOptions) (string, error) {
 		return mongoRestore(t, o), nil
 	case MSSQLBak, MSSQLDiff:
 		return mssqlRestore(t, o)
+	case ClickHouseTar:
+		return clickhouseRestore(t, o), nil
 	}
 	return "", fmt.Errorf("can't restore %s", o.Format)
 }
@@ -139,15 +147,42 @@ func pgRestore(t Target, o RestoreOptions) string {
 	admin := pgPrelude(&b, t)
 	b.WriteString("command -v pg_restore >/dev/null 2>&1 || { " + missing("pg_restore") + "; }\n")
 	ident := pgIdent(t.Name)
-	args := "pg_restore --no-owner --no-privileges --single-transaction --exit-on-error --no-password -d " + quote("dbname="+connInfo(t.Name))
+	args := "pg_restore --no-owner --no-privileges --exit-on-error --no-password -d " + quote("dbname="+connInfo(t.Name))
+	workers := max(1, min(o.Workers, MaxWorkers))
+	if o.Format == PgDir {
+		// The tar comes on stdin; pg_restore reads the folder it unpacks to.
+		b.WriteString("command -v tar >/dev/null 2>&1 || { " + missing("tar") + "; }\n")
+		tempFolder(&b, o.TempDir, "restore")
+		b.WriteString(`tar -xf - -C "$dir" || {
+  code=$?
+  free=$(df -Pk "$dir" 2>/dev/null | awk 'NR == 2 {print $4}')
+  [ "${free:-1048576}" -ge 65536 ] || echo "The temporary folder $(dirname "$dir") ran out of space: a parallel backup is unpacked there first. Pick a temporary folder on a bigger disk." >&2
+  exit $code
+}
+`)
+	}
+	if workers > 1 && o.Format == PgDir {
+		// Parallel jobs can't share one transaction.
+		args += " -j " + strconv.Itoa(workers)
+	} else {
+		args += " --single-transaction"
+	}
+	if o.Format == PgDir {
+		args += ` "$dir"`
+	}
+	// A custom archive is read from stdin; the folder's already unpacked.
+	stdin := ""
+	if o.Format == PgDir {
+		stdin = " </dev/null"
+	}
 	if o.Replace {
-		b.WriteString(args + " --clean --if-exists\n")
+		b.WriteString(args + " --clean --if-exists" + stdin + "\n")
 		return b.String()
 	}
 	b.WriteString("command -v psql >/dev/null 2>&1 || { " + missing("psql") + "; }\n")
 	b.WriteString(admin("CREATE DATABASE "+ident) + " || exit 1\n")
 	// A failed restore into a new database leaves nothing behind.
-	b.WriteString(args + " || { code=$?; " + admin("DROP DATABASE "+ident) + " >&2; exit $code; }\n")
+	b.WriteString(args + stdin + " || { code=$?; " + admin("DROP DATABASE "+ident) + " >&2; exit $code; }\n")
 	return b.String()
 }
 

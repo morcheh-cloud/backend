@@ -27,7 +27,7 @@ import (
 // reports progress and can be canceled.
 type Job struct {
 	ID         string         `json:"id" format:"uuid"`
-	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install, fail2ban-uninstall, firewall-install, firewall-apply, ansible-run, schedule-sync, schedule-run, script-run, database-backup, database-backup-verify, database-backup-restore, proxy-setup, proxy-geo, proxy-brotli, proxy-waf, proxy-image-filter, proxy-stream-geo, proxy-certificate, software-run, software-scan, package-action, package-refresh, docker-pull, docker-prune, pve-task or pve-create" example:"transfer"`
+	Kind       string         `json:"kind" doc:"What it does: transfer, copy, move, storage-copy, storage-move, compress, extract, fetch, fail2ban-install, fail2ban-uninstall, firewall-install, firewall-apply, ansible-run, schedule-sync, schedule-run, script-run, database-backup, database-backup-verify, database-backup-restore, database-pitr, proxy-setup, proxy-geo, proxy-brotli, proxy-waf, proxy-image-filter, proxy-stream-geo, proxy-certificate, software-run, software-scan, package-action, package-refresh, docker-pull, docker-prune, pve-task or pve-create" example:"transfer"`
 	Title      string         `json:"title" example:"Copy backup.tar.gz from MinIO to web-01"`
 	State      string         `json:"state" enum:"queued,running,succeeded,failed,canceled,interrupted"`
 	Refs       []string       `json:"refs" doc:"Servers and storages it touches"`
@@ -59,6 +59,7 @@ type JobPlace struct {
 	Registry   string `json:"registry,omitempty" format:"uuid" doc:"The container registry login it signs in or out"`
 	ClusterID  string `json:"cluster_id,omitempty" format:"uuid" doc:"The Proxmox cluster it works on"`
 	VMID       int    `json:"vmid,omitempty" doc:"The Proxmox guest it works on"`
+	Automation string `json:"automation_id,omitempty" format:"uuid" doc:"The automation it is a run of (run_id = the automation run)"`
 }
 
 // JobRemoved is sent on the stream when a job is deleted; an empty id means
@@ -273,8 +274,8 @@ func registerJobs(api huma.API, a *authz) {
 		}
 		// A run's record says what it ran; starting another goes through its checks.
 		switch old.Kind {
-		case ansibleRunKind, scheduleSyncKind, scheduleRunKind, scriptRunKind, backupKind, restoreKind, softwareRunKind,
-			logArchiveKind, logRestoreKind, logPutAwayKind:
+		case ansibleRunKind, scheduleSyncKind, scheduleRunKind, scriptRunKind, backupKind, restoreKind, softwareRunKind, pitrKind,
+			logArchiveKind, logRestoreKind, logPutAwayKind, automationRunKind:
 			return nil, huma.Error409Conflict("Run it again from its page.")
 		}
 		p := principalOf(ctx)

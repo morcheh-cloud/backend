@@ -20,6 +20,7 @@ import (
 	"github.com/morche/backend/internal/cmdlog"
 	"github.com/morche/backend/internal/config"
 	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/events"
 	"github.com/morche/backend/internal/jobs"
 	"github.com/morche/backend/internal/terminal"
 )
@@ -36,6 +37,10 @@ const (
 type principal struct {
 	User      sqlc.User
 	SessionID uuid.UUID
+	// TokenID is the API token the request came with (uuid.Nil = a session
+	// cookie); TokenName is that token's name, for the command log.
+	TokenID   uuid.UUID
+	TokenName string
 	Access    *auth.Access
 	// Workspace is the one open in the panel (X-Workspace-Id): it narrows lists
 	// and says where new servers go. It grants nothing.
@@ -85,6 +90,11 @@ type authz struct {
 	up *uptimeHandler
 	// pruned is when old sign-ins were last deleted (only the sweep touches it).
 	pruned time.Time
+	// events is the panel's event bus (internal/events): every handler reaches
+	// it as <handler>.authz.events. Set by build; nil drops events.
+	events *events.Bus
+	// panelURL is where the panel is served ("" = unknown), for links in events.
+	panelURL string
 }
 
 func newAuthz(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, runner *jobs.Runner, terms *terminal.Manager) *authz {
@@ -123,13 +133,18 @@ func (a *authz) middleware(api huma.API) func(huma.Context, func(huma.Context)) 
 			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "This action isn't available.")
 			return
 		}
-		token := ""
+		token, bearer := "", ""
 		if c, err := huma.ReadCookie(ctx, sessionCookie); err == nil {
 			token = c.Value
 		}
+		// An API token counts only without a session cookie, so a browser
+		// session is never mixed with a token.
+		if token == "" {
+			bearer = bearerToken(ctx.Header("Authorization"))
+		}
 		// Without a session there's nothing to reach, whatever the address:
 		// answer that first, so the address check never waits on the database.
-		if pol.kind != kindPublic && token == "" {
+		if pol.kind != kindPublic && token == "" && bearer == "" {
 			d := errUnauthenticated()
 			_ = huma.WriteErr(api, ctx, d.status, d.message)
 			return
@@ -151,7 +166,13 @@ func (a *authz) middleware(api huma.API) func(huma.Context, func(huma.Context)) 
 			next(huma.WithContext(ctx, base))
 			return
 		}
-		p, d := a.authorize(base, token, pol, ctx.Param("id"), ctx.Header(workspaceHeader))
+		var p *principal
+		var d *denied
+		if token != "" {
+			p, d = a.authorize(base, token, pol, ctx.Param("id"), ctx.Header(workspaceHeader))
+		} else {
+			p, d = a.authorizeToken(base, bearer, op, ctx.Operation().Method, pol, ctx.Param("id"), ctx.Header(workspaceHeader))
+		}
 		if d != nil {
 			_ = huma.WriteErr(api, ctx, d.status, d.message)
 			return
@@ -176,8 +197,12 @@ func requestOrigin(ctx huma.Context, p *principal, ip string) cmdlog.Origin {
 	if op.Method == http.MethodGet || op.Method == http.MethodHead {
 		kind = cmdlog.Read
 	}
+	source := cmpOr(op.Summary, op.OperationID)
+	if p.TokenID != uuid.Nil {
+		source = "API token " + p.TokenName + ": " + source
+	}
 	return cmdlog.Origin{
-		Kind: kind, Source: cmpOr(op.Summary, op.OperationID),
+		Kind: kind, Source: source,
 		UserID: &p.User.ID, ClientIP: ip,
 	}
 }
@@ -208,6 +233,13 @@ func (a *authz) authorize(ctx context.Context, token string, pol policy, rawID, 
 	if id, err := uuid.Parse(workspace); err == nil {
 		p.Workspace = &id
 	}
+	return a.authorizeAs(ctx, p, pol, rawID)
+}
+
+// authorizeAs is the part of the check shared by sessions and API tokens:
+// p's user is known and not blocked.
+func (a *authz) authorizeAs(ctx context.Context, p *principal, pol policy, rawID string) (*principal, *denied) {
+	u := p.User
 	if pol.kind == kindSession {
 		return p, nil
 	}
@@ -217,6 +249,7 @@ func (a *authz) authorize(ctx context.Context, token string, pol policy, rawID, 
 	if u.MustChangePassword {
 		return nil, &denied{http.StatusForbidden, "Change your password to continue."}
 	}
+	var err error
 	if p.Access, err = a.accessOf(ctx, u); err != nil {
 		slog.Error("load access", "error", err)
 		return nil, &denied{http.StatusInternalServerError, "internal error"}
@@ -253,7 +286,7 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 		return auth.Owner, nil
 	}
 
-	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindBackupPlan: "backup plan", kindBackup: "backup", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run", kindStorageSync: "sync", kindStorageSyncRun: "run", kindDatabaseSync: "sync", kindDatabaseSyncRun: "run", kindDNSServer: "DNS server", kindScript: "script", kindProxy: "proxy", kindSoftwareRecipe: "application", kindSoftwareInstall: "application", kindMonitor: "monitor", kindNotificationChannel: "channel", kindMonitorIncident: "incident", kindAlertRule: "alert rule", kindPVECluster: "cluster", kindCloudAccount: "cloud account", kindAsset: "asset"}[pol.kind]
+	noun := map[policyKind]string{kindServer: "server", kindStorage: "storage", kindWorkspace: "workspace", kindDatabase: "database", kindBackupPlan: "backup plan", kindBackup: "backup", kindApp: "service", kindPlaybook: "playbook", kindAnsibleRun: "run", kindSchedule: "cron job", kindScheduleRun: "run", kindStorageSync: "sync", kindStorageSyncRun: "run", kindDatabaseSync: "sync", kindDatabaseSyncRun: "run", kindDNSServer: "DNS server", kindScript: "script", kindProxy: "proxy", kindSoftwareRecipe: "application", kindSoftwareInstall: "application", kindMonitor: "monitor", kindNotificationChannel: "channel", kindMonitorIncident: "incident", kindAlertRule: "alert rule", kindPVECluster: "cluster", kindCloudAccount: "cloud account", kindAsset: "asset", kindWebhook: "webhook", kindWebhookDelivery: "delivery", kindAutomation: "automation", kindAutomationRun: "run"}[pol.kind]
 	missing := &denied{http.StatusNotFound, noun + " not found"}
 	id, err := uuid.Parse(rawID)
 	if err != nil {
@@ -392,6 +425,32 @@ func (a *authz) check(ctx context.Context, pol policy, acc *auth.Access, rawID s
 				ws, err = a.q.GetMonitorWorkspace(ctx, inc.MonitorID)
 			}
 		}
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		level = acc.WorkspaceLevel(ws)
+	case kindAutomation, kindAutomationRun:
+		get := a.q.GetAutomationWorkspace
+		if pol.kind == kindAutomationRun {
+			get = a.q.GetAutomationRunWorkspace
+		}
+		ws, err := get(ctx, id)
+		if isNotFound(err) {
+			return auth.None, missing
+		}
+		if err != nil {
+			return auth.None, err
+		}
+		level = acc.WorkspaceLevel(ws)
+	case kindWebhook, kindWebhookDelivery:
+		get := a.q.GetWebhookWorkspace
+		if pol.kind == kindWebhookDelivery {
+			get = a.q.GetWebhookDeliveryWorkspace
+		}
+		ws, err := get(ctx, id)
 		if isNotFound(err) {
 			return auth.None, missing
 		}
@@ -755,16 +814,31 @@ func (a *authz) sweep(ctx context.Context) {
 			w.cancel()
 			continue
 		}
-		row, err := a.q.GetSessionUser(ctx, w.p.SessionID)
-		if isNotFound(err) {
-			w.cancel()
-			continue
+		var u sqlc.User
+		if w.p.TokenID != uuid.Nil {
+			// Revoked or expired since it was opened: the stream ends.
+			row, err := a.q.GetApiTokenUser(ctx, w.p.TokenID)
+			if isNotFound(err) {
+				w.cancel()
+				continue
+			}
+			if err != nil {
+				slog.Warn("re-check api token", "error", err)
+				continue
+			}
+			u = row.User
+		} else {
+			row, err := a.q.GetSessionUser(ctx, w.p.SessionID)
+			if isNotFound(err) {
+				w.cancel()
+				continue
+			}
+			if err != nil {
+				slog.Warn("re-check session", "error", err)
+				continue
+			}
+			u = row.User
 		}
-		if err != nil {
-			slog.Warn("re-check session", "error", err)
-			continue
-		}
-		u := row.User
 		if u.Status == "blocked" {
 			w.cancel()
 			continue

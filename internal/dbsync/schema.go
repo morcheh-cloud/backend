@@ -1,5 +1,6 @@
 // Package dbsync copies rows between two databases of the same family
-// (PostgreSQL to PostgreSQL, MySQL/MariaDB to MySQL/MariaDB): it walks both
+// (PostgreSQL to PostgreSQL, MySQL/MariaDB to MySQL/MariaDB, ClickHouse to
+// ClickHouse), or from PostgreSQL or MySQL into ClickHouse: it walks both
 // sides of each table in key order, compares the rows and writes what
 // differs, with a choice of what to do with rows that changed on both sides
 // and with rows the target refuses.
@@ -56,9 +57,11 @@ type Table struct {
 	Ref
 	Columns []Column `json:"columns"`
 	Key     []string `json:"key" doc:"Primary key, or a unique index on non-null columns"`
-	KeyFrom string   `json:"key_from" enum:"primary,unique,none"`
+	KeyFrom string   `json:"key_from" enum:"primary,unique,sorting,none" doc:"sorting = ClickHouse ReplacingMergeTree ORDER BY"`
 	Rows    int64    `json:"rows" doc:"Estimate"`
 	Bytes   int64    `json:"bytes"`
+	Engine  string   `json:"engine,omitempty" doc:"ClickHouse: the table engine (MergeTree, ReplacingMergeTree…)"`
+	Sorting []string `json:"sorting,omitempty" doc:"ClickHouse: ORDER BY columns. Only a ReplacingMergeTree's identify a row; on other engines a sync may still name them as its key when they're unique"`
 }
 
 func (t Table) column(name string) (Column, bool) {
@@ -73,7 +76,7 @@ func (t Table) column(name string) (Column, bool) {
 // ---- SQL text ----
 
 func (d Dialect) quote(name string) string {
-	if d == MySQL {
+	if d == MySQL || d == ClickHouse {
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 	}
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
@@ -88,7 +91,7 @@ func (d Dialect) table(r Ref) string {
 
 // ph is the n-th (1-based) placeholder.
 func (d Dialect) ph(n int) string {
-	if d == MySQL {
+	if d == MySQL || d == ClickHouse {
 		return "?"
 	}
 	return fmt.Sprintf("$%d", n)
@@ -96,6 +99,9 @@ func (d Dialect) ph(n int) string {
 
 // sel reads a column as text, the same way on both sides.
 func (d Dialect) sel(c Column) string {
+	if d == ClickHouse {
+		return chSel(c)
+	}
 	if d == Postgres {
 		return d.quote(c.Name) + "::text"
 	}
@@ -105,6 +111,9 @@ func (d Dialect) sel(c Column) string {
 // ord is how a column is ordered: byte order for text, so Go compares the
 // same way the database sorts.
 func (d Dialect) ord(c Column) string {
+	if d == ClickHouse {
+		return chOrd(c)
+	}
 	if c.Kind != KindText {
 		return d.quote(c.Name)
 	}
@@ -114,13 +123,32 @@ func (d Dialect) ord(c Column) string {
 	return d.quote(c.Name) + ` COLLATE "C"`
 }
 
+// from is a table to read from: ClickHouse's ReplacingMergeTree with FINAL,
+// so each key shows once even before the server merged its copies.
+func (d Dialect) from(t Table) string {
+	if d == ClickHouse && replacing(t.Engine) {
+		return d.table(t.Ref) + " FINAL"
+	}
+	return d.table(t.Ref)
+}
+
+func countSQL(d Dialect, t Table) string {
+	if d == ClickHouse {
+		return "SELECT toInt64(count()) FROM " + d.from(t)
+	}
+	return "SELECT count(*) FROM " + d.table(t.Ref)
+}
+
 // ---- Reading the schema ----
 
 // Tables lists a database's tables with their columns and keys. On MySQL
 // database names the schema; on Postgres the connection already is in it.
 func Tables(ctx context.Context, db *sql.DB, d Dialect, database string) ([]Table, error) {
-	if d == MySQL {
+	switch d {
+	case MySQL:
 		return mysqlTables(ctx, db, database)
+	case ClickHouse:
+		return clickhouseTables(ctx, db, database)
 	}
 	return postgresTables(ctx, db)
 }
@@ -363,7 +391,7 @@ func keysFrom(rows *sql.Rows, byRef map[Ref]*Table) error {
 // (MySQL: its own CREATE TABLE, foreign keys left out, since the tables
 // they point at may not be there yet).
 func createTable(ctx context.Context, src, dst Side, t Table, to Ref) error {
-	if src.Dialect == MySQL {
+	if src.Dialect == MySQL && dst.Dialect == MySQL {
 		var name, stmt string
 		if err := src.DB.QueryRowContext(ctx, "SHOW CREATE TABLE "+MySQL.table(t.Ref)).Scan(&name, &stmt); err != nil {
 			return err

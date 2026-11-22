@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: run stop build reset-admin tidy up down db-up db-down psql redis-cli migrate-up migrate-down migrate-new sqlc test-integration
+.PHONY: run stop build cli reset-admin tidy up down db-up db-down psql redis-cli migrate-up migrate-down migrate-new sqlc test-integration
 
 # Port from HTTP_ADDR (":8080", "127.0.0.1:8080"…), 8080 when unset.
 PORT := $(or $(lastword $(subst :, ,$(HTTP_ADDR))),8080)
@@ -26,6 +26,10 @@ stop:
 
 build:
 	go build -o bin/server ./cmd/server
+
+# The command-line client (API tokens): bin/morche.
+cli:
+	go build -o bin/morche ./cmd/morche
 
 # usage: make reset-admin  (or args="-user alice -rename bob")
 reset-admin:

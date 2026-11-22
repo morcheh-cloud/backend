@@ -2,6 +2,7 @@ package nginx
 
 import (
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,16 +15,26 @@ func poolName(t string) string { return t + "_pool" }
 // upstreamBlock writes the upstream {} of a balanced host: the method, the
 // main server, the others, and kept-alive connections. It sits before the
 // server block, in http {} for a site and stream {} for a forward.
-func upstreamBlock(w *writer, t string, h proxy.HostConfig) {
+func upstreamBlock(w *writer, t string, h proxy.HostConfig, env proxy.Env) {
 	b := h.Balance
-	if !b.On() {
+	if !pooledOn(h, env) {
 		return
 	}
 	w.line("")
 	w.open("upstream %s", poolName(t))
 	// A shared zone makes least_conn, max_conns and failures count across
-	// all workers, not per worker.
+	// all workers, not per worker (and resolve needs one).
 	w.line("zone %s 64k;", poolName(t))
+	if !b.On() {
+		// One server, here only so nginx looks its name up again.
+		resolverLine(w, env)
+		w.line("server %s resolve;", h.MainServer())
+		w.close()
+		return
+	}
+	if slices.ContainsFunc(b.Servers, func(s proxy.UpstreamServer) bool { return named(env, s.Address) }) || named(env, h.MainServer()) {
+		resolverLine(w, env)
+	}
 	switch b.Method {
 	case proxy.MethodLeastConn:
 		w.line("least_conn;")
@@ -42,9 +53,9 @@ func upstreamBlock(w *writer, t string, h proxy.HostConfig) {
 			w.line("random;")
 		}
 	}
-	serverLine(w, h.MainServer(), b.Main, b)
+	serverLine(w, env, h.MainServer(), b.Main, b)
 	for _, s := range b.Servers {
-		serverLine(w, s.Address, s, b)
+		serverLine(w, env, s.Address, s, b)
 	}
 	if b.Keepalive > 0 {
 		w.line("keepalive %d;", b.Keepalive)
@@ -52,7 +63,7 @@ func upstreamBlock(w *writer, t string, h proxy.HostConfig) {
 	w.close()
 }
 
-func serverLine(w *writer, addr string, s proxy.UpstreamServer, b proxy.Balance) {
+func serverLine(w *writer, env proxy.Env, addr string, s proxy.UpstreamServer, b proxy.Balance) {
 	var p []string
 	if s.Weight > 1 {
 		p = append(p, "weight="+strconv.Itoa(s.Weight))
@@ -71,6 +82,9 @@ func serverLine(w *writer, addr string, s proxy.UpstreamServer, b proxy.Balance)
 	}
 	if s.Down {
 		p = append(p, "down")
+	}
+	if named(env, addr) {
+		p = append(p, "resolve")
 	}
 	if s.Note != "" {
 		w.line("# %s", s.Note)
@@ -103,8 +117,8 @@ func hashKey(h proxy.HostConfig) string {
 // pooled turns an address that goes to the main upstream into one that goes
 // to the pool, keeping its path; ok is false when it goes elsewhere (a path
 // rule's own upstream) or there is no pool.
-func pooled(t string, h proxy.HostConfig, upstream string) (string, bool) {
-	if !h.Balance.On() || proxy.Origin(upstream) != proxy.Origin(h.Upstream) {
+func pooled(t string, h proxy.HostConfig, env proxy.Env, upstream string) (string, bool) {
+	if !pooledOn(h, env) || proxy.Origin(upstream) != proxy.Origin(h.Upstream) {
 		return upstream, false
 	}
 	u, err := url.Parse(upstream)

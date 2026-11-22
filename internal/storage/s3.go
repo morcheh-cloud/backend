@@ -30,9 +30,30 @@ type s3fs struct {
 	region string
 }
 
-// Unknown sizes are uploaded in parts this big (minio's default for an
-// unknown size would buffer 512 MB per part).
-const s3PartSize = 16 << 20
+// An upload of unknown size goes up in parts of one fixed size, and S3 takes
+// at most s3MaxParts of them, so the part size caps the file: 32 MiB parts
+// reach about 312 GiB. A caller that knows roughly how big the file can get
+// says so with WithSizeHint, and the part grows to fit twice that. A hint
+// never shrinks it (a stale, small one would bring the cap back), and one
+// part is held in memory per upload, so it stops at 512 MiB (about 5 TiB).
+const (
+	s3MaxParts    = 10000
+	s3PartSize    = 32 << 20
+	s3MaxPartSize = 512 << 20
+	s3HintMargin  = 2 // the hint is doubled: a dump can outgrow the data it is of
+)
+
+// s3PartSizeFor is the part size for a file of unknown size, given a hint
+// (0 = none) of how big it may get.
+func s3PartSizeFor(hint int64) uint64 {
+	if hint <= 0 {
+		return s3PartSize
+	}
+	need := hint * s3HintMargin / s3MaxParts
+	const mib = 1 << 20
+	need = (need + mib - 1) / mib * mib
+	return uint64(min(max(need, s3PartSize), s3MaxPartSize))
+}
 
 func openS3(ctx context.Context, cfg Config) (FS, Info, error) {
 	var info Info
@@ -307,7 +328,16 @@ func (s *s3fs) Put(ctx context.Context, p string, r io.Reader, size int64) error
 	if ctype == "" {
 		ctype = "application/octet-stream"
 	}
-	_, err := s.c.PutObject(ctx, bucket, key, r, size, minio.PutObjectOptions{ContentType: ctype, PartSize: s3PartSize})
+	opts := minio.PutObjectOptions{ContentType: ctype}
+	if size < 0 {
+		opts.PartSize = s3PartSizeFor(SizeHint(ctx))
+	}
+	_, err := s.c.PutObject(ctx, bucket, key, r, size, opts)
+	if size < 0 && minio.ToErrorResponse(err).Code == "EntityTooLarge" {
+		limit := int64(opts.PartSize) * s3MaxParts
+		return fmt.Errorf("the file grew past %d GiB, the most an upload in %d MiB parts can hold on S3",
+			limit>>30, opts.PartSize>>20)
+	}
 	return s3Err(err)
 }
 

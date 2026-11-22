@@ -374,8 +374,16 @@ func (m *mongoEngine) activity(ctx context.Context, s *DatabaseSnapshot) {
 				a.Seconds = f64(float64(*us) / 1e6)
 			}
 			if cmd, err := d.LookupErr("command"); err == nil {
-				if b, err := bson.MarshalExtJSON(cmd.Document(), false, false); err == nil {
-					a.Query = truncate(string(b), queryLimit)
+				// Usually a document, but some operations report a plain
+				// string (or another type): Document() would panic on those.
+				if doc, ok := cmd.DocumentOK(); ok {
+					if b, err := bson.MarshalExtJSON(doc, false, false); err == nil {
+						a.Query = truncate(string(b), queryLimit)
+					}
+				} else if s, ok := cmd.StringValueOK(); ok {
+					a.Query = truncate(s, queryLimit)
+				} else {
+					a.Query = truncate(cmd.String(), queryLimit)
 				}
 			}
 		case inTx == nil:
