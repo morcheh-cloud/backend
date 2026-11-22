@@ -159,6 +159,10 @@ func Classify(err error) (string, string) {
 	if errors.As(err, &blocked) {
 		return StatusBlocked, blocked.Error()
 	}
+	var wrong *ProtocolError
+	if errors.As(err, &wrong) {
+		return StatusUnreachable, wrong.Error()
+	}
 	msg := err.Error()
 	low := strings.ToLower(msg)
 	switch {

@@ -38,7 +38,7 @@ func openClickHouse(ctx context.Context, cfg Config) (engine, error) {
 	c := &clickhouseEngine{cfg: cfg, db: db, delayAt: 1000, throwAt: 3000}
 	if err := db.QueryRowContext(ctx, "SELECT version()").Scan(&c.version); err != nil {
 		db.Close()
-		return nil, err
+		return nil, clickhouseOpenError(cfg, err)
 	}
 	c.partLimits(ctx)
 	return c, nil

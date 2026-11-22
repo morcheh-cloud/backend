@@ -2,6 +2,7 @@ package dbmon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -114,6 +115,17 @@ func Diagnose(ctx context.Context, cfg Config) *DatabaseTest {
 	conn, err := Open(ctx, cfg)
 	if err != nil {
 		status, msg := Classify(err)
+		// The port answers, but in another protocol: that's the port step.
+		var wrong *ProtocolError
+		if errors.As(err, &wrong) {
+			for i := range t.t.Steps {
+				if t.t.Steps[i].ID == "tcp" {
+					t.t.Steps[i].Status, t.t.Steps[i].Message = "failed", msg
+				}
+			}
+			t.skip("tls", "auth", "permissions")
+			return t.fail(status, msg)
+		}
 		switch status {
 		case StatusTLSError:
 			t.step("tls", stepTitles["tls"], "failed", msg, start)

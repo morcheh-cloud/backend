@@ -12,10 +12,19 @@
 #   mariadb-client ...... MySQL/MariaDB: mariadb-dump, mariadb, mariadb-binlog
 #   mongodb tools ....... mongodump, mongorestore
 #   redis-tools ......... redis-cli (RDB snapshots)
+#   clickhouse .......... clickhouse-client (ClickHouse backups/restores); the
+#                         official server image's single binary, ~700 MB
+#                         unpacked (most of the image's size)
 #   goose + migrations .. the schema, applied on start (MIGRATE_ON_START)
 
 ARG GO_VERSION=1.27
 ARG UBUNTU_VERSION=24.04
+# An LTS line; the client reads any server version near it.
+ARG CLICKHOUSE_VERSION=25.8
+
+# ---- ClickHouse client --------------------------------------------------------
+# The one binary is the server, client and tools; only the client is used.
+FROM clickhouse/clickhouse-server:${CLICKHOUSE_VERSION} AS clickhouse
 
 # ---- build ------------------------------------------------------------------
 FROM golang:${GO_VERSION}-bookworm AS build
@@ -71,9 +80,12 @@ RUN set -eux; \
     # Every tool the panel looks for has to be there.
     for t in ssh sshpass bwrap ansible-playbook ansible-doc pg_dump pg_dumpall \
       pg_restore psql mariadb-dump mariadb mariadb-binlog mongodump mongorestore \
-      redis-cli; do command -v "$t" >/dev/null || { echo "missing: $t"; exit 1; }; done
+      redis-cli tar; do command -v "$t" >/dev/null || { echo "missing: $t"; exit 1; }; done
 
 COPY --from=build /out/server /out/goose /usr/local/bin/
+COPY --from=clickhouse /usr/bin/clickhouse /usr/local/bin/clickhouse
+RUN ln -s clickhouse /usr/local/bin/clickhouse-client && \
+    clickhouse-client --version
 COPY migrations /app/migrations
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 

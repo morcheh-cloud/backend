@@ -89,15 +89,20 @@ func chDDLSQL() string {
 		chQuoteSQL("database") + `), ')\\.'), '\\1') AS q FROM system.tables WHERE database = unhex({d:String}) AND name = unhex({t:String})) FORMAT RawBLOB`
 }
 
-// chPrelude finds the client and writes its private config: address, login,
-// TLS. $dir must exist (the config lives there). It defines ch.
-func chPrelude(b *strings.Builder, t Target) {
+// chTools finds the client (CH_TOOL) and tar, before anything else runs, so
+// a missing tool is the only thing the backup's row says.
+func chTools(b *strings.Builder) {
 	b.WriteString(`if command -v clickhouse-client >/dev/null 2>&1; then CH_TOOL=clickhouse-client
 elif command -v clickhouse >/dev/null 2>&1; then CH_TOOL="clickhouse client"
 else ` + missing("clickhouse-client") + `
 fi
 command -v tar >/dev/null 2>&1 || { ` + missing("tar") + `; }
 `)
+}
+
+// chPrelude writes the client's private config (after chTools): address,
+// login, TLS. $dir must exist (the config lives there). It defines ch.
+func chPrelude(b *strings.Builder, t Target) {
 	conf := "<config><host>" + xmlText(t.Host) + "</host><port>" + strconv.Itoa(t.Port) + "</port>"
 	if t.Username != "" {
 		conf += "<user>" + xmlText(t.Username) + "</user>"
@@ -157,6 +162,7 @@ func xmlText(s string) string {
 func clickhouse(t Target) Spec {
 	var b strings.Builder
 	b.WriteString("umask 077\n")
+	chTools(&b)
 	if verifiesCA(t) {
 		caFile(&b, t.CACert)
 	}
@@ -254,6 +260,7 @@ esac
 func clickhouseRestore(t Target, o RestoreOptions) string {
 	var b strings.Builder
 	b.WriteString("umask 077\n")
+	chTools(&b)
 	if verifiesCA(t) {
 		caFile(&b, t.CACert)
 	}

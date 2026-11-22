@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -72,7 +74,7 @@ func OpenClickHouse(ctx context.Context, cfg Config, database, app string) (*sql
 	defer cancel()
 	if err := db.PingContext(pctx); err != nil {
 		db.Close()
-		return nil, err
+		return nil, clickhouseOpenError(cfg, err)
 	}
 	return db, nil
 }
@@ -106,4 +108,33 @@ func ClickHouseCode(err error) int32 {
 		return ex.Code
 	}
 	return 0
+}
+
+// ProtocolError is a port that answered, but not in the database's own
+// protocol (e.g. ClickHouse's HTTP port given for the native one).
+type ProtocolError struct{ Msg string }
+
+func (e *ProtocolError) Error() string { return e.Msg }
+
+// clickhouseOpenError explains the usual wrong-port mistakes in words a
+// person can act on; other errors pass through.
+func clickhouseOpenError(cfg Config, err error) error {
+	if err == nil {
+		return nil
+	}
+	low := strings.ToLower(err.Error())
+	switch {
+	// 72 = 'H': the port answered "HTTP/1.1 …".
+	case strings.Contains(low, "unexpected packet [72]"):
+		native := "9000"
+		if cfg.TLS != TLSDisable {
+			native = "9440"
+		}
+		return &ProtocolError{Msg: fmt.Sprintf("Port %d is ClickHouse's HTTP interface. Morche uses the native protocol: use port %s.", cfg.Port, native)}
+	case cfg.TLS != TLSDisable && strings.Contains(low, "first record does not look like a tls handshake"):
+		return &ProtocolError{Msg: fmt.Sprintf("Port %d doesn't use TLS. Turn encryption off, or use ClickHouse's secure native port (usually 9440).", cfg.Port)}
+	case cfg.TLS == TLSDisable && (cfg.Port == 9440 || cfg.Port == 8443):
+		return &ProtocolError{Msg: fmt.Sprintf("Port %d expects TLS. Turn encryption on, or use the plain native port 9000.", cfg.Port)}
+	}
+	return err
 }
