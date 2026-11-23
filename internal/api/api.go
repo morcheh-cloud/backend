@@ -135,6 +135,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerFail2ban(api, servers)
 	registerFirewall(api, servers)
 	registerUsers(api, servers)
+	registerConfigHistory(api, servers)
 	registerServices(api, servers)
 	registerPackages(api, servers)
 	registerPower(api, servers)

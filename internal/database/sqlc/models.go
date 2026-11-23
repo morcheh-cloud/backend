@@ -1545,6 +1545,18 @@ type ServerCheckBucket struct {
 	LatencyMax int32     `json:"latency_max"`
 }
 
+type ServerConfigChange struct {
+	ID        uuid.UUID  `json:"id"`
+	ServerID  uuid.UUID  `json:"server_id"`
+	UserID    *uuid.UUID `json:"user_id"`
+	UserName  string     `json:"user_name"`
+	Area      string     `json:"area"`
+	Summary   string     `json:"summary"`
+	Status    string     `json:"status"`
+	Files     []byte     `json:"files"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
 type ServerNote struct {
 	ID            uuid.UUID  `json:"id"`
 	ServerID      uuid.UUID  `json:"server_id"`

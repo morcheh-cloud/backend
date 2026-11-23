@@ -20,6 +20,7 @@ type Querier interface {
 	AddAlertRuleChannel(ctx context.Context, arg AddAlertRuleChannelParams) error
 	// ---- History ----
 	AddAssetEvent(ctx context.Context, arg AddAssetEventParams) error
+	AddConfigChange(ctx context.Context, arg AddConfigChangeParams) (uuid.UUID, error)
 	AddDockerAutoUpdateEvent(ctx context.Context, arg AddDockerAutoUpdateEventParams) error
 	AddDockerProjectStat(ctx context.Context, arg AddDockerProjectStatParams) error
 	AddFirewallChange(ctx context.Context, arg AddFirewallChangeParams) (uuid.UUID, error)
@@ -395,6 +396,7 @@ type Querier interface {
 	GetCommandLog(ctx context.Context, id uuid.UUID) (CommandLog, error)
 	GetCommandLogOutput(ctx context.Context, id uuid.UUID) (CommandLogOutput, error)
 	GetCommandLogSettings(ctx context.Context, workspaceID uuid.UUID) (CommandLogSetting, error)
+	GetConfigChange(ctx context.Context, arg GetConfigChangeParams) (ServerConfigChange, error)
 	GetDNSServer(ctx context.Context, id uuid.UUID) (DnsServer, error)
 	GetDNSServerWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetDatabase(ctx context.Context, id uuid.UUID) (Database, error)
@@ -608,6 +610,7 @@ type Querier interface {
 	ListCloudAccountsDueForCheck(ctx context.Context, before time.Time) ([]CloudAccount, error)
 	// Newest first, a page after the (before_at, before_id) cursor.
 	ListCommandLog(ctx context.Context, arg ListCommandLogParams) ([]CommandLog, error)
+	ListConfigChanges(ctx context.Context, arg ListConfigChangesParams) ([]ListConfigChangesRow, error)
 	ListDNSServers(ctx context.Context, arg ListDNSServersParams) ([]DnsServer, error)
 	// Servers whose last check is older than @before (or that were never
 	// checked), the longest waiting first.
@@ -838,6 +841,7 @@ type Querier interface {
 	PruneBackupRecords(ctx context.Context, arg PruneBackupRecordsParams) error
 	// Past each workspace's keep_days (90 without settings).
 	PruneCommandLog(ctx context.Context) (int64, error)
+	PruneConfigChanges(ctx context.Context, arg PruneConfigChangesParams) error
 	PruneDatabaseEvents(ctx context.Context, before time.Time) error
 	PruneDatabaseQueryRuns(ctx context.Context) error
 	PruneDatabaseSamples(ctx context.Context, before time.Time) error
@@ -1037,6 +1041,7 @@ type Querier interface {
 	SetUsername(ctx context.Context, arg SetUsernameParams) (User, error)
 	SetWebhookSecret(ctx context.Context, arg SetWebhookSecretParams) (Webhook, error)
 	SetWorkspaceLogoKind(ctx context.Context, arg SetWorkspaceLogoKindParams) (Workspace, error)
+	SettleConfigChanges(ctx context.Context, arg SettleConfigChangesParams) error
 	SettleFirewallChanges(ctx context.Context, arg SettleFirewallChangesParams) error
 	// Online servers whose image updates were checked before (they have rows)
 	// but not within their check interval (the server's own, else its
