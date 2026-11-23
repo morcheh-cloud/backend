@@ -182,3 +182,14 @@ func TestNmcliModify(t *testing.T) {
 		t.Fatalf("off: %s", got)
 	}
 }
+
+func TestFilled(t *testing.T) {
+	c := IfaceConfig{Name: "x"}.Filled()
+	if c.Addresses == nil || c.DNS == nil || c.Search == nil {
+		t.Fatal(c)
+	}
+	r := Repo{}.Filled()
+	if r.Types == nil || r.Options == nil || r.Components == nil {
+		t.Fatal(r)
+	}
+}

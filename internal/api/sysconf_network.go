@@ -46,8 +46,8 @@ type NetworkOverview struct {
 	Renderer   string         `json:"renderer" doc:"netplan's renderer (networkd or NetworkManager)"`
 	Editable   bool           `json:"editable"`
 	Note       string         `json:"note"`
-	Interfaces []ServerIface     `json:"interfaces"`
-	Routes     []IfaceRoute     `json:"routes"`
+	Interfaces []ServerIface  `json:"interfaces"`
+	Routes     []IfaceRoute   `json:"routes"`
 	CloudInit  bool           `json:"cloud_init" doc:"cloud-init writes the netplan config at boot (saving will ask to stop that)"`
 	Pending    *ConfigPending `json:"pending" doc:"A change waiting for Keep it"`
 	Writable   bool           `json:"writable"`
@@ -306,6 +306,7 @@ func (h *serverHandler) readNetwork(ctx context.Context, id string, sh *rootShel
 		}
 		for i := range o.Interfaces {
 			if c, ok := cfgs[o.Interfaces[i].Name]; ok && !o.Interfaces[i].Virtual {
+				c = c.Filled()
 				o.Interfaces[i].Config = &c
 				o.Interfaces[i].Kind = c.Kind
 				o.Interfaces[i].File = where[c.Name]
@@ -352,7 +353,7 @@ func (h *serverHandler) readNetwork(ctx context.Context, id string, sh *rootShel
 		for i := range o.Interfaces {
 			for _, c := range st.conns {
 				if c.conn.Device == o.Interfaces[i].Name && !o.Interfaces[i].Virtual {
-					cfg := c.conn.Config
+					cfg := c.conn.Config.Filled()
 					o.Interfaces[i].Config = &cfg
 					o.Interfaces[i].Kind = cfg.Kind
 					o.Interfaces[i].File = c.file

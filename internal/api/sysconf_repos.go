@@ -173,7 +173,9 @@ func (h *serverHandler) readRepos(ctx context.Context, sh *rootShell) (*repoStat
 	}
 	o.Repos = []sysconf.Repo{}
 	for _, f := range st.files {
-		o.Repos = append(o.Repos, parseRepoFile(f)...)
+		for _, r := range parseRepoFile(f) {
+			o.Repos = append(o.Repos, r.Filled())
+		}
 	}
 	o.Editable = o.Writable && o.Manager != "other"
 	if o.Manager == "apt" {
