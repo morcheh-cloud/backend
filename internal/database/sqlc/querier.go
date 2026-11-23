@@ -154,6 +154,7 @@ type Querier interface {
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
 	CreateLogArchive(ctx context.Context, arg CreateLogArchiveParams) (LogArchive, error)
 	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
+	CreateMorcheHost(ctx context.Context, arg CreateMorcheHostParams) (Server, error)
 	CreateNotificationChannel(ctx context.Context, arg CreateNotificationChannelParams) (NotificationChannel, error)
 	CreatePVECluster(ctx context.Context, arg CreatePVEClusterParams) (PveCluster, error)
 	CreatePitrRun(ctx context.Context, arg CreatePitrRunParams) (DatabasePitrRun, error)
@@ -351,6 +352,7 @@ type Querier interface {
 	FinishStorageSyncRun(ctx context.Context, arg FinishStorageSyncRunParams) error
 	FinishWebhookAttempt(ctx context.Context, arg FinishWebhookAttemptParams) (WebhookDelivery, error)
 	FirstDockerProjectStat(ctx context.Context, arg FirstDockerProjectStatParams) (time.Time, error)
+	FirstWorkspace(ctx context.Context) (Workspace, error)
 	// Whether candidate is folder_id itself or one of its descendants; moving a
 	// folder under such a candidate would make a cycle.
 	FolderSubtreeContains(ctx context.Context, arg FolderSubtreeContainsParams) (bool, error)
@@ -428,6 +430,8 @@ type Querier interface {
 	GetMonitorByPushToken(ctx context.Context, pushToken *string) (Monitor, error)
 	GetMonitorIncident(ctx context.Context, id uuid.UUID) (MonitorIncident, error)
 	GetMonitorWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	// ---- The machine Morche runs on ----
+	GetMorcheHost(ctx context.Context) (Server, error)
 	GetNotificationChannel(ctx context.Context, id uuid.UUID) (NotificationChannel, error)
 	GetNotificationChannelWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPVECluster(ctx context.Context, id uuid.UUID) (PveCluster, error)
@@ -728,7 +732,9 @@ type Querier interface {
 	// cloud servers are already in Morche.
 	ListServersByHost(ctx context.Context, arg ListServersByHostParams) ([]ListServersByHostRow, error)
 	// Servers whose last check is older than @before (or that were never checked),
-	// the longest waiting first.
+	// the longest waiting first. One waiting for a sign-in is tried every 3
+	// minutes at most: each try is a refused login in the server's auth log, and
+	// fail2ban's sshd jail bans after 5 in 10 minutes.
 	ListServersDueForCheck(ctx context.Context, before time.Time) ([]Server, error)
 	// Online servers that aren't known to be something other than Linux.
 	ListServersToSample(ctx context.Context) ([]Server, error)
@@ -788,6 +794,7 @@ type Querier interface {
 	MarkGoneAssets(ctx context.Context, workspaceID uuid.UUID) ([]uuid.UUID, error)
 	// A scan no longer finds an app Morche installed.
 	MarkMissingSoftware(ctx context.Context, arg MarkMissingSoftwareParams) error
+	MarkMorcheHostAdded(ctx context.Context) error
 	// Checks grouped into buckets of @step seconds.
 	MonitorBuckets(ctx context.Context, arg MonitorBucketsParams) ([]MonitorBucketsRow, error)
 	MonitorChecksBetween(ctx context.Context, arg MonitorChecksBetweenParams) ([]MonitorChecksBetweenRow, error)
@@ -1008,6 +1015,8 @@ type Querier interface {
 	SetScriptRunJob(ctx context.Context, arg SetScriptRunJobParams) error
 	SetSecuritySettings(ctx context.Context, arg SetSecuritySettingsParams) (AppSetting, error)
 	SetServerFavorite(ctx context.Context, arg SetServerFavoriteParams) (Server, error)
+	// After a sign-in: the login that worked, the host key it saw.
+	SetServerLogin(ctx context.Context, arg SetServerLoginParams) (Server, error)
 	// Pinning isn't an edit: it keeps who changed it last and when.
 	SetServerNotePinned(ctx context.Context, arg SetServerNotePinnedParams) (ServerNote, error)
 	SetSoftwareInstallStatus(ctx context.Context, arg SetSoftwareInstallStatusParams) error

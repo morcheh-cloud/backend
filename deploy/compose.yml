@@ -55,6 +55,11 @@ services:
       ANSIBLE_SANDBOX: ${ANSIBLE_SANDBOX:-auto}
       TZ: ${TZ:-UTC}
       LOG_ARCHIVE_DIR: /home/morche/log-archives
+      # Adds this machine as "This server", waiting for a one-time sign-in.
+      MANAGE_HOST: ${MANAGE_HOST:-false}
+    # Lets the backend reach this machine's SSH server (MANAGE_HOST).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Log archives kept on Morche's own machine (Settings › Logs & retention).
       - logarchives:/home/morche/log-archives

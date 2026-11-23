@@ -46,9 +46,13 @@ SELECT * FROM servers WHERE id = $1;
 
 -- name: ListServersDueForCheck :many
 -- Servers whose last check is older than @before (or that were never checked),
--- the longest waiting first.
+-- the longest waiting first. One waiting for a sign-in is tried every 3
+-- minutes at most: each try is a refused login in the server's auth log, and
+-- fail2ban's sshd jail bans after 5 in 10 minutes.
 SELECT * FROM servers
-WHERE last_checked_at IS NULL OR last_checked_at < @before::timestamptz
+WHERE (last_checked_at IS NULL OR last_checked_at < @before::timestamptz)
+  AND (status <> 'needs_login' OR last_checked_at IS NULL
+       OR last_checked_at < now() - interval '3 minutes')
 ORDER BY last_checked_at NULLS FIRST;
 
 -- name: GetServers :many
@@ -169,3 +173,39 @@ WHERE (@see_all::bool OR s.workspace_id = ANY (@workspace_ids::uuid[]) OR s.id =
   AND (sqlc.narg('workspace_id')::uuid IS NULL OR s.workspace_id = sqlc.narg('workspace_id')::uuid)
 GROUP BY t
 ORDER BY count(*) DESC, t;
+
+-- ---- The machine Morche runs on ----
+
+-- name: GetMorcheHost :one
+SELECT * FROM servers WHERE morche_host;
+
+-- name: CreateMorcheHost :one
+INSERT INTO servers (
+    workspace_id, name, host, port, username, auth_method, private_key_enc,
+    passphrase_enc, description, morche_host, setup_public_key, status, status_message
+) VALUES (
+    @workspace_id, @name, @host, @port, @username, 'private_key', @private_key_enc,
+    @passphrase_enc, @description, true, @setup_public_key, 'needs_login', @status_message
+)
+RETURNING *;
+
+-- name: MarkMorcheHostAdded :exec
+UPDATE app_settings SET morche_host_added_at = now() WHERE id;
+
+-- name: FirstWorkspace :one
+SELECT * FROM workspaces ORDER BY created_at, id LIMIT 1;
+
+-- name: SetServerLogin :one
+-- After a sign-in: the login that worked, the host key it saw.
+UPDATE servers SET
+    username = @username,
+    auth_method = @auth_method,
+    password_enc = sqlc.narg('password_enc'),
+    private_key_enc = sqlc.narg('private_key_enc'),
+    passphrase_enc = sqlc.narg('passphrase_enc'),
+    host_key = CASE WHEN host_key = '' THEN @host_key::text ELSE host_key END,
+    status = 'unknown',
+    status_message = '',
+    updated_at = now()
+WHERE id = @id
+RETURNING *;

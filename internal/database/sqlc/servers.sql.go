@@ -66,6 +66,80 @@ func (q *Queries) CountServers(ctx context.Context, arg CountServersParams) (Cou
 	return i, err
 }
 
+const createMorcheHost = `-- name: CreateMorcheHost :one
+INSERT INTO servers (
+    workspace_id, name, host, port, username, auth_method, private_key_enc,
+    passphrase_enc, description, morche_host, setup_public_key, status, status_message
+) VALUES (
+    $1, $2, $3, $4, $5, 'private_key', $6,
+    $7, $8, true, $9, 'needs_login', $10
+)
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key
+`
+
+type CreateMorcheHostParams struct {
+	WorkspaceID    uuid.UUID `json:"workspace_id"`
+	Name           string    `json:"name"`
+	Host           string    `json:"host"`
+	Port           int32     `json:"port"`
+	Username       string    `json:"username"`
+	PrivateKeyEnc  []byte    `json:"private_key_enc"`
+	PassphraseEnc  []byte    `json:"passphrase_enc"`
+	Description    string    `json:"description"`
+	SetupPublicKey string    `json:"setup_public_key"`
+	StatusMessage  string    `json:"status_message"`
+}
+
+func (q *Queries) CreateMorcheHost(ctx context.Context, arg CreateMorcheHostParams) (Server, error) {
+	row := q.db.QueryRow(ctx, createMorcheHost,
+		arg.WorkspaceID,
+		arg.Name,
+		arg.Host,
+		arg.Port,
+		arg.Username,
+		arg.PrivateKeyEnc,
+		arg.PassphraseEnc,
+		arg.Description,
+		arg.SetupPublicKey,
+		arg.StatusMessage,
+	)
+	var i Server
+	err := row.Scan(
+		&i.ID,
+		&i.FolderID,
+		&i.Name,
+		&i.Host,
+		&i.Port,
+		&i.Username,
+		&i.AuthMethod,
+		&i.PasswordEnc,
+		&i.PrivateKeyEnc,
+		&i.PassphraseEnc,
+		&i.HostKey,
+		&i.Description,
+		&i.Tags,
+		&i.Favorite,
+		&i.Status,
+		&i.StatusMessage,
+		&i.LatencyMs,
+		&i.OsFamily,
+		&i.OsID,
+		&i.OsName,
+		&i.OsVersion,
+		&i.Kernel,
+		&i.Arch,
+		&i.Hostname,
+		&i.LastCheckedAt,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.WorkspaceID,
+		&i.MorcheHost,
+		&i.SetupPublicKey,
+	)
+	return i, err
+}
+
 const createServer = `-- name: CreateServer :one
 INSERT INTO servers (
     workspace_id, folder_id, name, host, port, username, auth_method,
@@ -75,7 +149,7 @@ INSERT INTO servers (
     $8, $9, $10,
     $11, $12, $13
 )
-RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key
 `
 
 type CreateServerParams struct {
@@ -141,6 +215,8 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.MorcheHost,
+		&i.SetupPublicKey,
 	)
 	return i, err
 }
@@ -157,8 +233,73 @@ func (q *Queries) DeleteServers(ctx context.Context, ids []uuid.UUID) (int64, er
 	return result.RowsAffected(), nil
 }
 
+const firstWorkspace = `-- name: FirstWorkspace :one
+SELECT id, name, description, created_at, updated_at, color, logo_kind, logo_icon FROM workspaces ORDER BY created_at, id LIMIT 1
+`
+
+func (q *Queries) FirstWorkspace(ctx context.Context) (Workspace, error) {
+	row := q.db.QueryRow(ctx, firstWorkspace)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Color,
+		&i.LogoKind,
+		&i.LogoIcon,
+	)
+	return i, err
+}
+
+const getMorcheHost = `-- name: GetMorcheHost :one
+
+SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key FROM servers WHERE morche_host
+`
+
+// ---- The machine Morche runs on ----
+func (q *Queries) GetMorcheHost(ctx context.Context) (Server, error) {
+	row := q.db.QueryRow(ctx, getMorcheHost)
+	var i Server
+	err := row.Scan(
+		&i.ID,
+		&i.FolderID,
+		&i.Name,
+		&i.Host,
+		&i.Port,
+		&i.Username,
+		&i.AuthMethod,
+		&i.PasswordEnc,
+		&i.PrivateKeyEnc,
+		&i.PassphraseEnc,
+		&i.HostKey,
+		&i.Description,
+		&i.Tags,
+		&i.Favorite,
+		&i.Status,
+		&i.StatusMessage,
+		&i.LatencyMs,
+		&i.OsFamily,
+		&i.OsID,
+		&i.OsName,
+		&i.OsVersion,
+		&i.Kernel,
+		&i.Arch,
+		&i.Hostname,
+		&i.LastCheckedAt,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.WorkspaceID,
+		&i.MorcheHost,
+		&i.SetupPublicKey,
+	)
+	return i, err
+}
+
 const getServer = `-- name: GetServer :one
-SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id FROM servers WHERE id = $1
+SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key FROM servers WHERE id = $1
 `
 
 func (q *Queries) GetServer(ctx context.Context, id uuid.UUID) (Server, error) {
@@ -194,12 +335,14 @@ func (q *Queries) GetServer(ctx context.Context, id uuid.UUID) (Server, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.MorcheHost,
+		&i.SetupPublicKey,
 	)
 	return i, err
 }
 
 const getServers = `-- name: GetServers :many
-SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id FROM servers WHERE id = ANY ($1::uuid[]) ORDER BY lower(name)
+SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key FROM servers WHERE id = ANY ($1::uuid[]) ORDER BY lower(name)
 `
 
 func (q *Queries) GetServers(ctx context.Context, ids []uuid.UUID) ([]Server, error) {
@@ -241,6 +384,8 @@ func (q *Queries) GetServers(ctx context.Context, ids []uuid.UUID) ([]Server, er
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.WorkspaceID,
+			&i.MorcheHost,
+			&i.SetupPublicKey,
 		); err != nil {
 			return nil, err
 		}
@@ -258,7 +403,7 @@ WITH RECURSIVE subtree AS (
     UNION ALL
     SELECT f.id FROM folders f JOIN subtree t ON f.parent_id = t.id
 )
-SELECT s.id, s.folder_id, s.name, s.host, s.port, s.username, s.auth_method, s.password_enc, s.private_key_enc, s.passphrase_enc, s.host_key, s.description, s.tags, s.favorite, s.status, s.status_message, s.latency_ms, s.os_family, s.os_id, s.os_name, s.os_version, s.kernel, s.arch, s.hostname, s.last_checked_at, s.last_seen_at, s.created_at, s.updated_at, s.workspace_id, count(*) OVER ()::int AS total
+SELECT s.id, s.folder_id, s.name, s.host, s.port, s.username, s.auth_method, s.password_enc, s.private_key_enc, s.passphrase_enc, s.host_key, s.description, s.tags, s.favorite, s.status, s.status_message, s.latency_ms, s.os_family, s.os_id, s.os_name, s.os_version, s.kernel, s.arch, s.hostname, s.last_checked_at, s.last_seen_at, s.created_at, s.updated_at, s.workspace_id, s.morche_host, s.setup_public_key, count(*) OVER ()::int AS total
 FROM servers s
 WHERE ($1::bool OR s.workspace_id = ANY ($2::uuid[]) OR s.id = ANY ($3::uuid[]))
   AND ($4::uuid IS NULL OR s.workspace_id = $4::uuid)
@@ -378,6 +523,8 @@ func (q *Queries) ListServers(ctx context.Context, arg ListServersParams) ([]Lis
 			&i.Server.CreatedAt,
 			&i.Server.UpdatedAt,
 			&i.Server.WorkspaceID,
+			&i.Server.MorcheHost,
+			&i.Server.SetupPublicKey,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -391,13 +538,17 @@ func (q *Queries) ListServers(ctx context.Context, arg ListServersParams) ([]Lis
 }
 
 const listServersDueForCheck = `-- name: ListServersDueForCheck :many
-SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id FROM servers
-WHERE last_checked_at IS NULL OR last_checked_at < $1::timestamptz
+SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key FROM servers
+WHERE (last_checked_at IS NULL OR last_checked_at < $1::timestamptz)
+  AND (status <> 'needs_login' OR last_checked_at IS NULL
+       OR last_checked_at < now() - interval '3 minutes')
 ORDER BY last_checked_at NULLS FIRST
 `
 
 // Servers whose last check is older than @before (or that were never checked),
-// the longest waiting first.
+// the longest waiting first. One waiting for a sign-in is tried every 3
+// minutes at most: each try is a refused login in the server's auth log, and
+// fail2ban's sshd jail bans after 5 in 10 minutes.
 func (q *Queries) ListServersDueForCheck(ctx context.Context, before time.Time) ([]Server, error) {
 	rows, err := q.db.Query(ctx, listServersDueForCheck, before)
 	if err != nil {
@@ -437,6 +588,8 @@ func (q *Queries) ListServersDueForCheck(ctx context.Context, before time.Time) 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.WorkspaceID,
+			&i.MorcheHost,
+			&i.SetupPublicKey,
 		); err != nil {
 			return nil, err
 		}
@@ -446,6 +599,15 @@ func (q *Queries) ListServersDueForCheck(ctx context.Context, before time.Time) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const markMorcheHostAdded = `-- name: MarkMorcheHostAdded :exec
+UPDATE app_settings SET morche_host_added_at = now() WHERE id
+`
+
+func (q *Queries) MarkMorcheHostAdded(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, markMorcheHostAdded)
+	return err
 }
 
 const moveServers = `-- name: MoveServers :execrows
@@ -482,7 +644,7 @@ UPDATE servers SET
     last_checked_at = now(),
     last_seen_at = CASE WHEN $1 = 'online' THEN now() ELSE last_seen_at END
 WHERE id = $13
-RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key
 `
 
 type RecordServerCheckParams struct {
@@ -550,6 +712,8 @@ func (q *Queries) RecordServerCheck(ctx context.Context, arg RecordServerCheckPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.MorcheHost,
+		&i.SetupPublicKey,
 	)
 	return i, err
 }
@@ -734,7 +898,7 @@ func (q *Queries) ServerTagFacets(ctx context.Context, arg ServerTagFacetsParams
 const setServerFavorite = `-- name: SetServerFavorite :one
 UPDATE servers SET favorite = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key
 `
 
 type SetServerFavoriteParams struct {
@@ -775,6 +939,81 @@ func (q *Queries) SetServerFavorite(ctx context.Context, arg SetServerFavoritePa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.MorcheHost,
+		&i.SetupPublicKey,
+	)
+	return i, err
+}
+
+const setServerLogin = `-- name: SetServerLogin :one
+UPDATE servers SET
+    username = $1,
+    auth_method = $2,
+    password_enc = $3,
+    private_key_enc = $4,
+    passphrase_enc = $5,
+    host_key = CASE WHEN host_key = '' THEN $6::text ELSE host_key END,
+    status = 'unknown',
+    status_message = '',
+    updated_at = now()
+WHERE id = $7
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key
+`
+
+type SetServerLoginParams struct {
+	Username      string    `json:"username"`
+	AuthMethod    string    `json:"auth_method"`
+	PasswordEnc   []byte    `json:"password_enc"`
+	PrivateKeyEnc []byte    `json:"private_key_enc"`
+	PassphraseEnc []byte    `json:"passphrase_enc"`
+	HostKey       string    `json:"host_key"`
+	ID            uuid.UUID `json:"id"`
+}
+
+// After a sign-in: the login that worked, the host key it saw.
+func (q *Queries) SetServerLogin(ctx context.Context, arg SetServerLoginParams) (Server, error) {
+	row := q.db.QueryRow(ctx, setServerLogin,
+		arg.Username,
+		arg.AuthMethod,
+		arg.PasswordEnc,
+		arg.PrivateKeyEnc,
+		arg.PassphraseEnc,
+		arg.HostKey,
+		arg.ID,
+	)
+	var i Server
+	err := row.Scan(
+		&i.ID,
+		&i.FolderID,
+		&i.Name,
+		&i.Host,
+		&i.Port,
+		&i.Username,
+		&i.AuthMethod,
+		&i.PasswordEnc,
+		&i.PrivateKeyEnc,
+		&i.PassphraseEnc,
+		&i.HostKey,
+		&i.Description,
+		&i.Tags,
+		&i.Favorite,
+		&i.Status,
+		&i.StatusMessage,
+		&i.LatencyMs,
+		&i.OsFamily,
+		&i.OsID,
+		&i.OsName,
+		&i.OsVersion,
+		&i.Kernel,
+		&i.Arch,
+		&i.Hostname,
+		&i.LastCheckedAt,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.WorkspaceID,
+		&i.MorcheHost,
+		&i.SetupPublicKey,
 	)
 	return i, err
 }
@@ -798,7 +1037,7 @@ UPDATE servers SET
     favorite = $15,
     updated_at = now()
 WHERE id = $16
-RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id
+RETURNING id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key
 `
 
 type UpdateServerParams struct {
@@ -872,6 +1111,8 @@ func (q *Queries) UpdateServer(ctx context.Context, arg UpdateServerParams) (Ser
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.MorcheHost,
+		&i.SetupPublicKey,
 	)
 	return i, err
 }

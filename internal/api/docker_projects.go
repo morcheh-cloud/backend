@@ -44,6 +44,7 @@ type DockerProject struct {
 	Created    *time.Time  `json:"created,omitempty" doc:"When its oldest container was made"`
 	Title      string      `json:"title" doc:"A display name set in Morche; empty = use the name"`
 	Note       string      `json:"note" doc:"A description set in Morche"`
+	Itself     bool        `json:"itself" doc:"Morche itself runs in this project: stopping it stops the panel"`
 }
 
 type DockerProjectDetails struct {
@@ -275,6 +276,7 @@ done`
 			p.Source = "containers"
 		}
 		p.State = projectState(p.Running, p.Total)
+		p.Itself = holdsSelf(p.Containers)
 		sort.Strings(p.Services)
 		sort.Strings(p.Images)
 		sort.Slice(p.Containers, func(i, j int) bool { return p.Containers[i].Name < p.Containers[j].Name })

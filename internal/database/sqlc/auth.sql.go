@@ -532,7 +532,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, id uuid.UUID) (GetSessionU
 
 const getSettings = `-- name: GetSettings :one
 
-SELECT id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins FROM app_settings WHERE id
+SELECT id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins, morche_host_added_at FROM app_settings WHERE id
 `
 
 // ---- Settings ----
@@ -548,6 +548,7 @@ func (q *Queries) GetSettings(ctx context.Context) (AppSetting, error) {
 		&i.SignInChannels,
 		&i.AlertNewAddress,
 		&i.AlertFailedSignIns,
+		&i.MorcheHostAddedAt,
 	)
 	return i, err
 }
@@ -1359,7 +1360,7 @@ func (q *Queries) PutWorkspaceLogo(ctx context.Context, arg PutWorkspaceLogoPara
 }
 
 const setAllowlistEnabled = `-- name: SetAllowlistEnabled :one
-UPDATE app_settings SET ip_allowlist_enabled = $1, updated_at = now() WHERE id RETURNING id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins
+UPDATE app_settings SET ip_allowlist_enabled = $1, updated_at = now() WHERE id RETURNING id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins, morche_host_added_at
 `
 
 func (q *Queries) SetAllowlistEnabled(ctx context.Context, enabled bool) (AppSetting, error) {
@@ -1374,12 +1375,13 @@ func (q *Queries) SetAllowlistEnabled(ctx context.Context, enabled bool) (AppSet
 		&i.SignInChannels,
 		&i.AlertNewAddress,
 		&i.AlertFailedSignIns,
+		&i.MorcheHostAddedAt,
 	)
 	return i, err
 }
 
 const setRegistrationOpen = `-- name: SetRegistrationOpen :one
-UPDATE app_settings SET registration_open = $1, updated_at = now() WHERE id RETURNING id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins
+UPDATE app_settings SET registration_open = $1, updated_at = now() WHERE id RETURNING id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins, morche_host_added_at
 `
 
 func (q *Queries) SetRegistrationOpen(ctx context.Context, registrationOpen bool) (AppSetting, error) {
@@ -1394,6 +1396,7 @@ func (q *Queries) SetRegistrationOpen(ctx context.Context, registrationOpen bool
 		&i.SignInChannels,
 		&i.AlertNewAddress,
 		&i.AlertFailedSignIns,
+		&i.MorcheHostAddedAt,
 	)
 	return i, err
 }
@@ -1407,7 +1410,7 @@ UPDATE app_settings SET
     alert_failed_sign_ins = $5,
     updated_at = now()
 WHERE id
-RETURNING id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins
+RETURNING id, registration_open, updated_at, ip_allowlist_enabled, ip_allowlist, sign_in_channels, alert_new_address, alert_failed_sign_ins, morche_host_added_at
 `
 
 type SetSecuritySettingsParams struct {
@@ -1436,6 +1439,7 @@ func (q *Queries) SetSecuritySettings(ctx context.Context, arg SetSecuritySettin
 		&i.SignInChannels,
 		&i.AlertNewAddress,
 		&i.AlertFailedSignIns,
+		&i.MorcheHostAddedAt,
 	)
 	return i, err
 }

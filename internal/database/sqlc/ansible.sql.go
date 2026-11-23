@@ -424,7 +424,7 @@ func (q *Queries) ListAnsibleRuns(ctx context.Context, arg ListAnsibleRunsParams
 }
 
 const listAnsibleServers = `-- name: ListAnsibleServers :many
-SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id FROM servers WHERE workspace_id = $1 ORDER BY lower(name)
+SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key FROM servers WHERE workspace_id = $1 ORDER BY lower(name)
 `
 
 // With the sealed credentials: only for building a run's inventory.
@@ -467,6 +467,8 @@ func (q *Queries) ListAnsibleServers(ctx context.Context, workspaceID uuid.UUID)
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.WorkspaceID,
+			&i.MorcheHost,
+			&i.SetupPublicKey,
 		); err != nil {
 			return nil, err
 		}

@@ -52,7 +52,7 @@ type Server struct {
 	Description        string     `json:"description"`
 	Tags               []string   `json:"tags"`
 	Favorite           bool       `json:"favorite"`
-	Status             string     `json:"status" enum:"unknown,online,unreachable,auth_failed,host_key_mismatch,error" doc:"Result of the last connection check"`
+	Status             string     `json:"status" enum:"unknown,online,unreachable,auth_failed,host_key_mismatch,error,needs_login" doc:"Result of the last connection check; needs_login = waiting for someone to sign in once (the machine Morche runs on)"`
 	StatusMessage      string     `json:"status_message" doc:"Human-readable detail for the status"`
 	LatencyMs          *int32     `json:"latency_ms" nullable:"true" doc:"Time to connect and finish the SSH handshake on the last successful check"`
 	OS                 ServerOS   `json:"os"`
@@ -61,6 +61,8 @@ type Server struct {
 	LastSeenAt         *time.Time `json:"last_seen_at" nullable:"true" doc:"Last time a check reached the server"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
+	MorcheHost         bool       `json:"morche_host" doc:"The machine Morche itself runs on"`
+	SetupPublicKey     string     `json:"setup_public_key" doc:"The public key Morche made for this server (authorized_keys line); empty when it has none"`
 }
 
 func toServer(s sqlc.Server) Server {
@@ -91,11 +93,13 @@ func toServer(s sqlc.Server) Server {
 			Family: s.OsFamily, ID: s.OsID, Name: s.OsName, Version: s.OsVersion,
 			Kernel: s.Kernel, Arch: s.Arch,
 		},
-		Hostname:      s.Hostname,
-		LastCheckedAt: s.LastCheckedAt,
-		LastSeenAt:    s.LastSeenAt,
-		CreatedAt:     s.CreatedAt,
-		UpdatedAt:     s.UpdatedAt,
+		Hostname:       s.Hostname,
+		LastCheckedAt:  s.LastCheckedAt,
+		LastSeenAt:     s.LastSeenAt,
+		CreatedAt:      s.CreatedAt,
+		UpdatedAt:      s.UpdatedAt,
+		MorcheHost:     s.MorcheHost,
+		SetupPublicKey: s.SetupPublicKey,
 	}
 }
 
@@ -151,7 +155,7 @@ type ListServersInput struct {
 	Direct     bool     `query:"direct" doc:"With a folder id: only the folder's own servers, not its subfolders'"`
 	Favorites  bool     `query:"favorites" doc:"Only favourites"`
 	OS         []string `query:"os,explode" doc:"OS ids from the facets (ubuntu, debian…, 'unknown' for undetected)"`
-	Status     []string `query:"status,explode" enum:"unknown,online,unreachable,auth_failed,host_key_mismatch,error"`
+	Status     []string `query:"status,explode" enum:"unknown,online,unreachable,auth_failed,host_key_mismatch,error,needs_login"`
 	Tag        []string `query:"tag,explode" doc:"Servers with any of these tags"`
 	AuthMethod []string `query:"auth,explode" enum:"password,private_key"`
 	Sort       string   `query:"sort" enum:"name,host,os,status,last_checked,created" default:"name"`
@@ -940,6 +944,11 @@ func (h *serverHandler) check(ctx context.Context, s sqlc.Server) (sqlc.Server, 
 		Arch:          res.OS.Arch,
 		Hostname:      res.OS.Hostname,
 	}
+	// Never signed in to and Morche's own key isn't on it yet: still waiting.
+	if res.Status == sshprobe.StatusAuthFailed && s.MorcheHost && s.LastSeenAt == nil &&
+		s.SetupPublicKey != "" && s.AuthMethod == "private_key" {
+		params.Status, params.StatusMessage = statusNeedsLogin, needsLoginMessage
+	}
 	if res.Status == sshprobe.StatusOnline {
 		params.LatencyMs = &res.LatencyMs
 		// First successful connection: trust this key from now on.
@@ -957,6 +966,9 @@ func (h *serverHandler) check(ctx context.Context, s sqlc.Server) (sqlc.Server, 
 }
 
 const checkConcurrency = 8
+
+// statusNeedsLogin: a server that waits for someone to sign in once.
+const statusNeedsLogin = "needs_login"
 
 func (h *serverHandler) bulkCheck(ctx context.Context, in *struct{ Body IDsBody }) (*ServerItemsOutput, error) {
 	ids := parseIDs(in.Body.IDs)

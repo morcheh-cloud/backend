@@ -232,6 +232,7 @@ type AppSetting struct {
 	SignInChannels     []uuid.UUID `json:"sign_in_channels"`
 	AlertNewAddress    bool        `json:"alert_new_address"`
 	AlertFailedSignIns bool        `json:"alert_failed_sign_ins"`
+	MorcheHostAddedAt  *time.Time  `json:"morche_host_added_at"`
 }
 
 type Asset struct {
@@ -1502,35 +1503,37 @@ type ScriptRunTarget struct {
 }
 
 type Server struct {
-	ID            uuid.UUID  `json:"id"`
-	FolderID      *uuid.UUID `json:"folder_id"`
-	Name          string     `json:"name"`
-	Host          string     `json:"host"`
-	Port          int32      `json:"port"`
-	Username      string     `json:"username"`
-	AuthMethod    string     `json:"auth_method"`
-	PasswordEnc   []byte     `json:"password_enc"`
-	PrivateKeyEnc []byte     `json:"private_key_enc"`
-	PassphraseEnc []byte     `json:"passphrase_enc"`
-	HostKey       string     `json:"host_key"`
-	Description   string     `json:"description"`
-	Tags          []string   `json:"tags"`
-	Favorite      bool       `json:"favorite"`
-	Status        string     `json:"status"`
-	StatusMessage string     `json:"status_message"`
-	LatencyMs     *int32     `json:"latency_ms"`
-	OsFamily      string     `json:"os_family"`
-	OsID          string     `json:"os_id"`
-	OsName        string     `json:"os_name"`
-	OsVersion     string     `json:"os_version"`
-	Kernel        string     `json:"kernel"`
-	Arch          string     `json:"arch"`
-	Hostname      string     `json:"hostname"`
-	LastCheckedAt *time.Time `json:"last_checked_at"`
-	LastSeenAt    *time.Time `json:"last_seen_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	ID             uuid.UUID  `json:"id"`
+	FolderID       *uuid.UUID `json:"folder_id"`
+	Name           string     `json:"name"`
+	Host           string     `json:"host"`
+	Port           int32      `json:"port"`
+	Username       string     `json:"username"`
+	AuthMethod     string     `json:"auth_method"`
+	PasswordEnc    []byte     `json:"password_enc"`
+	PrivateKeyEnc  []byte     `json:"private_key_enc"`
+	PassphraseEnc  []byte     `json:"passphrase_enc"`
+	HostKey        string     `json:"host_key"`
+	Description    string     `json:"description"`
+	Tags           []string   `json:"tags"`
+	Favorite       bool       `json:"favorite"`
+	Status         string     `json:"status"`
+	StatusMessage  string     `json:"status_message"`
+	LatencyMs      *int32     `json:"latency_ms"`
+	OsFamily       string     `json:"os_family"`
+	OsID           string     `json:"os_id"`
+	OsName         string     `json:"os_name"`
+	OsVersion      string     `json:"os_version"`
+	Kernel         string     `json:"kernel"`
+	Arch           string     `json:"arch"`
+	Hostname       string     `json:"hostname"`
+	LastCheckedAt  *time.Time `json:"last_checked_at"`
+	LastSeenAt     *time.Time `json:"last_seen_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	WorkspaceID    uuid.UUID  `json:"workspace_id"`
+	MorcheHost     bool       `json:"morche_host"`
+	SetupPublicKey string     `json:"setup_public_key"`
 }
 
 type ServerCheckBucket struct {

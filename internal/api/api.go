@@ -109,6 +109,9 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	startServerMonitor(servers, cfg.ServerCheckInterval)
 	startServerSampler(servers, cfg.ServerSampleInterval, cfg.ServerHistory)
 	registerServers(api, servers)
+	morcheHost := &morcheHostHandler{cfg: cfg, s: servers}
+	registerMorcheHost(api, morcheHost)
+	startMorcheHost(morcheHost)
 	registerServerInsights(api, servers, cfg.ServerSampleInterval)
 	registerServerMetrics(api, servers, cfg.ServerSampleInterval)
 	registerTerminals(api, r, servers, cfg.CORSOrigins)

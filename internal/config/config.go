@@ -83,6 +83,16 @@ type Config struct {
 	TrustProxy bool `env:"TRUST_PROXY"`
 	// Send the session cookie over plain HTTP outside development.
 	CookieInsecure bool `env:"COOKIE_INSECURE"`
+	// ManageHost adds the machine Morche runs on as a server ("This server")
+	// once, waiting for someone to sign in to it from the panel. In Docker
+	// the backend reaches it at host.docker.internal (extra_hosts:
+	// host-gateway in compose).
+	ManageHost bool `env:"MANAGE_HOST"`
+	// Where the backend reaches that machine over SSH, and the login it
+	// tries until someone signs in.
+	ManageHostAddress string `env:"MANAGE_HOST_ADDRESS" envDefault:"host.docker.internal"`
+	ManageHostPort    int32  `env:"MANAGE_HOST_PORT" envDefault:"22"`
+	ManageHostUser    string `env:"MANAGE_HOST_USER" envDefault:"root"`
 	// DemoMode turns this panel into a public demo: anyone can enter as
 	// DemoUser without a password, and that account can't touch what other
 	// visitors share (its password, sessions, profile, access). The demo's

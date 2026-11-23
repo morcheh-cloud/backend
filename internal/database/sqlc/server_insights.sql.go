@@ -135,7 +135,7 @@ func (q *Queries) LatestServerSamples(ctx context.Context, ids []uuid.UUID) ([]S
 }
 
 const listServersToSample = `-- name: ListServersToSample :many
-SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id FROM servers
+SELECT id, folder_id, name, host, port, username, auth_method, password_enc, private_key_enc, passphrase_enc, host_key, description, tags, favorite, status, status_message, latency_ms, os_family, os_id, os_name, os_version, kernel, arch, hostname, last_checked_at, last_seen_at, created_at, updated_at, workspace_id, morche_host, setup_public_key FROM servers
 WHERE status = 'online' AND os_family IN ('', 'linux')
 ORDER BY id
 `
@@ -180,6 +180,8 @@ func (q *Queries) ListServersToSample(ctx context.Context) ([]Server, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.WorkspaceID,
+			&i.MorcheHost,
+			&i.SetupPublicKey,
 		); err != nil {
 			return nil, err
 		}
