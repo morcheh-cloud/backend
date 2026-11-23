@@ -91,3 +91,44 @@ func TestConfigScriptKeepsMode(t *testing.T) {
 		t.Fatal(s)
 	}
 }
+
+func TestCheckRepoAdd(t *testing.T) {
+	ok := RepoAddBody{Name: "docker", URIs: []string{"https://download.docker.com/linux/ubuntu"}, Suites: []string{"noble"}, Components: []string{"stable"}, SignedBy: "/etc/apt/keyrings/docker.asc"}
+	if err := checkRepoAdd(ok, "apt"); err != nil {
+		t.Fatal(err)
+	}
+	bad := []RepoAddBody{
+		{Name: "Docker", URIs: ok.URIs, Suites: ok.Suites},
+		{Name: "x", URIs: []string{"ftp://x"}, Suites: ok.Suites},
+		{Name: "x", URIs: []string{"https://x/a\nURIs: https://evil"}, Suites: ok.Suites},
+		{Name: "x", URIs: ok.URIs, Suites: []string{"noble\nComponents: x"}},
+		{Name: "x", URIs: ok.URIs},
+		{Name: "x", URIs: ok.URIs, Suites: ok.Suites, SignedBy: "keys/rel"},
+	}
+	for _, b := range bad {
+		if checkRepoAdd(b, "apt") == nil {
+			t.Errorf("should refuse %+v", b)
+		}
+	}
+	if checkRepoAdd(RepoAddBody{Name: "x", URIs: ok.URIs, Title: "A\nB"}, "dnf") == nil {
+		t.Error("title with a newline")
+	}
+}
+
+func TestOsRelease(t *testing.T) {
+	id, code := osRelease("NAME=\"Ubuntu\"\nID=ubuntu\nVERSION_CODENAME=noble\n")
+	if id != "ubuntu" || code != "noble" {
+		t.Fatal(id, code)
+	}
+}
+
+func TestRevisionIgnoresMissingFiles(t *testing.T) {
+	a := revisionOf([]configFile{{Path: "/etc/hosts", Text: "x", Exists: true}})
+	b := revisionOf([]configFile{{Path: "/etc/hosts", Text: "x", Exists: true}, {Path: "/etc/new.conf"}})
+	if a != b {
+		t.Fatal("a file that isn't there must not move the revision")
+	}
+	if c := revisionOf([]configFile{{Path: "/etc/hosts", Text: "x", Exists: true}, {Path: "/etc/new.conf", Exists: true}}); c == a {
+		t.Fatal("a file that appeared must move it")
+	}
+}

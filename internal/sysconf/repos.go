@@ -383,3 +383,34 @@ func PrintYumRepo(r Repo) string {
 	}
 	return s
 }
+
+// RemoveRepo takes the n-th repo of a file (as numbered in its ID) out.
+func RemoveRepo(format, text string, n int) string {
+	ls := lines(text)
+	switch format {
+	case "line":
+		if n >= 1 && n <= len(ls) {
+			if _, ok := parseAptLine(ls[n-1]); ok {
+				ls = slices.Delete(ls, n-1, n)
+			}
+		}
+	case "deb822":
+		st := deb822Stanzas(ls)
+		if n >= 1 && n <= len(st) {
+			s := st[n-1]
+			end := s.end
+			if end < len(ls) && strings.TrimSpace(ls[end]) == "" {
+				end++
+			} else if s.start > 0 && strings.TrimSpace(ls[s.start-1]) == "" {
+				s.start--
+			}
+			ls = slices.Delete(ls, s.start, end)
+		}
+	case "repo":
+		ss := yumSections(ls)
+		if n >= 1 && n <= len(ss) {
+			ls = slices.Delete(ls, ss[n-1].start, ss[n-1].end)
+		}
+	}
+	return join(ls)
+}

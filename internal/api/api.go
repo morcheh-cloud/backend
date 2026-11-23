@@ -140,6 +140,7 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerConfigDns(api, servers)
 	registerConfigClock(api, servers)
 	registerConfigNetwork(api, servers)
+	registerConfigRepos(api, servers)
 	registerServices(api, servers)
 	registerPackages(api, servers)
 	registerPower(api, servers)

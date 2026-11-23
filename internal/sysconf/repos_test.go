@@ -157,3 +157,17 @@ func TestPrintNewRepos(t *testing.T) {
 		t.Fatalf("%s", y)
 	}
 }
+
+func TestRemoveRepo(t *testing.T) {
+	if got := RemoveRepo("line", aptList, 3); strings.Contains(got, "docker") || !strings.Contains(got, "## Plain comment line") {
+		t.Fatalf("line:\n%s", got)
+	}
+	got := RemoveRepo("deb822", aptDeb822, 2)
+	if rs := ParseDeb822("f", got); len(rs) != 1 || strings.Contains(got, "security") {
+		t.Fatalf("deb822:\n%s", got)
+	}
+	got = RemoveRepo("repo", yumRepo, 2)
+	if rs := ParseYumRepo("f", got); len(rs) != 1 || rs[0].Name != "baseos" || strings.Contains(got, "docker") {
+		t.Fatalf("repo:\n%s", got)
+	}
+}

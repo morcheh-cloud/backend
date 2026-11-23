@@ -137,8 +137,12 @@ done`
 
 func revisionOf(files []configFile) string {
 	h := sha256.New()
+	// Files that aren't there don't count, so a plan may name the file it
+	// is about to add; one appearing still moves the revision.
 	for _, f := range files {
-		fmt.Fprintf(h, "%s\x00%t\x00%d\x00%s", f.Path, f.Exists, len(f.Text), f.Text)
+		if f.Exists {
+			fmt.Fprintf(h, "%s\x00%d\x00%s", f.Path, len(f.Text), f.Text)
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))[:24]
 }

@@ -23,6 +23,13 @@ var configPolicies = map[string]policy{
 	"get-server-network":     onServer(auth.Viewer),
 	"preview-server-network": onServer(auth.Engineer),
 	"update-server-network":  onServer(auth.Engineer),
+
+	"get-server-repositories":  onServer(auth.Viewer),
+	"update-server-repository": onServer(auth.Engineer),
+	"add-server-repository":    onServer(auth.Engineer),
+	"delete-server-repository": onServer(auth.Engineer),
+	"set-server-mirror":        onServer(auth.Engineer),
+	"test-server-mirror":       onServer(auth.Operator),
 }
 
 // Every write is refused on the public demo.
@@ -30,6 +37,8 @@ var configDemoRefused = []string{
 	"restore-config-change", "keep-config-change", "undo-config-change",
 	"update-server-hosts", "update-server-dns", "update-server-hostname",
 	"update-server-clock", "sync-server-clock", "update-server-network",
+	"update-server-repository", "add-server-repository", "delete-server-repository",
+	"set-server-mirror", "test-server-mirror",
 }
 
 func init() {
