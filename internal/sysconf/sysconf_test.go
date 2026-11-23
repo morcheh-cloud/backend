@@ -165,3 +165,18 @@ func TestValidHostname(t *testing.T) {
 		}
 	}
 }
+
+func TestValidators(t *testing.T) {
+	if !ValidIP("1.1.1.1") || !ValidIP("2606:4700::1111") || ValidIP("1.1.1.1\nnameserver 6.6.6.6") || ValidIP("") {
+		t.Fatal("ValidIP")
+	}
+	if !ValidServerName("pool.ntp.org") || !ValidServerName("10.0.0.1") || ValidServerName("a b") || ValidServerName("x\n[Time]") {
+		t.Fatal("ValidServerName")
+	}
+	if !ValidResolvOption("edns0") || !ValidResolvOption("timeout:2") || ValidResolvOption("ndots:1 x") || ValidResolvOption("a\nb") {
+		t.Fatal("ValidResolvOption")
+	}
+	if !ValidCIDR("10.0.0.5/24") || !ValidCIDR("fd00::5/64") || ValidCIDR("10.0.0.5") || ValidCIDR("10.0.0.5/33") {
+		t.Fatal("ValidCIDR")
+	}
+}
