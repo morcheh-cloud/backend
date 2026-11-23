@@ -372,6 +372,7 @@ func (h *backupHandler) dumpOne(ctx context.Context, t *jobs.Task, b sqlc.Databa
 			return backupResult{}, err
 		}
 		script.script = spec.Script
+		script.native = h.nativeFor(d, target, nil)
 		res, err := h.stream(dumpSizeHint(ctx, d), t, script, spec, place.storages, b.ID, file)
 		if errors.Is(err, errChainBroken) && target.Incremental && attempt == 0 {
 			t.Logf("%s: the backup it builds on no longer fits the database (another backup or a restore moved it on); taking a full one instead.", cmpOr(b.Target, d.Name))
@@ -571,6 +572,8 @@ type dumpScript struct {
 	script    string
 	secrets   []string
 	data      io.Reader
+	// Set: Morche does it itself (nativeFor) and the rest is unused.
+	native nativeRun
 }
 
 // dumpMarks are what a script said on stderr for Morche.
@@ -604,6 +607,9 @@ func readMarks(s string) (dumpMarks, string) {
 // runDump runs the script on its server, its stdout going to out. It
 // reconnects once when the connection turns out to be stale.
 func (h *backupHandler) runDump(ctx context.Context, t *jobs.Task, s dumpScript, out io.Writer) (dumpMarks, error) {
+	if s.native != nil {
+		return dumpMarks{}, s.native(ctx, s.data, out)
+	}
 	if s.runsLocally() {
 		return h.runLocal(ctx, t, s, out)
 	}

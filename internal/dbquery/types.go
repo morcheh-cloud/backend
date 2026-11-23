@@ -73,7 +73,7 @@ type RowsRequest struct {
 type DatabaseObject struct {
 	Schema string `json:"schema"`
 	Name   string `json:"name"`
-	Kind   string `json:"kind" enum:"table,view,materialized_view,foreign_table,collection,timeseries,dictionary"`
+	Kind   string `json:"kind" enum:"table,view,materialized_view,foreign_table,collection,timeseries,dictionary,index,alias,data_stream"`
 	Rows   *int64 `json:"rows" nullable:"true" doc:"The engine's estimate"`
 	Bytes  *int64 `json:"bytes" nullable:"true"`
 }
@@ -192,6 +192,10 @@ func Open(ctx context.Context, cfg dbmon.Config, name string) (Client, error) {
 		return openRedis(ctx, cfg, name)
 	case dbmon.ClickHouse:
 		return openClickHouse(ctx, cfg, name)
+	case dbmon.Elastic:
+		return openElastic(ctx, cfg)
+	case dbmon.Meili:
+		return openMeili(ctx, cfg)
 	}
 	return nil, fmt.Errorf("unknown engine %q", cfg.Engine)
 }

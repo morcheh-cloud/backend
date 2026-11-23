@@ -50,6 +50,7 @@ type Sniffed struct {
 var engineNames = map[string]string{
 	dbmon.Postgres: "PostgreSQL", dbmon.MySQL: "MySQL / MariaDB", dbmon.MSSQL: "SQL Server",
 	dbmon.Redis: "Redis", dbmon.Mongo: "MongoDB", dbmon.ClickHouse: "ClickHouse",
+	dbmon.Elastic: "Elasticsearch", dbmon.Meili: "Meilisearch",
 }
 
 // Sniff reads the start of a backup file to tell what it is. engine is the
@@ -115,6 +116,9 @@ func sniff(head []byte, engine string) Sniffed {
 			Problem: Restorable(RedisRDB, "")}
 	case !isText(head):
 		return Sniffed{Label: "Unknown file", Problem: "This isn't a backup Morche knows: not a SQL dump, a pg_dump archive, a mongodump archive, a SQL Server backup or a ClickHouse dump Morche made."}
+	}
+	if n := sniffNative(head); n.Format != "" {
+		return n
 	}
 	text := string(head)
 	switch {
@@ -404,6 +408,9 @@ func CheckFile(r io.Reader, engine string) (FileCheck, error) {
 		return finish(out)
 	}
 	ends := func(s string) bool { return bytes.Contains(tail.tail, []byte(s)) }
+	if NativeFormat(out.Format) && !nativeEnds(tail.tail) {
+		out.Problem = "The file doesn't reach its last line, so it was cut short."
+	}
 	headText := string(head[:min(len(head), 4096)])
 	switch out.Format {
 	case PgSQL:

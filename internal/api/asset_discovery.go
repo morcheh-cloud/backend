@@ -60,7 +60,7 @@ type AssetDiscoveryResult struct {
 	Problems []string `json:"problems"`
 }
 
-var dbEngines = map[string]string{"postgresql": "postgres", "mysql": "mysql", "mariadb": "mysql", "mongodb": "mongodb", "redis": "redis", "sql server": "mssql", "microsoft sql server": "mssql", "clickhouse": "clickhouse"}
+var dbEngines = map[string]string{"postgresql": "postgres", "mysql": "mysql", "mariadb": "mysql", "mongodb": "mongodb", "redis": "redis", "sql server": "mssql", "microsoft sql server": "mssql", "clickhouse": "clickhouse", "elasticsearch": "elasticsearch", "opensearch": "elasticsearch", "meilisearch": "meilisearch"}
 
 func engineOfService(s string) string {
 	l := strings.ToLower(s)

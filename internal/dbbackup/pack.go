@@ -235,6 +235,8 @@ func Parallel(engine string) IncrementalSupport {
 		return IncrementalSupport{false, "Redis makes one snapshot."}
 	case dbmon.MSSQL:
 		return IncrementalSupport{false, "SQL Server's backup runs on its own."}
+	case dbmon.Elastic, dbmon.Meili:
+		return IncrementalSupport{false, "Morche reads the documents in pages, one index at a time."}
 	case dbmon.ClickHouse:
 		return IncrementalSupport{false, "ClickHouse already reads each table with many threads; the dump takes the tables one at a time."}
 	}
@@ -250,6 +252,8 @@ func CompressionNote(engine string) string {
 		return "gzip is mongodump's own and has no levels; zstd is done by Morche."
 	case dbmon.ClickHouse:
 		return "Morche compresses the file while it's uploaded. Each table is written to a temporary folder before it's sent, so that needs room for the biggest table."
+	case dbmon.Elastic, dbmon.Meili:
+		return "Morche reads every document over the API and compresses the file while it's uploaded; nothing runs on a server."
 	}
 	return "Morche compresses the file while it's uploaded."
 }

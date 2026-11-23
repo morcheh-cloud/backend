@@ -420,9 +420,9 @@ func (h *databaseSyncHandler) check(ctx context.Context, ws uuid.UUID, b Databas
 	switch b.Mode {
 	case "replace":
 		switch c.src.Engine {
-		case dbmon.Postgres, dbmon.MySQL, dbmon.Mongo, dbmon.ClickHouse:
+		case dbmon.Postgres, dbmon.MySQL, dbmon.Mongo, dbmon.ClickHouse, dbmon.Elastic, dbmon.Meili:
 		default:
-			return c, fieldError("body.mode", "Replacing works on PostgreSQL, MySQL/MariaDB, MongoDB and ClickHouse.", b.Mode)
+			return c, fieldError("body.mode", "Replacing works on PostgreSQL, MySQL/MariaDB, MongoDB, ClickHouse, Elasticsearch and Meilisearch.", b.Mode)
 		}
 		src, err := h.syncRunner(ctx, c.src, o.SourceRunner, "body.options.source_runner")
 		if err != nil {
@@ -901,13 +901,16 @@ func (h *databaseSyncHandler) replace(ctx context.Context, t *jobs.Task, s sqlc.
 	if err != nil {
 		return err
 	}
-	spec, err := dbbackup.Build(backupTarget(src, src.Username, srcPass, s.SourceName, s.ID.String()))
+	srcTarget := backupTarget(src, src.Username, srcPass, s.SourceName, s.ID.String())
+	spec, err := dbbackup.Build(srcTarget)
 	if err != nil {
 		return err
 	}
-	script, err := dbbackup.BuildRestore(backupTarget(tgt, tgt.Username, tgtPass, s.TargetName, s.ID.String()), dbbackup.RestoreOptions{
+	tgtTarget := backupTarget(tgt, tgt.Username, tgtPass, s.TargetName, s.ID.String())
+	loadOpts := dbbackup.RestoreOptions{
 		Format: spec.Format, Source: s.SourceName, Replace: res.Replace.Existed, First: true, Last: true, CreateNamed: true,
-	})
+	}
+	script, err := dbbackup.BuildRestore(tgtTarget, loadOpts)
 	if err != nil {
 		return err
 	}
@@ -923,6 +926,8 @@ func (h *databaseSyncHandler) replace(ctx context.Context, t *jobs.Task, s sqlc.
 	}
 	dump := scriptFor(src, o.SourceRunner, spec.Script, srcPass)
 	load := scriptFor(tgt, o.TargetRunner, script, tgtPass)
+	dump.native = h.backups.nativeFor(src, srcTarget, nil)
+	load.native = h.backups.nativeFor(tgt, tgtTarget, &loadOpts)
 
 	save("Copying")
 	t.Update(func(p *jobs.Progress) { p.Phase, p.Current = "Copying", s.SourceName+" → "+s.TargetName })

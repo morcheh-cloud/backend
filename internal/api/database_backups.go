@@ -717,6 +717,10 @@ func (h *backupHandler) listDatabases(ctx context.Context, d sqlc.Database) ([]s
 		if slices.Contains(systemDatabases[d.Engine], db.Name) {
 			continue
 		}
+		// Elasticsearch's own indices (security, tasks, data streams' backing ones).
+		if d.Engine == dbmon.Elastic && strings.HasPrefix(db.Name, ".") {
+			continue
+		}
 		// SQL Server can only back up a database that's online.
 		if d.Engine == dbmon.MSSQL && db.State != "" && !strings.EqualFold(db.State, "ONLINE") {
 			continue

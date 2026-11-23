@@ -23,7 +23,7 @@ func Restorable(format, target string) string {
 	switch format {
 	case PgCustom, PgDir, PgSQL, MySQLDB, MySQLBinlog, MSSQLBak, MSSQLDiff:
 		return ""
-	case MongoArchive, MySQLSQL, ClickHouseTar:
+	case MongoArchive, MySQLSQL, ClickHouseTar, ElasticNDJSON, MeiliNDJSON:
 		if target != "" {
 			return ""
 		}
@@ -103,6 +103,9 @@ func BuildRestore(t Target, o RestoreOptions) (string, error) {
 		return mssqlRestore(t, o)
 	case ClickHouseTar:
 		return clickhouseRestore(t, o), nil
+	case ElasticNDJSON, MeiliNDJSON:
+		// Morche loads it itself (Load); there's no script.
+		return "", nil
 	}
 	return "", fmt.Errorf("can't restore %s", o.Format)
 }

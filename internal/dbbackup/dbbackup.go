@@ -65,6 +65,10 @@ func Incremental(engine string) IncrementalSupport {
 		return IncrementalSupport{false, "MongoDB only has this through the oplog of a replica set, not per database."}
 	case dbmon.Redis:
 		return IncrementalSupport{false, "Redis only makes whole snapshots."}
+	case dbmon.Elastic:
+		return IncrementalSupport{false, "Elasticsearch's own incremental snapshots need a snapshot repository on the cluster; Morche exports every document of each index instead."}
+	case dbmon.Meili:
+		return IncrementalSupport{false, "Meilisearch has no incremental export: each backup holds every document and setting of the index."}
 	case dbmon.ClickHouse:
 		return IncrementalSupport{false, "ClickHouse's own incremental backups (BACKUP … base_backup) are written on the server's disk or to S3, not sent as a stream, so only full backups are offered."}
 	}
@@ -119,6 +123,8 @@ type Spec struct {
 	Workers int
 	// The chain's position is in the file's first lines (see PositionIn).
 	HeadPosition bool
+	// No script: Morche reads the database over its HTTP API itself (Dump).
+	Native bool
 }
 
 var idPattern = regexp.MustCompile(`^[0-9a-zA-Z-]+$`)
@@ -179,6 +185,8 @@ func Build(t Target) (Spec, error) {
 		s, err = mssql(t)
 	case dbmon.ClickHouse:
 		s = clickhouse(t)
+	case dbmon.Elastic, dbmon.Meili:
+		s = nativeSpec(t)
 	default:
 		return Spec{}, fmt.Errorf("backups don't support %s", t.Engine)
 	}

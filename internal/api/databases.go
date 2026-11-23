@@ -30,7 +30,7 @@ type Database struct {
 	ID          string  `json:"id" format:"uuid"`
 	WorkspaceID string  `json:"workspace_id" format:"uuid"`
 	Name        string  `json:"name" example:"Shop primary"`
-	Engine      string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse"`
+	Engine      string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse,elasticsearch,meilisearch"`
 	Mode        string  `json:"mode" enum:"server,direct" doc:"server: reached through one of your servers over SSH; direct: Morche connects itself"`
 	ServerID    *string `json:"server_id" format:"uuid" nullable:"true" doc:"The server it's reached through; null when direct, or when that server was removed"`
 	Host        string  `json:"host" doc:"As the server sees it (mode server), or its public address"`
@@ -118,13 +118,13 @@ type DatabaseIDPath struct {
 
 // DatabaseSettings is how to reach a database.
 type DatabaseSettings struct {
-	Engine   string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse"`
+	Engine   string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse,elasticsearch,meilisearch"`
 	Mode     string  `json:"mode" enum:"server,direct" doc:"server: through one of your servers over SSH (the database may run on it, in Docker on it, or behind it); direct: Morche connects to a public address itself"`
 	ServerID *string `json:"server_id,omitempty" format:"uuid" doc:"mode server: the server it's reached through"`
 	Host     string  `json:"host,omitempty" maxLength:"255" doc:"mode server: as that server sees it (empty = 127.0.0.1, or the container's own address when a container is set). direct: public IP or domain"`
 	Port     int32   `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"0 or left out = the engine's default"`
-	Username string  `json:"username,omitempty" maxLength:"128"`
-	Password string  `json:"password,omitempty" maxLength:"1024" doc:"On update, leave out to keep the stored one"`
+	Username string  `json:"username,omitempty" maxLength:"128" doc:"Elasticsearch: empty = password is an API key (Authorization: ApiKey). Meilisearch: unused"`
+	Password string  `json:"password,omitempty" maxLength:"1024" doc:"On update, leave out to keep the stored one. Meilisearch: the master key or an API key"`
 	// On update: forget the stored password.
 	ClearPassword bool   `json:"clear_password,omitempty"`
 	Dbname        string `json:"dbname,omitempty" maxLength:"128" doc:"Database to sign in to (MongoDB: the auth database; Redis: the db number). Empty = the engine's usual one"`
@@ -197,6 +197,13 @@ func (s *DatabaseSettings) normalize() error {
 		s.CACert = ""
 	} else if s.CACert != "" && !x509.NewCertPool().AppendCertsFromPEM([]byte(s.CACert)) {
 		return fieldError("body.ca_cert", "Paste the CA certificate in PEM form (-----BEGIN CERTIFICATE-----)", nil)
+	}
+	// Search engines have no database to sign in to; Meilisearch has only a key.
+	if s.Engine == dbmon.Elastic || s.Engine == dbmon.Meili {
+		s.Dbname = ""
+	}
+	if s.Engine == dbmon.Meili {
+		s.Username = ""
 	}
 	if s.Engine == dbmon.Redis && s.Dbname != "" {
 		if n, err := strconv.Atoi(s.Dbname); err != nil || n < 0 || n > 255 {
@@ -739,7 +746,7 @@ func fetchIP(ctx context.Context, url string) (string, error) {
 // ---- Credentials ----
 
 type DatabaseCredentials struct {
-	Engine   string `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse"`
+	Engine   string `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse,elasticsearch,meilisearch"`
 	Host     string `json:"host" doc:"As the server it goes through sees it, when mode is server"`
 	Port     int32  `json:"port"`
 	Username string `json:"username"`

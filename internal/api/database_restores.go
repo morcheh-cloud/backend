@@ -526,6 +526,9 @@ func (h *backupHandler) runRestore(ctx context.Context, t *jobs.Task) (any, erro
 			return fail(err)
 		}
 		script.script = s
+		script.native = h.nativeFor(d, target, &dbbackup.RestoreOptions{
+			Format: m.Format, Source: m.Target, Replace: r.Mode == "replace", First: i == 0, Last: i == len(chain)-1,
+		})
 		if err := h.loadFile(ctx, t, script, src, m); err != nil {
 			if i > 0 {
 				err = fmt.Errorf("%s (after %d of %d files)", problemText(err), i, len(chain))
@@ -590,7 +593,8 @@ func (h *backupHandler) safetyBackup(ctx context.Context, t *jobs.Task, r sqlc.D
 	if err := h.q.CreateBackupCopy(bg, sqlc.CreateBackupCopyParams{BackupID: b.ID, StorageID: &dest.ID, StorageName: dest.Name}); err != nil {
 		return end(err)
 	}
-	spec, err := dbbackup.Build(backupTarget(d, user, password, r.TargetName, b.ID.String()))
+	safety := backupTarget(d, user, password, r.TargetName, b.ID.String())
+	spec, err := dbbackup.Build(safety)
 	if err != nil {
 		return end(err)
 	}
@@ -606,6 +610,7 @@ func (h *backupHandler) safetyBackup(ctx context.Context, t *jobs.Task, r sqlc.D
 	if d.Mode == "server" {
 		script.container = d.Container
 	}
+	script.native = h.nativeFor(d, safety, nil)
 	res, err := h.stream(dumpSizeHint(ctx, d), t, script, spec, []sqlc.Storage{dest}, b.ID, file)
 	if err != nil {
 		return end(err)

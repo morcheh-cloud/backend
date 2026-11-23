@@ -9,7 +9,8 @@ import (
 
 func engineAuthError(err error) bool {
 	return engineAuthErrorPostgres(err) || engineAuthErrorMySQL(err) ||
-		engineAuthErrorMSSQL(err) || engineAuthErrorClickHouse(err)
+		engineAuthErrorMSSQL(err) || engineAuthErrorClickHouse(err) ||
+		engineAuthErrorHTTP(err)
 }
 
 // sortTables keeps the 20 largest tables across every database read.

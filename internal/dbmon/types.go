@@ -1,5 +1,6 @@
 // Package dbmon watches databases: it connects to PostgreSQL, MySQL/MariaDB,
-// SQL Server, Redis, MongoDB and ClickHouse with read-only monitoring queries, turns what
+// SQL Server, Redis, MongoDB, ClickHouse, Elasticsearch (also OpenSearch) and
+// Meilisearch with read-only monitoring queries, turns what
 // each engine reports into one shape (a snapshot), and judges that snapshot
 // against limits (checks). It knows nothing about HTTP or Morche's own
 // tables; the API decides how a database is reached (directly or through a
@@ -20,10 +21,12 @@ const (
 	Redis      = "redis"
 	Mongo      = "mongodb"
 	ClickHouse = "clickhouse"
+	Elastic    = "elasticsearch"
+	Meili      = "meilisearch"
 )
 
 // Engines lists every engine, in the order the UI offers them.
-var Engines = []string{Postgres, MySQL, MSSQL, Redis, Mongo, ClickHouse}
+var Engines = []string{Postgres, MySQL, MSSQL, Redis, Mongo, ClickHouse, Elastic, Meili}
 
 // DefaultPort is each engine's usual port.
 func DefaultPort(engine string) int {
@@ -40,6 +43,10 @@ func DefaultPort(engine string) int {
 		return 27017
 	case ClickHouse:
 		return 9000 // native protocol (9440 with TLS)
+	case Elastic:
+		return 9200
+	case Meili:
+		return 7700
 	}
 	return 0
 }
@@ -63,7 +70,8 @@ type Config struct {
 	Password string
 	// Database to connect to (Postgres: default postgres; MySQL: none; SQL
 	// Server: default master; MongoDB: the auth source, default admin; Redis:
-	// the db number, default 0; ClickHouse: default "default").
+	// the db number, default 0; ClickHouse: default "default"; Elasticsearch and
+	// Meilisearch: unused).
 	Database string
 	TLS      string
 	CACert   string
@@ -92,8 +100,8 @@ func (c Config) addr() string {
 // capped; a part an engine or the login's privileges can't give is left empty
 // and explained in Notes.
 type DatabaseSnapshot struct {
-	Engine      string    `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse"`
-	Flavor      string    `json:"flavor" doc:"What it really is: PostgreSQL, MySQL, MariaDB, SQL Server, Redis, Valkey, MongoDB, ClickHouse" example:"PostgreSQL"`
+	Engine      string    `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse,elasticsearch,meilisearch"`
+	Flavor      string    `json:"flavor" doc:"What it really is: PostgreSQL, MySQL, MariaDB, SQL Server, Redis, Valkey, MongoDB, ClickHouse, Elasticsearch, OpenSearch, Meilisearch" example:"PostgreSQL"`
 	Version     string    `json:"version" example:"17.2"`
 	Edition     string    `json:"edition,omitempty" doc:"SQL Server edition, managed-service hints" example:"Developer Edition (64-bit)"`
 	CollectedAt time.Time `json:"collected_at"`
@@ -131,6 +139,7 @@ type DatabaseSnapshot struct {
 	Security      DatabaseSecurity    `json:"security"`
 	Parts         *DatabaseParts      `json:"parts,omitempty" doc:"ClickHouse: the partition with the most active parts"`
 	Mutations     *DatabaseMutations  `json:"mutations,omitempty" doc:"ClickHouse: ALTER UPDATE/DELETE still being applied"`
+	Search        *DatabaseSearch     `json:"search,omitempty" doc:"Elasticsearch, OpenSearch and Meilisearch: cluster, shards and indexing"`
 	Facts         []DatabaseFact      `json:"facts" doc:"Engine-specific numbers"`
 	Notes         []DatabaseNote      `json:"notes" doc:"What couldn't be read, and why"`
 
@@ -138,6 +147,38 @@ type DatabaseSnapshot struct {
 	// listed, for the summaries; never sent.
 	counters counters
 	all      []DatabaseActivity
+}
+
+// DatabaseSearch is what a search engine reports beyond the common shape.
+type DatabaseSearch struct {
+	// Elasticsearch / OpenSearch.
+	Cluster       string `json:"cluster,omitempty" doc:"Cluster name"`
+	Status        string `json:"status,omitempty" enum:"green,yellow,red," doc:"Cluster health; Meilisearch: available = green"`
+	Nodes         int32  `json:"nodes"`
+	DataNodes     int32  `json:"data_nodes"`
+	ActiveShards  int32  `json:"active_shards"`
+	PrimaryShards int32  `json:"primary_shards"`
+	Relocating    int32  `json:"relocating_shards"`
+	Initializing  int32  `json:"initializing_shards"`
+	Unassigned    int32  `json:"unassigned_shards"`
+	PendingTasks  int32  `json:"pending_tasks" doc:"Cluster-state changes waiting for the master"`
+	// Highest JVM heap use of any node, 0–1 (Elasticsearch).
+	HeapRatio *float64 `json:"heap_ratio" nullable:"true"`
+	// Highest disk use of any data node, 0–1, and the watermarks it's judged by.
+	DiskRatio       *float64 `json:"disk_ratio" nullable:"true"`
+	HighWatermark   *float64 `json:"high_watermark" nullable:"true" doc:"Share of the disk where shards stop being placed on a node"`
+	FloodStage      *float64 `json:"flood_stage" nullable:"true" doc:"Share of the disk where indices turn read-only"`
+	ReadOnlyIndices []string `json:"read_only_indices" doc:"Indices blocked for writes (flood stage or set by hand)"`
+	// Documents in every index together.
+	Documents *int64 `json:"documents" nullable:"true"`
+	Indexes   int32  `json:"indexes"`
+	// Meilisearch task queue (Elasticsearch: running bulk/reindex tasks).
+	Enqueued    int32    `json:"enqueued" doc:"Tasks waiting"`
+	Processing  int32    `json:"processing" doc:"Tasks running"`
+	Failed      int32    `json:"failed" doc:"Tasks that failed in the last 24 hours"`
+	OldestWait  *float64 `json:"oldest_wait_seconds" nullable:"true" doc:"How long the oldest waiting task has waited"`
+	LastFailure string   `json:"last_failure,omitempty" doc:"The newest failed task's error"`
+	Indexing    bool     `json:"indexing" doc:"Meilisearch: an index is being updated right now"`
 }
 
 type DatabaseConnections struct {

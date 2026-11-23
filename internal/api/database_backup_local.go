@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/morche/backend/internal/database/sqlc"
+	"github.com/morche/backend/internal/dbbackup"
 	"github.com/morche/backend/internal/dbmon"
 	"github.com/morche/backend/internal/jobs"
 )
@@ -105,6 +106,9 @@ type LocalTools struct {
 // localTools checks the tools a backup and a restore of this engine use.
 // Each entry is a set of alternatives.
 func localTools(d sqlc.Database) LocalTools {
+	if dbbackup.NativeEngine(d.Engine) {
+		return LocalTools{Supported: true, Missing: []string{}, Note: "Morche reads every document over the database's API itself, so nothing is installed or run on a server."}
+	}
 	if d.Mode != "direct" {
 		return LocalTools{Missing: []string{}, Note: "It's reached through a server, so its backups run there."}
 	}

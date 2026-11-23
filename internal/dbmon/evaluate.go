@@ -58,6 +58,12 @@ var Checks = []DatabaseCheckInfo{
 	{ID: "connections", Area: "capacity", Title: "Connections", About: "Share of the connection limit in use.", Unit: "ratio", Limit: lim(0.8, 0.95)},
 	{ID: "memory", Area: "capacity", Title: "Memory limit", About: "Redis: share of maxmemory in use. ClickHouse: share of max_server_memory_usage.", Unit: "ratio", Limit: lim(0.85, 0.95)},
 	{ID: "parts", Area: "capacity", Title: "Parts per partition", About: "ClickHouse: the partition with the most active parts, as a share of parts_to_throw_insert. Inserts slow down at parts_to_delay_insert and fail at the limit.", Unit: "ratio", Limit: lim(0.3, 0.8)},
+	{ID: "cluster_health", Area: "availability", Title: "Cluster health", About: "Elasticsearch/OpenSearch: green = every shard placed, yellow = a replica isn't, red = a primary isn't (some data can't be searched or written)."},
+	{ID: "shards", Area: "availability", Title: "Unassigned shards", About: "Elasticsearch/OpenSearch: shards no node holds.", Unit: "count", Limit: lim(1, 20)},
+	{ID: "heap", Area: "capacity", Title: "JVM heap", About: "Elasticsearch/OpenSearch: the fullest node's heap. Past ~85% it spends its time collecting garbage and may refuse requests (circuit breakers).", Unit: "ratio", Limit: lim(0.85, 0.95)},
+	{ID: "watermark", Area: "capacity", Title: "Disk watermarks", About: "Elasticsearch/OpenSearch: the fullest data node against the high watermark and the flood stage, where indices turn read-only."},
+	{ID: "task_queue", Area: "performance", Title: "Indexing queue", About: "Meilisearch: how long the oldest waiting task has waited. Documents sent are searchable only after their task runs.", Unit: "seconds", Limit: lim(300, 1800)},
+	{ID: "failed_tasks", Area: "performance", Title: "Failed tasks", About: "Meilisearch: tasks that failed in the last 24 hours (documents or settings that weren't taken).", Unit: "count", Limit: lim(1, 10)},
 	{ID: "id_columns", Area: "capacity", Title: "Auto-increment IDs", About: "The fullest auto-increment column, as a share of its type's maximum.", Unit: "ratio", Limit: lim(0.7, 0.9)},
 	{ID: "log_space", Area: "capacity", Title: "Transaction log", About: "SQL Server: share of the fullest transaction log in use.", Unit: "ratio", Limit: lim(0.8, 0.95)},
 	{ID: "replication_slots", Area: "capacity", Title: "Replication slots", About: "PostgreSQL: WAL kept for slots; an inactive slot keeps it forever.", Unit: "bytes", Limit: lim(10<<30, 50<<30)},
@@ -172,6 +178,7 @@ func Evaluate(in EvalInput) []DatabaseCheck {
 	e.replication(s)
 	e.backup(s)
 	e.security(s)
+	e.search(s)
 	return e.out
 }
 
@@ -556,7 +563,7 @@ func (e *evaluator) security(s *DatabaseSnapshot) {
 	}
 
 	if len(sec.Risks) > 0 {
-		e.add("risky_settings", LevelWarning, joinMax(sec.Risks, 2), "Turn them off unless something needs them.", nil)
+		e.add("risky_settings", LevelWarning, joinMax(sec.Risks, 2), "Change these settings unless something needs them as they are.", nil)
 	} else if s.DetailsAt != nil {
 		e.add("risky_settings", LevelOK, "None found", "", nil)
 	}

@@ -71,6 +71,10 @@ func Open(ctx context.Context, cfg Config) (*Conn, error) {
 		e, err = openMongo(ctx, cfg)
 	case ClickHouse:
 		e, err = openClickHouse(ctx, cfg)
+	case Elastic:
+		e, err = openElastic(ctx, cfg)
+	case Meili:
+		e, err = openMeili(ctx, cfg)
 	default:
 		return nil, fmt.Errorf("unknown engine %q", cfg.Engine)
 	}

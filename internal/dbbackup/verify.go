@@ -133,6 +133,13 @@ func check(format string, k *keeper) error {
 		if !bytes.HasPrefix(k.head, []byte{0x6d, 0xe2, 0x99, 0x81}) {
 			return errors.New("it isn't a mongodump archive")
 		}
+	case ElasticNDJSON, MeiliNDJSON:
+		if n := sniffNative(k.head); n.Format != format {
+			return errors.New("it isn't a file Morche exported")
+		}
+		if !nativeEnds(k.tail) {
+			return errors.New("the file doesn't reach its last line, so it was cut short")
+		}
 	case RedisRDB:
 		if !has("REDIS") {
 			return errors.New("it isn't a Redis snapshot")

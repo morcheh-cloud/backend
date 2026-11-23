@@ -143,7 +143,7 @@ func fileRestoreOptions(s dbbackup.Sniffed, sourceName, target, mode string) (db
 		MongoPlain: !s.MongoGzip, CreateNamed: true,
 	}
 	switch s.Format {
-	case dbbackup.MongoArchive, dbbackup.ClickHouseTar:
+	case dbbackup.MongoArchive, dbbackup.ClickHouseTar, dbbackup.ElasticNDJSON, dbbackup.MeiliNDJSON:
 		switch {
 		case len(s.Databases) == 0:
 			return o, "body.source", "The archive holds no databases."
@@ -509,11 +509,13 @@ func (h *backupHandler) runFileRestore(ctx context.Context, t *jobs.Task, r sqlc
 	if d.Mode == "server" {
 		script.container = d.Container
 	}
-	s, err := dbbackup.BuildRestore(backupTarget(d, user, password, r.TargetName, r.ID.String()), opts)
+	loadTarget := backupTarget(d, user, password, r.TargetName, r.ID.String())
+	s, err := dbbackup.BuildRestore(loadTarget, opts)
 	if err != nil {
 		return fail(err)
 	}
 	script.script = s
+	script.native = h.nativeFor(d, loadTarget, &opts)
 	err = h.st.with(ctx, end, func(p place) error {
 		f, err := p.fs.Open(ctx, r.Source)
 		if err != nil {

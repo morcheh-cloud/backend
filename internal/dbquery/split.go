@@ -344,6 +344,10 @@ func Risks(engine, script string) []string {
 		out = append(out, s)
 	}
 	switch engine {
+	case dbmon.Elastic:
+		return elasticRisks(script)
+	case dbmon.Meili:
+		return meiliRisks(script)
 	case dbmon.Redis:
 		for _, line := range redisLines(script) {
 			if len(line) == 0 {

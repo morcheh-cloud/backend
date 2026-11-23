@@ -104,7 +104,7 @@ func connKey(d sqlc.Database, name string) string {
 // open hands out a connection to one database inside d (name: the SQL
 // database, the Redis number; unused for MongoDB). Call done after.
 func (h *explorerHandler) open(ctx context.Context, d sqlc.Database, name string) (dbquery.Client, func(), error) {
-	if d.Engine == dbmon.Mongo {
+	if d.Engine == dbmon.Mongo || d.Engine == dbmon.Elastic || d.Engine == dbmon.Meili {
 		name = ""
 	}
 	key := connKey(d, name)
@@ -157,7 +157,7 @@ func (h *explorerHandler) open(ctx context.Context, d sqlc.Database, name string
 
 // drop forgets a connection that failed mid-use, so the next try reconnects.
 func (h *explorerHandler) drop(d sqlc.Database, name string) {
-	if d.Engine == dbmon.Mongo {
+	if d.Engine == dbmon.Mongo || d.Engine == dbmon.Elastic || d.Engine == dbmon.Meili {
 		name = ""
 	}
 	key := connKey(d, name)

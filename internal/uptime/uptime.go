@@ -93,7 +93,7 @@ type MonitorConfig struct {
 	RecordType      string            `json:"record_type,omitempty" enum:"A,AAAA,CNAME,MX,NS,TXT," doc:"dns: default A"`
 	Resolver        string            `json:"resolver,omitempty" maxLength:"255" doc:"dns: the server to ask (ip or ip:port); blank = the system's"`
 	Expected        []string          `json:"expected,omitempty" maxItems:"20" doc:"dns: values the answer must include"`
-	Engine          string            `json:"engine,omitempty" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse," doc:"database: which one"`
+	Engine          string            `json:"engine,omitempty" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse,elasticsearch,meilisearch," doc:"database: which one"`
 	Database        string            `json:"database,omitempty" maxLength:"255" doc:"database: the database to connect to"`
 	Container       string            `json:"container,omitempty" maxLength:"255" doc:"docker: the container name or id"`
 	Unit            string            `json:"unit,omitempty" maxLength:"255" doc:"systemd: the unit, e.g. nginx.service"`
