@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -67,7 +68,7 @@ type ConfigChangeFile struct {
 	After   string `json:"after"`
 	Existed bool   `json:"existed" doc:"The file was there before the change"`
 	Exists  bool   `json:"exists" doc:"The file was there after the change"`
-	Cut     bool   `json:"cut" doc:"Too big to keep (over 256 KiB): it can't be compared or put back"`
+	Cut     bool   `json:"cut" doc:"Too big to keep (over 256 KiB), or it holds secrets (shown as <hidden>): it can't be put back"`
 }
 
 type ConfigChangeDetail struct {
@@ -262,7 +263,14 @@ func (h *serverHandler) configChange(ctx context.Context, id, expect string, bui
 			return internalError(err)
 		}
 		script := configScript(p, hex.EncodeToString(token))
-		res, err := sh.hiding(false).exec(ctx, script, configTimeout, 64<<10)
+		// The files' contents stay out of the command log.
+		var payloads []string
+		for _, w := range p.Writes {
+			if !w.Remove && w.Text != "" {
+				payloads = append(payloads, base64.StdEncoding.EncodeToString([]byte(w.Text)))
+			}
+		}
+		res, err := sh.hiding(false, payloads...).exec(ctx, script, configTimeout, 64<<10)
 		lost := huma.Error502BadGateway(fmt.Sprintf("The connection dropped during the change. If it cut Morche off, the server undoes it within %d seconds.", configWindow))
 		switch {
 		case err != nil || res.timedOut:
@@ -414,9 +422,17 @@ sh "$d/rollback.sh"
 `
 }
 
-func keptFile(path, text string, exists bool) (string, bool) {
+var secretLine = regexp.MustCompile(`(?im)^(\s*(?:psk|password|wep-key\d|private-key-password|secret|pin)[^=\n]*=).*$`)
+
+// keptFile is what the history keeps of a file: nothing when it is too big,
+// and secrets (Wi-Fi keys, 802.1x passwords) hidden, which also means it
+// can't be put back.
+func keptFile(text string) (string, bool) {
 	if len(text) > configKeepText {
 		return "", true
+	}
+	if secretLine.MatchString(text) {
+		return secretLine.ReplaceAllString(text, "${1}<hidden>"), true
 	}
 	return text, false
 }
@@ -431,8 +447,8 @@ func (h *serverHandler) recordConfigChange(ctx context.Context, id string, p con
 		if a == b.Text && exists == b.Exists {
 			continue
 		}
-		bt, cut1 := keptFile(b.Path, b.Text, b.Exists)
-		at, cut2 := keptFile(b.Path, a, exists)
+		bt, cut1 := keptFile(b.Text)
+		at, cut2 := keptFile(a)
 		files = append(files, ConfigChangeFile{Path: b.Path, Before: bt, After: at, Existed: b.Exists, Exists: exists, Cut: cut1 || cut2})
 	}
 	data, _ := json.Marshal(files)
@@ -533,7 +549,7 @@ func registerConfigHistory(api huma.API, h *serverHandler) {
 			return nil, huma.Error422UnprocessableEntity("This change has no files to put back")
 		}
 		if slices.ContainsFunc(files, func(f ConfigChangeFile) bool { return f.Cut }) {
-			return nil, huma.Error422UnprocessableEntity("A file of this change was too big to keep, so it can't be put back")
+			return nil, huma.Error422UnprocessableEntity("A file of this change was too big to keep or holds secrets, so it can't be put back")
 		}
 		restore := configRestorers[r.Area]
 		id, err := h.configChange(ctx, in.ID, "", func(sh *rootShell) (configPlan, error) {

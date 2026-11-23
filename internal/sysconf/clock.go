@@ -99,3 +99,12 @@ func ParseTimesyncd(text string) []string {
 	}
 	return fallback
 }
+
+// PrintChronySources is Morche's file in chrony's sourcedir.
+func PrintChronySources(servers []string) string {
+	s := "# Written by Morche. Change it from Morche.\n"
+	for _, srv := range servers {
+		s += "server " + srv + " iburst\n"
+	}
+	return s
+}

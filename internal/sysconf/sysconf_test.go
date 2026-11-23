@@ -180,3 +180,13 @@ func TestValidators(t *testing.T) {
 		t.Fatal("ValidCIDR")
 	}
 }
+
+func TestPrintChronySources(t *testing.T) {
+	got := PrintChronySources([]string{"ntp.local", "10.0.0.1"})
+	if !strings.Contains(got, "server ntp.local iburst\nserver 10.0.0.1 iburst\n") || !slices.Equal(ParseChronyServers(got), []string{"ntp.local", "10.0.0.1"}) {
+		t.Fatal(got)
+	}
+	if got := SetChronyServers("pool a iburst\nmakestep 1 3\n", nil); got != "makestep 1 3\n" {
+		t.Fatalf("%q", got)
+	}
+}
