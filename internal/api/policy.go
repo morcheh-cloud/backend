@@ -68,6 +68,8 @@ const (
 	// run in {id}.
 	kindAutomation
 	kindAutomationRun
+	// The server level on the server the package registry in {id} runs on.
+	kindPackageRegistry
 )
 
 type policy struct {
@@ -101,6 +103,9 @@ func onPVECluster(l auth.Level) policy   { return policy{kindPVECluster, l} }
 func onCloudAccount(l auth.Level) policy { return policy{kindCloudAccount, l} }
 func onScript(l auth.Level) policy       { return policy{kindScript, l} }
 func onProxy(l auth.Level) policy        { return policy{kindProxy, l} }
+func onPackageRegistry(l auth.Level) policy {
+	return policy{kindPackageRegistry, l}
+}
 func onSoftwareRecipe(l auth.Level) policy {
 	return policy{kindSoftwareRecipe, l}
 }
@@ -827,6 +832,25 @@ var policies = map[string]policy{
 
 	// Reverse proxies
 	"list-proxy-kinds":                   active,
+	"list-package-registry-kinds":        active,
+	"list-package-registries":            active,
+	"create-package-registry":            active, // Engineer on the server, checked in the handler
+	"package-registry-preflight":         onServer(auth.Engineer),
+	"get-package-registry":               onPackageRegistry(auth.Viewer),
+	"update-package-registry":            onPackageRegistry(auth.Engineer),
+	"delete-package-registry":            onPackageRegistry(auth.Owner),
+	"redeploy-package-registry":          onPackageRegistry(auth.Engineer),
+	"secure-package-registry":            onPackageRegistry(auth.Engineer),
+	"check-package-registry":             onPackageRegistry(auth.Operator),
+	"package-registry-action":            onPackageRegistry(auth.Engineer),
+	"get-package-registry-credentials":   onPackageRegistry(auth.Owner),
+	"list-package-registry-items":        onPackageRegistry(auth.Viewer),
+	"get-package-registry-item":          onPackageRegistry(auth.Viewer),
+	"delete-package-registry-item":       onPackageRegistry(auth.Engineer),
+	"list-package-registry-accounts":     onPackageRegistry(auth.Operator),
+	"create-package-registry-account":    onPackageRegistry(auth.Engineer),
+	"reset-package-registry-account":     onPackageRegistry(auth.Engineer),
+	"delete-package-registry-account":    onPackageRegistry(auth.Engineer),
 	"list-proxies":                       active,
 	"list-proxy-hosts-everywhere":        active,
 	"get-proxy-traffic":                  active,

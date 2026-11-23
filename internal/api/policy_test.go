@@ -82,7 +82,7 @@ func TestEveryOperationHasAPolicy(t *testing.T) {
 		}
 		hasID := strings.Contains(op.path, "{id}")
 		switch pol.kind {
-		case kindServer, kindStorage, kindWorkspace, kindDatabase, kindBackupPlan, kindBackup, kindApp, kindPlaybook, kindAnsibleRun, kindSchedule, kindScheduleRun, kindDNSServer, kindPVECluster, kindScript, kindProxy, kindSoftwareRecipe, kindSoftwareInstall, kindWebhook, kindWebhookDelivery:
+		case kindServer, kindStorage, kindWorkspace, kindDatabase, kindBackupPlan, kindBackup, kindApp, kindPlaybook, kindAnsibleRun, kindSchedule, kindScheduleRun, kindDNSServer, kindPVECluster, kindScript, kindProxy, kindPackageRegistry, kindSoftwareRecipe, kindSoftwareInstall, kindWebhook, kindWebhookDelivery:
 			if !hasID {
 				t.Errorf("%s checks the path's {id}, but %s has none", op.id, op.path)
 			}

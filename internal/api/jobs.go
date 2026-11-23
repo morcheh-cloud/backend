@@ -44,22 +44,23 @@ type Job struct {
 
 // JobPlace is a folder on a server or storage.
 type JobPlace struct {
-	ServerID   string `json:"server_id,omitempty" format:"uuid"`
-	StorageID  string `json:"storage_id,omitempty" format:"uuid"`
-	Path       string `json:"path"`
-	Name       string `json:"name,omitempty" doc:"The server's or storage's name when the job started"`
-	RunID      string `json:"run_id,omitempty" format:"uuid" doc:"The Ansible or cron job run it belongs to"`
-	ScheduleID string `json:"schedule_id,omitempty" format:"uuid" doc:"The cron job it is a run of"`
-	SyncID     string `json:"sync_id,omitempty" format:"uuid" doc:"The storage migration or sync it is a run of"`
-	DatabaseID string `json:"database_id,omitempty" format:"uuid" doc:"The database it backs up"`
-	Volume     string `json:"volume,omitempty" doc:"The Docker volume it works in (path is inside it)"`
-	AutoUpdate string `json:"auto_update,omitempty" format:"uuid" doc:"The container auto-update it is a run of"`
-	Dataset    string `json:"dataset,omitempty" doc:"The kind of logs it archives, puts back or compacts"`
-	Archive    string `json:"archive,omitempty" format:"uuid" doc:"The log archive it writes, restores or puts away"`
-	Registry   string `json:"registry,omitempty" format:"uuid" doc:"The container registry login it signs in or out"`
-	ClusterID  string `json:"cluster_id,omitempty" format:"uuid" doc:"The Proxmox cluster it works on"`
-	VMID       int    `json:"vmid,omitempty" doc:"The Proxmox guest it works on"`
-	Automation string `json:"automation_id,omitempty" format:"uuid" doc:"The automation it is a run of (run_id = the automation run)"`
+	ServerID        string `json:"server_id,omitempty" format:"uuid"`
+	StorageID       string `json:"storage_id,omitempty" format:"uuid"`
+	Path            string `json:"path"`
+	Name            string `json:"name,omitempty" doc:"The server's or storage's name when the job started"`
+	RunID           string `json:"run_id,omitempty" format:"uuid" doc:"The Ansible or cron job run it belongs to"`
+	ScheduleID      string `json:"schedule_id,omitempty" format:"uuid" doc:"The cron job it is a run of"`
+	SyncID          string `json:"sync_id,omitempty" format:"uuid" doc:"The storage migration or sync it is a run of"`
+	DatabaseID      string `json:"database_id,omitempty" format:"uuid" doc:"The database it backs up"`
+	Volume          string `json:"volume,omitempty" doc:"The Docker volume it works in (path is inside it)"`
+	AutoUpdate      string `json:"auto_update,omitempty" format:"uuid" doc:"The container auto-update it is a run of"`
+	Dataset         string `json:"dataset,omitempty" doc:"The kind of logs it archives, puts back or compacts"`
+	Archive         string `json:"archive,omitempty" format:"uuid" doc:"The log archive it writes, restores or puts away"`
+	PackageRegistry string `json:"package_registry,omitempty" format:"uuid" doc:"The package registry it deploys, secures or removes"`
+	Registry        string `json:"registry,omitempty" format:"uuid" doc:"The container registry login it signs in or out"`
+	ClusterID       string `json:"cluster_id,omitempty" format:"uuid" doc:"The Proxmox cluster it works on"`
+	VMID            int    `json:"vmid,omitempty" doc:"The Proxmox guest it works on"`
+	Automation      string `json:"automation_id,omitempty" format:"uuid" doc:"The automation it is a run of (run_id = the automation run)"`
 }
 
 // JobRemoved is sent on the stream when a job is deleted; an empty id means

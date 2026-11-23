@@ -158,6 +158,7 @@ type Querier interface {
 	CreateMorcheHost(ctx context.Context, arg CreateMorcheHostParams) (Server, error)
 	CreateNotificationChannel(ctx context.Context, arg CreateNotificationChannelParams) (NotificationChannel, error)
 	CreatePVECluster(ctx context.Context, arg CreatePVEClusterParams) (PveCluster, error)
+	CreatePackageRegistry(ctx context.Context, arg CreatePackageRegistryParams) (PackageRegistry, error)
 	CreatePitrRun(ctx context.Context, arg CreatePitrRunParams) (DatabasePitrRun, error)
 	CreatePlaybook(ctx context.Context, arg CreatePlaybookParams) (AnsiblePlaybook, error)
 	CreateProxy(ctx context.Context, arg CreateProxyParams) (Proxy, error)
@@ -250,6 +251,7 @@ type Querier interface {
 	DeletePVECluster(ctx context.Context, id uuid.UUID) error
 	DeletePVELink(ctx context.Context, arg DeletePVELinkParams) error
 	DeletePVELinkForServer(ctx context.Context, serverID uuid.UUID) error
+	DeletePackageRegistry(ctx context.Context, id uuid.UUID) error
 	DeletePitr(ctx context.Context, databaseID uuid.UUID) error
 	DeletePlaybook(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteProxy(ctx context.Context, id uuid.UUID) error
@@ -440,6 +442,8 @@ type Querier interface {
 	GetPVEClusterWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPVELink(ctx context.Context, arg GetPVELinkParams) (PveVmLink, error)
 	GetPVELinkForServer(ctx context.Context, serverID uuid.UUID) (GetPVELinkForServerRow, error)
+	GetPackageRegistry(ctx context.Context, id uuid.UUID) (GetPackageRegistryRow, error)
+	GetPackageRegistryServer(ctx context.Context, id uuid.UUID) (GetPackageRegistryServerRow, error)
 	GetPitr(ctx context.Context, databaseID uuid.UUID) (DatabasePitr, error)
 	GetPitrRun(ctx context.Context, id uuid.UUID) (DatabasePitrRun, error)
 	GetPlaybook(ctx context.Context, id uuid.UUID) (AnsiblePlaybook, error)
@@ -447,6 +451,7 @@ type Querier interface {
 	GetProxy(ctx context.Context, id uuid.UUID) (GetProxyRow, error)
 	GetProxyChange(ctx context.Context, arg GetProxyChangeParams) (ProxyChange, error)
 	GetProxyHost(ctx context.Context, arg GetProxyHostParams) (ProxyHost, error)
+	GetProxyHostProxy(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetProxyServer(ctx context.Context, id uuid.UUID) (GetProxyServerRow, error)
 	GetRestore(ctx context.Context, id uuid.UUID) (DatabaseRestore, error)
 	GetSchedule(ctx context.Context, id uuid.UUID) (Schedule, error)
@@ -566,6 +571,7 @@ type Querier interface {
 	ListAlertStates(ctx context.Context, ids []uuid.UUID) ([]ListAlertStatesRow, error)
 	ListAllGroupMembers(ctx context.Context) ([]GroupMember, error)
 	ListAllPVEClusters(ctx context.Context) ([]PveCluster, error)
+	ListAllPackageRegistries(ctx context.Context) ([]PackageRegistry, error)
 	ListAnsibleFolders(ctx context.Context, workspaceID uuid.UUID) ([]ListAnsibleFoldersRow, error)
 	// Newest first, without the heavy columns.
 	ListAnsibleRuns(ctx context.Context, arg ListAnsibleRunsParams) ([]ListAnsibleRunsRow, error)
@@ -692,6 +698,7 @@ type Querier interface {
 	ListPVEClustersDueForCheck(ctx context.Context, before time.Time) ([]PveCluster, error)
 	// Machines linked to servers, with the server's name, on the given clusters.
 	ListPVELinks(ctx context.Context, clusterIds []uuid.UUID) ([]ListPVELinksRow, error)
+	ListPackageRegistries(ctx context.Context, arg ListPackageRegistriesParams) ([]ListPackageRegistriesRow, error)
 	ListPitrCopies(ctx context.Context, databaseID uuid.UUID) ([]DatabasePitrRun, error)
 	ListPitrRuns(ctx context.Context, arg ListPitrRunsParams) ([]DatabasePitrRun, error)
 	ListPitrs(ctx context.Context) ([]DatabasePitr, error)
@@ -723,6 +730,7 @@ type Querier interface {
 	ListScripts(ctx context.Context, workspaceID uuid.UUID) ([]ListScriptsRow, error)
 	// Pinned first, then the most recently changed.
 	ListServerNotes(ctx context.Context, serverID uuid.UUID) ([]ServerNote, error)
+	ListServerPackageRegistryPorts(ctx context.Context, serverID uuid.UUID) ([]int32, error)
 	// Runs that touched one server, newest first, with what they did there.
 	ListServerScriptRuns(ctx context.Context, arg ListServerScriptRunsParams) ([]ListServerScriptRunsRow, error)
 	ListServerSoftwareInstalls(ctx context.Context, serverID uuid.UUID) ([]ListServerSoftwareInstallsRow, error)
@@ -1001,6 +1009,10 @@ type Querier interface {
 	// A machine links to one server; run DeletePVELinkForServer first so a
 	// server links to one machine too.
 	SetPVELink(ctx context.Context, arg SetPVELinkParams) (PveVmLink, error)
+	SetPackageRegistryHealth(ctx context.Context, arg SetPackageRegistryHealthParams) error
+	SetPackageRegistryJob(ctx context.Context, arg SetPackageRegistryJobParams) error
+	SetPackageRegistryLinks(ctx context.Context, arg SetPackageRegistryLinksParams) error
+	SetPackageRegistryState(ctx context.Context, arg SetPackageRegistryStateParams) error
 	SetPitrCluster(ctx context.Context, arg SetPitrClusterParams) error
 	SetPitrInfo(ctx context.Context, arg SetPitrInfoParams) error
 	SetPitrRestartAt(ctx context.Context, arg SetPitrRestartAtParams) error
@@ -1118,6 +1130,7 @@ type Querier interface {
 	UpdateNotificationChannel(ctx context.Context, arg UpdateNotificationChannelParams) (NotificationChannel, error)
 	// Full replace of the editable fields; the handler resolves the secret first.
 	UpdatePVECluster(ctx context.Context, arg UpdatePVEClusterParams) (PveCluster, error)
+	UpdatePackageRegistry(ctx context.Context, arg UpdatePackageRegistryParams) (PackageRegistry, error)
 	UpdatePlaybook(ctx context.Context, arg UpdatePlaybookParams) (AnsiblePlaybook, error)
 	UpdateProxyHost(ctx context.Context, arg UpdateProxyHostParams) (ProxyHost, error)
 	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (Schedule, error)

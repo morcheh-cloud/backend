@@ -1335,6 +1335,35 @@ type NotificationLog struct {
 	RuleID    *uuid.UUID `json:"rule_id"`
 }
 
+type PackageRegistry struct {
+	ID               uuid.UUID  `json:"id"`
+	ServerID         uuid.UUID  `json:"server_id"`
+	Kind             string     `json:"kind"`
+	Name             string     `json:"name"`
+	Note             string     `json:"note"`
+	Project          string     `json:"project"`
+	Dir              string     `json:"dir"`
+	Port             int32      `json:"port"`
+	Domain           string     `json:"domain"`
+	Https            bool       `json:"https"`
+	Version          string     `json:"version"`
+	AdminUser        string     `json:"admin_user"`
+	AdminSecretEnc   []byte     `json:"admin_secret_enc"`
+	ProxyHostID      *uuid.UUID `json:"proxy_host_id"`
+	DockerRegistryID *uuid.UUID `json:"docker_registry_id"`
+	Settings         []byte     `json:"settings"`
+	State            string     `json:"state"`
+	Health           string     `json:"health"`
+	Problem          string     `json:"problem"`
+	JobID            *uuid.UUID `json:"job_id"`
+	UsageBytes       int64      `json:"usage_bytes"`
+	Items            int32      `json:"items"`
+	CheckedAt        *time.Time `json:"checked_at"`
+	CreatedByName    string     `json:"created_by_name"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
 type Proxy struct {
 	ID            uuid.UUID  `json:"id"`
 	ServerID      uuid.UUID  `json:"server_id"`

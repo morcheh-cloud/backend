@@ -136,14 +136,20 @@ func (h *proxyHandler) runCertificate(ctx context.Context, t *jobs.Task) (any, e
 		_ = json.Unmarshal([]byte(plain), &s)
 		req.EABHMAC, req.Key = s.EABHMAC, s.Key
 	}
-	r, d, err := h.getProxy(ctx, p.ProxyID)
+	return h.certify(ctx, t, p.ProxyID, p.ServerID, req)
+}
+
+// certify gets, makes or saves req's certificate on the proxy's server,
+// logging into t. Other jobs (package registries) call it too.
+func (h *proxyHandler) certify(ctx context.Context, t *jobs.Task, proxyID, serverID string, req proxy.CertRequest) (*ProxyCertResult, error) {
+	r, d, err := h.getProxy(ctx, proxyID)
 	if err != nil {
 		return nil, jobError(err)
 	}
 	defer h.lock(r.Proxy.ID)()
 	defer h.refresh(r.Proxy.ID)
 
-	err = h.s.withConn(ctx, p.ServerID, func(c *sshpool.Conn) error {
+	err = h.s.withConn(ctx, serverID, func(c *sshpool.Conn) error {
 		sh, err := h.shell(ctx, r.Proxy, c)
 		if err != nil {
 			return err
@@ -225,7 +231,7 @@ func (h *proxyHandler) runCertificate(ctx context.Context, t *jobs.Task) (any, e
 		return nil, jobError(err)
 	}
 	cert, key := req.Paths()
-	return ProxyCertResult{Name: req.Name, Certificate: cert, Key: key, Domains: req.Domains, Source: certSource(req)}, nil
+	return &ProxyCertResult{Name: req.Name, Certificate: cert, Key: key, Domains: req.Domains, Source: certSource(req)}, nil
 }
 
 func certSource(r proxy.CertRequest) string {
