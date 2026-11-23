@@ -379,15 +379,20 @@ umask 022
 			b.WriteString("rm -f " + q + " || { back; exit " + strconv.Itoa(cfgExitApply) + "; }\n")
 			continue
 		}
+		// A file that is there keeps its mode (netplan wants 0600, NM
+		// keyfiles too); a new one gets Mode or 0644.
 		mode := w.Mode
 		if mode == "" {
 			mode = "0644"
 		}
-		tmp := terminal.ShellQuote(w.Path + ".morche-new")
+		chmod := "chmod " + mode + " " + tmp(w.Path)
+		if w.Mode == "" {
+			chmod = "{ if [ -e " + q + " ]; then chmod \"$(stat -c %a " + q + ")\" " + tmp(w.Path) + "; else chmod 0644 " + tmp(w.Path) + "; fi; }"
+		}
 		b.WriteString("mkdir -p " + terminal.ShellQuote(path.Dir(w.Path)) + " && printf '%s' " +
-			terminal.ShellQuote(base64.StdEncoding.EncodeToString([]byte(w.Text))) + " | base64 -d > " + tmp +
-			" && chmod " + mode + " " + tmp + " && mv -f " + tmp + " " + q +
-			" || { rm -f " + tmp + "; echo \"Could not write " + w.Path + "\"; back; exit " + strconv.Itoa(cfgExitApply) + "; }\n")
+			terminal.ShellQuote(base64.StdEncoding.EncodeToString([]byte(w.Text))) + " | base64 -d > " + tmp(w.Path) +
+			" && " + chmod + " && mv -f " + tmp(w.Path) + " " + q +
+			" || { rm -f " + tmp(w.Path) + "; echo \"Could not write " + w.Path + "\"; back; exit " + strconv.Itoa(cfgExitApply) + "; }\n")
 	}
 	if p.Check != "" {
 		b.WriteString("if ! o=$( ( " + p.Check + " ) 2>&1 ); then printf '%s\\n' \"$o\"; back; exit " + strconv.Itoa(cfgExitCheck) + "; fi\n")
@@ -407,6 +412,8 @@ umask 022
 	}
 	return b.String()
 }
+
+func tmp(p string) string { return terminal.ShellQuote(p + ".morche-new") }
 
 func configKeepScript(area string) string {
 	return `d=` + configDir + `/` + area + `

@@ -20,13 +20,16 @@ var configPolicies = map[string]policy{
 	"update-server-hostname": onServer(auth.Engineer),
 	"update-server-clock":    onServer(auth.Engineer),
 	"sync-server-clock":      onServer(auth.Engineer),
+	"get-server-network":     onServer(auth.Viewer),
+	"preview-server-network": onServer(auth.Engineer),
+	"update-server-network":  onServer(auth.Engineer),
 }
 
 // Every write is refused on the public demo.
 var configDemoRefused = []string{
 	"restore-config-change", "keep-config-change", "undo-config-change",
 	"update-server-hosts", "update-server-dns", "update-server-hostname",
-	"update-server-clock", "sync-server-clock",
+	"update-server-clock", "sync-server-clock", "update-server-network",
 }
 
 func init() {

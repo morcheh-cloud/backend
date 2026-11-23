@@ -80,3 +80,14 @@ func TestKeptFileHidesSecrets(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestConfigScriptKeepsMode(t *testing.T) {
+	s := configScript(configPlan{Area: "hosts", Read: []string{"/etc/hosts"}, Writes: []configWrite{{Path: "/etc/hosts", Text: "x\n"}}}, "tok")
+	if !strings.Contains(s, `stat -c %a '/etc/hosts'`) {
+		t.Fatalf("an existing file's mode must be kept:\n%s", s)
+	}
+	s = configScript(configPlan{Area: "network", Writes: []configWrite{{Path: "/etc/netplan/a.yaml", Text: "x\n", Mode: "0600"}}}, "tok")
+	if !strings.Contains(s, "chmod 0600") {
+		t.Fatal(s)
+	}
+}
