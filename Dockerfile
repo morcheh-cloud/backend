@@ -32,9 +32,12 @@ ARG CLICKHOUSE_VERSION=25.8
 FROM clickhouse/clickhouse-server:${CLICKHOUSE_VERSION} AS clickhouse
 
 # ---- build ------------------------------------------------------------------
-FROM golang:${GO_VERSION}-bookworm AS build
+# Runs on the builder's own platform and cross-compiles (CGO is off), so an
+# arm64 image never compiles Go under QEMU (that took ~27 of 30 CI minutes).
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS build
+ARG TARGETOS TARGETARCH
 WORKDIR /src
-ENV CGO_ENABLED=0 GOFLAGS=-trimpath
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOOS=$TARGETOS GOARCH=$TARGETARCH
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
