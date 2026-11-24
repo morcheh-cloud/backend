@@ -23,7 +23,7 @@ INSERT INTO storages (
     $12, $13, $14, $15, $16, $17, $18,
     $19, $20, $21
 )
-RETURNING id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id
+RETURNING id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id, tunnel_id
 `
 
 type CreateStorageParams struct {
@@ -105,6 +105,7 @@ func (q *Queries) CreateStorage(ctx context.Context, arg CreateStorageParams) (S
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -122,7 +123,7 @@ func (q *Queries) DeleteStorage(ctx context.Context, id uuid.UUID) (int64, error
 }
 
 const getStorage = `-- name: GetStorage :one
-SELECT id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id FROM storages WHERE id = $1
+SELECT id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id, tunnel_id FROM storages WHERE id = $1
 `
 
 func (q *Queries) GetStorage(ctx context.Context, id uuid.UUID) (Storage, error) {
@@ -158,12 +159,13 @@ func (q *Queries) GetStorage(ctx context.Context, id uuid.UUID) (Storage, error)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.TunnelID,
 	)
 	return i, err
 }
 
 const listStorages = `-- name: ListStorages :many
-SELECT id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id FROM storages s
+SELECT id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id, tunnel_id FROM storages s
 WHERE ($1::bool OR s.workspace_id = ANY ($2::uuid[]) OR s.id = ANY ($3::uuid[]))
   AND ($4::uuid IS NULL OR s.workspace_id = $4::uuid)
 ORDER BY s.favorite DESC, lower(s.name)
@@ -220,6 +222,7 @@ func (q *Queries) ListStorages(ctx context.Context, arg ListStoragesParams) ([]S
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.WorkspaceID,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}
@@ -232,7 +235,7 @@ func (q *Queries) ListStorages(ctx context.Context, arg ListStoragesParams) ([]S
 }
 
 const listStoragesDueForCheck = `-- name: ListStoragesDueForCheck :many
-SELECT id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id FROM storages
+SELECT id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id, tunnel_id FROM storages
 WHERE last_checked_at IS NULL OR last_checked_at < $1::timestamptz
 ORDER BY last_checked_at NULLS FIRST
 `
@@ -278,6 +281,7 @@ func (q *Queries) ListStoragesDueForCheck(ctx context.Context, before time.Time)
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.WorkspaceID,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}
@@ -298,7 +302,7 @@ UPDATE storages SET
     host_key = CASE WHEN $5::text <> '' THEN $5::text ELSE host_key END,
     last_checked_at = now()
 WHERE id = $6
-RETURNING id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id
+RETURNING id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id, tunnel_id
 `
 
 type RecordStorageCheckParams struct {
@@ -351,6 +355,7 @@ func (q *Queries) RecordStorageCheck(ctx context.Context, arg RecordStorageCheck
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -367,7 +372,7 @@ func (q *Queries) ResetStorageHostKey(ctx context.Context, id uuid.UUID) error {
 const setStorageFavorite = `-- name: SetStorageFavorite :one
 UPDATE storages SET favorite = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id
+RETURNING id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id, tunnel_id
 `
 
 type SetStorageFavoriteParams struct {
@@ -408,6 +413,7 @@ func (q *Queries) SetStorageFavorite(ctx context.Context, arg SetStorageFavorite
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -438,7 +444,7 @@ UPDATE storages SET
     status_message = $22,
     updated_at = now()
 WHERE id = $23
-RETURNING id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id
+RETURNING id, name, protocol, provider, host, port, username, auth_method, secret_enc, private_key_enc, passphrase_enc, bucket, region, path_style, tls, insecure_tls, host_key, root_path, read_only, description, favorite, status, status_message, detail, latency_ms, last_checked_at, created_at, updated_at, workspace_id, tunnel_id
 `
 
 type UpdateStorageParams struct {
@@ -525,6 +531,7 @@ func (q *Queries) UpdateStorage(ctx context.Context, arg UpdateStorageParams) (S
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.WorkspaceID,
+		&i.TunnelID,
 	)
 	return i, err
 }

@@ -120,7 +120,7 @@ func (q *Queries) LatestStorageUsage(ctx context.Context, ids []uuid.UUID) ([]St
 }
 
 const listStoragesDueForScan = `-- name: ListStoragesDueForScan :many
-SELECT s.id, s.name, s.protocol, s.provider, s.host, s.port, s.username, s.auth_method, s.secret_enc, s.private_key_enc, s.passphrase_enc, s.bucket, s.region, s.path_style, s.tls, s.insecure_tls, s.host_key, s.root_path, s.read_only, s.description, s.favorite, s.status, s.status_message, s.detail, s.latency_ms, s.last_checked_at, s.created_at, s.updated_at, s.workspace_id FROM storages s
+SELECT s.id, s.name, s.protocol, s.provider, s.host, s.port, s.username, s.auth_method, s.secret_enc, s.private_key_enc, s.passphrase_enc, s.bucket, s.region, s.path_style, s.tls, s.insecure_tls, s.host_key, s.root_path, s.read_only, s.description, s.favorite, s.status, s.status_message, s.detail, s.latency_ms, s.last_checked_at, s.created_at, s.updated_at, s.workspace_id, s.tunnel_id FROM storages s
 LEFT JOIN LATERAL (
     SELECT max(u.measured_at) AS last FROM storage_usage u WHERE u.storage_id = s.id
 ) u ON true
@@ -168,6 +168,7 @@ func (q *Queries) ListStoragesDueForScan(ctx context.Context, before time.Time) 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.WorkspaceID,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}

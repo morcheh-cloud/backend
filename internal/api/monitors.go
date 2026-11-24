@@ -95,6 +95,7 @@ type UptimeMonitor struct {
 	ResendEvery     int32                `json:"resend_every"`
 	NotifyDegraded  bool                 `json:"notify_degraded"`
 	AllowInternal   bool                 `json:"allow_internal"`
+	TunnelID        *string              `json:"tunnel_id" format:"uuid" nullable:"true" doc:"Checks from Morche go through this tunnel; null = directly"`
 	Paused          bool                 `json:"paused"`
 	PushToken       string               `json:"push_token,omitempty" doc:"push: the secret in the heartbeat address (Engineer and up)"`
 	Status          string               `json:"status" enum:"pending,up,degraded,down"`
@@ -192,6 +193,7 @@ type MonitorBody struct {
 	ResendEvery     int32                 `json:"resend_every,omitempty" minimum:"0" maximum:"10000" doc:"While down, remind every this many checks; 0 = never"`
 	NotifyDegraded  *bool                 `json:"notify_degraded,omitempty" doc:"Also alert when it turns slow or degraded (default false)"`
 	AllowInternal   bool                  `json:"allow_internal,omitempty" doc:"Check a private or loopback address from Morche. System admins only."`
+	TunnelID        *string               `json:"tunnel_id,omitempty" format:"uuid" nullable:"true" doc:"Check from Morche through this tunnel (VPN, proxy or jump host)"`
 	Paused          bool                  `json:"paused,omitempty" doc:"Create it paused (ignored on update)"`
 	ChannelIDs      []string              `json:"channel_ids,omitempty" doc:"Where alerts go; left out on create = the workspace's default channels, on update = unchanged"`
 	ResetPushToken  bool                  `json:"reset_push_token,omitempty" doc:"push: make a new heartbeat address (the old one stops working)"`
@@ -228,7 +230,7 @@ func toUptimeMonitor(m sqlc.Monitor, s uptime.MonitorSecrets, showToken bool) Up
 		Locations: []MonitorLocation{}, Rule: toLocationRule(ruleOf(m)), ServerID: optionalIDString(m.ServerID),
 		IntervalSeconds: m.IntervalSeconds, RetrySeconds: m.RetrySeconds, TimeoutSeconds: m.TimeoutSeconds,
 		Retries: m.Retries, ResendEvery: m.ResendEvery, NotifyDegraded: m.NotifyDegraded,
-		AllowInternal: m.AllowInternal, Paused: m.Paused, Status: m.Status, StatusMessage: m.StatusMessage,
+		AllowInternal: m.AllowInternal, TunnelID: optionalIDString(m.TunnelID), Paused: m.Paused, Status: m.Status, StatusMessage: m.StatusMessage,
 		StatusSince: m.StatusSince, FailCount: m.FailCount, LastLatencyMs: m.LastLatencyMs,
 		LastCheckedAt: m.LastCheckedAt, NextCheckAt: m.NextCheckAt, CertExpiresAt: m.CertExpiresAt,
 		ChannelIDs: []string{}, Recent: []Beat{}, CreatedByName: m.CreatedByName,
@@ -620,6 +622,13 @@ func (h *uptimeHandler) createMonitor(ctx context.Context, in *struct{ Body Moni
 	if err != nil {
 		return nil, err
 	}
+	via, err := h.servers.tunnels.pick(ctx, p, ws, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
+	}
+	if err := tunnelKindOK(b.Kind, via); err != nil {
+		return nil, err
+	}
 	if !pl.setCh {
 		pl.channels, _ = h.q.DefaultChannels(ctx, ws)
 	}
@@ -652,6 +661,12 @@ func (h *uptimeHandler) createMonitor(ctx context.Context, in *struct{ Body Moni
 	if err := h.setLocations(ctx, m.ID, pl.locs); err != nil {
 		return nil, internalError(err)
 	}
+	if via != nil {
+		if err := h.q.SetMonitorTunnel(ctx, sqlc.SetMonitorTunnelParams{ID: m.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
+		m.TunnelID = via
+	}
 	return h.monitorOut(ctx, m, true)
 }
 
@@ -670,6 +685,13 @@ func (h *uptimeHandler) updateMonitor(ctx context.Context, in *struct {
 	}
 	pl, err := h.planMonitor(ctx, p, prev.WorkspaceID, prev.Kind, &b, &prev)
 	if err != nil {
+		return nil, err
+	}
+	via, err := h.servers.tunnels.pick(ctx, p, prev.WorkspaceID, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
+	}
+	if err := tunnelKindOK(prev.Kind, via); err != nil {
 		return nil, err
 	}
 	token := prev.PushToken
@@ -703,7 +725,25 @@ func (h *uptimeHandler) updateMonitor(ctx context.Context, in *struct {
 	if err := h.setLocations(ctx, m.ID, pl.locs); err != nil {
 		return nil, internalError(err)
 	}
+	if !sameID(via, prev.TunnelID) {
+		if err := h.q.SetMonitorTunnel(ctx, sqlc.SetMonitorTunnelParams{ID: m.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
+	}
+	m.TunnelID = via
 	return h.monitorOut(ctx, m, true)
+}
+
+// tunnelKindOK: a tunnel carries TCP connections only.
+func tunnelKindOK(kind string, via *uuid.UUID) error {
+	if via == nil {
+		return nil
+	}
+	switch kind {
+	case uptime.Ping, uptime.UDP, uptime.Push:
+		return fieldError("body.tunnel_id", "Ping, UDP and push monitors can't go through a tunnel", nil)
+	}
+	return nil
 }
 
 type MonitorTestBody struct {
@@ -751,8 +791,12 @@ func (h *uptimeHandler) testMonitor(ctx context.Context, in *struct{ Body Monito
 	if err != nil {
 		return nil, err
 	}
+	via, err := h.servers.tunnels.pick(ctx, p, ws, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
+	}
 	timeout := time.Duration(max(b.TimeoutSeconds, 1)) * time.Second
-	probes := h.runAll(ctx, kind, b.Config, pl.secrets, pl.locs, b.AllowInternal, timeout)
+	probes := h.runAll(ctx, kind, b.Config, pl.secrets, pl.locs, b.AllowInternal, timeout, h.morcheVia(ws, via))
 	return &MonitorTestOutput{Body: uptime.Combine(pl.rule, probes)}, nil
 }
 

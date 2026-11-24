@@ -72,12 +72,34 @@ func Addrs(list []string) ([]netip.Addr, error) {
 }
 
 type wgLink struct {
-	dev  *device.Device
-	tnet *netstack.Net
-	once sync.Once
+	dev    *device.Device
+	tnet   *netstack.Net
+	once   sync.Once
+	hasDNS bool
+}
+
+// outsideName looks a name up on the machine itself when the tunnel has no
+// name servers of its own.
+func outsideName(ctx context.Context, addr string, hasDNS bool) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || hasDNS {
+		return addr, nil
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return addr, nil
+	}
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil || len(ips) == 0 {
+		return "", fmt.Errorf("couldn't look up %s (set the VPN's DNS servers to look up names inside it)", host)
+	}
+	return net.JoinHostPort(ips[0].Unmap().String(), port), nil
 }
 
 func (w *wgLink) dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	addr, err := outsideName(ctx, addr, w.hasDNS)
+	if err != nil {
+		return nil, err
+	}
 	c, err := w.tnet.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, wgMessage(err)
@@ -197,7 +219,7 @@ func openWireGuard(ctx context.Context, s Spec, log func(string)) (link, opened,
 	for _, a := range local {
 		addrs = append(addrs, a.String())
 	}
-	return &wgLink{dev: dev, tnet: tnet}, opened{address: strings.Join(addrs, ", "), dns: c.DNS}, nil
+	return &wgLink{dev: dev, tnet: tnet, hasDNS: len(dns) > 0}, opened{address: strings.Join(addrs, ", "), dns: c.DNS}, nil
 }
 
 func parsePort(s string) uint16 {

@@ -524,7 +524,7 @@ func (q *Queries) DiscoveryDatabases(ctx context.Context, workspaceID uuid.UUID)
 }
 
 const discoveryPVEClusters = `-- name: DiscoveryPVEClusters :many
-SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at FROM pve_clusters WHERE workspace_id = $1
+SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, tunnel_id FROM pve_clusters WHERE workspace_id = $1
 `
 
 func (q *Queries) DiscoveryPVEClusters(ctx context.Context, workspaceID uuid.UUID) ([]PveCluster, error) {
@@ -561,6 +561,7 @@ func (q *Queries) DiscoveryPVEClusters(ctx context.Context, workspaceID uuid.UUI
 			&i.LastOnlineAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}

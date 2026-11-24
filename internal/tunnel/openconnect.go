@@ -73,9 +73,14 @@ type ocLink struct {
 	reason error
 	keep   *net.UnixConn
 	dir    string
+	hasDNS bool
 }
 
 func (o *ocLink) dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	addr, err := outsideName(ctx, addr, o.hasDNS)
+	if err != nil {
+		return nil, err
+	}
 	return o.tnet.DialContext(ctx, network, addr)
 }
 
@@ -297,7 +302,7 @@ func openOpenConnect(ctx context.Context, s Spec, exe string, log func(string)) 
 	if err != nil {
 		return failWith(err)
 	}
-	l.tdev, l.tnet = tdev, tnet
+	l.tdev, l.tnet, l.hasDNS = tdev, tnet, len(dns) > 0
 	go pump(pkt, tdev, mtu, l.fail)
 	var addrs []string
 	for _, a := range local {

@@ -21,7 +21,7 @@ type AlertMute struct {
 	WorkspaceID   string    `json:"workspace_id" format:"uuid"`
 	RuleID        *string   `json:"rule_id,omitempty" format:"uuid" doc:"Missing = every rule"`
 	RuleName      string    `json:"rule_name"`
-	TargetKind    string    `json:"target_kind" enum:",server,database,pve" doc:"Empty = everywhere"`
+	TargetKind    string    `json:"target_kind" enum:",server,database,pve,tunnel" doc:"Empty = everywhere"`
 	TargetID      *string   `json:"target_id,omitempty" format:"uuid"`
 	TargetName    string    `json:"target_name"`
 	StartsAt      time.Time `json:"starts_at"`
@@ -34,7 +34,7 @@ type AlertMute struct {
 
 type AlertMuteBody struct {
 	RuleID     string     `json:"rule_id,omitempty" doc:"One rule; empty = every rule"`
-	TargetKind string     `json:"target_kind,omitempty" enum:"server,database,pve" doc:"With target_id: one server or database; empty = everywhere"`
+	TargetKind string     `json:"target_kind,omitempty" enum:"server,database,pve,tunnel" doc:"With target_id: one server, database, cluster or tunnel; empty = everywhere"`
 	TargetID   string     `json:"target_id,omitempty"`
 	StartsAt   *time.Time `json:"starts_at,omitempty" doc:"Empty = now"`
 	Minutes    int32      `json:"minutes,omitempty" minimum:"0" maximum:"129600" doc:"How long; or give until"`
@@ -128,8 +128,26 @@ func (h *alertRuleHandler) createMute(ctx context.Context, in *struct {
 			return nil, fieldError("body.target_id", "That cluster isn't in the rule's workspace", b.TargetID)
 		}
 		ws = &c.WorkspaceID
+	case b.TargetKind == "tunnel":
+		id, err := uuid.Parse(b.TargetID)
+		if err != nil {
+			return nil, huma.Error404NotFound("Tunnel not found")
+		}
+		t, err := h.q.GetTunnel(ctx, id)
+		if isNotFound(err) || (err == nil && p.Access.WorkspaceLevel(t.WorkspaceID) == auth.None) {
+			return nil, huma.Error404NotFound("Tunnel not found")
+		}
+		if err != nil {
+			return nil, internalError(err)
+		}
+		m.TargetID, m.TargetName = &t.ID, t.Name
+		level = p.Access.WorkspaceLevel(t.WorkspaceID)
+		if ws != nil && *ws != t.WorkspaceID {
+			return nil, fieldError("body.target_id", "That tunnel isn't in the rule's workspace", b.TargetID)
+		}
+		ws = &t.WorkspaceID
 	default:
-		return nil, fieldError("body.target_kind", "Say whether it's a server, a database or a cluster", b.TargetKind)
+		return nil, fieldError("body.target_kind", "Say whether it's a server, a database, a cluster or a tunnel", b.TargetKind)
 	}
 	if ws == nil {
 		w, err := h.authz.createTarget(ctx, p)

@@ -61,6 +61,15 @@ func openFTP(ctx context.Context, cfg Config) (FS, Info, error) {
 
 func (f *ftpfs) dial(ctx context.Context) (*ftp.ServerConn, error) {
 	opts := []ftp.DialOption{ftp.DialWithContext(ctx), ftp.DialWithDialer(*guardedDialer())}
+	if f.cfg.Dial != nil {
+		// Data connections too go through the tunnel.
+		dial := f.cfg.Dial
+		opts = append(opts, ftp.DialWithDialFunc(func(network, address string) (net.Conn, error) {
+			dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dialTimeout)
+			defer cancel()
+			return dial(dctx, network, address)
+		}))
+	}
 	if f.cfg.TLS != "" && f.cfg.TLS != "none" {
 		host, _, _ := net.SplitHostPort(f.addr)
 		conf := &tls.Config{ServerName: host, InsecureSkipVerify: f.cfg.InsecureTLS} //nolint:gosec // opt-in for self-signed servers

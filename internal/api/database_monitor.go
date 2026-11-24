@@ -84,6 +84,10 @@ func (h *databaseHandler) config(ctx context.Context, d sqlc.Database) (dbmon.Co
 	}
 	if d.Mode == "direct" {
 		cfg.Dial = dbmon.DirectDialer(d.AllowInternal)
+		if d.TunnelID != nil && h.servers.tunnels != nil {
+			// Inside the tunnel's network: its addresses are private by design.
+			cfg.Dial, cfg.Tunneled = dbmon.Dialer(h.servers.tunnels.dialVia(d.WorkspaceID, *d.TunnelID)), true
+		}
 		return cfg, nil, nil
 	}
 	if d.ServerID == nil {

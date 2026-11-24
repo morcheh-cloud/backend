@@ -22,10 +22,11 @@ import (
 // edit them. The engine that runs them is in alert_engine.go.
 
 type alertRuleHandler struct {
-	q      *sqlc.Queries
-	authz  *authz
-	engine *alertEngine
-	pve    *pveHandler
+	q       *sqlc.Queries
+	authz   *authz
+	engine  *alertEngine
+	pve     *pveHandler
+	tunnels *tunnelHandler
 }
 
 type AlertRuleIDPath struct {
@@ -34,7 +35,7 @@ type AlertRuleIDPath struct {
 
 type AlertRuleState struct {
 	TargetID    string     `json:"target_id" format:"uuid" doc:"The server, database or Proxmox cluster"`
-	TargetKind  string     `json:"target_kind" enum:"server,database,pve"`
+	TargetKind  string     `json:"target_kind" enum:"server,database,pve,tunnel"`
 	TargetName  string     `json:"target_name"`
 	State       string     `json:"state" enum:"pending,firing" doc:"pending = the condition holds, not yet for long enough"`
 	BreachSince *time.Time `json:"breach_since,omitempty"`
@@ -81,9 +82,9 @@ type AlertRuleOutput struct {
 type AlertRuleBody struct {
 	Name           string   `json:"name" minLength:"1" maxLength:"100"`
 	Enabled        *bool    `json:"enabled,omitempty" doc:"Default true"`
-	Metric         string   `json:"metric" enum:"cpu,iowait,load,memory,swap,disk,net_rx,net_tx,offline,service,db_down,db_health,db_disk,db_connections,db_memory,db_latency,db_replication_lag,db_backup_age,container_down,container_unhealthy,container_restarts,container_cpu,container_memory,docker_engine,container_vulns_critical,container_vulns_high,pve_node_down,pve_storage_full,pve_vm_stopped"`
+	Metric         string   `json:"metric" enum:"cpu,iowait,load,memory,swap,disk,net_rx,net_tx,offline,service,db_down,db_health,db_disk,db_connections,db_memory,db_latency,db_replication_lag,db_backup_age,container_down,container_unhealthy,container_restarts,container_cpu,container_memory,docker_engine,container_vulns_critical,container_vulns_high,pve_node_down,pve_storage_full,pve_vm_stopped,tunnel_down"`
 	Op             string   `json:"op,omitempty" enum:"above,below" default:"above"`
-	Threshold      float64  `json:"threshold" doc:"Percent for cpu, iowait, memory, swap, disk and container_memory (of its limit); load per core; bytes per second for net_rx/net_tx; percent of one core for container_cpu; stops in 10 minutes for container_restarts; findings in the image's last scan for container_vulns_critical (critical) and container_vulns_high (high or critical); percent used for pve_storage_full; percent used for db_disk, db_connections (of the limit) and db_memory (Redis maxmemory, ClickHouse max_server_memory_usage); milliseconds for db_latency; seconds behind for db_replication_lag; hours since the last good backup for db_backup_age; ignored for offline, service, db_down, db_health, container_down, container_unhealthy, docker_engine, pve_node_down and pve_vm_stopped"`
+	Threshold      float64  `json:"threshold" doc:"Percent for cpu, iowait, memory, swap, disk and container_memory (of its limit); load per core; bytes per second for net_rx/net_tx; percent of one core for container_cpu; stops in 10 minutes for container_restarts; findings in the image's last scan for container_vulns_critical (critical) and container_vulns_high (high or critical); percent used for pve_storage_full; percent used for db_disk, db_connections (of the limit) and db_memory (Redis maxmemory, ClickHouse max_server_memory_usage); milliseconds for db_latency; seconds behind for db_replication_lag; hours since the last good backup for db_backup_age; ignored for offline, service, db_down, db_health, container_down, container_unhealthy, docker_engine, pve_node_down, pve_vm_stopped and tunnel_down"`
 	Mount          string   `json:"mount,omitempty" maxLength:"255" doc:"disk only: one mount point; empty = the fullest"`
 	Unit           string   `json:"unit,omitempty" maxLength:"255" doc:"service only: one systemd unit that must keep running; empty = any service that failed"`
 	Project        string   `json:"project,omitempty" maxLength:"100" doc:"container_* only: a compose project (* = any characters); empty = any"`
@@ -300,6 +301,9 @@ func (h *alertRuleHandler) clean(ctx context.Context, ws uuid.UUID, b *AlertRule
 			return c, fieldError("body.container", "Use a container or service name like web or web-*", b.Container)
 		}
 	}
+	if tunnelMetric(b.Metric) && c.scope != "all" {
+		return c, fieldError("body.scope", "A tunnel rule covers every tunnel in use", b.Scope)
+	}
 	if pveMetric(b.Metric) != (c.scope == "clusters") && c.scope != "all" {
 		if pveMetric(b.Metric) {
 			return c, fieldError("body.scope", "A Proxmox rule covers every cluster or the ones you pick", b.Scope)
@@ -479,7 +483,7 @@ func (h *alertRuleHandler) update(ctx context.Context, in *struct {
 
 type AlertPreviewItem struct {
 	TargetID   string     `json:"target_id" format:"uuid"`
-	TargetKind string     `json:"target_kind" enum:"server,database,pve"`
+	TargetKind string     `json:"target_kind" enum:"server,database,pve,tunnel"`
 	TargetName string     `json:"target_name"`
 	Status     string     `json:"status"`
 	At         *time.Time `json:"at,omitempty" doc:"The sample it was read from; missing = no data"`
@@ -522,6 +526,9 @@ func (h *alertRuleHandler) preview(ctx context.Context, in *struct {
 	}
 	if pveMetric(rule.Metric) {
 		return h.previewClusters(ctx, p, ws, rule)
+	}
+	if tunnelMetric(rule.Metric) {
+		return h.previewTunnels(ctx, ws)
 	}
 	rows, err := h.q.ListServers(ctx, sqlc.ListServersParams{
 		SeeAll: sc.seeAll, WorkspaceIds: sc.workspaces, ServerIds: sc.servers, WorkspaceID: &ws,
@@ -712,7 +719,7 @@ func databaseCovered(r sqlc.AlertRule, d sqlc.Database) bool {
 
 // ruleCovers says whether a rule's scope takes in a server.
 func ruleCovers(r sqlc.AlertRule, s sqlc.Server) bool {
-	if databaseMetric(r.Metric) || pveMetric(r.Metric) {
+	if databaseMetric(r.Metric) || pveMetric(r.Metric) || tunnelMetric(r.Metric) {
 		return false
 	}
 	switch r.Scope {
@@ -737,6 +744,7 @@ type AlertEvent struct {
 	ServerID   *string   `json:"server_id,omitempty" format:"uuid"`
 	DatabaseID *string   `json:"database_id,omitempty" format:"uuid"`
 	ClusterID  *string   `json:"cluster_id,omitempty" format:"uuid" doc:"A Proxmox cluster's event"`
+	TunnelID   *string   `json:"tunnel_id,omitempty" format:"uuid" doc:"A tunnel's event"`
 	RuleName   string    `json:"rule_name"`
 	ServerName string    `json:"server_name" doc:"The server's or the database's name"`
 	Metric     string    `json:"metric"`
@@ -995,6 +1003,7 @@ func registerAlertRules(api huma.API, h *alertRuleHandler) {
 			out.Body.Items = append(out.Body.Items, AlertEvent{
 				ID: e.ID, RuleID: optionalIDString(e.RuleID), ServerID: optionalIDString(e.ServerID),
 				DatabaseID: optionalIDString(e.DatabaseID), ClusterID: optionalIDString(e.ClusterID),
+				TunnelID: optionalIDString(e.TunnelID),
 				RuleName: e.RuleName, ServerName: e.ServerName, Metric: e.Metric, Severity: e.Severity,
 				Kind: e.Kind, Value: e.Value, Threshold: e.Threshold, Detail: e.Detail,
 				LastedSecs: e.LastedSecs, Muted: e.Muted, At: e.At,

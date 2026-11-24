@@ -15,7 +15,7 @@ import (
 const createPVECluster = `-- name: CreatePVECluster :one
 INSERT INTO pve_clusters (workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at
+RETURNING id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, tunnel_id
 `
 
 type CreatePVEClusterParams struct {
@@ -68,6 +68,7 @@ func (q *Queries) CreatePVECluster(ctx context.Context, arg CreatePVEClusterPara
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -105,7 +106,7 @@ func (q *Queries) DeletePVELinkForServer(ctx context.Context, serverID uuid.UUID
 }
 
 const getPVECluster = `-- name: GetPVECluster :one
-SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at FROM pve_clusters WHERE id = $1
+SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, tunnel_id FROM pve_clusters WHERE id = $1
 `
 
 func (q *Queries) GetPVECluster(ctx context.Context, id uuid.UUID) (PveCluster, error) {
@@ -136,6 +137,7 @@ func (q *Queries) GetPVECluster(ctx context.Context, id uuid.UUID) (PveCluster, 
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -201,7 +203,7 @@ func (q *Queries) GetPVELinkForServer(ctx context.Context, serverID uuid.UUID) (
 }
 
 const listAllPVEClusters = `-- name: ListAllPVEClusters :many
-SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at FROM pve_clusters ORDER BY workspace_id, lower(name)
+SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, tunnel_id FROM pve_clusters ORDER BY workspace_id, lower(name)
 `
 
 func (q *Queries) ListAllPVEClusters(ctx context.Context) ([]PveCluster, error) {
@@ -238,6 +240,7 @@ func (q *Queries) ListAllPVEClusters(ctx context.Context) ([]PveCluster, error) 
 			&i.LastOnlineAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}
@@ -250,7 +253,7 @@ func (q *Queries) ListAllPVEClusters(ctx context.Context) ([]PveCluster, error) 
 }
 
 const listPVEClusters = `-- name: ListPVEClusters :many
-SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at FROM pve_clusters
+SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, tunnel_id FROM pve_clusters
 WHERE ($1::bool OR workspace_id = ANY ($2::uuid[]))
   AND ($3::uuid IS NULL OR workspace_id = $3::uuid)
 ORDER BY favorite DESC, lower(name)
@@ -296,6 +299,7 @@ func (q *Queries) ListPVEClusters(ctx context.Context, arg ListPVEClustersParams
 			&i.LastOnlineAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}
@@ -308,7 +312,7 @@ func (q *Queries) ListPVEClusters(ctx context.Context, arg ListPVEClustersParams
 }
 
 const listPVEClustersDueForCheck = `-- name: ListPVEClustersDueForCheck :many
-SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at FROM pve_clusters
+SELECT id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, tunnel_id FROM pve_clusters
 WHERE last_checked_at IS NULL OR last_checked_at < $1::timestamptz
 ORDER BY last_checked_at NULLS FIRST
 `
@@ -349,6 +353,7 @@ func (q *Queries) ListPVEClustersDueForCheck(ctx context.Context, before time.Ti
 			&i.LastOnlineAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}
@@ -416,7 +421,7 @@ UPDATE pve_clusters SET
     last_checked_at = now(),
     last_online_at = CASE WHEN $1 = 'online' THEN now() ELSE last_online_at END
 WHERE id = $10
-RETURNING id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at
+RETURNING id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, tunnel_id
 `
 
 type RecordPVEClusterCheckParams struct {
@@ -472,12 +477,13 @@ func (q *Queries) RecordPVEClusterCheck(ctx context.Context, arg RecordPVECluste
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
 
 const setPVEClusterFavorite = `-- name: SetPVEClusterFavorite :one
-UPDATE pve_clusters SET favorite = $1, updated_at = now() WHERE id = $2 RETURNING id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at
+UPDATE pve_clusters SET favorite = $1, updated_at = now() WHERE id = $2 RETURNING id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, tunnel_id
 `
 
 type SetPVEClusterFavoriteParams struct {
@@ -513,6 +519,7 @@ func (q *Queries) SetPVEClusterFavorite(ctx context.Context, arg SetPVEClusterFa
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -555,7 +562,7 @@ UPDATE pve_clusters SET
     description = $8,
     updated_at = now()
 WHERE id = $9
-RETURNING id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at
+RETURNING id, workspace_id, name, url, token_id, secret_enc, fingerprint, tls_skip_verify, allow_internal, description, favorite, status, status_message, version, cluster_name, node_count, nodes_online, guest_count, running_count, latency_ms, last_checked_at, last_online_at, created_at, updated_at, tunnel_id
 `
 
 type UpdatePVEClusterParams struct {
@@ -609,6 +616,7 @@ func (q *Queries) UpdatePVECluster(ctx context.Context, arg UpdatePVEClusterPara
 		&i.LastOnlineAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }

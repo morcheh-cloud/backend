@@ -60,7 +60,12 @@ const (
 	metricPVENodeDown    = "pve_node_down"
 	metricPVEStorageFull = "pve_storage_full"
 	metricPVEVMStopped   = "pve_vm_stopped"
+	// Tunnels something goes through (alert_tunnels.go).
+	metricTunnelDown = "tunnel_down"
 )
+
+// tunnelMetric says whether a rule watches tunnels.
+func tunnelMetric(m string) bool { return m == metricTunnelDown }
 
 // pveMetric says whether a rule watches Proxmox clusters.
 func pveMetric(m string) bool { return strings.HasPrefix(m, "pve_") }
@@ -111,7 +116,7 @@ func dbCheckValue(metric string, checks []dbmon.DatabaseCheck) (v float64, detai
 func stateMetric(m string) bool {
 	switch m {
 	case metricOffline, metricService, metricContainerDown, metricContainerUnhealthy, metricDockerEngine,
-		metricPVENodeDown, metricPVEVMStopped:
+		metricPVENodeDown, metricPVEVMStopped, metricTunnelDown:
 		return true
 	}
 	return databaseMetric(m)
@@ -127,7 +132,8 @@ var metricLabels = map[string]string{
 	metricContainerMemory: "Container memory", metricDockerEngine: "Docker engine",
 	metricVulnsCritical: "Critical vulnerabilities", metricVulnsHigh: "High vulnerabilities",
 	metricPVENodeDown: "Node down", metricPVEStorageFull: "Storage used", metricPVEVMStopped: "Machine stopped",
-	metricDBDisk: "Database disk", metricDBConnections: "Database connections", metricDBMemory: "Database memory",
+	metricTunnelDown: "Tunnel down",
+	metricDBDisk:     "Database disk", metricDBConnections: "Database connections", metricDBMemory: "Database memory",
 	metricDBLatency: "Database response time", metricDBReplication: "Replication lag", metricDBBackupAge: "Last backup",
 }
 
@@ -182,6 +188,8 @@ func ruleCondition(r sqlc.AlertRule) string {
 		return "a node is offline"
 	case metricPVEVMStopped:
 		return "a machine stopped on its own"
+	case metricTunnelDown:
+		return "it can't connect"
 	case metricService:
 		if r.Unit != "" {
 			return r.Unit + " not running"
@@ -214,6 +222,10 @@ func serverTarget(s sqlc.Server) alertTarget {
 
 func clusterTarget(c sqlc.PveCluster) alertTarget {
 	return alertTarget{id: c.ID, kind: "pve", name: c.Name, where: c.Url}
+}
+
+func tunnelTarget(t sqlc.Tunnel) alertTarget {
+	return alertTarget{id: t.ID, kind: "tunnel", name: t.Name, where: tunnelKindLabel(t.Kind, tunnelConfigOf(t))}
 }
 
 func databaseTarget(d sqlc.Database) alertTarget {
@@ -512,6 +524,8 @@ func (e *alertEngine) event(ctx context.Context, r sqlc.AlertRule, t alertTarget
 		p.DatabaseID = &tid
 	case "pve":
 		p.ClusterID = &tid
+	case "tunnel":
+		p.TunnelID = &tid
 	default:
 		p.ServerID = &tid
 	}
@@ -540,6 +554,11 @@ func alertText(r sqlc.AlertRule, t alertTarget, kind string, v float64, detail s
 			return "Every node of " + t.name + " is online again."
 		}
 		return "Nodes of " + t.name + " are offline: " + detail
+	case metricTunnelDown:
+		if resolved {
+			return t.name + " connects again."
+		}
+		return t.name + " can't connect: " + detail
 	case metricPVEVMStopped:
 		if resolved {
 			return "The machines that stopped on " + t.name + " run again (or are gone)."
@@ -636,6 +655,8 @@ func (e *alertEngine) alertMessage(r sqlc.AlertRule, t alertTarget, kind string,
 		noun = "Database"
 	case "pve":
 		noun = "Cluster"
+	case "tunnel":
+		noun = "Tunnel"
 	}
 	fields := []notify.Field{{Name: noun, Value: t.name + " (" + t.where + ")"}}
 	if !stateMetric(r.Metric) {
@@ -655,6 +676,8 @@ func (e *alertEngine) alertMessage(r sqlc.AlertRule, t alertTarget, kind string,
 		switch {
 		case t.kind == "database":
 			url = e.up.panelURL + "/databases/" + t.id.String()
+		case t.kind == "tunnel":
+			url = e.up.panelURL + "/tunnels/" + t.id.String()
 		case t.kind == "pve" && r.Metric == metricPVENodeDown:
 			url = e.up.panelURL + "/vms?tab=nodes&cluster=" + t.id.String()
 		case t.kind == "pve" && r.Metric == metricPVEStorageFull:
@@ -686,6 +709,8 @@ func (e *alertEngine) alertMessage(r sqlc.AlertRule, t alertTarget, kind string,
 		data["database_id"], data["database_name"] = t.id.String(), t.name
 	case "pve":
 		data["cluster_id"], data["cluster_name"] = t.id.String(), t.name
+	case "tunnel":
+		data["tunnel_id"], data["tunnel_name"] = t.id.String(), t.name
 	default:
 		data["server_id"], data["server_name"] = t.id.String(), t.name
 	}

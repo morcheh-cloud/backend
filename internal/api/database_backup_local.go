@@ -112,6 +112,9 @@ func localTools(d sqlc.Database) LocalTools {
 	if d.Mode != "direct" {
 		return LocalTools{Missing: []string{}, Note: "It's reached through a server, so its backups run there."}
 	}
+	if d.TunnelID != nil {
+		return LocalTools{Missing: []string{}, Note: "It's reached through a tunnel, so its backups run on a server inside that network: pick one as the runner."}
+	}
 	var need [][]string
 	switch d.Engine {
 	case dbmon.Postgres:

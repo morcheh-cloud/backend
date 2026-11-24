@@ -29,23 +29,24 @@ type StorageCapabilities struct {
 }
 
 type Storage struct {
-	ID          string `json:"id" format:"uuid"`
-	WorkspaceID string `json:"workspace_id" format:"uuid"`
-	Name        string `json:"name" example:"Backups"`
-	Protocol    string `json:"protocol" enum:"s3,ftp,sftp,webdav"`
-	Provider    string `json:"provider" doc:"Preset the settings came from (aws, minio, r2, nextcloud…)" example:"minio"`
-	Host        string `json:"host" doc:"S3 endpoint or WebDAV URL; host name for FTP and SFTP" example:"https://s3.example.com"`
-	Port        int32  `json:"port" doc:"0 = the protocol's default"`
-	Username    string `json:"username" doc:"Access key for S3"`
-	AuthMethod  string `json:"auth_method" enum:"password,private_key"`
-	HasSecret   bool   `json:"has_secret" doc:"A password (or S3 secret key) is stored"`
-	HasPrivKey  bool   `json:"has_private_key"`
-	HasPassph   bool   `json:"has_passphrase"`
-	Bucket      string `json:"bucket"`
-	Region      string `json:"region"`
-	PathStyle   bool   `json:"path_style"`
-	TLS         string `json:"tls" enum:"none,explicit,implicit"`
-	InsecureTLS bool   `json:"insecure_tls"`
+	ID          string  `json:"id" format:"uuid"`
+	WorkspaceID string  `json:"workspace_id" format:"uuid"`
+	Name        string  `json:"name" example:"Backups"`
+	Protocol    string  `json:"protocol" enum:"s3,ftp,sftp,webdav"`
+	TunnelID    *string `json:"tunnel_id" format:"uuid" nullable:"true" doc:"The tunnel it's reached through; null = straight from Morche"`
+	Provider    string  `json:"provider" doc:"Preset the settings came from (aws, minio, r2, nextcloud…)" example:"minio"`
+	Host        string  `json:"host" doc:"S3 endpoint or WebDAV URL; host name for FTP and SFTP" example:"https://s3.example.com"`
+	Port        int32   `json:"port" doc:"0 = the protocol's default"`
+	Username    string  `json:"username" doc:"Access key for S3"`
+	AuthMethod  string  `json:"auth_method" enum:"password,private_key"`
+	HasSecret   bool    `json:"has_secret" doc:"A password (or S3 secret key) is stored"`
+	HasPrivKey  bool    `json:"has_private_key"`
+	HasPassph   bool    `json:"has_passphrase"`
+	Bucket      string  `json:"bucket"`
+	Region      string  `json:"region"`
+	PathStyle   bool    `json:"path_style"`
+	TLS         string  `json:"tls" enum:"none,explicit,implicit"`
+	InsecureTLS bool    `json:"insecure_tls"`
 	// SFTP trust on first use.
 	HostKeyFingerprint string              `json:"host_key_fingerprint"`
 	RootPath           string              `json:"root_path" doc:"Folder shown as the top; empty = the login folder (or every bucket)"`
@@ -81,6 +82,7 @@ func toStorage(s sqlc.Storage) Storage {
 		ID:                 s.ID.String(),
 		Name:               s.Name,
 		Protocol:           s.Protocol,
+		TunnelID:           optionalIDString(s.TunnelID),
 		Provider:           s.Provider,
 		Host:               s.Host,
 		Port:               s.Port,
@@ -120,22 +122,23 @@ type StorageIDPath struct {
 
 // StorageSettings is how to reach a storage.
 type StorageSettings struct {
-	Protocol    string `json:"protocol" enum:"s3,ftp,sftp,webdav"`
-	Provider    string `json:"provider,omitempty" maxLength:"32"`
-	Host        string `json:"host" minLength:"1" maxLength:"500" doc:"S3: endpoint URL or host (https unless given); WebDAV: the folder's URL; FTP/SFTP: host name or IP"`
-	Port        int32  `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"0 or left out = the default (21, 990 for implicit FTPS, 22; S3 and WebDAV take it from the URL)"`
-	Username    string `json:"username,omitempty" maxLength:"256" doc:"S3: access key id. Empty FTP user logs in anonymously"`
-	AuthMethod  string `json:"auth_method,omitempty" enum:"password,private_key" default:"password" doc:"private_key is SFTP only"`
-	Secret      string `json:"secret,omitempty" maxLength:"4096" doc:"Password, or S3 secret key. On update, leave out to keep the stored one"`
-	ClearSecret bool   `json:"clear_secret,omitempty" doc:"On update: forget the stored password / secret key"`
-	PrivateKey  string `json:"private_key,omitempty" maxLength:"16384" doc:"On update, leave out to keep the stored one"`
-	Passphrase  string `json:"passphrase,omitempty" maxLength:"1024"`
-	Bucket      string `json:"bucket,omitempty" maxLength:"63" doc:"S3: stay in one bucket; empty lists every bucket"`
-	Region      string `json:"region,omitempty" maxLength:"64"`
-	PathStyle   bool   `json:"path_style,omitempty" doc:"S3: endpoint/bucket/key URLs (MinIO and most self-hosted servers)"`
-	TLS         string `json:"tls,omitempty" enum:"none,explicit,implicit" default:"none" doc:"FTP: explicit = AUTH TLS on the normal port, implicit = FTPS (990)"`
-	InsecureTLS bool   `json:"insecure_tls,omitempty" doc:"Accept any TLS certificate (self-signed). Anyone on the path can then read the traffic"`
-	RootPath    string `json:"root_path,omitempty" maxLength:"1024" doc:"Folder to show as the top (S3: bucket/prefix)"`
+	TunnelID    *string `json:"tunnel_id,omitempty" format:"uuid" nullable:"true" doc:"Reach it through this tunnel (VPN, proxy or jump host)"`
+	Protocol    string  `json:"protocol" enum:"s3,ftp,sftp,webdav"`
+	Provider    string  `json:"provider,omitempty" maxLength:"32"`
+	Host        string  `json:"host" minLength:"1" maxLength:"500" doc:"S3: endpoint URL or host (https unless given); WebDAV: the folder's URL; FTP/SFTP: host name or IP"`
+	Port        int32   `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"0 or left out = the default (21, 990 for implicit FTPS, 22; S3 and WebDAV take it from the URL)"`
+	Username    string  `json:"username,omitempty" maxLength:"256" doc:"S3: access key id. Empty FTP user logs in anonymously"`
+	AuthMethod  string  `json:"auth_method,omitempty" enum:"password,private_key" default:"password" doc:"private_key is SFTP only"`
+	Secret      string  `json:"secret,omitempty" maxLength:"4096" doc:"Password, or S3 secret key. On update, leave out to keep the stored one"`
+	ClearSecret bool    `json:"clear_secret,omitempty" doc:"On update: forget the stored password / secret key"`
+	PrivateKey  string  `json:"private_key,omitempty" maxLength:"16384" doc:"On update, leave out to keep the stored one"`
+	Passphrase  string  `json:"passphrase,omitempty" maxLength:"1024"`
+	Bucket      string  `json:"bucket,omitempty" maxLength:"63" doc:"S3: stay in one bucket; empty lists every bucket"`
+	Region      string  `json:"region,omitempty" maxLength:"64"`
+	PathStyle   bool    `json:"path_style,omitempty" doc:"S3: endpoint/bucket/key URLs (MinIO and most self-hosted servers)"`
+	TLS         string  `json:"tls,omitempty" enum:"none,explicit,implicit" default:"none" doc:"FTP: explicit = AUTH TLS on the normal port, implicit = FTPS (990)"`
+	InsecureTLS bool    `json:"insecure_tls,omitempty" doc:"Accept any TLS certificate (self-signed). Anyone on the path can then read the traffic"`
+	RootPath    string  `json:"root_path,omitempty" maxLength:"1024" doc:"Folder to show as the top (S3: bucket/prefix)"`
 }
 
 type StorageBody struct {
@@ -372,6 +375,9 @@ func (h *storageHandler) config(s sqlc.Storage) (storage.Config, error) {
 		Protocol: s.Protocol, Host: s.Host, Port: int(s.Port), Username: s.Username,
 		Bucket: s.Bucket, Region: s.Region, PathStyle: s.PathStyle, TLS: s.Tls,
 		InsecureTLS: s.InsecureTls, HostKey: s.HostKey, Root: s.RootPath,
+	}
+	if s.TunnelID != nil && h.servers.tunnels != nil {
+		cfg.Dial = h.servers.tunnels.dialVia(s.WorkspaceID, *s.TunnelID)
 	}
 	var err error
 	if cfg.Secret, err = h.box.Open(s.SecretEnc); err != nil {
@@ -615,6 +621,10 @@ func (h *storageHandler) create(ctx context.Context, in *struct{ Body StorageBod
 	if err != nil {
 		return nil, err
 	}
+	via, err := h.servers.tunnels.pick(ctx, p, ws, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
+	}
 	tx, err := h.servers.db.Begin(ctx)
 	if err != nil {
 		return nil, internalError(err)
@@ -639,6 +649,12 @@ func (h *storageHandler) create(ctx context.Context, in *struct{ Body StorageBod
 	if err := grantCreator(ctx, q, p, ws, nil, &s.ID, nil); err != nil {
 		return nil, internalError(err)
 	}
+	if via != nil {
+		if err := q.SetStorageTunnel(ctx, sqlc.SetStorageTunnelParams{ID: s.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
+		s.TunnelID = via
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, internalError(err)
 	}
@@ -661,6 +677,10 @@ func (h *storageHandler) update(ctx context.Context, in *struct {
 	if err != nil {
 		return nil, err
 	}
+	via, err := h.servers.tunnels.pick(ctx, principalOf(ctx), prev.WorkspaceID, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
+	}
 	hostKey, status, message := prev.HostKey, prev.Status, prev.StatusMessage
 	if b.Host != prev.Host || b.Port != prev.Port || b.Protocol != prev.Protocol {
 		hostKey = ""
@@ -668,7 +688,7 @@ func (h *storageHandler) update(ctx context.Context, in *struct {
 	if b.Host != prev.Host || b.Port != prev.Port || b.Protocol != prev.Protocol ||
 		b.Username != prev.Username || b.AuthMethod != prev.AuthMethod || b.Secret != "" ||
 		b.ClearSecret || b.PrivateKey != "" || b.Bucket != prev.Bucket || b.RootPath != prev.RootPath ||
-		b.TLS != prev.Tls || b.PathStyle != prev.PathStyle || b.Region != prev.Region {
+		b.TLS != prev.Tls || b.PathStyle != prev.PathStyle || b.Region != prev.Region || !sameID(via, prev.TunnelID) {
 		status, message = "unknown", ""
 	}
 	s, err := h.q.UpdateStorage(ctx, sqlc.UpdateStorageParams{
@@ -686,6 +706,12 @@ func (h *storageHandler) update(ctx context.Context, in *struct {
 	if err != nil {
 		return nil, internalError(err)
 	}
+	if !sameID(via, prev.TunnelID) {
+		if err := h.q.SetStorageTunnel(ctx, sqlc.SetStorageTunnelParams{ID: s.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
+	}
+	s.TunnelID = via
 	h.drop(s.ID)
 	return &StorageOutput{Body: toStorage(s)}, nil
 }
@@ -729,6 +755,19 @@ func (h *storageHandler) testConnection(ctx context.Context, in *struct{ Body St
 	}
 	if prev != nil && prev.Host == c.Host && prev.Port == c.Port && prev.Protocol == c.Protocol {
 		cfg.HostKey = prev.HostKey
+	}
+	if c.TunnelID != nil {
+		ws := uuid.Nil
+		if prev != nil {
+			ws = prev.WorkspaceID
+		} else if w, err := h.servers.authz.createTarget(ctx, principalOf(ctx)); err == nil {
+			ws = w
+		}
+		via, err := h.servers.tunnels.pick(ctx, principalOf(ctx), ws, c.TunnelID, "body.tunnel_id")
+		if err != nil {
+			return nil, err
+		}
+		cfg.Dial = h.servers.tunnels.dialVia(ws, *via)
 	}
 	if cfg.Secret, err = h.box.Open(sec.secret); err != nil {
 		return nil, internalError(err)

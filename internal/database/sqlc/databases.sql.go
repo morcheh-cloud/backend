@@ -65,7 +65,7 @@ INSERT INTO databases (
     $9, $10, $11, $12, $13, $14,
     $15, $16, $17
 )
-RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at
+RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at, tunnel_id
 `
 
 type CreateDatabaseParams struct {
@@ -148,6 +148,7 @@ func (q *Queries) CreateDatabase(ctx context.Context, arg CreateDatabaseParams) 
 		&i.Baseline,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -588,7 +589,7 @@ func (q *Queries) GetAlertChannel(ctx context.Context, id uuid.UUID) (AlertChann
 }
 
 const getDatabase = `-- name: GetDatabase :one
-SELECT id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at FROM databases WHERE id = $1
+SELECT id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at, tunnel_id FROM databases WHERE id = $1
 `
 
 func (q *Queries) GetDatabase(ctx context.Context, id uuid.UUID) (Database, error) {
@@ -633,6 +634,7 @@ func (q *Queries) GetDatabase(ctx context.Context, id uuid.UUID) (Database, erro
 		&i.Baseline,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -831,7 +833,7 @@ func (q *Queries) ListDatabaseEvents(ctx context.Context, arg ListDatabaseEvents
 }
 
 const listDatabases = `-- name: ListDatabases :many
-SELECT id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at FROM databases d
+SELECT id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at, tunnel_id FROM databases d
 WHERE ($1::bool OR d.workspace_id = ANY ($2::uuid[])
        OR d.server_id = ANY ($3::uuid[]))
   AND ($4::uuid IS NULL OR d.workspace_id = $4::uuid)
@@ -902,6 +904,7 @@ func (q *Queries) ListDatabases(ctx context.Context, arg ListDatabasesParams) ([
 			&i.Baseline,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}
@@ -914,7 +917,7 @@ func (q *Queries) ListDatabases(ctx context.Context, arg ListDatabasesParams) ([
 }
 
 const listDatabasesDue = `-- name: ListDatabasesDue :many
-SELECT id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at FROM databases
+SELECT id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at, tunnel_id FROM databases
 WHERE NOT paused
   AND (last_checked_at IS NULL OR last_checked_at + make_interval(secs => interval_seconds) <= now())
 ORDER BY last_checked_at NULLS FIRST
@@ -969,6 +972,7 @@ func (q *Queries) ListDatabasesDue(ctx context.Context) ([]Database, error) {
 			&i.Baseline,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}
@@ -1032,7 +1036,7 @@ UPDATE databases SET
     checks = $11,
     baseline = $12
 WHERE id = $13
-RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at
+RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at, tunnel_id
 `
 
 type RecordDatabaseCheckParams struct {
@@ -1107,12 +1111,13 @@ func (q *Queries) RecordDatabaseCheck(ctx context.Context, arg RecordDatabaseChe
 		&i.Baseline,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
 
 const setDatabaseFavorite = `-- name: SetDatabaseFavorite :one
-UPDATE databases SET favorite = $1 WHERE id = $2 RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at
+UPDATE databases SET favorite = $1 WHERE id = $2 RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at, tunnel_id
 `
 
 type SetDatabaseFavoriteParams struct {
@@ -1162,6 +1167,7 @@ func (q *Queries) SetDatabaseFavorite(ctx context.Context, arg SetDatabaseFavori
 		&i.Baseline,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -1172,7 +1178,7 @@ UPDATE databases SET
     muted_checks = $2,
     alerts_enabled = $3
 WHERE id = $4
-RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at
+RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at, tunnel_id
 `
 
 type SetDatabaseMonitoringParams struct {
@@ -1229,12 +1235,13 @@ func (q *Queries) SetDatabaseMonitoring(ctx context.Context, arg SetDatabaseMoni
 		&i.Baseline,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
 
 const setDatabasePaused = `-- name: SetDatabasePaused :one
-UPDATE databases SET paused = $1, updated_at = now() WHERE id = $2 RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at
+UPDATE databases SET paused = $1, updated_at = now() WHERE id = $2 RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at, tunnel_id
 `
 
 type SetDatabasePausedParams struct {
@@ -1284,6 +1291,7 @@ func (q *Queries) SetDatabasePaused(ctx context.Context, arg SetDatabasePausedPa
 		&i.Baseline,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }
@@ -1361,7 +1369,7 @@ UPDATE databases SET
     status_message = $18,
     updated_at = now()
 WHERE id = $19
-RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at
+RETURNING id, workspace_id, name, engine, mode, server_id, host, port, username, password_enc, dbname, tls, ca_cert, allow_internal, container, description, favorite, paused, interval_seconds, thresholds, muted_checks, alerts_enabled, status, status_message, version, flavor, role, latency_ms, size_bytes, connections, max_connections, last_checked_at, last_online_at, health, checks, baseline, created_at, updated_at, tunnel_id
 `
 
 type UpdateDatabaseParams struct {
@@ -1449,6 +1457,7 @@ func (q *Queries) UpdateDatabase(ctx context.Context, arg UpdateDatabaseParams) 
 		&i.Baseline,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TunnelID,
 	)
 	return i, err
 }

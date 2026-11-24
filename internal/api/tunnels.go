@@ -136,6 +136,7 @@ type Tunnel struct {
 	DNS             []string   `json:"dns" doc:"Name servers in use inside the VPN"`
 	Conns           int        `json:"conns" doc:"Connections open through it now"`
 	ServerCount     int        `json:"server_count" doc:"Servers reached through it"`
+	OtherCount      int        `json:"other_count" doc:"Databases, clusters, monitors and storages reached through it"`
 	LastConnectedAt *time.Time `json:"last_connected_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
@@ -194,7 +195,7 @@ func (h *tunnelHandler) spec(t sqlc.Tunnel) (tunnel.Spec, error) {
 	return tunnel.Spec{ID: t.ID.String(), Name: t.Name, Kind: t.Kind, Config: tunnelConfigOf(t), Secrets: sec}, nil
 }
 
-func (h *tunnelHandler) toTunnel(t sqlc.Tunnel, servers int) Tunnel {
+func (h *tunnelHandler) toTunnel(t sqlc.Tunnel, servers int, others ...int) Tunnel {
 	c := tunnelConfigOf(t)
 	sec, _ := h.openSecrets(t)
 	out := Tunnel{
@@ -205,7 +206,8 @@ func (h *tunnelHandler) toTunnel(t sqlc.Tunnel, servers int) Tunnel {
 		HasPassphrase: sec.Passphrase != "", Remotes: []string{},
 		Status: t.Status, StatusMessage: t.StatusMessage, StatusAt: t.StatusAt, Address: t.Address,
 		DNS: []string{}, ServerCount: servers, LastConnectedAt: t.LastConnectedAt,
-		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
+		OtherCount: sum(others),
+		CreatedAt:  t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 	if t.Kind == tunnel.KindOpenVPN && sec.ConfigFile != "" {
 		if f, err := tunnel.ParseOpenVPN(sec.ConfigFile); err == nil {
@@ -247,12 +249,24 @@ func (h *tunnelHandler) get(ctx context.Context, rawID string) (sqlc.Tunnel, err
 	return t, nil
 }
 
-func (h *tunnelHandler) serverCount(ctx context.Context, id uuid.UUID) int {
-	rows, err := h.q.ListTunnelServers(ctx, id)
-	if err != nil {
-		return 0
+func sum(list []int) int {
+	n := 0
+	for _, v := range list {
+		n += v
 	}
-	return len(rows)
+	return n
+}
+
+// out is the tunnel with what goes through it counted.
+func (h *tunnelHandler) out(ctx context.Context, t sqlc.Tunnel) Tunnel {
+	users, _ := h.q.ListTunnelUsers(ctx, t.ID)
+	servers := 0
+	for _, u := range users {
+		if u.Kind == "server" {
+			servers++
+		}
+	}
+	return h.toTunnel(t, servers, len(users)-servers)
 }
 
 // ---- Validation ----
@@ -496,7 +510,7 @@ func (h *tunnelHandler) list(ctx context.Context, _ *struct{}) (*TunnelsOutput, 
 			SecretsEnc: r.SecretsEnc, Description: r.Description, Status: r.Status,
 			StatusMessage: r.StatusMessage, Address: r.Address, StatusAt: r.StatusAt,
 			LastConnectedAt: r.LastConnectedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-		}, int(r.ServerCount)))
+		}, int(r.ServerCount), int(r.OtherCount)))
 	}
 	out.Body.Tools = tunnelTools()
 	return out, nil
@@ -585,7 +599,7 @@ func (h *tunnelHandler) update(ctx context.Context, in *struct {
 	// Open connections keep the old settings until the tunnel reopens.
 	h.mgr.Close(t.ID.String())
 	h.servers.dropTunnelConns(ctx, t.ID)
-	return &TunnelOutput{Body: h.toTunnel(t, h.serverCount(ctx, t.ID))}, nil
+	return &TunnelOutput{Body: h.out(ctx, t)}, nil
 }
 
 func (h *tunnelHandler) remove(ctx context.Context, in *TunnelIDPath) (*struct{}, error) {
@@ -593,7 +607,7 @@ func (h *tunnelHandler) remove(ctx context.Context, in *TunnelIDPath) (*struct{}
 	if err != nil {
 		return nil, err
 	}
-	using, err := h.q.ListTunnelServers(ctx, t.ID)
+	using, err := h.q.ListTunnelUsers(ctx, t.ID)
 	if err != nil {
 		return nil, internalError(err)
 	}
@@ -606,7 +620,7 @@ func (h *tunnelHandler) remove(ctx context.Context, in *TunnelIDPath) (*struct{}
 			}
 			names = append(names, s.Name)
 		}
-		return nil, huma.Error409Conflict("Servers still go through it (" + strings.Join(names, ", ") + "). Change how they're reached first.")
+		return nil, huma.Error409Conflict("Still in use by " + strings.Join(names, ", ") + ". Change how they're reached first.")
 	}
 	h.mgr.Close(t.ID.String())
 	if err := h.q.DeleteTunnel(ctx, t.ID); err != nil {
@@ -679,6 +693,19 @@ type TunnelServer struct {
 	Host   string `json:"host"`
 	Port   int32  `json:"port"`
 	Status string `json:"status"`
+}
+
+type TunnelUser struct {
+	Kind   string `json:"kind" enum:"server,database,cluster,monitor,storage"`
+	ID     string `json:"id" format:"uuid"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+type TunnelUsersOutput struct {
+	Body struct {
+		Items []TunnelUser `json:"items"`
+	}
 }
 
 type TunnelServersOutput struct {
@@ -761,18 +788,37 @@ func (h *tunnelHandler) dialFor(serverID uuid.UUID, ws uuid.UUID, tunnelID uuid.
 	}
 }
 
-// checkServerTunnel checks a tunnel a server is set to go through.
-func (h *tunnelHandler) checkServerTunnel(ctx context.Context, p *principal, ws uuid.UUID, serverID *uuid.UUID, raw *string) (*uuid.UUID, error) {
+// pick checks a tunnel picked for something in workspace ws (the body's
+// field is named by field).
+func (h *tunnelHandler) pick(ctx context.Context, p *principal, ws uuid.UUID, raw *string, field string) (*uuid.UUID, error) {
 	id := parseOptionalID(raw)
 	if id == nil {
 		return nil, nil
 	}
 	t, err := h.q.GetTunnel(ctx, *id)
 	if err != nil || t.WorkspaceID != ws || p.Access.WorkspaceLevel(ws) == auth.None {
-		return nil, fieldError("body.tunnel_id", "Pick a tunnel in this workspace", *raw)
+		return nil, fieldError(field, "Pick a tunnel in this workspace", *raw)
 	}
 	if p.Access.WorkspaceLevel(ws) < auth.Operator {
-		return nil, fieldError("body.tunnel_id", "You need Operator access to the workspace to use its tunnels", *raw)
+		return nil, fieldError(field, "You need Operator access to the workspace to use its tunnels", *raw)
+	}
+	return id, nil
+}
+
+// dialVia reaches something that isn't a server through a tunnel.
+func (h *tunnelHandler) dialVia(ws, tunnelID uuid.UUID) tunnel.DialFunc {
+	return h.dialFor(uuid.Nil, ws, tunnelID)
+}
+
+// checkServerTunnel checks a tunnel a server is set to go through.
+func (h *tunnelHandler) checkServerTunnel(ctx context.Context, p *principal, ws uuid.UUID, serverID *uuid.UUID, raw *string) (*uuid.UUID, error) {
+	id, err := h.pick(ctx, p, ws, raw, "body.tunnel_id")
+	if id == nil || err != nil {
+		return id, err
+	}
+	t, err := h.q.GetTunnel(ctx, *id)
+	if err != nil {
+		return nil, internalError(err)
 	}
 	// A chain of jump hosts must end somewhere.
 	seen := map[string]bool{}
@@ -827,7 +873,7 @@ func registerTunnels(api huma.API, h *tunnelHandler) {
 		if err != nil {
 			return nil, err
 		}
-		return &TunnelOutput{Body: h.toTunnel(t, h.serverCount(ctx, t.ID))}, nil
+		return &TunnelOutput{Body: h.out(ctx, t)}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -857,7 +903,7 @@ func registerTunnels(api huma.API, h *tunnelHandler) {
 		if t, err = h.get(ctx, in.ID); err != nil {
 			return nil, err
 		}
-		return &TunnelOutput{Body: h.toTunnel(t, h.serverCount(ctx, t.ID))}, nil
+		return &TunnelOutput{Body: h.out(ctx, t)}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -873,7 +919,7 @@ func registerTunnels(api huma.API, h *tunnelHandler) {
 		if t, err = h.get(ctx, in.ID); err != nil {
 			return nil, err
 		}
-		return &TunnelOutput{Body: h.toTunnel(t, h.serverCount(ctx, t.ID))}, nil
+		return &TunnelOutput{Body: h.out(ctx, t)}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -886,6 +932,30 @@ func registerTunnels(api huma.API, h *tunnelHandler) {
 		}
 		out := &TunnelLogOutput{}
 		out.Body.Lines = h.mgr.Log(t.ID.String())
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-tunnel-users", Method: http.MethodGet, Path: "/tunnels/{id}/users",
+		Summary: "What goes through a tunnel", Description: "Servers, databases, Proxmox clusters, monitors and storages, those the caller can see.", Tags: tags,
+	}, func(ctx context.Context, in *TunnelIDPath) (*TunnelUsersOutput, error) {
+		t, err := h.get(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.q.ListTunnelUsers(ctx, t.ID)
+		if err != nil {
+			return nil, internalError(err)
+		}
+		acc := principalOf(ctx).Access
+		out := &TunnelUsersOutput{}
+		out.Body.Items = []TunnelUser{}
+		for _, r := range rows {
+			if r.Kind == "server" && acc.ServerLevel(r.WorkspaceID, r.ID) == auth.None {
+				continue
+			}
+			out.Body.Items = append(out.Body.Items, TunnelUser{Kind: r.Kind, ID: r.ID.String(), Name: r.Name, Status: r.Status})
+		}
 		return out, nil
 	})
 

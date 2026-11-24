@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"path"
 	"strings"
 	"time"
@@ -64,6 +65,16 @@ type Config struct {
 	// Folder shown as "/". Empty is the protocol's natural start: the login
 	// folder for SFTP, "/" elsewhere.
 	Root string
+	// Dial reaches it through a tunnel; nil = straight from Morche (guarded).
+	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
+}
+
+// dialFunc is how cfg reaches the storage.
+func (cfg Config) dialFunc() func(ctx context.Context, network, addr string) (net.Conn, error) {
+	if cfg.Dial != nil {
+		return cfg.Dial
+	}
+	return guardedDialer().DialContext
 }
 
 // Info describes a successful connection.

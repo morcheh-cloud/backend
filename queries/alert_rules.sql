@@ -77,6 +77,20 @@ WHERE enabled AND workspace_id = @workspace_id
   AND metric LIKE 'db\_%'
   AND (scope = 'all' OR (scope = 'databases' AND @database_id::uuid = ANY (database_ids)));
 
+-- name: EnabledTunnelAlertRules :many
+-- Every enabled rule that watches tunnels.
+SELECT * FROM alert_rules WHERE enabled AND metric = 'tunnel_down' ORDER BY workspace_id, created_at;
+
+-- name: TunnelsInUse :many
+-- Tunnels something goes through, with their stored state.
+SELECT t.* FROM tunnels t
+WHERE EXISTS (SELECT 1 FROM servers s WHERE s.tunnel_id = t.id)
+   OR EXISTS (SELECT 1 FROM databases d WHERE d.tunnel_id = t.id)
+   OR EXISTS (SELECT 1 FROM pve_clusters c WHERE c.tunnel_id = t.id)
+   OR EXISTS (SELECT 1 FROM monitors m WHERE m.tunnel_id = t.id)
+   OR EXISTS (SELECT 1 FROM storages st WHERE st.tunnel_id = t.id)
+ORDER BY t.workspace_id, lower(t.name);
+
 -- name: EnabledPVEAlertRules :many
 -- Every enabled rule that watches Proxmox clusters.
 SELECT * FROM alert_rules
@@ -99,20 +113,21 @@ DELETE FROM alert_states WHERE rule_id = $1;
 
 -- name: ListAlertStates :many
 -- Where the given rules stand on each server or database they've seen.
-SELECT st.*, coalesce(s.name, d.name, p.name)::text AS target_name
+SELECT st.*, coalesce(s.name, d.name, p.name, t.name)::text AS target_name
 FROM alert_states st
 LEFT JOIN servers s ON st.target_kind = 'server' AND s.id = st.target_id
 LEFT JOIN databases d ON st.target_kind = 'database' AND d.id = st.target_id
 LEFT JOIN pve_clusters p ON st.target_kind = 'pve' AND p.id = st.target_id
-WHERE st.rule_id = ANY (@ids::uuid[]) AND (s.id IS NOT NULL OR d.id IS NOT NULL OR p.id IS NOT NULL)
-ORDER BY st.firing_since NULLS LAST, coalesce(s.name, d.name, p.name);
+LEFT JOIN tunnels t ON st.target_kind = 'tunnel' AND t.id = st.target_id
+WHERE st.rule_id = ANY (@ids::uuid[]) AND (s.id IS NOT NULL OR d.id IS NOT NULL OR p.id IS NOT NULL OR t.id IS NOT NULL)
+ORDER BY st.firing_since NULLS LAST, coalesce(s.name, d.name, p.name, t.name);
 
 -- name: InsertAlertEvent :exec
 INSERT INTO alert_events (
-    workspace_id, rule_id, server_id, database_id, cluster_id, rule_name, server_name, metric, severity, kind,
+    workspace_id, rule_id, server_id, database_id, cluster_id, tunnel_id, rule_name, server_name, metric, severity, kind,
     value, threshold, detail, lasted_secs, muted, at
 ) VALUES (
-    @workspace_id, @rule_id, sqlc.narg('server_id'), sqlc.narg('database_id'), sqlc.narg('cluster_id'), @rule_name, @server_name, @metric, @severity, @kind,
+    @workspace_id, @rule_id, sqlc.narg('server_id'), sqlc.narg('database_id'), sqlc.narg('cluster_id'), sqlc.narg('tunnel_id'), @rule_name, @server_name, @metric, @severity, @kind,
     @value, @threshold, @detail, @lasted_secs, @muted, @at
 );
 

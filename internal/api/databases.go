@@ -33,6 +33,7 @@ type Database struct {
 	Engine      string  `json:"engine" enum:"postgres,mysql,mssql,redis,mongodb,clickhouse,elasticsearch,meilisearch"`
 	Mode        string  `json:"mode" enum:"server,direct" doc:"server: reached through one of your servers over SSH; direct: Morche connects itself"`
 	ServerID    *string `json:"server_id" format:"uuid" nullable:"true" doc:"The server it's reached through; null when direct, or when that server was removed"`
+	TunnelID    *string `json:"tunnel_id" format:"uuid" nullable:"true" doc:"direct: the tunnel it's reached through; null = straight from Morche"`
 	Host        string  `json:"host" doc:"As the server sees it (mode server), or its public address"`
 	Port        int32   `json:"port"`
 	Username    string  `json:"username"`
@@ -71,7 +72,7 @@ type Database struct {
 func toDatabase(d sqlc.Database) Database {
 	out := Database{
 		ID: d.ID.String(), WorkspaceID: d.WorkspaceID.String(), Name: d.Name,
-		Engine: d.Engine, Mode: d.Mode, ServerID: optionalIDString(d.ServerID),
+		Engine: d.Engine, Mode: d.Mode, ServerID: optionalIDString(d.ServerID), TunnelID: optionalIDString(d.TunnelID),
 		Host: d.Host, Port: d.Port, Username: d.Username, HasPassword: len(d.PasswordEnc) > 0,
 		Dbname: d.Dbname, TLS: d.Tls, CACert: d.CaCert, AllowInternal: d.AllowInternal,
 		Container: d.Container, Description: d.Description, Favorite: d.Favorite,
@@ -126,12 +127,13 @@ type DatabaseSettings struct {
 	Username string  `json:"username,omitempty" maxLength:"128" doc:"Elasticsearch: empty = password is an API key (Authorization: ApiKey). Meilisearch: unused"`
 	Password string  `json:"password,omitempty" maxLength:"1024" doc:"On update, leave out to keep the stored one. Meilisearch: the master key or an API key"`
 	// On update: forget the stored password.
-	ClearPassword bool   `json:"clear_password,omitempty"`
-	Dbname        string `json:"dbname,omitempty" maxLength:"128" doc:"Database to sign in to (MongoDB: the auth database; Redis: the db number). Empty = the engine's usual one"`
-	TLS           string `json:"tls,omitempty" enum:"disable,require,verify" doc:"require: encrypted, the certificate isn't checked; verify: also checks it (against ca_cert, or the system's CAs). Default: require when direct, disable through a server (SSH already encrypts)"`
-	CACert        string `json:"ca_cert,omitempty" maxLength:"65536" doc:"verify only: PEM of the CA that signed the database's certificate"`
-	AllowInternal bool   `json:"allow_internal,omitempty" doc:"direct only: allow private, loopback and link-local addresses. System admins only"`
-	Container     string `json:"container,omitempty" maxLength:"128" doc:"mode server: the Docker container it runs in. Disk is then read inside it"`
+	ClearPassword bool    `json:"clear_password,omitempty"`
+	Dbname        string  `json:"dbname,omitempty" maxLength:"128" doc:"Database to sign in to (MongoDB: the auth database; Redis: the db number). Empty = the engine's usual one"`
+	TLS           string  `json:"tls,omitempty" enum:"disable,require,verify" doc:"require: encrypted, the certificate isn't checked; verify: also checks it (against ca_cert, or the system's CAs). Default: require when direct, disable through a server (SSH already encrypts)"`
+	CACert        string  `json:"ca_cert,omitempty" maxLength:"65536" doc:"verify only: PEM of the CA that signed the database's certificate"`
+	AllowInternal bool    `json:"allow_internal,omitempty" doc:"direct only: allow private, loopback and link-local addresses. System admins only"`
+	Container     string  `json:"container,omitempty" maxLength:"128" doc:"mode server: the Docker container it runs in. Disk is then read inside it"`
+	TunnelID      *string `json:"tunnel_id,omitempty" format:"uuid" nullable:"true" doc:"direct only: reach it through this tunnel (VPN, proxy or jump host)"`
 }
 
 type DatabaseBody struct {
@@ -155,6 +157,9 @@ func (s *DatabaseSettings) normalize() error {
 	s.Dbname = strings.TrimSpace(s.Dbname)
 	s.Container = strings.TrimSpace(s.Container)
 	s.CACert = strings.TrimSpace(s.CACert)
+	if s.Mode != "direct" {
+		s.TunnelID = nil
+	}
 	if s.Mode == "direct" {
 		s.ServerID, s.Container = nil, ""
 		if s.Host == "" {
@@ -340,6 +345,10 @@ func (h *databaseHandler) create(ctx context.Context, in *struct{ Body DatabaseB
 	if b.AllowInternal && !p.Access.Admin {
 		return nil, fieldError("body.allow_internal", "Only a system admin can allow private addresses", true)
 	}
+	via, err := h.servers.tunnels.pick(ctx, p, ws, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
+	}
 	d, err := h.q.CreateDatabase(ctx, sqlc.CreateDatabaseParams{
 		WorkspaceID: ws, Name: strings.TrimSpace(b.Name), Engine: b.Engine, Mode: b.Mode,
 		ServerID: parseOptionalID(b.ServerID), Host: b.Host, Port: b.Port, Username: b.Username,
@@ -353,6 +362,12 @@ func (h *databaseHandler) create(ctx context.Context, in *struct{ Body DatabaseB
 	}
 	if err != nil {
 		return nil, internalError(err)
+	}
+	if via != nil {
+		if err := h.q.SetDatabaseTunnel(ctx, sqlc.SetDatabaseTunnelParams{ID: d.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
+		d.TunnelID = via
 	}
 	return &DatabaseOutput{Body: toDatabase(d)}, nil
 }
@@ -383,7 +398,11 @@ func (h *databaseHandler) update(ctx context.Context, in *struct {
 	case b.Mode == "direct" && prev.Mode != "direct" && p.Access.WorkspaceLevel(prev.WorkspaceID) < auth.Engineer:
 		return nil, huma.Error403Forbidden("You need Engineer access to the workspace to connect to this database directly.")
 	}
-	moved := b.Host != prev.Host || b.Port != prev.Port || b.Mode != prev.Mode
+	via, err := h.servers.tunnels.pick(ctx, p, prev.WorkspaceID, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
+	}
+	moved := b.Host != prev.Host || b.Port != prev.Port || b.Mode != prev.Mode || !sameID(via, prev.TunnelID)
 	allowInternal := b.AllowInternal
 	if !p.Access.Admin {
 		if b.AllowInternal && (moved || !prev.AllowInternal) {
@@ -413,6 +432,12 @@ func (h *databaseHandler) update(ctx context.Context, in *struct {
 	if err != nil {
 		return nil, internalError(err)
 	}
+	if !sameID(via, prev.TunnelID) {
+		if err := h.q.SetDatabaseTunnel(ctx, sqlc.SetDatabaseTunnelParams{ID: d.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
+	}
+	d.TunnelID = via
 	h.drop(d.ID)
 	return &DatabaseOutput{Body: toDatabase(d)}, nil
 }
@@ -457,6 +482,19 @@ func (h *databaseHandler) testConnection(ctx context.Context, in *struct{ Body D
 		}
 	} else if prev == nil && !p.Access.CanCreateAnywhere() {
 		return nil, huma.Error403Forbidden("You can't add databases.")
+	}
+	if c.TunnelID != nil {
+		ws := uuid.Nil
+		if prev != nil {
+			ws = prev.WorkspaceID
+		} else if w, err := h.servers.authz.createTarget(ctx, p); err == nil {
+			ws = w
+		}
+		via, err := h.servers.tunnels.pick(ctx, p, ws, c.TunnelID, "body.tunnel_id")
+		if err != nil {
+			return nil, err
+		}
+		row.WorkspaceID, row.TunnelID = ws, via
 	}
 	switch {
 	case p.Access.Admin:

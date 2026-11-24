@@ -520,6 +520,56 @@ func (q *Queries) EnabledPVEAlertRules(ctx context.Context) ([]AlertRule, error)
 	return items, nil
 }
 
+const enabledTunnelAlertRules = `-- name: EnabledTunnelAlertRules :many
+SELECT id, workspace_id, name, enabled, metric, op, threshold, mount, for_minutes, severity, scope, server_ids, tags, repeat_minutes, notify_resolved, created_by_name, updated_by_name, created_at, updated_at, unit, database_ids, project, container, cluster_ids FROM alert_rules WHERE enabled AND metric = 'tunnel_down' ORDER BY workspace_id, created_at
+`
+
+// Every enabled rule that watches tunnels.
+func (q *Queries) EnabledTunnelAlertRules(ctx context.Context) ([]AlertRule, error) {
+	rows, err := q.db.Query(ctx, enabledTunnelAlertRules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AlertRule{}
+	for rows.Next() {
+		var i AlertRule
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Enabled,
+			&i.Metric,
+			&i.Op,
+			&i.Threshold,
+			&i.Mount,
+			&i.ForMinutes,
+			&i.Severity,
+			&i.Scope,
+			&i.ServerIds,
+			&i.Tags,
+			&i.RepeatMinutes,
+			&i.NotifyResolved,
+			&i.CreatedByName,
+			&i.UpdatedByName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Unit,
+			&i.DatabaseIds,
+			&i.Project,
+			&i.Container,
+			&i.ClusterIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const endAlertMute = `-- name: EndAlertMute :one
 UPDATE alert_mutes SET until = greatest(now(), starts_at + interval '1 second')
 WHERE id = $1
@@ -644,11 +694,11 @@ func (q *Queries) GetAlertState(ctx context.Context, arg GetAlertStateParams) (A
 
 const insertAlertEvent = `-- name: InsertAlertEvent :exec
 INSERT INTO alert_events (
-    workspace_id, rule_id, server_id, database_id, cluster_id, rule_name, server_name, metric, severity, kind,
+    workspace_id, rule_id, server_id, database_id, cluster_id, tunnel_id, rule_name, server_name, metric, severity, kind,
     value, threshold, detail, lasted_secs, muted, at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+    $12, $13, $14, $15, $16, $17
 )
 `
 
@@ -658,6 +708,7 @@ type InsertAlertEventParams struct {
 	ServerID    *uuid.UUID `json:"server_id"`
 	DatabaseID  *uuid.UUID `json:"database_id"`
 	ClusterID   *uuid.UUID `json:"cluster_id"`
+	TunnelID    *uuid.UUID `json:"tunnel_id"`
 	RuleName    string     `json:"rule_name"`
 	ServerName  string     `json:"server_name"`
 	Metric      string     `json:"metric"`
@@ -678,6 +729,7 @@ func (q *Queries) InsertAlertEvent(ctx context.Context, arg InsertAlertEventPara
 		arg.ServerID,
 		arg.DatabaseID,
 		arg.ClusterID,
+		arg.TunnelID,
 		arg.RuleName,
 		arg.ServerName,
 		arg.Metric,
@@ -694,7 +746,7 @@ func (q *Queries) InsertAlertEvent(ctx context.Context, arg InsertAlertEventPara
 }
 
 const listAlertEvents = `-- name: ListAlertEvents :many
-SELECT id, workspace_id, rule_id, server_id, rule_name, server_name, metric, severity, kind, value, threshold, detail, lasted_secs, at, database_id, muted, cluster_id FROM alert_events
+SELECT id, workspace_id, rule_id, server_id, rule_name, server_name, metric, severity, kind, value, threshold, detail, lasted_secs, at, database_id, muted, cluster_id, tunnel_id FROM alert_events
 WHERE ($1::bool OR workspace_id = ANY ($2::uuid[]))
   AND ($3::uuid IS NULL OR workspace_id = $3::uuid)
   AND ($4::uuid IS NULL OR server_id = $4::uuid)
@@ -752,6 +804,7 @@ func (q *Queries) ListAlertEvents(ctx context.Context, arg ListAlertEventsParams
 			&i.DatabaseID,
 			&i.Muted,
 			&i.ClusterID,
+			&i.TunnelID,
 		); err != nil {
 			return nil, err
 		}
@@ -912,13 +965,14 @@ func (q *Queries) ListAlertRules(ctx context.Context, arg ListAlertRulesParams) 
 }
 
 const listAlertStates = `-- name: ListAlertStates :many
-SELECT st.rule_id, st.target_id, st.breach_since, st.firing_since, st.last_sent_at, st.value, st.detail, st.updated_at, st.target_kind, coalesce(s.name, d.name, p.name)::text AS target_name
+SELECT st.rule_id, st.target_id, st.breach_since, st.firing_since, st.last_sent_at, st.value, st.detail, st.updated_at, st.target_kind, coalesce(s.name, d.name, p.name, t.name)::text AS target_name
 FROM alert_states st
 LEFT JOIN servers s ON st.target_kind = 'server' AND s.id = st.target_id
 LEFT JOIN databases d ON st.target_kind = 'database' AND d.id = st.target_id
 LEFT JOIN pve_clusters p ON st.target_kind = 'pve' AND p.id = st.target_id
-WHERE st.rule_id = ANY ($1::uuid[]) AND (s.id IS NOT NULL OR d.id IS NOT NULL OR p.id IS NOT NULL)
-ORDER BY st.firing_since NULLS LAST, coalesce(s.name, d.name, p.name)
+LEFT JOIN tunnels t ON st.target_kind = 'tunnel' AND t.id = st.target_id
+WHERE st.rule_id = ANY ($1::uuid[]) AND (s.id IS NOT NULL OR d.id IS NOT NULL OR p.id IS NOT NULL OR t.id IS NOT NULL)
+ORDER BY st.firing_since NULLS LAST, coalesce(s.name, d.name, p.name, t.name)
 `
 
 type ListAlertStatesRow struct {
@@ -1032,6 +1086,52 @@ func (q *Queries) SetAlertRuleEnabled(ctx context.Context, arg SetAlertRuleEnabl
 		&i.ClusterIds,
 	)
 	return i, err
+}
+
+const tunnelsInUse = `-- name: TunnelsInUse :many
+SELECT t.id, t.workspace_id, t.name, t.kind, t.config, t.secrets_enc, t.description, t.status, t.status_message, t.address, t.status_at, t.last_connected_at, t.created_at, t.updated_at FROM tunnels t
+WHERE EXISTS (SELECT 1 FROM servers s WHERE s.tunnel_id = t.id)
+   OR EXISTS (SELECT 1 FROM databases d WHERE d.tunnel_id = t.id)
+   OR EXISTS (SELECT 1 FROM pve_clusters c WHERE c.tunnel_id = t.id)
+   OR EXISTS (SELECT 1 FROM monitors m WHERE m.tunnel_id = t.id)
+   OR EXISTS (SELECT 1 FROM storages st WHERE st.tunnel_id = t.id)
+ORDER BY t.workspace_id, lower(t.name)
+`
+
+// Tunnels something goes through, with their stored state.
+func (q *Queries) TunnelsInUse(ctx context.Context) ([]Tunnel, error) {
+	rows, err := q.db.Query(ctx, tunnelsInUse)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Tunnel{}
+	for rows.Next() {
+		var i Tunnel
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Kind,
+			&i.Config,
+			&i.SecretsEnc,
+			&i.Description,
+			&i.Status,
+			&i.StatusMessage,
+			&i.Address,
+			&i.StatusAt,
+			&i.LastConnectedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateAlertRule = `-- name: UpdateAlertRule :one

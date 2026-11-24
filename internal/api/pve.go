@@ -44,6 +44,7 @@ type PVECluster struct {
 	Fingerprint   string     `json:"fingerprint" doc:"The pinned certificate (SHA-256), empty when not pinned"`
 	TLSSkipVerify bool       `json:"tls_skip_verify"`
 	AllowInternal bool       `json:"allow_internal"`
+	TunnelID      *string    `json:"tunnel_id" format:"uuid" nullable:"true" doc:"The tunnel it's reached through; null = straight from Morche"`
 	Description   string     `json:"description"`
 	Favorite      bool       `json:"favorite"`
 	Status        string     `json:"status" enum:"unknown,online,unreachable,auth_failed,tls_error,blocked,error"`
@@ -66,7 +67,8 @@ func toPVECluster(c sqlc.PveCluster) PVECluster {
 		ID: c.ID.String(), WorkspaceID: c.WorkspaceID.String(), Name: c.Name, URL: c.Url,
 		TokenID: c.TokenID, Fingerprint: c.Fingerprint, TLSSkipVerify: c.TlsSkipVerify,
 		AllowInternal: c.AllowInternal, Description: c.Description, Favorite: c.Favorite,
-		Status: c.Status, StatusMessage: c.StatusMessage, Version: c.Version,
+		TunnelID: optionalIDString(c.TunnelID),
+		Status:   c.Status, StatusMessage: c.StatusMessage, Version: c.Version,
 		ClusterName: c.ClusterName, NodeCount: c.NodeCount, NodesOnline: c.NodesOnline,
 		GuestCount: c.GuestCount, RunningCount: c.RunningCount, LatencyMs: c.LatencyMs,
 		LastCheckedAt: c.LastCheckedAt, LastOnlineAt: c.LastOnlineAt,
@@ -79,14 +81,15 @@ type PVEClusterOutput struct {
 }
 
 type PVEClusterBody struct {
-	Name          string `json:"name" minLength:"1" maxLength:"100"`
-	URL           string `json:"url" minLength:"1" maxLength:"500" doc:"Any node's address, like https://pve1.example.com:8006"`
-	TokenID       string `json:"token_id" minLength:"1" maxLength:"300" doc:"user@realm!tokenname, or the whole user@realm!tokenname=secret"`
-	Secret        string `json:"secret,omitempty" maxLength:"300" doc:"The token's secret. Blank on update keeps the saved one."`
-	Fingerprint   string `json:"fingerprint,omitempty" maxLength:"200" doc:"Pin the certificate (SHA-256). Safer than skipping the check."`
-	TLSSkipVerify bool   `json:"tls_skip_verify,omitempty"`
-	AllowInternal bool   `json:"allow_internal,omitempty" doc:"Reach a private or loopback address. System admins only."`
-	Description   string `json:"description,omitempty" maxLength:"500"`
+	Name          string  `json:"name" minLength:"1" maxLength:"100"`
+	URL           string  `json:"url" minLength:"1" maxLength:"500" doc:"Any node's address, like https://pve1.example.com:8006"`
+	TokenID       string  `json:"token_id" minLength:"1" maxLength:"300" doc:"user@realm!tokenname, or the whole user@realm!tokenname=secret"`
+	Secret        string  `json:"secret,omitempty" maxLength:"300" doc:"The token's secret. Blank on update keeps the saved one."`
+	Fingerprint   string  `json:"fingerprint,omitempty" maxLength:"200" doc:"Pin the certificate (SHA-256). Safer than skipping the check."`
+	TLSSkipVerify bool    `json:"tls_skip_verify,omitempty"`
+	AllowInternal bool    `json:"allow_internal,omitempty" doc:"Reach a private or loopback address. System admins only."`
+	Description   string  `json:"description,omitempty" maxLength:"500"`
+	TunnelID      *string `json:"tunnel_id,omitempty" format:"uuid" nullable:"true" doc:"Reach it through this tunnel (VPN, proxy or jump host)"`
 }
 
 var pveTokenID = regexp.MustCompile(`^[^\s@!=]+@[^\s@!=]+![A-Za-z0-9._-]+$`)
@@ -138,13 +141,30 @@ func cleanPVEURL(raw string) (string, error) {
 type pveConnection struct {
 	url, tokenID, secret, fingerprint string
 	skipVerify, allowInternal         bool
+	// Set: through a tunnel; nil = straight from Morche.
+	dial dbmon.Dialer
+}
+
+func (c pveConnection) dialer() dbmon.Dialer {
+	if c.dial != nil {
+		return c.dial
+	}
+	return dbmon.DirectDialer(c.allowInternal)
 }
 
 func pveClient(c pveConnection) *proxmox.Client {
 	return proxmox.New(proxmox.Config{
 		URL: c.url, TokenID: c.tokenID, Secret: c.secret, Fingerprint: c.fingerprint,
-		SkipVerify: c.skipVerify, Dial: dbmon.DirectDialer(c.allowInternal),
+		SkipVerify: c.skipVerify, Dial: c.dialer(),
 	})
+}
+
+// tunnelDial is how to reach a cluster through its tunnel; nil = directly.
+func (h *pveHandler) tunnelDial(ws uuid.UUID, tunnelID *uuid.UUID) dbmon.Dialer {
+	if tunnelID == nil || h.servers == nil || h.servers.tunnels == nil {
+		return nil
+	}
+	return dbmon.Dialer(h.servers.tunnels.dialVia(ws, *tunnelID))
 }
 
 func (h *pveHandler) savedClient(c sqlc.PveCluster) (*proxmox.Client, error) {
@@ -152,7 +172,8 @@ func (h *pveHandler) savedClient(c sqlc.PveCluster) (*proxmox.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pveClient(pveConnection{c.Url, c.TokenID, secret, c.Fingerprint, c.TlsSkipVerify, c.AllowInternal}), nil
+	return pveClient(pveConnection{c.Url, c.TokenID, secret, c.Fingerprint, c.TlsSkipVerify, c.AllowInternal,
+		h.tunnelDial(c.WorkspaceID, c.TunnelID)}), nil
 }
 
 // pveStatus adds the status only this layer knows about to the client's.
@@ -302,6 +323,10 @@ func (h *pveHandler) create(ctx context.Context, in *struct{ Body PVEClusterBody
 	if err != nil {
 		return nil, err
 	}
+	via, err := h.servers.tunnels.pick(ctx, p, ws, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
+	}
 	c, err := h.q.CreatePVECluster(ctx, sqlc.CreatePVEClusterParams{
 		WorkspaceID: ws, Name: strings.TrimSpace(b.Name), Url: s.url, TokenID: s.tokenID,
 		SecretEnc: h.box.Seal(s.secret), Fingerprint: s.fingerprint,
@@ -313,6 +338,12 @@ func (h *pveHandler) create(ctx context.Context, in *struct{ Body PVEClusterBody
 	}
 	if err != nil {
 		return nil, internalError(err)
+	}
+	if via != nil {
+		if err := h.q.SetPVEClusterTunnel(ctx, sqlc.SetPVEClusterTunnelParams{ID: c.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
+		c.TunnelID = via
 	}
 	return &PVEClusterOutput{Body: toPVECluster(h.checkNow(ctx, c))}, nil
 }
@@ -348,6 +379,10 @@ func (h *pveHandler) update(ctx context.Context, in *struct {
 	if err != nil {
 		return nil, err
 	}
+	via, err := h.servers.tunnels.pick(ctx, p, prev.WorkspaceID, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
+	}
 	c, err := h.q.UpdatePVECluster(ctx, sqlc.UpdatePVEClusterParams{
 		ID: prev.ID, Name: strings.TrimSpace(b.Name), Url: s.url, TokenID: s.tokenID,
 		SecretEnc: h.box.Seal(s.secret), Fingerprint: s.fingerprint,
@@ -360,6 +395,12 @@ func (h *pveHandler) update(ctx context.Context, in *struct {
 	if err != nil {
 		return nil, internalError(err)
 	}
+	if !sameID(via, prev.TunnelID) {
+		if err := h.q.SetPVEClusterTunnel(ctx, sqlc.SetPVEClusterTunnelParams{ID: c.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
+	}
+	c.TunnelID = via
 	return &PVEClusterOutput{Body: toPVECluster(h.checkNow(ctx, c))}, nil
 }
 
@@ -371,6 +412,7 @@ type PVETestBody struct {
 	TLSSkipVerify bool    `json:"tls_skip_verify,omitempty"`
 	AllowInternal bool    `json:"allow_internal,omitempty"`
 	ClusterID     *string `json:"cluster_id,omitempty" format:"uuid" doc:"When editing: the saved cluster, whose secret a blank one stands for."`
+	TunnelID      *string `json:"tunnel_id,omitempty" format:"uuid" nullable:"true"`
 }
 
 type PVETestOutput struct {
@@ -393,6 +435,7 @@ func (h *pveHandler) test(ctx context.Context, in *struct{ Body PVETestBody }) (
 	p := principalOf(ctx)
 	b := in.Body
 	var prev *sqlc.PveCluster
+	var ws uuid.UUID
 	if id := parseOptionalID(b.ClusterID); id != nil {
 		c, err := h.q.GetPVECluster(ctx, *id)
 		if isNotFound(err) || (err == nil && p.Access.WorkspaceLevel(c.WorkspaceID) == auth.None) {
@@ -404,10 +447,10 @@ func (h *pveHandler) test(ctx context.Context, in *struct{ Body PVETestBody }) (
 		if p.Access.WorkspaceLevel(c.WorkspaceID) < auth.Owner {
 			return nil, huma.Error403Forbidden("You need Owner access to use this cluster's saved token.")
 		}
-		prev = &c
+		prev, ws = &c, c.WorkspaceID
 	} else {
-		ws, err := h.authz.createTarget(ctx, p)
-		if err != nil {
+		var err error
+		if ws, err = h.authz.createTarget(ctx, p); err != nil {
 			return nil, err
 		}
 		if p.Access.WorkspaceLevel(ws) < auth.Owner {
@@ -421,12 +464,17 @@ func (h *pveHandler) test(ctx context.Context, in *struct{ Body PVETestBody }) (
 	if err != nil {
 		return nil, err
 	}
-	out := &PVETestOutput{}
-	dial := dbmon.DirectDialer(b.AllowInternal)
-	if strings.HasPrefix(s.url, "https://") {
-		out.Body.Fingerprint, _ = proxmox.PeekFingerprint(ctx, s.url, dial)
+	via, err := h.servers.tunnels.pick(ctx, p, ws, b.TunnelID, "body.tunnel_id")
+	if err != nil {
+		return nil, err
 	}
-	cl := pveClient(pveConnection{s.url, s.tokenID, s.secret, s.fingerprint, b.TLSSkipVerify && s.fingerprint == "", b.AllowInternal})
+	conn := pveConnection{s.url, s.tokenID, s.secret, s.fingerprint, b.TLSSkipVerify && s.fingerprint == "", b.AllowInternal,
+		h.tunnelDial(ws, via)}
+	out := &PVETestOutput{}
+	if strings.HasPrefix(s.url, "https://") {
+		out.Body.Fingerprint, _ = proxmox.PeekFingerprint(ctx, s.url, conn.dialer())
+	}
+	cl := pveClient(conn)
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	info, checkErr := cl.Check(cctx)

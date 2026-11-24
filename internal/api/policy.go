@@ -775,6 +775,7 @@ var policies = map[string]policy{
 	"test-tunnel":                    active,
 	"get-tunnel":                     onTunnel(auth.Viewer),
 	"list-tunnel-servers":            onTunnel(auth.Viewer),
+	"list-tunnel-users":              onTunnel(auth.Viewer),
 	"get-tunnel-log":                 onTunnel(auth.Operator),
 	"connect-tunnel":                 onTunnel(auth.Operator),
 	"disconnect-tunnel":              onTunnel(auth.Operator),

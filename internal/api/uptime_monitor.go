@@ -117,18 +117,32 @@ func (h *uptimeHandler) checkMonitor(ctx context.Context, m sqlc.Monitor) uptime
 	if err != nil {
 		return uptime.CheckResult{Status: uptime.Down, Message: "Couldn't read where to check from"}
 	}
-	probes := h.runAll(ctx, m.Kind, monitorConfig(m), s, planLocs(rows), m.AllowInternal, timeout)
+	probes := h.runAll(ctx, m.Kind, monitorConfig(m), s, planLocs(rows), m.AllowInternal, timeout, h.morcheVia(m.WorkspaceID, m.TunnelID))
 	return uptime.Combine(ruleOf(m), probes)
 }
 
 // runAll checks from every location at once. A location whose server can't
 // be reached is marked unreachable: it doesn't vote.
-func (h *uptimeHandler) runAll(ctx context.Context, kind string, c uptime.MonitorConfig, s uptime.MonitorSecrets, locs []planLoc, allowInternal bool, timeout time.Duration) []uptime.Probe {
+// morcheVia is how the Morche location reaches out: through the monitor's
+// tunnel, or nil = directly.
+func (h *uptimeHandler) morcheVia(ws uuid.UUID, tunnelID *uuid.UUID) uptime.Dialer {
+	if tunnelID == nil || h.servers == nil || h.servers.tunnels == nil {
+		return nil
+	}
+	return uptime.Dialer(h.servers.tunnels.dialVia(ws, *tunnelID))
+}
+
+func (h *uptimeHandler) runAll(ctx context.Context, kind string, c uptime.MonitorConfig, s uptime.MonitorSecrets, locs []planLoc, allowInternal bool, timeout time.Duration, via uptime.Dialer) []uptime.Probe {
 	probes := make([]uptime.Probe, len(locs))
 	var wg sync.WaitGroup
 	for i, l := range locs {
 		wg.Go(func() {
-			r := h.runCheck(ctx, kind, c, s, l.server, allowInternal, timeout)
+			var r uptime.CheckResult
+			if l.server == nil && via != nil {
+				r = h.runTunneled(ctx, kind, c, s, via, timeout)
+			} else {
+				r = h.runCheck(ctx, kind, c, s, l.server, allowInternal, timeout)
+			}
 			probes[i] = uptime.Probe{Location: l.key, Name: l.name, Result: r, Unreachable: l.server != nil && r.Code == "via"}
 		})
 	}
@@ -210,6 +224,15 @@ func (h *uptimeHandler) runCheck(ctx context.Context, kind string, c uptime.Moni
 		defer conn.Release()
 		env.Dial, env.Run, env.Tunneled = conn.Client.DialContext, sshRunner(conn), true
 	}
+	return uptime.Check(ctx, kind, c, s, env)
+}
+
+// runTunneled checks from Morche through a tunnel: TCP-based checks only.
+func (h *uptimeHandler) runTunneled(ctx context.Context, kind string, c uptime.MonitorConfig, s uptime.MonitorSecrets, via uptime.Dialer, timeout time.Duration) uptime.CheckResult {
+	if kind == uptime.Ping || kind == uptime.UDP {
+		return uptime.CheckResult{Status: uptime.Down, Code: "via", Message: "Ping and UDP checks can't go through a tunnel: use a TCP check, or check from a server behind it"}
+	}
+	env := uptime.Env{Dial: via, Tunneled: true, AllowInternal: true, Timeout: timeout}
 	return uptime.Check(ctx, kind, c, s, env)
 }
 

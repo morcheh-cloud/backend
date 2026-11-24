@@ -198,7 +198,10 @@ func build(cfg *config.Config, db *pgxpool.Pool, rdb *cache.Cache, box *secrets.
 	registerPVEConsole(api, r, pve, cfg.CORSOrigins)
 	startPVEMonitor(pve, cfg.PVECheckInterval)
 	cloudH := &cloudHandler{q: sqlc.New(db), box: box, authz: a, fakeURL: cfg.ArvanFakeURL, cache: map[uuid.UUID]cloudCached{}, res: map[uuid.UUID]cloudResCached{}}
-	registerTunnels(api, newTunnelHandler(sqlc.New(db), box, a, servers))
+	tunnelsH := newTunnelHandler(sqlc.New(db), box, a, servers)
+	registerTunnels(api, tunnelsH)
+	tunnelsH.startAlerts()
+	alertRules.tunnels = tunnelsH
 	registerCloudAccounts(api, cloudH)
 	registerCloudServers(api, cloudH)
 	registerCloudResources(api, cloudH)

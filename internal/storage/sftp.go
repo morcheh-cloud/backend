@@ -33,7 +33,7 @@ func openSFTP(ctx context.Context, cfg Config) (FS, Info, error) {
 	client, presented, err := sshprobe.Dial(ctx, sshprobe.Target{
 		Host: strings.TrimSpace(cfg.Host), Port: port, User: cfg.Username,
 		Password: cfg.Secret, PrivateKey: cfg.PrivateKey, Passphrase: cfg.Passphrase,
-		KnownHostKey: cfg.HostKey,
+		KnownHostKey: cfg.HostKey, Dial: cfg.Dial,
 	})
 	info := Info{LatencyMs: presented.LatencyMs, HostKey: presented.HostKey, Fingerprint: presented.Fingerprint}
 	if err != nil {

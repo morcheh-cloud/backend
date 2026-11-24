@@ -310,6 +310,8 @@ type Querier interface {
 	EnabledDockerAutoUpdatesWithoutNext(ctx context.Context) ([]DockerAutoUpdate, error)
 	// Every enabled rule that watches Proxmox clusters.
 	EnabledPVEAlertRules(ctx context.Context) ([]AlertRule, error)
+	// Every enabled rule that watches tunnels.
+	EnabledTunnelAlertRules(ctx context.Context) ([]AlertRule, error)
 	// Ends a mute now (one that hasn't started yet goes away).
 	EndAlertMute(ctx context.Context, id uuid.UUID) (AlertMute, error)
 	// A run whose job ended without it (canceled while queued, Morche restarted).
@@ -774,6 +776,8 @@ type Querier interface {
 	// Without the data. user_id narrows to one person's sessions.
 	ListTerminalRecordings(ctx context.Context, arg ListTerminalRecordingsParams) ([]ListTerminalRecordingsRow, error)
 	ListTunnelServers(ctx context.Context, tunnelID uuid.UUID) ([]ListTunnelServersRow, error)
+	// Everything reached through a tunnel, servers first.
+	ListTunnelUsers(ctx context.Context, tunnelID uuid.UUID) ([]ListTunnelUsersRow, error)
 	ListTunnels(ctx context.Context, arg ListTunnelsParams) ([]ListTunnelsRow, error)
 	ListUserApiTokens(ctx context.Context, userID uuid.UUID) ([]ApiToken, error)
 	// ---- Grants ----
@@ -1003,6 +1007,7 @@ type Querier interface {
 	SetDatabaseSyncPaused(ctx context.Context, arg SetDatabaseSyncPausedParams) (DatabaseSync, error)
 	SetDatabaseSyncProblem(ctx context.Context, arg SetDatabaseSyncProblemParams) error
 	SetDatabaseSyncRunJob(ctx context.Context, arg SetDatabaseSyncRunJobParams) error
+	SetDatabaseTunnel(ctx context.Context, arg SetDatabaseTunnelParams) error
 	SetDockerAutoUpdateEnabled(ctx context.Context, arg SetDockerAutoUpdateEnabledParams) (DockerAutoUpdate, error)
 	SetDockerAutoUpdateNext(ctx context.Context, arg SetDockerAutoUpdateNextParams) error
 	SetDockerAutoUpdateWebhook(ctx context.Context, arg SetDockerAutoUpdateWebhookParams) (DockerAutoUpdate, error)
@@ -1014,7 +1019,9 @@ type Querier interface {
 	SetLogArchiveRestore(ctx context.Context, arg SetLogArchiveRestoreParams) (LogArchive, error)
 	// Resuming starts over: pending until the next check says otherwise.
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) (Monitor, error)
+	SetMonitorTunnel(ctx context.Context, arg SetMonitorTunnelParams) error
 	SetPVEClusterFavorite(ctx context.Context, arg SetPVEClusterFavoriteParams) (PveCluster, error)
+	SetPVEClusterTunnel(ctx context.Context, arg SetPVEClusterTunnelParams) error
 	// A machine links to one server; run DeletePVELinkForServer first so a
 	// server links to one machine too.
 	SetPVELink(ctx context.Context, arg SetPVELinkParams) (PveVmLink, error)
@@ -1054,6 +1061,7 @@ type Querier interface {
 	// Pausing and resuming don't change whose access it runs with.
 	SetStorageSyncPaused(ctx context.Context, arg SetStorageSyncPausedParams) (StorageSync, error)
 	SetStorageSyncRunJob(ctx context.Context, arg SetStorageSyncRunJobParams) error
+	SetStorageTunnel(ctx context.Context, arg SetStorageTunnelParams) error
 	SetTerminalRecordingSettings(ctx context.Context, arg SetTerminalRecordingSettingsParams) (TerminalRecordingSetting, error)
 	// Replaces the groups of one user (approving someone, editing them).
 	SetUserGroups(ctx context.Context, arg SetUserGroupsParams) error
@@ -1108,6 +1116,8 @@ type Querier interface {
 	TouchAssetDiscovery(ctx context.Context, workspaceID uuid.UUID) error
 	TouchSession(ctx context.Context, id uuid.UUID) error
 	TouchUserLogin(ctx context.Context, id uuid.UUID) error
+	// Tunnels something goes through, with their stored state.
+	TunnelsInUse(ctx context.Context) ([]Tunnel, error)
 	UpdateAlertChannel(ctx context.Context, arg UpdateAlertChannelParams) (AlertChannel, error)
 	UpdateAlertRule(ctx context.Context, arg UpdateAlertRuleParams) (AlertRule, error)
 	UpdateApp(ctx context.Context, arg UpdateAppParams) (App, error)

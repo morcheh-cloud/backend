@@ -58,6 +58,7 @@ type AlertEvent struct {
 	DatabaseID  *uuid.UUID `json:"database_id"`
 	Muted       bool       `json:"muted"`
 	ClusterID   *uuid.UUID `json:"cluster_id"`
+	TunnelID    *uuid.UUID `json:"tunnel_id"`
 }
 
 type AlertMute struct {
@@ -524,6 +525,7 @@ type Database struct {
 	Baseline        []byte     `json:"baseline"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+	TunnelID        *uuid.UUID `json:"tunnel_id"`
 }
 
 type DatabaseBackup struct {
@@ -1242,6 +1244,7 @@ type Monitor struct {
 	RuleDownCount     int32      `json:"rule_down_count"`
 	RuleDegraded      string     `json:"rule_degraded"`
 	RuleDegradedCount int32      `json:"rule_degraded_count"`
+	TunnelID          *uuid.UUID `json:"tunnel_id"`
 }
 
 type MonitorChannel struct {
@@ -1428,6 +1431,7 @@ type PveCluster struct {
 	LastOnlineAt  *time.Time `json:"last_online_at"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	TunnelID      *uuid.UUID `json:"tunnel_id"`
 }
 
 type PveVmLink struct {
@@ -1769,6 +1773,7 @@ type Storage struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	TunnelID      *uuid.UUID `json:"tunnel_id"`
 }
 
 type StorageCheck struct {

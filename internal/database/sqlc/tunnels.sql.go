@@ -142,8 +142,57 @@ func (q *Queries) ListTunnelServers(ctx context.Context, tunnelID uuid.UUID) ([]
 	return items, nil
 }
 
+const listTunnelUsers = `-- name: ListTunnelUsers :many
+SELECT 'server'::text AS kind, id, name, workspace_id, status FROM servers WHERE tunnel_id = $1::uuid
+UNION ALL
+SELECT 'database', id, name, workspace_id, status FROM databases WHERE tunnel_id = $1::uuid
+UNION ALL
+SELECT 'cluster', id, name, workspace_id, status FROM pve_clusters WHERE tunnel_id = $1::uuid
+UNION ALL
+SELECT 'monitor', id, name, workspace_id, status FROM monitors WHERE tunnel_id = $1::uuid
+UNION ALL
+SELECT 'storage', id, name, workspace_id, status FROM storages WHERE tunnel_id = $1::uuid
+`
+
+type ListTunnelUsersRow struct {
+	Kind        string    `json:"kind"`
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	Status      string    `json:"status"`
+}
+
+// Everything reached through a tunnel, servers first.
+func (q *Queries) ListTunnelUsers(ctx context.Context, tunnelID uuid.UUID) ([]ListTunnelUsersRow, error) {
+	rows, err := q.db.Query(ctx, listTunnelUsers, tunnelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTunnelUsersRow{}
+	for rows.Next() {
+		var i ListTunnelUsersRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.ID,
+			&i.Name,
+			&i.WorkspaceID,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTunnels = `-- name: ListTunnels :many
-SELECT t.id, t.workspace_id, t.name, t.kind, t.config, t.secrets_enc, t.description, t.status, t.status_message, t.address, t.status_at, t.last_connected_at, t.created_at, t.updated_at, (SELECT count(*) FROM servers s WHERE s.tunnel_id = t.id)::int AS server_count
+SELECT t.id, t.workspace_id, t.name, t.kind, t.config, t.secrets_enc, t.description, t.status, t.status_message, t.address, t.status_at, t.last_connected_at, t.created_at, t.updated_at, (SELECT count(*) FROM servers s WHERE s.tunnel_id = t.id)::int AS server_count,
+    ((SELECT count(*) FROM databases d WHERE d.tunnel_id = t.id) + (SELECT count(*) FROM pve_clusters c WHERE c.tunnel_id = t.id)
+     + (SELECT count(*) FROM monitors m WHERE m.tunnel_id = t.id) + (SELECT count(*) FROM storages st WHERE st.tunnel_id = t.id))::int AS other_count
 FROM tunnels t
 WHERE ($1::bool OR t.workspace_id = ANY ($2::uuid[]))
   AND ($3::uuid IS NULL OR t.workspace_id = $3::uuid)
@@ -172,6 +221,7 @@ type ListTunnelsRow struct {
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 	ServerCount     int32      `json:"server_count"`
+	OtherCount      int32      `json:"other_count"`
 }
 
 func (q *Queries) ListTunnels(ctx context.Context, arg ListTunnelsParams) ([]ListTunnelsRow, error) {
@@ -199,6 +249,7 @@ func (q *Queries) ListTunnels(ctx context.Context, arg ListTunnelsParams) ([]Lis
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ServerCount,
+			&i.OtherCount,
 		); err != nil {
 			return nil, err
 		}
@@ -244,6 +295,48 @@ UPDATE tunnels SET status = 'idle', status_message = '', address = '' WHERE stat
 // On start nothing is open yet.
 func (q *Queries) ResetTunnelStates(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, resetTunnelStates)
+	return err
+}
+
+const setDatabaseTunnel = `-- name: SetDatabaseTunnel :exec
+UPDATE databases SET tunnel_id = $1 WHERE id = $2
+`
+
+type SetDatabaseTunnelParams struct {
+	TunnelID *uuid.UUID `json:"tunnel_id"`
+	ID       uuid.UUID  `json:"id"`
+}
+
+func (q *Queries) SetDatabaseTunnel(ctx context.Context, arg SetDatabaseTunnelParams) error {
+	_, err := q.db.Exec(ctx, setDatabaseTunnel, arg.TunnelID, arg.ID)
+	return err
+}
+
+const setMonitorTunnel = `-- name: SetMonitorTunnel :exec
+UPDATE monitors SET tunnel_id = $1 WHERE id = $2
+`
+
+type SetMonitorTunnelParams struct {
+	TunnelID *uuid.UUID `json:"tunnel_id"`
+	ID       uuid.UUID  `json:"id"`
+}
+
+func (q *Queries) SetMonitorTunnel(ctx context.Context, arg SetMonitorTunnelParams) error {
+	_, err := q.db.Exec(ctx, setMonitorTunnel, arg.TunnelID, arg.ID)
+	return err
+}
+
+const setPVEClusterTunnel = `-- name: SetPVEClusterTunnel :exec
+UPDATE pve_clusters SET tunnel_id = $1 WHERE id = $2
+`
+
+type SetPVEClusterTunnelParams struct {
+	TunnelID *uuid.UUID `json:"tunnel_id"`
+	ID       uuid.UUID  `json:"id"`
+}
+
+func (q *Queries) SetPVEClusterTunnel(ctx context.Context, arg SetPVEClusterTunnelParams) error {
+	_, err := q.db.Exec(ctx, setPVEClusterTunnel, arg.TunnelID, arg.ID)
 	return err
 }
 
@@ -294,6 +387,20 @@ func (q *Queries) SetServerTunnel(ctx context.Context, arg SetServerTunnelParams
 		&i.TunnelID,
 	)
 	return i, err
+}
+
+const setStorageTunnel = `-- name: SetStorageTunnel :exec
+UPDATE storages SET tunnel_id = $1 WHERE id = $2
+`
+
+type SetStorageTunnelParams struct {
+	TunnelID *uuid.UUID `json:"tunnel_id"`
+	ID       uuid.UUID  `json:"id"`
+}
+
+func (q *Queries) SetStorageTunnel(ctx context.Context, arg SetStorageTunnelParams) error {
+	_, err := q.db.Exec(ctx, setStorageTunnel, arg.TunnelID, arg.ID)
+	return err
 }
 
 const updateTunnel = `-- name: UpdateTunnel :one
