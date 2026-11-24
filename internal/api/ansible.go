@@ -844,7 +844,7 @@ func (h *ansibleHandler) inventoryHosts(ctx context.Context, run sqlc.AnsibleRun
 			ServerID: want.ServerID, Name: want.InventoryName, ServerName: s.Name,
 			Address: s.Host, Port: int(s.Port), User: s.Username,
 			Password: target.Password, PrivateKey: target.PrivateKey, Passphrase: target.Passphrase,
-			HostKey: s.HostKey, Groups: serverGroups(s),
+			HostKey: s.HostKey, Groups: serverGroups(s), Dial: target.Dial,
 		})
 	}
 	if len(hosts) == 0 {

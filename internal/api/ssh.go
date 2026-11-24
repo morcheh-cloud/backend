@@ -24,12 +24,19 @@ func connVersion(s sqlc.Server) string {
 	for _, part := range [][]byte{
 		[]byte(s.Host), []byte(strconv.Itoa(int(s.Port))), []byte(s.Username),
 		[]byte(s.AuthMethod), s.PasswordEnc, s.PrivateKeyEnc, s.PassphraseEnc,
-		[]byte(s.HostKey),
+		[]byte(s.HostKey), []byte(optionalIDText(s.TunnelID)),
 	} {
 		sum.Write(part)
 		sum.Write([]byte{0})
 	}
 	return hex.EncodeToString(sum.Sum(nil))
+}
+
+func optionalIDText(id *uuid.UUID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }
 
 // conn returns a live SSH connection to a stored server, shared with other

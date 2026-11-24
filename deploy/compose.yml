@@ -74,6 +74,13 @@ services:
     #   - seccomp=unconfined
     #   - apparmor=unconfined
     #   - systempaths=unconfined
+    # OpenVPN tunnels (Settings › Tunnels) run in a private network namespace
+    # and need a tun device: add the device below and the same security_opt
+    # lines (user namespaces). WireGuard, AnyConnect & co., proxies and jump
+    # hosts need neither. SSTP also needs /dev/ppp, user: root and
+    # cap_add: [NET_ADMIN].
+    # devices:
+    #   - /dev/net/tun
 
   frontend:
     build:

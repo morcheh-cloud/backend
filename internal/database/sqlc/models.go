@@ -1563,6 +1563,7 @@ type Server struct {
 	WorkspaceID    uuid.UUID  `json:"workspace_id"`
 	MorcheHost     bool       `json:"morche_host"`
 	SetupPublicKey string     `json:"setup_public_key"`
+	TunnelID       *uuid.UUID `json:"tunnel_id"`
 }
 
 type ServerCheckBucket struct {
@@ -1867,6 +1868,23 @@ type TerminalRecordingSetting struct {
 	KeepDays      int32     `json:"keep_days"`
 	UpdatedByName string    `json:"updated_by_name"`
 	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type Tunnel struct {
+	ID              uuid.UUID  `json:"id"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	Name            string     `json:"name"`
+	Kind            string     `json:"kind"`
+	Config          []byte     `json:"config"`
+	SecretsEnc      []byte     `json:"secrets_enc"`
+	Description     string     `json:"description"`
+	Status          string     `json:"status"`
+	StatusMessage   string     `json:"status_message"`
+	Address         string     `json:"address"`
+	StatusAt        *time.Time `json:"status_at"`
+	LastConnectedAt *time.Time `json:"last_connected_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type User struct {

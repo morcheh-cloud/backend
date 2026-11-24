@@ -15,6 +15,11 @@
 #   clickhouse .......... clickhouse-client (ClickHouse backups/restores); the
 #                         official server image's single binary, ~700 MB
 #                         unpacked (most of the image's size)
+#   openvpn, openconnect, VPN tunnels (Settings › Tunnels): OpenVPN; AnyConnect,
+#   sstp-client, ppp .... Fortinet, GlobalProtect…; SSTP. WireGuard, proxies and
+#                         jump hosts need nothing. OpenVPN/SSTP need /dev/net/tun
+#                         and user namespaces, see deploy/compose.yml
+#   iproute2 ............ routes inside a VPN's private network namespace
 #   goose + migrations .. the schema, applied on start (MIGRATE_ON_START)
 
 ARG GO_VERSION=1.27
@@ -74,13 +79,14 @@ RUN set -eux; \
       mariadb-client \
       mongodb-database-tools \
       redis-tools \
-      gzip coreutils findutils procps less iputils-ping netcat-openbsd; \
+      gzip coreutils findutils procps less iputils-ping netcat-openbsd \
+      openvpn openconnect sstp-client ppp iproute2; \
     apt-get purge -y --auto-remove gnupg postgresql-common; \
     rm -rf /var/lib/apt/lists/*; \
     # Every tool the panel looks for has to be there.
     for t in ssh sshpass bwrap ansible-playbook ansible-doc pg_dump pg_dumpall \
       pg_restore psql mariadb-dump mariadb mariadb-binlog mongodump mongorestore \
-      redis-cli tar; do command -v "$t" >/dev/null || { echo "missing: $t"; exit 1; }; done
+      redis-cli tar nc openvpn openconnect sstpc ip; do command -v "$t" >/dev/null || { echo "missing: $t"; exit 1; }; done
 
 COPY --from=build /out/server /out/goose /usr/local/bin/
 COPY --from=clickhouse /usr/bin/clickhouse /usr/local/bin/clickhouse

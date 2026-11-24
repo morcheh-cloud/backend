@@ -1,9 +1,11 @@
 package ansible
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,6 +33,14 @@ type Host struct {
 	HostKey string
 	// Groups the host belongs to, already valid group names.
 	Groups []string
+	// Dial reaches it through a tunnel; nil = directly. ssh then goes
+	// through a unix socket in the run's folder (ProxyCommand nc -U).
+	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
+}
+
+// tunnelSocket is where a tunneled host's connections are taken.
+func tunnelSocket(dir string, h Host) string {
+	return filepath.Join(dir, "tunnels", h.ServerID)
 }
 
 var notName = regexp.MustCompile(`[^a-z0-9_]+`)
@@ -100,11 +110,15 @@ func writeInventory(dir string, hosts []Host) error {
 		}
 		fmt.Fprintf(&known, "%s %s", alias(h), ssh.MarshalAuthorizedKey(pub))
 
+		extra := "-o HostKeyAlias=" + alias(h)
+		if h.Dial != nil {
+			extra += " -o ProxyCommand='nc -U " + tunnelSocket(dir, h) + "'"
+		}
 		v := map[string]any{
 			"ansible_host":           h.Address,
 			"ansible_port":           h.Port,
 			"ansible_user":           h.User,
-			"ansible_ssh_extra_args": "-o HostKeyAlias=" + alias(h),
+			"ansible_ssh_extra_args": extra,
 			"morche_server_id":       h.ServerID,
 			"morche_server_name":     h.ServerName,
 		}

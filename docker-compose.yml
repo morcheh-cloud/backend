@@ -337,6 +337,43 @@ services:
     ports:
       - "127.0.0.1:8091:8091"
 
+  # VPN & tunnels fixture (dev/test-vpn): a gateway with WireGuard, OpenVPN,
+  # ocserv (AnyConnect), SOCKS5 and an HTTP proxy in front of a private
+  # network; test-vpn-target (10.77.0.10:22, ant / colony) is only reachable
+  # through it. Client configs: docker compose exec test-vpn cat /out/<file>.
+  test-vpn:
+    build: dev/test-vpn
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    ports:
+      - "127.0.0.1:51820:51820/udp"
+      - "127.0.0.1:1194:1194/udp"
+      - "127.0.0.1:1195:1195"
+      - "127.0.0.1:4443:4443"
+      - "127.0.0.1:4443:4443/udp"
+      - "127.0.0.1:1080:1080"
+      - "127.0.0.1:3128:3128"
+    networks:
+      default: {}
+      vpnlan:
+        ipv4_address: 10.77.0.2
+
+  test-vpn-target:
+    build: dev/test-vpn
+    command: ["target"]
+    networks:
+      vpnlan:
+        ipv4_address: 10.77.0.10
+
+networks:
+  vpnlan:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.77.0.0/24
+
 volumes:
   pgdata:
   redisdata:

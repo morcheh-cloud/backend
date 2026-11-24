@@ -37,6 +37,14 @@ var demoRefused = map[string]bool{
 	"get-recording":             true,
 	"get-recording-cast":        true,
 	"delete-recording":          true,
+	// Tunnels reach out to other networks: a visitor could aim one at
+	// anything, so the demo can't make, change or test them.
+	"create-tunnel":     true,
+	"update-tunnel":     true,
+	"test-tunnel":       true,
+	"delete-tunnel":     true,
+	"connect-tunnel":    true,
+	"disconnect-tunnel": true,
 	// Who can reach what.
 	"set-grant":    true,
 	"delete-grant": true,

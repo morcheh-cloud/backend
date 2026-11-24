@@ -19,9 +19,25 @@ import (
 	"github.com/morche/backend/internal/database/sqlc"
 	"github.com/morche/backend/internal/jobs"
 	"github.com/morche/backend/internal/secrets"
+	"github.com/morche/backend/internal/tunnel"
 )
 
 func main() {
+	// Helpers the VPN tunnels start (see internal/tunnel).
+	if len(os.Args) > 1 && os.Args[1] == "tunnel-helper" {
+		if err := tunnel.RunHelper(); err != nil {
+			fmt.Fprintln(os.Stderr, "tunnel-helper:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "tunnel-script" {
+		if err := tunnel.RunScript(); err != nil {
+			fmt.Fprintln(os.Stderr, "tunnel-script:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "reset-admin" {
 		if err := resetAdmin(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "reset-admin:", err)

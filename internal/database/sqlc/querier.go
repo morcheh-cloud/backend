@@ -180,6 +180,7 @@ type Querier interface {
 	CreateStorageSync(ctx context.Context, arg CreateStorageSyncParams) (StorageSync, error)
 	CreateStorageSyncRun(ctx context.Context, arg CreateStorageSyncRunParams) (StorageSyncRun, error)
 	CreateTerminalRecording(ctx context.Context, arg CreateTerminalRecordingParams) (uuid.UUID, error)
+	CreateTunnel(ctx context.Context, arg CreateTunnelParams) (Tunnel, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	// ---- Outgoing webhooks ----
 	CreateWebhook(ctx context.Context, arg CreateWebhookParams) (Webhook, error)
@@ -270,6 +271,7 @@ type Querier interface {
 	DeleteStorage(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteStorageSync(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteTerminalRecording(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteTunnel(ctx context.Context, id uuid.UUID) error
 	DeleteUser(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteUserApiToken(ctx context.Context, arg DeleteUserApiTokenParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) error
@@ -488,6 +490,8 @@ type Querier interface {
 	GetTerminalRecordingData(ctx context.Context, id uuid.UUID) (GetTerminalRecordingDataRow, error)
 	GetTerminalRecordingInfo(ctx context.Context, id uuid.UUID) (GetTerminalRecordingInfoRow, error)
 	GetTerminalRecordingSettings(ctx context.Context, workspaceID uuid.UUID) (TerminalRecordingSetting, error)
+	GetTunnel(ctx context.Context, id uuid.UUID) (Tunnel, error)
+	GetTunnelWorkspace(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
 	GetUserSession(ctx context.Context, arg GetUserSessionParams) (Session, error)
@@ -769,6 +773,8 @@ type Querier interface {
 	ListStoragesDueForScan(ctx context.Context, before time.Time) ([]Storage, error)
 	// Without the data. user_id narrows to one person's sessions.
 	ListTerminalRecordings(ctx context.Context, arg ListTerminalRecordingsParams) ([]ListTerminalRecordingsRow, error)
+	ListTunnelServers(ctx context.Context, tunnelID uuid.UUID) ([]ListTunnelServersRow, error)
+	ListTunnels(ctx context.Context, arg ListTunnelsParams) ([]ListTunnelsRow, error)
 	ListUserApiTokens(ctx context.Context, userID uuid.UUID) ([]ApiToken, error)
 	// ---- Grants ----
 	// Every grant that applies to a user, directly or through a group.
@@ -903,6 +909,7 @@ type Querier interface {
 	RecordSignIn(ctx context.Context, arg RecordSignInParams) (SignIn, error)
 	// host_key is only stored when the check saw one (SFTP).
 	RecordStorageCheck(ctx context.Context, arg RecordStorageCheckParams) (Storage, error)
+	RecordTunnelState(ctx context.Context, arg RecordTunnelStateParams) error
 	RememberDockerProjectPlace(ctx context.Context, arg RememberDockerProjectPlaceParams) error
 	RemoveServerTags(ctx context.Context, arg RemoveServerTagsParams) (int64, error)
 	ReparentFolderChildren(ctx context.Context, arg ReparentFolderChildrenParams) error
@@ -914,6 +921,8 @@ type Querier interface {
 	ResetStuckPitrs(ctx context.Context) error
 	// Installs left mid-change by a restart.
 	ResetStuckSoftwareInstalls(ctx context.Context) error
+	// On start nothing is open yet.
+	ResetTunnelStates(ctx context.Context) error
 	// Findings now managed by Morche (their key was added to a section) count
 	// as accepted.
 	ResolveAssetDiscoveries(ctx context.Context, arg ResolveAssetDiscoveriesParams) error
@@ -1035,6 +1044,7 @@ type Querier interface {
 	SetServerLogin(ctx context.Context, arg SetServerLoginParams) (Server, error)
 	// Pinning isn't an edit: it keeps who changed it last and when.
 	SetServerNotePinned(ctx context.Context, arg SetServerNotePinnedParams) (ServerNote, error)
+	SetServerTunnel(ctx context.Context, arg SetServerTunnelParams) (Server, error)
 	SetSoftwareInstallStatus(ctx context.Context, arg SetSoftwareInstallStatusParams) error
 	SetSoftwareRunJob(ctx context.Context, arg SetSoftwareRunJobParams) error
 	SetStorageFavorite(ctx context.Context, arg SetStorageFavoriteParams) (Storage, error)
@@ -1143,6 +1153,7 @@ type Querier interface {
 	// Full replace of the editable fields; the handler resolves secrets first.
 	UpdateStorage(ctx context.Context, arg UpdateStorageParams) (Storage, error)
 	UpdateStorageSync(ctx context.Context, arg UpdateStorageSyncParams) (StorageSync, error)
+	UpdateTunnel(ctx context.Context, arg UpdateTunnelParams) (Tunnel, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpdateWebhook(ctx context.Context, arg UpdateWebhookParams) (Webhook, error)
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)

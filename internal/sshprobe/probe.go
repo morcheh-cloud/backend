@@ -36,6 +36,10 @@ type Target struct {
 	// KnownHostKey is the trusted key in authorized_keys format; empty trusts
 	// whatever key the server presents (trust on first use).
 	KnownHostKey string
+	// Dial opens the TCP connection (through a tunnel); nil = directly.
+	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
+	// Via names the tunnel, for messages.
+	Via string
 }
 
 type OS struct {
@@ -159,9 +163,19 @@ func Dial(ctx context.Context, t Target) (*ssh.Client, Presented, error) {
 
 	addr := net.JoinHostPort(t.Host, strconv.Itoa(t.Port))
 	start := time.Now()
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	var conn net.Conn
+	var err error
+	if t.Dial != nil {
+		conn, err = t.Dial(ctx, "tcp", addr)
+	} else {
+		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	}
 	if err != nil {
-		return nil, p, &DialError{StatusUnreachable, dialMessage(err)}
+		msg := dialMessage(err)
+		if t.Via != "" {
+			msg = "Through " + t.Via + ": " + msg
+		}
+		return nil, p, &DialError{StatusUnreachable, msg}
 	}
 	deadline, _ := ctx.Deadline()
 	_ = conn.SetDeadline(deadline)

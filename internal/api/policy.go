@@ -70,6 +70,8 @@ const (
 	kindAutomationRun
 	// The server level on the server the package registry in {id} runs on.
 	kindPackageRegistry
+	// A workspace level, on the workspace of the tunnel in {id}.
+	kindTunnel
 )
 
 type policy struct {
@@ -101,6 +103,7 @@ func onDatabaseSyncRun(l auth.Level) policy {
 func onDNSServer(l auth.Level) policy    { return policy{kindDNSServer, l} }
 func onPVECluster(l auth.Level) policy   { return policy{kindPVECluster, l} }
 func onCloudAccount(l auth.Level) policy { return policy{kindCloudAccount, l} }
+func onTunnel(l auth.Level) policy       { return policy{kindTunnel, l} }
 func onScript(l auth.Level) policy       { return policy{kindScript, l} }
 func onProxy(l auth.Level) policy        { return policy{kindProxy, l} }
 func onPackageRegistry(l auth.Level) policy {
@@ -767,6 +770,16 @@ var policies = map[string]policy{
 	"test-pve-connection":            active,
 	"list-pve-guests-everywhere":     active,
 	"list-pve-infrastructure":        active,
+	"list-tunnels":                   active,
+	"create-tunnel":                  active,
+	"test-tunnel":                    active,
+	"get-tunnel":                     onTunnel(auth.Viewer),
+	"list-tunnel-servers":            onTunnel(auth.Viewer),
+	"get-tunnel-log":                 onTunnel(auth.Operator),
+	"connect-tunnel":                 onTunnel(auth.Operator),
+	"disconnect-tunnel":              onTunnel(auth.Operator),
+	"update-tunnel":                  onTunnel(auth.Owner),
+	"delete-tunnel":                  onTunnel(auth.Owner),
 	"list-cloud-accounts":            active,
 	"create-cloud-account":           active,
 	"test-cloud-account":             active,

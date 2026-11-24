@@ -63,6 +63,7 @@ type Server struct {
 	UpdatedAt          time.Time  `json:"updated_at"`
 	MorcheHost         bool       `json:"morche_host" doc:"The machine Morche itself runs on"`
 	SetupPublicKey     string     `json:"setup_public_key" doc:"The public key Morche made for this server (authorized_keys line); empty when it has none"`
+	TunnelID           *string    `json:"tunnel_id" format:"uuid" nullable:"true" doc:"The tunnel it's reached through; null = directly"`
 }
 
 func toServer(s sqlc.Server) Server {
@@ -74,6 +75,7 @@ func toServer(s sqlc.Server) Server {
 		ID:                 s.ID.String(),
 		WorkspaceID:        s.WorkspaceID.String(),
 		FolderID:           optionalIDString(s.FolderID),
+		TunnelID:           optionalIDString(s.TunnelID),
 		Name:               s.Name,
 		Host:               s.Host,
 		Port:               s.Port,
@@ -130,6 +132,7 @@ type Connection struct {
 	Password   string `json:"password,omitempty" maxLength:"1024" doc:"For auth_method=password. On update, leave out to keep the stored one"`
 	PrivateKey string `json:"private_key,omitempty" maxLength:"16384" doc:"PEM or OpenSSH private key, for auth_method=private_key. On update, leave out to keep the stored one"`
 	Passphrase string `json:"passphrase,omitempty" maxLength:"1024" doc:"Passphrase of an encrypted private key"`
+	TunnelID   *string `json:"tunnel_id,omitempty" format:"uuid" nullable:"true" doc:"Reach it through this tunnel (VPN, proxy or jump host); leave out or null for directly"`
 }
 
 type ServerBody struct {
@@ -288,6 +291,20 @@ type serverHandler struct {
 	authz      *authz
 	// Set once the uptime handler exists; nil = no alert rules.
 	alerts *alertEngine
+	// The tunnels servers can be reached through.
+	tunnels *tunnelHandler
+}
+
+// dropTunnelConns closes the pooled connections of the servers that go
+// through a tunnel, so the next use goes through it afresh.
+func (h *serverHandler) dropTunnelConns(ctx context.Context, tunnelID uuid.UUID) {
+	rows, err := h.q.ListTunnelServers(ctx, tunnelID)
+	if err != nil {
+		return
+	}
+	for _, r := range rows {
+		h.pool.Drop(r.ID.String())
+	}
 }
 
 // forget closes everything still connected to deleted servers.
@@ -743,6 +760,10 @@ func (h *serverHandler) create(ctx context.Context, in *struct{ Body ServerBody 
 	if err != nil {
 		return nil, err
 	}
+	via, err := h.tunnels.checkServerTunnel(ctx, p, ws, nil, b.TunnelID)
+	if err != nil {
+		return nil, err
+	}
 	s, err := h.insert(ctx, p, sqlc.CreateServerParams{
 		WorkspaceID:   ws,
 		FolderID:      folder,
@@ -763,6 +784,11 @@ func (h *serverHandler) create(ctx context.Context, in *struct{ Body ServerBody 
 	}
 	if err != nil {
 		return nil, internalError(err)
+	}
+	if via != nil {
+		if s, err = h.q.SetServerTunnel(ctx, sqlc.SetServerTunnelParams{ID: s.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
 	}
 	return &ServerOutput{Body: toServer(s)}, nil
 }
@@ -809,6 +835,11 @@ func (h *serverHandler) update(ctx context.Context, in *struct {
 	if err != nil {
 		return nil, err
 	}
+	via, err := h.tunnels.checkServerTunnel(ctx, principalOf(ctx), prev.WorkspaceID, &prev.ID, b.TunnelID)
+	if err != nil {
+		return nil, err
+	}
+	viaChanged := !sameID(via, prev.TunnelID)
 
 	// A different address is a different machine as far as trust goes; any
 	// connection change makes the last status stale.
@@ -816,7 +847,7 @@ func (h *serverHandler) update(ctx context.Context, in *struct {
 	if b.Host != prev.Host || b.Port != prev.Port {
 		hostKey = ""
 	}
-	if b.Host != prev.Host || b.Port != prev.Port || b.Username != prev.Username ||
+	if b.Host != prev.Host || b.Port != prev.Port || b.Username != prev.Username || viaChanged ||
 		b.AuthMethod != prev.AuthMethod || b.Password != "" || b.PrivateKey != "" || b.Passphrase != "" {
 		status, message = "unknown", ""
 	}
@@ -844,6 +875,12 @@ func (h *serverHandler) update(ctx context.Context, in *struct {
 	}
 	if err != nil {
 		return nil, internalError(err)
+	}
+	if viaChanged {
+		if s, err = h.q.SetServerTunnel(ctx, sqlc.SetServerTunnelParams{ID: s.ID, TunnelID: via}); err != nil {
+			return nil, internalError(err)
+		}
+		h.pool.Drop(s.ID.String())
 	}
 	return &ServerOutput{Body: toServer(s)}, nil
 }
@@ -897,6 +934,11 @@ func (h *serverHandler) duplicate(ctx context.Context, in *ServerIDPath) (*Serve
 		if err != nil {
 			return nil, internalError(err)
 		}
+		if src.TunnelID != nil {
+			if s, err = h.q.SetServerTunnel(ctx, sqlc.SetServerTunnelParams{ID: s.ID, TunnelID: src.TunnelID}); err != nil {
+				return nil, internalError(err)
+			}
+		}
 		return &ServerOutput{Body: toServer(s)}, nil
 	}
 	return nil, huma.Error409Conflict("too many copies of this server already exist")
@@ -920,6 +962,9 @@ func (h *serverHandler) target(s sqlc.Server) (sshprobe.Target, error) {
 		t.PrivateKey, t.Passphrase = "", ""
 	} else {
 		t.Password = ""
+	}
+	if s.TunnelID != nil && h.tunnels != nil {
+		t.Dial = h.tunnels.dialFor(s.ID, s.WorkspaceID, *s.TunnelID)
 	}
 	return t, nil
 }
@@ -1063,6 +1108,21 @@ func (h *serverHandler) testConnection(ctx context.Context, in *struct{ Body Con
 		if t.PrivateKey == "" {
 			return nil, fieldError("body.private_key", "Paste the private key", nil)
 		}
+	}
+
+	if id := parseOptionalID(c.TunnelID); id != nil {
+		tn, err := h.q.GetTunnel(ctx, *id)
+		if err != nil || acc.WorkspaceLevel(tn.WorkspaceID) == auth.None || (prev != nil && prev.WorkspaceID != tn.WorkspaceID) {
+			return nil, fieldError("body.tunnel_id", "Pick a tunnel in this workspace", *c.TunnelID)
+		}
+		if acc.WorkspaceLevel(tn.WorkspaceID) < auth.Operator {
+			return nil, fieldError("body.tunnel_id", "You need Operator access to the workspace to use its tunnels", *c.TunnelID)
+		}
+		self := uuid.Nil
+		if prev != nil {
+			self = prev.ID
+		}
+		t.Dial = h.tunnels.dialFor(self, tn.WorkspaceID, tn.ID)
 	}
 
 	res := sshprobe.Probe(ctx, t)

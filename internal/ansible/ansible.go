@@ -133,6 +133,11 @@ func Run(ctx context.Context, c Config, st Status, s Spec, hook Hook) (int, erro
 	if err := prepare(dir, s); err != nil {
 		return -1, err
 	}
+	stopTunnels, err := serveTunnels(ctx, dir, s.Hosts)
+	if err != nil {
+		return -1, err
+	}
+	defer stopTunnels()
 
 	args := []string{"-i", filepath.Join(dir, "inventory.json")}
 	if s.Check {
